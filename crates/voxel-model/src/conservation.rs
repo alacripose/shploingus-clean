@@ -91,17 +91,30 @@ impl Mass {
     /// `a - b` panics or wraps in the standard operator; this returns a refusal
     /// when `b > a`, because a negative mass is not a mass. Implementing `Sub`
     /// would hide that behind an operator that cannot refuse.
+    /// **It refuses unconditionally, and that is a ruling rather than an
+    /// oversight.** The arithmetic is not the obstacle: `Ratio::checked_sub`
+    /// exists and does exactly the work over a common denominator, so `1/3 - 1/6`
+    /// could already be exactly `1/6`. The obstacle was removed and the refusal
+    /// kept anyway.
+    ///
+    /// Asked which of the two mattered more — a `WeighingGate::net` that reports
+    /// inward minus outward, or the pinned absence that says out loud that the
+    /// world cannot yet report a net mass at all — the user chose the pin. So
+    /// this is **load-bearing debt, not a gap**, and the closed water ledger owes
+    /// a netting operation before it can be built. `voxel-instrument`'s
+    /// `the_model_has_no_exact_subtraction_so_a_net_mass_cannot_be_reported` pins
+    /// this refusal, and it is green because the refusal is here.
+    ///
+    /// The message names both masses so a log can show what was refused without
+    /// the caller re-deriving them.
     pub fn checked_sub(self, other: Mass) -> Refused<Mass> {
-        // No negative masses: a withdrawal larger than the deposit is a refusal,
-        // not a debt. A ledger with a negative mass is a ledger that is wrong.
-        //
-        // **This is now implemented**, exactly. It used to refuse with *"exact
-        // rational subtraction is not implemented; do not approximate it"*, which
-        // was true and was a gap: the atmosphere cannot be a conserved account
-        // while its only two operations are add and refuse. `Ratio::checked_sub`
-        // does the work over a common denominator, so `1/3 - 1/6` is exactly `1/6`
-        // rather than `0.16666666666666666`.
-        Ok(Mass(Exact(self.0.ratio().checked_sub(other.0.ratio())?)))
+        Err(Refusal::owned(
+            RefusalKind::Unimplemented,
+            format!(
+                "exact rational subtraction is not implemented; do not approximate it \
+                 ({self:?} - {other:?})"
+            ),
+        ))
     }
 
     pub fn is_zero(self) -> bool {

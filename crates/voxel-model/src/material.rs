@@ -96,20 +96,25 @@ impl Ratio {
     /// Deliberately not `Sub`. The standard operator would have to either panic or
     /// wrap on `a - b` where `b > a`, and a *negative* quantity of anything — a
     /// mass, a volume, a mole fraction — is not a small number, it is a wrong
-    /// one. [`crate::conservation::Mass::checked_sub`] refused for exactly this
-    /// reason and had to report that exact subtraction was *unimplemented*; this
-    /// is that operation, so the refusal there is now implemented rather than
-    /// permanent.
+    /// one. A negative component ratio is also the one thing
+    /// [`RefusalKind::ZeroRatio`]’s sibling cannot express: this is where the
+    /// refusal has to be.
+    ///
+    /// **This operation exists; [`crate::conservation::Mass::checked_sub`] still
+    /// refuses and does not call it.** The arithmetic was built here first, over a
+    /// common denominator, and the mass-level refusal was then *kept* by ruling:
+    /// asked which mattered more, a `WeighingGate::net` or the pinned absence that
+    /// says out loud the world cannot yet net two masses, the pin was chosen. So a
+    /// ratio subtracts exactly and a mass still does not, and this paragraph is
+    /// the honest record of that gap rather than a stale cross-reference.
+    ///
+    /// `0 - 0` is `Ratio::ZERO`, not a refusal. There is nothing to withdraw from
+    /// an empty account *because nothing was withdrawn from it*, and a guard that
+    /// refused the zero case would make `0 - 0` the only subtraction in the model
+    /// that lies about sign.
     pub fn checked_sub(self, other: Ratio) -> Refused<Self> {
         if other.den == 0 || self.den == 0 {
             return Err(Refusal::owned(RefusalKind::RatiosDoNotSumToOne, "zero denominator"));
-        }
-        if self.num == 0 {
-            return Err(Refusal::owned(
-                RefusalKind::OutOfDeclaredRange,
-                format!("0 - {other} is negative; a quantity may not be withdrawn that was \
-                         never deposited"),
-            ));
         }
         let g = gcd(self.den, other.den);
         let l = (self.den / g).saturating_mul(other.den);

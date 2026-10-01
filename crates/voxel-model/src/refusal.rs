@@ -49,6 +49,15 @@ pub enum RefusalKind {
     /// A **material** shaper reached for occupancy, which is a physical shaper's
     /// authority and nobody else's (see `crate::shaper`).
     ShaperKindViolation,
+    /// The operation does not exist, and refusing to fake it is the answer.
+    ///
+    /// Its own kind rather than a reused one, because "this model cannot do that
+    /// yet" and "that value is out of range" are different facts: the first is a
+    /// gap in the ledger of operations, the second is a bad input, and a caller
+    /// that cannot tell them apart will eventually treat a gap as a bad input and
+    /// work around it. This is what [`crate::conservation::Mass::checked_sub`]
+    /// refuses with while exact subtraction is unbuilt.
+    Unimplemented,
 
     // ---- the signing seam (C-59 R-59.2, R-59.3) ------------------------------
     //
@@ -156,6 +165,7 @@ impl RefusalKind {
             RefusalKind::NonFiniteValue => "non_finite_value",
             RefusalKind::OutOfDeclaredRange => "out_of_declared_range",
             RefusalKind::ShaperKindViolation => "shaper_kind_violation",
+            RefusalKind::Unimplemented => "unimplemented",
             RefusalKind::DigestMismatch => "digest_mismatch",
             RefusalKind::UnsignedEnvelope => "unsigned_envelope",
             RefusalKind::UntrustedKey => "untrusted_key",

@@ -257,16 +257,20 @@ fn mass_of_count(count: u64, density_kg_m3: Ratio) -> Mass {
 ///
 /// A gate that weighs both directions obviously *should* be able to report the
 /// net. It cannot, and the reason is one layer down: [`voxel_model`] has no exact
-/// rational **subtraction**. `Ratio` has `Add` and `Mul`; `Mass::checked_sub`
-/// refuses unconditionally with *"exact rational subtraction is not implemented;
-/// do not approximate it"*.
+/// rational **subtraction** on a mass. `Ratio` has `Add`, `Mul` and its own
+/// `checked_sub`, but `Mass::checked_sub` refuses unconditionally with *"exact
+/// rational subtraction is not implemented; do not approximate it"*.
 ///
 /// So a gate reports its two gross masses and there is no `net` method — not
 /// because netting is unimportant, but because the only way to produce one today
 /// would be to cross the exact/approximate boundary to get it, and the exact set
-/// is the one place this project refuses to approximate. The test below measures
-/// the gap rather than assuming it, so that when subtraction exists the test
-/// fails and the method gets written.
+/// is the one place this project refuses to approximate.
+///
+/// **This was ruled, not overlooked.** `Ratio::checked_sub` was written, which
+/// made the mass-level operation a two-line delegation, and the delegation was
+/// then reverted: the user chose the pinned absence over a green `net`. The pin
+/// below measures the gap rather than assuming it, so the day the ruling goes the
+/// other way the test fails and the method gets written.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct WeighingGate {
     boundary: [i32; 3],
