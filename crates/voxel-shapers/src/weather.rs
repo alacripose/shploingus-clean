@@ -168,7 +168,7 @@ const ONSET_DRYNESS: f64 = 2.4;
 /// the field's maximum was `0.5491` and it therefore **never rained at all**; at `0.25`,
 /// before the floor existed, 4 % of the year was wet. `0.18` is the third value and the
 /// first one that was read off the distribution rather than picked and hoped for.
-const WET_ONSET: f64 = 0.18;
+pub const WET_ONSET: f64 = 0.18;
 
 /// The onset below which the field is flattened, suppressing its low tail.
 ///
@@ -201,7 +201,11 @@ const ONSET_FLOOR: f64 = 0.22;
 /// for the measurement that killed the zero claim. This is the threshold that replaces
 /// it, and it is well above the field's ordinary minimum so that silence is a **common**
 /// state rather than a rare accident.
-const SILENT_ONSET: f64 = 0.05;
+///
+/// **`pub` for the same reason as [`WET_ONSET`]:** a synthesiser deciding to be
+/// silent must read the same threshold the field was flattened against, or the
+/// audio will disagree with the weather about when there is none.
+pub const SILENT_ONSET: f64 = 0.05;
 
 /// The measured mean of the onset field, and the divisor that conserves the annual mean.
 ///

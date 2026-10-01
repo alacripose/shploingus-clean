@@ -9,6 +9,7 @@ members = [
     "crates/voxel-instrument",
     "crates/voxel-appearance",
     "crates/voxel-work",
+    "crates/voxel-audio",
     "crates/voxel-client",
     "crates/shploingus",
     "crates/voxel-ui",

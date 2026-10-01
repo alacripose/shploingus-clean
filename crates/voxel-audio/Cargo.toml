@@ -1,0 +1,23 @@
+[package]
+name = "voxel-audio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Deliberately NOT a dependency: rodio, cpal, or anything that opens a device.
+#
+# This crate is the *synthesis*, and synthesis is a pure function of `(tick,
+# address)` — the same purity the shapers claim. A crate that could open an audio
+# device could not be tested headlessly, and C-40's rule about never testing the
+# client invisibly is a rule about not letting the only way to check a thing be a
+# window. So the output wheel lives in `voxel-client`, which already owns the GPU
+# and already has the ignored-test convention, and this crate stays arithmetic.
+#
+#   does it do something we need?      yes — the onset is measurable but inaudible
+#   is it actually USED?               yes — voxel-client plays what this returns
+#
+# `voxel-model` is deliberately absent: nothing here is exact, so depending on the
+# exact set would be a resolve without a use.
+voxel-shapers = { path = "../voxel-shapers" }

@@ -2129,6 +2129,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "voxel-audio"
+version = "0.1.0"
+dependencies = [
+ "voxel-shapers",
+]
+
+[[package]]
 name = "voxel-client"
 version = "0.1.0"
 dependencies = [
