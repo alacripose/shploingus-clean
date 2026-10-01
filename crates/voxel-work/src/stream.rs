@@ -52,9 +52,21 @@ pub struct ChunkWindow {
     pub vertical_chunks: i32,
 }
 
-/// The declared default window: the render horizon's radius, three chunks up and
-/// down.
-pub const DEFAULT_WINDOW: ChunkWindow = ChunkWindow { radius_chunks: 8, vertical_chunks: 3 };
+/// The declared default window: the **simulation** horizon's radius, three chunks
+/// up and down.
+///
+/// It was the render horizon's radius, and that was too small for what the window
+/// is *for*. A tick stage works over [`Horizon::Simulation`], so at radius 8 it
+/// would ask about chunks this window never streams — the neighbourhood the stage
+/// reasons over and the neighbourhood the machine holds were not the same place.
+/// Radius 12 is the simulation horizon's own number, read rather than retyped, so
+/// the window cannot drift from it.
+///
+/// The cost is declared, not discovered: **4,375** chunks wanted instead of
+/// 2,023. That is what [`Budget`] and [`Frame::wanted`] are for, and a test holds
+/// the two extents to each other so this line and `Horizon::Simulation` cannot
+/// quietly disagree again.
+pub const DEFAULT_WINDOW: ChunkWindow = ChunkWindow { radius_chunks: 12, vertical_chunks: 3 };
 
 impl ChunkWindow {
     pub fn validate(&self) -> Refused<()> {
@@ -445,6 +457,41 @@ impl Streamer {
         Digest::of_fields("voxel-work/stream", &[t.as_slice()])
     }
 
+    /// Order candidate chunks the way [`Self::pump`] asks for them: **horizon tier
+    /// first, then distance, then position.**
+    ///
+    /// Tier before distance is the ruling, and the reason is backpressure.
+    /// [`Pool::submit`] does not block — it refuses the tail when the queue is
+    /// full, and reports [`Submitted::QueueFull`]. So the order chunks are offered
+    /// in *is* the order they are refused in, and offering in scan order refused
+    /// whichever chunk the scan reached last — a corner of the window, the
+    /// farthest thing in it — while a chunk beside the viewer went unasked. Ranking
+    /// first moves the refusal onto the chunk the viewer would miss least.
+    ///
+    /// Within one tier this is the old nearest-first order unchanged: every chunk
+    /// inside the render horizon has the same tier, so nothing about the near world
+    /// changes. The tier only decides between the rings.
+    ///
+    /// Position last, so the order is **total**: equal tier and equal distance
+    /// still submit in one fixed sequence, and two runs of the same world ask in
+    /// the same order (F12).
+    ///
+    /// It is a named method rather than an inline sort because the tests assert
+    /// this order, and a tested *copy* of an ordering is not the ordering.
+    pub fn rank(&self, candidates: &mut [ChunkPos], centre: ChunkPos) {
+        // MUTATION-PROBE REVERTED: the sort is load-bearing, and all three tests here
+        // were measured failing when it was removed.
+        candidates.sort_unstable_by_key(|p| {
+            (
+                std::cmp::Reverse(self.horizons.tier(centre, *p)),
+                self.window.priority(centre, *p),
+                p.x,
+                p.y,
+                p.z,
+            )
+        });
+    }
+
     /// One frame of streaming: cancel, evict, ask, take.
     pub fn pump(&mut self) -> Refused<Frame> {
         let centre = self.centre;
@@ -493,13 +540,21 @@ impl Streamer {
             self.failed.clear();
         }
 
-        // 3. Ask for what the window wants and does not already have.
+        // 3. Ask for what the window wants and does not already have — **in the
+        //    order [Self::rank] decides, not in scan order.**
+        //
+        //    The sort is what makes a full queue refuse the far chunk instead of a
+        //    corner, and it is the same call the tests hold, so the order cannot be
+        //    right in a test and wrong here.
+        let mut missing: Vec<ChunkPos> = self
+            .window
+            .positions(centre)
+            .filter(|p| !self.meshes.contains_key(p) && !self.failed.contains(p))
+            .collect();
+        self.rank(&mut missing, centre);
         let mut submitted = 0usize;
         let mut queue_full = 0u64;
-        for pos in self.window.positions(centre) {
-            if self.meshes.contains_key(&pos) || self.failed.contains(&pos) {
-                continue;
-            }
+        for pos in missing {
             let request = Request { pos, priority: self.window.priority(centre, pos) };
             match self.pool.submit(request) {
                 Submitted::Queued => submitted += 1,
@@ -1114,13 +1169,137 @@ mod tests {
 
     #[test]
     fn the_window_is_a_box_and_the_count_says_so() {
-        // A cube of radius 8 would be 4,913 chunks; the declared window is not.
+        // A cube of radius 12 would be 15,625 chunks; the declared window is not.
         let w = DEFAULT_WINDOW;
-        assert_eq!(w.count(), 17 * 17 * 7);
-        assert!(w.count() < 17u64.pow(3));
-        assert!(w.contains(ChunkPos::new(0, 0, 0), ChunkPos::new(8, 3, 8)));
-        assert!(!w.contains(ChunkPos::new(0, 0, 0), ChunkPos::new(8, 4, 8)));
-        assert!(!w.contains(ChunkPos::new(0, 0, 0), ChunkPos::new(9, 0, 0)));
+        assert_eq!(w.count(), 25 * 25 * 7);
+        assert!(w.count() < 25u64.pow(3));
+        assert!(w.contains(ChunkPos::new(0, 0, 0), ChunkPos::new(12, 3, 12)));
+        assert!(!w.contains(ChunkPos::new(0, 0, 0), ChunkPos::new(12, 4, 12)));
+        assert!(!w.contains(ChunkPos::new(0, 0, 0), ChunkPos::new(13, 0, 0)));
+    }
+
+    #[test]
+    fn the_window_radius_is_the_simulation_horizon_and_cannot_drift_from_it() {
+        // The reason the window was widened, held as an assertion: if the horizon
+        // moves and this number does not, the two neighbourhoods separate again
+        // and nothing says so.
+        let h = Horizons::declared();
+        assert_eq!(DEFAULT_WINDOW.radius_chunks, h.rule(Horizon::Simulation).radius_chunks);
+        // And it is strictly wider than what is drawn, which was the defect.
+        assert!(DEFAULT_WINDOW.radius_chunks > h.rule(Horizon::Render).radius_chunks);
+    }
+
+    #[test]
+    fn the_viewers_own_chunk_is_asked_for_first_and_the_farthest_chunk_last() {
+        // Teeth for [Streamer::rank]. Remove the sort — leave the candidates in
+        // scan order — and the first chunk offered becomes the window's
+        // `(-r, -v, -r)` corner, because that is where `positions` starts. Every
+        // assertion below is chosen to fail on that mutation, because "the pool
+        // has a priority queue" is not the claim: the claim is *what gets refused
+        // when the queue is full*, and the pool pops in priority order whatever
+        // order it was handed.
+        let s = streamer(1, 8 * 1024 * 1024).with_window(DEFAULT_WINDOW).unwrap();
+        let c = centre();
+        let mut candidates: Vec<ChunkPos> = s.window.positions(c).collect();
+        let unranked_first = candidates[0];
+        s.rank(&mut candidates, c);
+
+        assert_eq!(
+            candidates[0],
+            c,
+            "the chunk the viewer is standing in was not the first one asked for"
+        );
+        assert_ne!(
+            unranked_first, c,
+            "the scan happened to start at the centre, so this test cannot fail"
+        );
+
+        // The other end, stated as a maximum rather than as a named corner: ties
+        // in priority are broken by position, so "the last chunk" is one of the
+        // farthest, not a particular one.
+        let farthest = candidates.iter().map(|p| s.window.priority(c, *p)).max().unwrap();
+        assert_eq!(
+            s.window.priority(c, *candidates.last().unwrap()),
+            farthest,
+            "the last chunk asked for is not one of the farthest"
+        );
+        s.shutdown();
+    }
+
+    #[test]
+    fn everything_inside_the_render_horizon_is_asked_for_before_anything_outside_it() {
+        // The tier half of the ruling, measured. A nearer chunk outside the render
+        // horizon must lose to a farther chunk inside it, because the inner one is
+        // the one the viewer can see into.
+        let s = streamer(1, 8 * 1024 * 1024).with_window(DEFAULT_WINDOW).unwrap();
+        let c = centre();
+        let h = Horizons::declared();
+        let mut candidates: Vec<ChunkPos> = s.window.positions(c).collect();
+        s.rank(&mut candidates, c);
+
+        let mut seen_outside = None;
+        for (i, p) in candidates.iter().enumerate() {
+            let inside = h.contains(Horizon::Render, c, *p);
+            if !inside {
+                seen_outside.get_or_insert(i);
+            } else if let Some(first_outside) = seen_outside {
+                // The rank is total, so once the first outside chunk is reached
+                // no inside chunk may appear after it. This is the whole claim.
+                assert!(
+                    i < first_outside,
+                    "chunk {p:?} is inside the render horizon but was ranked at {i}, \
+                     after an outside chunk at {first_outside}"
+                );
+            }
+        }
+        // And the claim is not vacuous: the window really does straddle the
+        // render horizon now, which is only true because it was widened.
+        let inside_count =
+            candidates.iter().filter(|p| h.contains(Horizon::Render, c, **p)).count();
+        // The window is 25×7×25 and the render horizon is a radius-8 cube, which
+        // spans all seven of its vertical chunks: so 17×7×17 inside, exactly.
+        assert_eq!(candidates.len(), 25 * 25 * 7);
+        assert_eq!(inside_count, 17 * 17 * 7);
+        assert!(
+            candidates.len() - inside_count > 0,
+            "no candidate was outside the render horizon, so the tier cannot bite"
+        );
+        s.shutdown();
+    }
+
+    #[test]
+    fn ranking_is_total_so_two_runs_ask_in_the_same_order() {
+        // F12: an order that depended on iteration order would be a different
+        // order on another machine, and the world would build differently there.
+        let s = streamer(1, 8 * 1024 * 1024).with_window(DEFAULT_WINDOW).unwrap();
+        let c = centre();
+        let mut a: Vec<ChunkPos> = s.window.positions(c).collect();
+        let mut b: Vec<ChunkPos> = a.clone();
+        b.reverse();
+        s.rank(&mut a, c);
+        s.rank(&mut b, c);
+        assert_eq!(a, b, "the same candidates ranked two ways came out in two orders");
+        // The order is **lexicographic** in (tier, distance): the tier may drop exactly
+        // once per ring boundary, and inside a tier the distance may never go
+        // backwards. Stated as a monotone pair rather than "the tier is constant",
+        // which would be a false claim — the tier is the primary key, so it is
+        // supposed to change at each boundary.
+        let h = Horizons::declared();
+        for w in a.windows(2) {
+            let (t0, t1) = (h.tier(c, w[0]), h.tier(c, w[1]));
+            let (p0, p1) = (s.window.priority(c, w[0]), s.window.priority(c, w[1]));
+            assert!(
+                t0 > t1 || (t0 == t1 && p0 <= p1),
+                "{w:?} then {:?} is not a monotone (tier, distance) order: \
+                 ({t0}, {p0}) then ({t1}, {p1})",
+                w[1]
+            );
+        }
+        // And the tiers really do step down: all four are present in this window.
+        let mut tiers: Vec<u8> = a.iter().map(|p| h.tier(c, *p)).collect();
+        tiers.dedup();
+        assert!(tiers.len() > 1, "the window only reached one tier, so tiering is untested");
+        s.shutdown();
     }
 
     #[test]

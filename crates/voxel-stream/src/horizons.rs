@@ -137,6 +137,23 @@ impl Horizons {
                 HorizonRule { horizon: Horizon::Field, radius_chunks: 96, level: 5 },
             ],
         }
+    }/// Replace one horizon's rule, **validating the whole set again**.
+    ///
+    /// The fields of [`HorizonRule`] are public so a rule can be read, but a set
+    /// is only meaningful nested, and hand-building one out of four public structs
+    /// is how a caller ends up with horizons that are individually plausible and
+    /// jointly wrong. This is the only way to change one, and it cannot produce a
+    /// set that [`Self::validate`] would refuse.
+    pub fn with_rule(self, horizon: Horizon, radius_chunks: i32, level: u32) -> Refused<Self> {
+        let mut next = self;
+        for r in next.rules.iter_mut() {
+            if r.horizon == horizon {
+                r.radius_chunks = radius_chunks;
+                r.level = level;
+            }
+        }
+        next.validate()?;
+        Ok(next)
     }
 
     pub fn rule(&self, horizon: Horizon) -> &HorizonRule {
@@ -157,6 +174,24 @@ impl Horizons {
     /// Whether a chunk lies inside a horizon of `centre`.
     pub fn contains(&self, horizon: Horizon, centre: ChunkPos, at: ChunkPos) -> bool {
         self.rule(horizon).contains(centre, at)
+    }
+
+    /// How many of the four horizons hold this chunk: **4 for the ones nearest
+    /// the viewer, fewer the further out**.
+    ///
+    /// Because the horizons are strictly nested, the count *is* the outermost
+    /// reach — a chunk in all four is in none of the others' exclusive bands, and
+    /// a chunk in one is past every inner horizon. So this is not a fourth
+    /// ordering that has to be kept in agreement with `contains`; it is derived
+    /// from it, and cannot drift.
+    ///
+    /// It exists because distance alone is the wrong answer when the machine is
+    /// behind. A chunk at the far side of the render cube and one just past it can
+    /// be the same distance away, and only one of them is inside the horizon the
+    /// viewer can actually see into. Counting horizons is how that difference gets
+    /// a name without inventing a fifth concept.
+    pub fn tier(&self, centre: ChunkPos, at: ChunkPos) -> u8 {
+        Horizon::ALL.iter().filter(|h| self.contains(**h, centre, at)).count() as u8
     }
 
     /// Every horizon a chunk lies inside, widest first.
@@ -399,6 +434,35 @@ mod tests {
             vec![Horizon::Field]
         );
         assert!(h.horizons_containing(c, ChunkPos::new(200, 0, 0)).is_empty());
+    }
+
+    #[test]
+    fn the_tier_counts_horizons_and_falls_only_outward() {
+        // The count is the outermost reach, because the set is nested. If these
+        // two ever disagree, one of them is wrong.
+        let h = Horizons::declared();
+        let c = ChunkPos::new(0, 0, 0);
+        assert_eq!(h.tier(c, c), 4);
+        // Inside render, outside nothing.
+        assert_eq!(h.tier(c, ChunkPos::new(8, 0, 0)), 4);
+        // Just outside render (8), inside simulation (12): one horizon fewer.
+        assert_eq!(h.tier(c, ChunkPos::new(9, 0, 0)), 3);
+        // Just outside simulation, inside residency (24).
+        assert_eq!(h.tier(c, ChunkPos::new(13, 0, 0)), 2);
+        // Just outside residency, inside field (96).
+        assert_eq!(h.tier(c, ChunkPos::new(25, 0, 0)), 1);
+        assert_eq!(h.tier(c, ChunkPos::new(97, 0, 0)), 0);
+
+        // Monotone along one ray, and always equal to the count it claims.
+        let mut last = u8::MAX;
+        for d in [0i32, 4, 8, 9, 12, 13, 24, 25, 96, 97, 500] {
+            let at = ChunkPos::new(d, 0, 0);
+            let n = h.tier(c, at);
+            assert!(n <= last, "tier rose at d = {d}");
+            last = n;
+            let counted = Horizon::ALL.iter().filter(|x| h.contains(**x, c, at)).count() as u8;
+            assert_eq!(n, counted, "tier and contains disagree at d = {d}");
+        }
     }
 
     #[test]
