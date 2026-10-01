@@ -238,6 +238,48 @@ impl SparseVoxelOctree {
         visit(&self.root, OCTREE_LEVELS, [0, 0, 0], f);
     }
 
+    /// Visit every region of **exactly `level`**, whether or not the tree
+    /// compresses at that level.
+    ///
+    /// [`Self::visit_leaves`] reports what the tree *happened* to merge, so its
+    /// output depends on the contents' compressibility: a chunk of solid rock
+    /// yields one leaf and a chunk of rubble yields thousands. That is the right
+    /// answer to "how is this stored" and the **wrong** answer to "what are the
+    /// units of work", because a scheduler that planned work from it would give
+    /// two chunks of the same world different tick plans — which is F12's exact
+    /// failure, arrived at from the other direction.
+    ///
+    /// So this walks to `level` and stops there, descending through branches and
+    /// **splitting coarse leaves back down**. A `Uniform` node at level 4 asked
+    /// for at level 2 is reported four times, once per level-2 cell it covers, and
+    /// the node is the same one every time. The region count is therefore a
+    /// function of `level` and the chunk's size alone.
+    ///
+    /// A `level` above [`OCTREE_LEVELS`] visits **nothing** rather than refusing:
+    /// there is no such region, and an empty answer is not a wrong one. Callers
+    /// that need a refusal ask [`Self::leaf_count_at`], which reports zero for the
+    /// same reason and says so.
+    pub fn visit_at_level(&self, level: u32, f: &mut impl FnMut([i32; 3], &Node)) {
+        if level > OCTREE_LEVELS {
+            return;
+        }
+        visit_at(&self.root, OCTREE_LEVELS, [0, 0, 0], level, f);
+    }
+
+    /// How many regions [`Self::visit_at_level`] would report at `level`.
+    ///
+    /// Equal to `(CHUNK_SIDE >> level)³` for any level at or below
+    /// [`OCTREE_LEVELS`], and zero above it. Stated as its own function because
+    /// "the walk reports the right number" is a claim worth holding rather than
+    /// assuming.
+    pub fn leaf_count_at(&self, level: u32) -> u64 {
+        if level > OCTREE_LEVELS {
+            return 0;
+        }
+        let per_axis = (CHUNK_SIDE >> level) as u64;
+        per_axis * per_axis * per_axis
+    }
+
     /// How many voxels hold matter.
     pub fn solid_count(&self) -> u64 {
         count_solid(&self.root, OCTREE_LEVELS)
@@ -338,6 +380,44 @@ fn material_at(node: &Node, level: u32, local: [i32; 3], at: SubvoxelIndex) -> M
         Node::Branch(c) => {
             let half = 1i32 << (level - 1);
             material_at(&c[octant_index(local, half)], level - 1, local, at)
+        }
+    }
+}
+
+/// Walk to `target` and report the node covering each region of that size.
+///
+/// Two cases the leaf walk does not have. A **branch** above the target is
+/// descended into, so the regions come out of the children. A **leaf** above the
+/// target is *split*, because it covers several target-sized regions and all of
+/// them are that node — reporting it once would hand the caller a region eight
+/// times too large and call it exact.
+fn visit_at(node: &Node, level: u32, origin: [i32; 3], target: u32, f: &mut impl FnMut([i32; 3], &Node)) {
+    if level == target {
+        f(origin, node);
+        return;
+    }
+    match node {
+        Node::Branch(children) => {
+            let half = 1i32 << (level - 1);
+            for (i, child) in children.iter().enumerate() {
+                let child_origin = [
+                    origin[0] + if i & 1 != 0 { half } else { 0 },
+                    origin[1] + if i & 2 != 0 { half } else { 0 },
+                    origin[2] + if i & 4 != 0 { half } else { 0 },
+                ];
+                visit_at(child, level - 1, child_origin, target, f);
+            }
+        }
+        leaf => {
+            let side = 1i32 << target;
+            let n = 1i32 << (level - target);
+            for dz in 0..n {
+                for dy in 0..n {
+                    for dx in 0..n {
+                        f([origin[0] + dx * side, origin[1] + dy * side, origin[2] + dz * side], leaf);
+                    }
+                }
+            }
         }
     }
 }
@@ -444,6 +524,74 @@ mod tests {
             }
         }
         t
+    }
+
+    #[test]
+    fn the_region_count_is_the_same_however_well_the_chunk_compresses() {
+        // The claim `visit_at_level` exists for. A solid chunk is **one** leaf and
+        // a chunk with one odd voxel in it is thousands; if the unit-of-work walk
+        // followed compression, those two chunks would be scheduled differently
+        // for the same world.
+        let solid = solid_everywhere(MaterialId(1));
+        let mut speckled = solid_everywhere(MaterialId(2));
+        speckled.set_voxel(pos(7, 9, 11), VoxelShape::solid(MaterialId(3)));
+
+        assert_ne!(
+            solid.leaf_count(),
+            speckled.leaf_count(),
+            "the two trees do not compress differently, so this test proves nothing"
+        );
+
+        for level in 0..=OCTREE_LEVELS {
+            let mut a = 0u64;
+            solid.visit_at_level(level, &mut |_, _| a += 1);
+            let mut b = 0u64;
+            speckled.visit_at_level(level, &mut |_, _| b += 1);
+            assert_eq!(a, speckled.leaf_count_at(level), "solid chunk, level {level}");
+            assert_eq!(b, speckled.leaf_count_at(level), "speckled chunk, level {level}");
+            assert_eq!(a, b, "compression changed the region count at level {level}");
+        }
+
+        // And the count is the one arithmetic says it is, not merely equal.
+        assert_eq!(speckled.leaf_count_at(OCTREE_LEVELS), 1);
+        assert_eq!(speckled.leaf_count_at(OCTREE_LEVELS - 1), 8);
+        assert_eq!(speckled.leaf_count_at(OCTREE_LEVELS - 2), 64);
+        // Above the root there is no such region, and that is zero rather than a
+        // refusal.
+        assert_eq!(speckled.leaf_count_at(OCTREE_LEVELS + 1), 0);
+        let mut none = 0u64;
+        speckled.visit_at_level(OCTREE_LEVELS + 1, &mut |_, _| none += 1);
+        assert_eq!(none, 0);
+    }
+
+    #[test]
+    fn regions_at_a_level_partition_the_chunk_exactly_once_each() {
+        // Every voxel belongs to exactly one reported region: no gap, no overlap.
+        // A hole or a double-count here is what a tick stage would read as a
+        // duplicated or missing voxel.
+        let mut t = solid_everywhere(MaterialId(1));
+        t.set_voxel(pos(0, 0, 0), VoxelShape::solid(MaterialId(2)));
+        t.set_voxel(pos(31, 31, 31), VoxelShape::solid(MaterialId(3)));
+        t.set_voxel(pos(16, 0, 16), VoxelShape::solid(MaterialId(4)));
+
+        for level in 0..=OCTREE_LEVELS {
+            let side = 1i32 << level;
+            let mut covered = vec![0u8; CHUNK_VOLUME as usize];
+            t.visit_at_level(level, &mut |origin, _| {
+                for dz in 0..side {
+                    for dy in 0..side {
+                        for dx in 0..side {
+                            let v = [origin[0] + dx, origin[1] + dy, origin[2] + dz];
+                            covered[(v[2] * CHUNK_SIDE + v[1]) as usize
+                                * CHUNK_SIDE as usize
+                                + v[0] as usize] += 1;
+                        }
+                    }
+                }
+            });
+            let wrong = covered.iter().position(|c| *c != 1);
+            assert_eq!(wrong, None, "level {level}: voxel {wrong:?} was covered {} times", covered[wrong.unwrap_or(0)]);
+        }
     }
 
     #[test]
