@@ -6928,3 +6928,115 @@ build. **Left open and asked again rather than guessed at.**
 * **The onset layer, `examples/onset-profile.rs`, the MODS-MAP reconciliation and
   `docs/references.md` are uncommitted** alongside `chains/`, which stays excluded by
   design at 101 MB.
+
+### 94.8 The reservoir set is three, and the ledger closes at one machine epsilon
+
+94.6 left the reservoir set open and asked again. Ruled: **the three this world
+actually has** — ocean, surface water, groundwater — with **snowpack, soil moisture
+and atmospheric vapour declared out of scope**, because the world's atmosphere is a
+sky shader and none of the water cycle is drawn. **There is no seam**, because
+nothing is being withheld: a reservoir that does not exist is not a gap in a ledger,
+it is an absence of a claim.
+
+Built in `crates/voxel-shapers/src/water.rs`. **17 tests.**
+
+**Why three is closed and six was not.** With no atmosphere and no soil, **every
+flux but one is internal**: rain enters; surface water runs off to the sea, soaks
+down and comes back. Runoff, infiltration and baseflow move water between
+reservoirs and cancel. So
+
+```text
+Σ storage_after − Σ storage_before == precipitation_in
+```
+
+and that is *checkable*. There is also **no evaporation term**, and its absence is
+the point: there is nowhere for evaporated water to go, so subtracting it would
+destroy mass.
+
+**Salinity is a class, not a label**, and tracking it as one is what caught two of
+the three errors below. The ocean is saline; surface and groundwater are fresh.
+Storage holds `fresh_m3` and `saline_m3` separately, because runoff carries fresh
+water into a saline reservoir and a single number per reservoir could not say
+whether the *water* or the *salt* was conserved.
+
+**Storage is derived from terrain every tick** — ocean from depth below sea level,
+surface from the priority-flood depth `hydrology` already computes, groundwater from
+the saturated thickness below the water table, capped at a declared
+`GROUNDWATER_CAP_M = 30.0`. Nothing is stored between ticks, so a ledger is a pure
+function of `(tick, column)`: the same purity the tick ladder claims, and the same
+reason a skipped tick gives the same world. **The named cost**: a lake appears and
+vanishes with the elevation that made it rather than filling over time.
+
+**Measured** — `cargo run -p voxel-shapers --example water-ledger`, 960 columns ×
+4 ticks:
+
+| | |
+|---|---|
+| columns with ocean / surface / groundwater | 308 / 48 / 500 |
+| volume held: ocean | 786.042 m³ (32.68 %) |
+| volume held: surface | 5.668 m³ (0.24 %) |
+| volume held: groundwater | 1 613.362 m³ (67.08 %) |
+| worst relative error, **total** | **2.222e-16** |
+| worst relative error, **fresh class** | **1.790e-16** |
+| worst relative error, **saline class** | **0** |
+| mixing error | **0** |
+
+One machine epsilon (`f64::EPSILON` = 2.220e-16). Closed, not approximately closed.
+
+**Teeth proven by mutation**: dropping the destination deposit — the leak that
+makes a "conserving" ledger quietly conserve the wrong thing — was measured failing
+**7 of the 17**.
+
+#### Three errors, and the measurement caught all three
+
+1. **`precipitation_years_per_tick` was wrong by 876×.** Declared as a literal
+   `0.0001` years per tick; at 24 000 ticks/day a tick is **1.1408e-7** years. The
+   literal delivered 876 years of rain per world year, and the ratio validator
+   refused it, which is the only reason it was caught. It is now
+   `1.0 / year_in_ticks()` — **derived from `TICKS_PER_DAY`**, not declared — and a
+   test holds it there.
+2. **"Runoff creates salt."** False, and it was a *test* asserting a falsehood that
+   made the false version look true. Fresh water arriving at the ocean joins its
+   fresh bucket; nothing in this tree transports dissolved solids, so the saline
+   class is **invariant**.
+3. **"Runoff leaves the fresh class."** Also false, and the sweep is what showed it:
+   the fresh error read **8.9e-4** while the total was exact at **2.2e-16**. Those
+   can only both be true if a class identity is wrong, and it was — the water
+   arriving at the ocean is *still fresh*, so runoff is a movement between two fresh
+   reservoirs and not an exit from the class. Only precipitation changes a class.
+
+The general lesson is the same one 94.4 records about the onset constants: **a
+declared identity is a hypothesis, and the only evidence that counts is a measured
+residual.**
+
+#### What the measurement found that was not asked about
+
+**Runoff moves 296× more water than the rain delivers** — 9.75e-3 m³ against
+3.29e-5 m³ over the sweep, a share of **29 602 %**. Not a bug: standing water is
+metres deep and one tick of rain is tens of micrometres. But it has a consequence
+worth naming, because it follows directly from ruling the atmosphere out of scope:
+
+> **With no vapour reservoir, runoff is the only sink a lake has, so the derived
+> ledger drains inland standing water into the sea.**
+
+A metre-deep lake loses 0.2 % — 2 mm — per tick and gains 36 µm. It empties in
+roughly 500 ticks, about 20 days, with no drought anywhere. Physically that loss
+should be evaporation, which is exactly the term the ruling removed. So the ruling
+is not wrong about what the world contains; it means **the ledger's surface-water
+reservoir is a throughput measure, not a store**, and any claim that a lake
+*persists* has to come from somewhere other than this module.
+
+#### Owed from 94.8
+
+* **The surface-water reservoir drains**, as above. Either the runoff fraction is
+  re-derived against a lake that is meant to last, or evaporation returns as a sink
+  with somewhere to go. **Not silently patched**: the numbers are declared and the
+  consequence is named.
+* **`GROUNDWATER_CAP_M = 30.0` is a declared reading depth**, not a measurement. It
+  is the one invented number in the module and it is named as one.
+* **`Phase` is declared on the storage, not derived.** Nothing computes ice, so the
+  ledger closes over **volume** and not mass, and the SUTRA densities (liquid
+  1 000, solid 917 kg/m³) are cited as **reference, never rules** (C-48/C-49).
+* **`WeighingGate::net` is still owed** (94.1), so the ledger cannot net a column
+  exactly — its closure is `f64`-exact, not rational-exact, and the difference is
+  the difference between a conserving claim and an audited one.

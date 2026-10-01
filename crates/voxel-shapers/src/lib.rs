@@ -68,6 +68,7 @@ pub mod tectonics;
 pub mod terrain;
 pub mod transition;
 pub mod voxel;
+pub mod water;
 pub mod weather;
 
 pub use column::{derive as derive_column, Column};
