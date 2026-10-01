@@ -6631,3 +6631,300 @@ What is **not** mine to settle:
   is the largest remaining gap in any procedural audio work.
 * **The sky pass** (this session) — `SKY_EXPOSURE`'s sibling. Built and measured; recorded
   in §94 when that entry is written.
+
+---
+
+## C-94 — the onset layer exists, and a stage has a unit of work
+
+Filed 2026-09-30 from the world-ticking integration pass. This entry exists to do
+three things: record the two passes 93.5 promised would be recorded here, **supersede
+92.6's direction on the pinned absence**, and close the forward reference at 93.5
+rather than leave it pointing at a section that did not exist.
+
+### 94.0 Four rulings, 2026-09-30
+
+1. **The pin is kept and the subtraction is reverted.** See 94.1.
+2. **Streaming submits in horizon-tier order, then distance**, and `DEFAULT_WINDOW`
+   widens to the simulation horizon. See 94.2.
+3. **A stage's unit of work is an octree region at a declared level, plus a
+   one-voxel halo**, with `Horizon::Simulation` as the chunk-level half. See 94.3.
+4. **The water ledger is derived-first with a stateful seam**, six reservoirs with
+   salinity and phase, separate declared ratios per process. See 94.6 — and see
+   what 94.6 could **not** close.
+
+### 94.1 The pin is kept, which supersedes 92.6
+
+92.6 filed this and ruled the direction:
+
+> **Two red tests** — the `skylight` noon intensity, and
+> `voxel_instrument::stock::the_model_has_no_exact_subtraction_so_a_net_mass_cannot_be_reported`,
+> which pins an **absence on purpose**. **Fixing it is ruled, and the fix is to
+> implement exact subtraction, not to change the test.**
+
+`Ratio::checked_sub` was implemented, `Mass::checked_sub` was made a two-line
+delegation over it, and the pin went green — **which is the pin working**. Put to
+the user, the choice was between a `WeighingGate::net` and the pin itself, and the
+pin was chosen. `Mass::checked_sub` refuses again.
+
+So **92.6's sentence is superseded by this one, and 92.6 is left exactly as
+written.** The append-only rule is what makes that sentence still evidence: a
+superseded entry is not a mistake, and the fact that this tree once had the
+arithmetic and then chose not to use it at mass level is the finding.
+
+Three consequences, all recorded rather than tidied:
+
+* **The absence is now load-bearing debt, not a gap.** A closed water ledger owes a
+  netting operation before it can be built, because a ledger that cannot subtract
+  two masses cannot report what a column gained.
+* **`RefusalKind::Unimplemented` is a new variant**, not a borrowed
+  `OutOfDeclaredRange`. "This model cannot do that yet" and "that value is out of
+  range" are different facts, and a caller that cannot tell them apart will route
+  around a gap instead of closing it. The variant list's own doc says a new class
+  of refusal is a new variant, and this is one.
+* **`Ratio::checked_sub` stays**, so a ratio subtracts exactly and a mass still does
+  not. Its `0 - 0` case was wrong and is now permitted: `unchecked(0, l)` reduces to
+  `Ratio::ZERO` anyway, and a guard that refused the zero case would have made
+  `0 - 0` the only subtraction in the model that lied about sign.
+
+`voxel-instrument` 33 pass, `voxel-model` 151 pass, and
+`the_model_has_no_exact_subtraction_so_a_net_mass_cannot_be_reported` is green
+because the refusal is there.
+
+**The other red test named in 92.6 is also green**, and for a different reason:
+`skylight::tests::the_rig_carries_a_direction_that_moves_and_an_intensity_that_is_one_at_noon`
+passes, closed by the sky pass in 94.5 rather than by a change to the test.
+
+### 94.2 The refusal order was one layer above a correct priority queue
+
+The report was *"chunks do not prioritise streaming around the player faster"*.
+The pool is **not** the defect: `Pending` is a `BinaryHeap<Entry>` keyed
+`Reverse((priority, x, y, z))` and pops the smallest priority first, and
+`ChunkWindow::priority` is squared distance, so pops were already nearest-first.
+
+The defect was in `Streamer::pump`, which submitted in `window.positions()` **scan
+order** and only *tagged* each request. `Pool::submit` does not block — it refuses
+the tail and reports `Submitted::QueueFull`. So the order chunks are offered in is
+the order they are refused in, and offering in scan order refused whichever chunk
+the scan reached last, which is the farthest corner of the window, while a chunk
+beside the viewer went unasked. That is the reported symptom, located.
+
+`Streamer::rank` now sorts by **(horizon tier, distance, position)**. Tier is
+`Horizons::tier` — how many of the four horizons hold the chunk — which is derived
+from `contains` rather than being a fifth ordering kept in agreement with it. Within
+one tier the order is the old nearest-first order unchanged; the tier only decides
+between rings, where a nearer chunk outside the render horizon loses to a farther
+one inside it. Position last keeps the order total.
+
+`DEFAULT_WINDOW.radius_chunks` **8 → 12**, which is `Horizon::Simulation`'s own
+number read rather than retyped, held to it by a test. At 8 the window streamed a
+smaller neighbourhood than a tick stage reasons over. Cost declared: **4,375**
+chunks wanted instead of 2,023.
+
+**Teeth proven by mutation**: the sort was removed and all three new tests were
+measured failing, then the probe was reverted. Two of them are worth naming because
+they are the ones that would have passed on a weaker claim — *the viewer's own chunk
+is offered first* (scan order starts at the `(-r, -v, -r)` corner) and *the order
+is lexicographic in (tier, distance)*.
+
+### 94.3 A unit of work, and the two ladders that do not agree
+
+§88.7 left this unruled. Ruled: an octree region at a **declared level**, plus one
+voxel of halo.
+
+**Two ladders exist and conflating them was the available wrong answer.**
+
+| | source | unit | size |
+|---|---|---|---|
+| octree | `voxel-mesh/src/octree.rs` | **voxel** | `2^L`, `OCTREE_LEVELS` = 5, root = one 32³ chunk |
+| field ladder | `voxel-shapers/src/fields.rs` | **cell** | `32 · 2^L`, `STANDARD_LEVELS` = 20 |
+
+Reading one as the other gives a unit 32× too large and a level index that means
+nothing in the tree being walked. `UnitOfWork` is in voxels and does not reference
+the field ladder.
+
+**"Whatever merged" was the other wrong answer, and it is a determinism bug.** A
+solid chunk is **one** leaf; a chunk with one odd voxel is thousands. Scheduling
+from that would give two chunks of the same world different tick plans — F12's
+exact failure from the other direction. `SparseVoxelOctree::visit_at_level` walks to
+the requested level and splits coarse leaves back down, so a `Uniform` node at level
+4 asked for at level 2 is reported four times and the region count is a function of
+`level` and the chunk size alone.
+
+**A second, sharper version of the same bug was measured and fixed.**
+`Scheduler::units_at` originally returned the walk's order, and the walk's order is
+*not canonical*: a compressed chunk arrives as one leaf split in a nested loop, a
+mixed one arrives by descending branches in octant order. Same set, different
+sequence. It now sorts by origin.
+
+**The halo is one cell, held from both sides.** `HALO_VOXELS = 1` because that is
+what a D8 neighbourhood reaches. Suffiency is tested at every level and at four
+placements per level, including the ones that cross a chunk boundary; minimality is
+tested as the geometry (`side + 2` per axis). One cell less loses the corner
+neighbour; one cell more is slack nobody asked for. A halo is a `CellBox` and not a
+`UnitOfWork` **because a halo is not a power of two** — `2^L + 2` is a size no
+octree level can name.
+
+`chunks_touched` returns the **set** of chunks the halo reaches, not a radius: a
+region in the middle of a chunk reaches only its own, and one at the chunk's low
+corner reaches eight — its own chunk and the seven behind it. An earlier version of
+that test expected four and had reasoned only about x and z while assuming symmetry;
+the geometry gives eight, and it was the test that was wrong.
+
+**`Stage::Hydrology`'s ×4 rung stops being decorative.** It held a rung that nothing
+consulted. The scheduler consults it, and the tick enters as **schedule, never
+state**: `plan()` stores nothing, so a stage's answer stays a pure function of
+`(tick, address)` and a skipped tick still gives the same world. That is also why
+hydrology needs no time dimension of its own — priority-flood has none, and
+inventing one would have broken the purity the ladder's own doc claims.
+
+### 94.4 The onset layer, built and measured
+
+93.5 filed it as *"Unbuilt, and it is the largest remaining gap in any procedural
+audio work."* It is built. Superseded status, entry left as written.
+
+The problem it solves is precise: this world's precipitation is **mm/year**, a
+long-run mean, so nothing in the shapers said when rain *starts*. An audio layer
+that wants "is it raining right now" had nothing to read.
+
+| constant | value | what it is |
+|---|---|---|
+| `ONSET_CELL_TICKS` | 2 000 | how many ticks one onset cell averages over |
+| `ONSET_CELL_M` | 900 | the cell's edge in metres |
+| `ONSET_DRYNESS` | 2.4 | how sharply a column separates from its neighbours |
+| `ONSET_FLOOR` | 0.22 | the floor below which a cell is not raining at all |
+| `WET_ONSET` | 0.18 | the declared "wet" threshold |
+| `SILENT_ONSET` | 0.05 | the declared silence threshold |
+| `ONSET_DUTY` | 0.0997 | the ensemble mean onset, as a fraction of samples |
+
+Measured over the field (`cargo test -p voxel-shapers --lib weather`, **14 pass**):
+
+* onset `0.0000 .. 0.4416`, mean `0.1013`, wet fraction `0.134`
+* `wet 5824`, `quiet 11270`, `neither 26378` — every column is in exactly one class
+* silent **27.9 %**; the quietest single column **17.9 %**
+* rates `0.0 .. 10021.9 mm/yr`
+* continuity: worst step `0.000391`, mean `0.00011538`
+
+**Teeth**: `stationary_stage_seed` gives mean step `0.0934`, about **770× worse** —
+so the field is continuous in space and the seed is what makes it vary.
+
+**Every one of these constants was wrong at least once**, and that is the part worth
+keeping. `ONSET_DUTY 0.10` raised the rate by 95 %. `WET_ONSET 0.55` meant it **never
+rained** — the field's maximum is `0.5491`. `ONSET_FLOOR 0.12` did not bite at all,
+the raw minimum being about `0.128`. Each was re-derived from
+`examples/onset-profile.rs` rather than guessed again.
+
+**A claim that was false and is now a declared threshold**: the floor does not
+produce exact zero. Measured, only **9 of 49** columns ever reach exactly `0`, and
+none of the four probed columns did. Silence is therefore a **declared** threshold,
+`SILENT_ONSET = 0.05`, not an emergent property.
+
+`rate = mean · onset / ONSET_DUTY` conserves the annual mean exactly, and the
+factorisation is **exact**, not approximate: `rate_a / rate_b == (mean_a / mean_b) ·
+(onset_a / onset_b)`. Two tests of this failed three times before the property was
+stated correctly — the failures were in the tests, not the code, and 93.5's own
+"provenance typing" discipline is what caught them.
+
+### 94.5 The sky pass, measured
+
+This closes the forward reference at 93.5.
+
+`SKY_EXPOSURE = 24.0` (`voxel-client/src/skylight.rs`), and the measurement beside
+it: the normalised noon sky peaks at **0.030456**, so `24.0` puts the brightest noon
+sky at about **0.73** — bright, unclipped, and below sunlit terrain's own
+highlights, so the sky reads as sky and not as a white card.
+
+**The first value tried was `220.0` and it was wrong by 9×**, caught by
+`the exposed noon sky peaks at 6.7005`. Recorded because a constant guessed and then
+measured is a different kind of number from one measured first, and this one was
+guess-then-measure.
+
+Sky and Sun are exposed **separately**: the sky is a *radiance*, some three orders
+of magnitude fainter than the Sun's disc, and sharing one constant would force it to
+be either invisible or white. `sky_exposed` is a separate function from
+`exposed_colour` so no caller can reach the rig's exposure by accident.
+
+`EXPOSURE = 8.0` for the rig, applied to the **uploaded** rig and never to
+`daylight_of`'s result, so the rig stays a physical measurement. Two earlier
+exposures were wrong in **opposite** directions — too bright, then `mean 0.00085`
+— and the doc says so rather than presenting `8.0` as derived.
+
+`sky_lut_lookup` exists so the CPU table and the shader's interpolation can be
+**compared rather than assumed equal**. A shader that drifted would still look like a
+sky, which is exactly why it needs a number attached.
+
+### 94.6 The water ledger: three of the six reservoirs are derivable
+
+Ruled: derived storage first with a stateful seam behind it; six reservoirs with
+salinity and phase; **separate declared ratios per process**, not one global clock.
+
+The complete inventory of what water **is** in this tree today, measured by reading
+every water-bearing site rather than by searching for the word:
+
+| what exists | where | units | ticked? |
+|---|---|---|---|
+| standing water from priority-flood | `hydrology.rs` `water_depth_m` | **metres of depth** — not volume, not mass | no tick |
+| a droplet's water | `erosion.rs:274` `water *= 1.0 - 0.01` | dimensionless per-step scalar | per step |
+| the ocean, as voxels | `column.rs:362` `fy <= sea` | implicit, 1 m³ per voxel | no tick |
+| the water table | `caves.rs:140` `sea_level_m + 2.0` | a **single global plane** | no tick |
+| precipitation | `weather.rs` | **mm/year** | ticked |
+
+**There is no reservoir anywhere in this tree.** No snowpack, no soil moisture, no
+groundwater store, no vapour, no salinity, no phase.
+
+**So of the six ruled reservoirs, three are derivable and three are not.**
+
+* **Derivable now**: ocean (area below sea level × depth), surface water (the
+  flood-fill depth `hydrology.rs` already computes), groundwater (the water table).
+* **Not derivable**: **snowpack, soil moisture and atmospheric vapour have no source
+  in this tree at all.** Nothing computes them, so there is nothing to recompute them
+  from, and the seam is exactly these three.
+
+Under "derived first, stateful seam behind it", that seam must **refuse and name**
+what is missing rather than report zero — the rule this codebase already applies to
+materials (*"a missing row is a visible blocker, never an implicit zero"*). The
+consequence is that the ledger **cannot report closure over all six reservoirs yet**,
+and says so. A ledger that reported three and stayed silent about three would be the
+exact failure C-40 exists to prevent.
+
+**Water is currently a pure function of terrain, not state.** `column.rs` decides
+water by `fy <= sea` and `fy > surface`, so a lake exists only while the elevation
+that made it does — it appears and vanishes with the terrain rather than filling and
+drying. This is the single fact that shapes the whole design, and it is why the
+ruling was "derived first": making water stateful means adding hysteresis, which is
+physically right and is a behavioural change to what a voxel column *is*.
+
+`hydrology.rs` takes **no tick at all** and is a structural stage despite holding
+`Cadence::Water`. 94.3 gives the rung a scheduler that consults it; it does not give
+hydrology a time dimension, and deliberately so.
+
+**Not closed here.** The user was asked how the three underivable reservoirs should
+behave and answered with a statement about the render rather than a choice: *"the
+sky itself doesn't use the voxel functions to draw the way the atmosphere actually
+looks in 3d, so no cloud no rain no hydrology etc."* Read as a fact about the
+renderer — the atmosphere is a sky shader, and none of the water cycle is drawn —
+that constrains what the ledger is *for*, but it does not say which reservoir set to
+build. **Left open and asked again rather than guessed at.**
+
+### 94.7 Owed, and named
+
+* **The water ledger** — derived ocean, surface and groundwater, with snowpack, soil
+  moisture and vapour behind a refusing seam. Blocked on the open reading in 94.6.
+* **`WeighingGate::net`** — still unbuildable, and the reason is now a ruling rather
+  than a gap (94.1). The ledger owes it before it can net a column.
+* **The onset layer is not wired to `Stage::Weather` as a rate.** Built and tested;
+  the stage consumes precipitation and nothing yet consumes the onset.
+* **`rodio` with playback**, so the onset can be heard. Ruled earlier this session;
+  not started.
+* **`GAME_WINDOW` is radius 5 and was deliberately left alone.** `DEFAULT_WINDOW`
+  widened to 12, and the client overrides with `GAME_WINDOW` — so **a tick stage
+  reading `Horizon::Simulation` reads chunks the client never streams.** Measured,
+  named, and untouched: widening the client's window changes its cost and its render
+  behaviour, which 94.0's ruling did not cover.
+* **`voxel-client::hud` `the_shell_chrome_is_legible_over_the_worst_backdrop`** — still
+  fails on `shaped_runs`, proven pre-existing and unreachable from these changes
+  (`hud.rs`'s `Frame` is `voxel_work::Frame`).
+* **`ECO-0001`** — still blocked on the biome ruling in 93.4, still independent of
+  everything here.
+* **The onset layer, `examples/onset-profile.rs`, the MODS-MAP reconciliation and
+  `docs/references.md` are uncommitted** alongside `chains/`, which stays excluded by
+  design at 101 MB.
