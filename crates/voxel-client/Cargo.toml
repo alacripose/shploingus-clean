@@ -1,0 +1,56 @@
+[package]
+name = "voxel-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# The workspace rule is that every GPU dependency names its reason, because an
+# extra dependency is a replay-affecting input (see the root `Cargo.toml`).
+#
+#   wgpu     — the only way this repository has to turn a `Mesh` into pixels.
+#              The offline registry cache already holds `wgpu 30.0.1` and its
+#              whole closure, so this is buildable with `--offline`.
+#   pollster — `wgpu 30` made adapter enumeration async. This is a headless
+#              renderer with no async runtime and no wish for one, so it needs
+#              exactly one function: "block until this future finishes". That is
+#              what `pollster` is, in about 40 lines, and writing it here would
+#              be a hand-rolled executor to avoid naming one.
+#
+#   glyphon  — the text half of the HUD. `voxel-ui` decides *what* is said and
+#              where; something still has to turn a string into glyphs, shape
+#              them and pack them into an atlas, and that is a font-shaping
+#              engine, not a rendering detail. `glyphon 0.12.0` and its whole
+#              closure (`cosmic-text`, `swash`, `etagere`, `fontdb`) are in the
+#              offline registry cache. It is declared **here** rather than in
+#              the bin so the HUD can be drawn into an offscreen target and
+#              measured in a test — a HUD that only exists inside an event loop
+#              is a HUD nobody can check.
+#
+#   voxel-package — the shell's windows are **data the shell mounts** (UI-SPEC
+#              §1, H-9.7), and the declaration is a `recipe/3` package. The
+#              mount parses exactly the frame the build gate compiles, so the
+#              client cannot hold a second opinion about what a window is — and
+#              an unknown `theme-role` or an older header is refused by the
+#              same code that refused it at build time. The crate has no
+#              external dependencies of its own.
+#
+# There is deliberately nothing else. `bytemuck` is NOT used: vertex data is
+# assembled as `f32` and passed as a byte slice, which `wgpu` accepts, so the
+# crate does not grow a derive-macro dependency to save four `to_le_bytes`
+# calls. And there is no windowing dependency here at all — that is the
+# `shploingus` bin's job, so this crate stays renderable **offscreen**, which
+# is what lets a frame be verified without a display.
+[dependencies]
+voxel-model = { path = "../voxel-model" }
+voxel-package = { path = "../voxel-package" }
+voxel-noise = { path = "../voxel-noise" }
+voxel-shapers = { path = "../voxel-shapers" }
+voxel-mesh = { path = "../voxel-mesh" }
+voxel-stream = { path = "../voxel-stream" }
+voxel-appearance = { path = "../voxel-appearance" }
+voxel-work = { path = "../voxel-work" }
+voxel-ui = { path = "../voxel-ui" }
+wgpu = "30"
+pollster = "0.3"
+glyphon = "0.12"

@@ -1,0 +1,11 @@
+[package]
+name = "voxel-shapers"
+description = "The terrain shapers: tectonics, geology, terrain, hydrology, erosion, climate, weather, caves, substrate, ecology, delta, transition."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-model = { path = "../voxel-model" }
+voxel-noise = { path = "../voxel-noise" }

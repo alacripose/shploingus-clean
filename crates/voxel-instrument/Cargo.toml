@@ -1,0 +1,24 @@
+[package]
+name = "voxel-instrument"
+description = "One sensor concept, the instruments built from it, the band controller and the factory gauge wall."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# The world model. **Not** a new item type: an item here *is* a material, so the
+# stock network counts materials and the weighing gate converts a count to mass
+# with the material's own admitted density through the exact-rational machinery
+# that already exists. A second identity system for "things you can hold" would
+# be a second answer to "what is this made of".
+voxel-model = { path = "../voxel-model" }
+
+[dev-dependencies]
+# Test-only, and deliberately so. The instrument layer may not depend on the
+# shapers (an instrument is not the authority on what the world is made of), but
+# its tests need a *real* admitted registry rather than a fixture one: the mass
+# assertions are count x the admitted density, and a fixture density would let
+# the exact-rational arithmetic be right about the wrong number. The starter set
+# lives in `voxel-shapers::column::materials`, so the tests read it there.
+voxel-shapers = { path = "../voxel-shapers" }

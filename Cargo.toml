@@ -1,0 +1,56 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/voxel-model",
+    "crates/voxel-noise",
+    "crates/voxel-mesh",
+    "crates/voxel-shapers",
+    "crates/voxel-stream",
+    "crates/voxel-instrument",
+    "crates/voxel-appearance",
+    "crates/voxel-work",
+    "crates/voxel-client",
+    "crates/shploingus",
+    "crates/voxel-ui",
+    "crates/voxel-package",
+]
+
+# shploingus-clean — a fresh implementation of the Shploingus voxel world.
+#
+# This workspace is NOT a copy of any other tree. It consumes the *package API*
+# (the ledger/signature/conformance core) as a crate boundary, and everything a
+# player can see was written here. Reference projects named in
+# references.md are architectural sources: their *ideas* are implemented from
+# first principles and their papers, never their files.
+#
+# Dependency discipline (inherited from the project this serves):
+#   1. does it do something we need?      (answered beside the line)
+#   2. is it actually USED?               (a resolve is not a use)
+#
+# The headless crates below depend on nothing but `sha2`. The GPU crates are
+# declared with the client and each names its reason.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+# Content identity. The world is content-addressed: two runs of the same
+# generator over the same seed must produce the same digests, and this is the
+# one hash function the project accepts for that.
+sha2 = "0.10"
+
+[profile.dev]
+opt-level = 1
+
+# A world generator is arithmetic-heavy enough that a debug build is unusable
+# for play. Dependencies are optimised always; first-party code is optimised
+# enough to play while staying debuggable.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

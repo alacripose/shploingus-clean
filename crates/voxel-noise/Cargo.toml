@@ -1,0 +1,11 @@
+[package]
+name = "voxel-noise"
+description = "The noise primitives every shaper is built from, each from its paper."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# No dependencies. The determinism contract means the arithmetic base has to be
+# small enough to audit, and a noise library's arithmetic IS the world.
+[dependencies]

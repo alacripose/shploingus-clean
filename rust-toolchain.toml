@@ -1,0 +1,26 @@
+# The host must be MSVC, and the reason is measured rather than a preference.
+#
+# Every headless crate in this workspace builds on the GNU host. The **client
+# does not**: `wgpu` pulls in the `windows-*` crates, which need import
+# libraries built by `dlltool`. The GNU toolchain ships `dlltool.exe` under
+# `lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained/`, but that copy has no
+# assembler to call and fails with `CreateProcess` — there is no `as`, `gcc` or
+# `ld` on this machine, and no MinGW install to supply one. So on the GNU host
+# the client fails to build at `windows-result`, `windows-strings`,
+# `windows-threading` and `libloading`, which is exactly the set of crates the
+# non-GPU workspace never touched.
+#
+# MSVC needs no `dlltool`. Visual Studio 2022 Community is installed (MSVC
+# 14.44.35207) with Windows SDK 10.0.26100.0, so the MSVC host links.
+#
+# The compiler revision is **unchanged** by this switch: both toolchains are
+# `rustc 1.98.1 (48a229cea 2026-09-01)`. Only the host triple differs, so the
+# build identity recorded in `docs/LEDGER.md` still describes this compiler.
+#
+# Cost, stated plainly: `stable` is the only installed MSVC channel, so the
+# version is carried by whatever `stable` currently is rather than pinned to a
+# number. `x86_64-pc-windows-msvc` keeps the *platform* pinned, and
+# `rustc -vV` is the check that the version has not moved.
+[toolchain]
+channel = "stable-x86_64-pc-windows-msvc"
+components = ["rustfmt", "clippy"]

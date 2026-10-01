@@ -1,0 +1,976 @@
+//! The HUD: `voxel-ui`'s [`Element`]s, on screen.
+//!
+//! # The division of labour, which is the whole design
+//!
+//! * [`voxel_ui`] decides everything a designer would decide: which ink step,
+//!   how far apart the rows are, what a panel's surface is, and whether the text
+//!   on it is legible. It answers with [`Element`]s whose colours are already
+//!   **resolved** — a [`Paint`], not a role name.
+//! * This module turns resolved paint into triangles and glyphs. It contains no
+//!   colour arithmetic at all, and it could not invent a colour if it wanted to:
+//!   there is nothing in an [`Element`] to invent one from.
+//!
+//! That is what makes the design system enforceable rather than aspirational. A
+//! renderer that can compute a colour can compute the wrong one, and the only
+//! way a component repaints itself outside the palette is by being handed
+//! something other than a resolved paint.
+//!
+//! # What is drawn, and what is not
+//!
+//! Four panels — world, streamer, determinism, refusals — one in each screen
+//! corner. The refusal panel is the one that matters most: this project's first
+//! rule is *refuse, never default*, and a refusal that only reaches `stderr` in a
+//! windowed program is a refusal nobody sees. When nothing has been refused the
+//! panel carries a **note** rather than collapsing, because a view that
+//! disappears when it is empty teaches a player that empty and broken look the
+//! same.
+//!
+//! # The cost this version accepts
+//!
+//! Every text run is reshaped every frame. A HUD is twenty-odd short lines, and
+//! caching would mean an invalidation rule for text that changes whenever a
+//! counter changes — which is text that changes every frame anyway. The panel
+//! vertex buffer *is* reused, because a rect is a rect. Named, not hidden, in the
+//! same spirit as [`crate::Renderer`]'s per-frame vertex upload.
+//!
+//! # Why `glyphon` is named by this crate and not by the bin
+//!
+//! So the HUD can be drawn into an **offscreen** target and measured in a test —
+//! see `tests::the_shell_chrome_is_legible_over_the_worst_backdrop`. A HUD that
+//! exists only inside an event loop is a HUD nobody can check.
+
+use crate::shading;
+use crate::ClientError;
+use voxel_model::{Digest, Refusal};
+use voxel_ui::{radius_dp, Align, Element, Paint, Panel, Readout, Rect, Role, WHITE};
+
+/// The brightest thing the world can put behind the glass: an 8-bit swapchain
+/// cannot present more than white. Every ink step the HUD uses is measured
+/// against this, so "the HUD is legible" is a claim about the worst case rather
+/// than about a screenshot.
+///
+/// **The limit, stated:** an HDR swapchain, or a material whose emission exceeds
+/// white, would be brighter than this and would invalidate the assumption.
+/// Neither exists in this build, and the constant is named so that when one does,
+/// the thing to change has a name.
+pub const BRIGHTEST_BACKDROP: voxel_ui::Rgb = WHITE;
+
+/// Everything the HUD is told. Every field is a value that was **measured**; the
+/// HUD computes no statistic and estimates none.
+pub struct HudState<'a> {
+    /// The frame `Streamer::pump` returned. Taken by reference rather than copied
+    /// field by field, so the HUD cannot drift from the thing it describes.
+    pub frame: &'a voxel_work::Frame,
+    pub adapter: &'a str,
+    /// How many worker threads the mesher was given. Reported because it is a
+    /// *perf knob* and never an input to the world — the digest beside it is the
+    /// statement that says so.
+    pub workers: usize,
+    /// `None` until a reporting interval has completed. A frame rate is a
+    /// **measurement over a period**, and before one has passed there is no
+    /// measurement to report — `0 fps` would be a number the HUD made up.
+    pub fps: Option<f64>,
+    pub position_m: [f64; 3],
+    pub quads: usize,
+    pub seed: u64,
+    pub tick: u64,
+    /// A digest over the resident meshes. Order-independent by construction, so
+    /// it is the same number at any worker count (F12).
+    pub digest: Digest,
+    /// The streamer's last refusal, if it has had one.
+    pub refusal: Option<&'a Refusal>,
+    /// What the appearance layer could and could not derive for the world's
+    /// materials.
+    pub shading: shading::ShadingReport,
+}
+
+
+
+/// How much of a digest the HUD shows. Sixteen hex characters is 64 bits of a
+/// 256-bit digest: enough to see that two runs differ. The readout ends in `…`
+/// because it is a prefix, and pretending sixteen characters is the digest would
+/// be the sort of rounding this project refuses everywhere else.
+pub const DIGEST_CHARS: usize = 16;
+
+// **There is no `hud()` that places panels in four corners any more, and that is H-9.8's
+// ruling rather than a deletion for tidiness.** The HUD *is* the pinned subset of the shell's
+// window set (§1), so the four panels are hosted by four declared pinned windows and drawn by
+// `crate::shell::hud::frame` — one window system, not two. The panel builders below are
+// unchanged and still the only place a readout's ink, row height and note are decided.
+
+/// Where the player is, what is around them, and how fast it is being drawn.
+pub fn world_panel(state: &HudState<'_>) -> Panel {
+    let f = state.frame;
+    Panel::new(
+        "world",
+        Role::Chrome,
+        "World",
+        vec![
+            Readout::measured(
+                "position",
+                format!(
+                    "{:.0}, {:.0}, {:.0} m",
+                    state.position_m[0], state.position_m[1], state.position_m[2]
+                ),
+            ),
+            Readout::measured(
+                "chunks",
+                format!("{} / {} ({:.0}%)", f.resident, f.wanted, f.progress() * 100.0),
+            ),
+            Readout::measured("quads drawn", format!("{}", state.quads)),
+            match state.fps {
+                Some(fps) => Readout::measured("frame rate", format!("{fps:.0} fps")),
+                None => Readout::absent(
+                    "frame rate",
+                    "no reporting interval has completed yet",
+                )
+                .expect("the note is not blank"),
+            },
+            Readout::measured("adapter", state.adapter.to_string()),
+        ],
+    )
+}
+
+/// The residency, the ceiling and the budget refusals.
+pub fn streamer_panel(state: &HudState<'_>) -> Panel {
+    let f = state.frame;
+    let mb = |bytes: usize| bytes as f64 / (1024.0 * 1024.0);
+    Panel::new(
+        "streamer",
+        Role::Chrome,
+        "Streamer",
+        vec![
+            Readout::measured("mesh", format!("{:.1} / {:.1} MB", mb(f.bytes), mb(f.ceiling))),
+            Readout::measured("worker scratch", format!("{:.1} MB", mb(f.scratch_bytes))),
+            Readout::measured("in flight", format!("{}", f.in_flight)),
+            // The one number that has to stay at zero for "bounded" to be a
+            // claim rather than a hope (`docs/LEDGER.md` C-29).
+            Readout::measured("refused for budget", format!("{}", f.refused_for_budget)),
+            Readout::measured("evicted / failed", format!("{} / {}", f.evicted, f.failed)),
+            // Chunks on screen from a mesh the world has moved past. Non-zero
+            // exactly while something rebuilds, and the direct read on the flash
+            // this crate no longer has: those chunks are covered, not absent.
+            Readout::measured("stale, still drawn", format!("{}", f.stale_drawn)),
+        ],
+    )
+}
+
+/// The readout that makes F12 visible: the world is a function of the seed and
+/// the tick, and **not** of how many threads produced it.
+pub fn determinism_panel(state: &HudState<'_>) -> Panel {
+    let mut rows = vec![
+        Readout::measured("seed", format!("{}", state.seed)),
+        Readout::measured("tick", format!("{}", state.tick)),
+        // The worker count is reported *beside* the digest so the pair reads as
+        // one statement: this number is a performance knob, that number is the
+        // world.
+        Readout::measured("workers", format!("{} (a perf knob)", state.workers)),
+    ];
+    if state.frame.resident == 0 {
+        // A digest over zero meshes is a real number and not a statement about
+        // the world, so the row says why it has nothing rather than showing it.
+        rows.push(
+            Readout::absent("resident digest", "no chunk is resident yet")
+                .expect("the note is not blank"),
+        );
+    } else {
+        let hex = state.digest.to_hex();
+        let shown: String = hex.chars().take(DIGEST_CHARS).collect();
+        rows.push(Readout::measured("resident digest", format!("{shown}…")));
+    }
+    Panel::new("determinism", Role::Chrome, "Determinism", rows)
+}
+
+/// The **refusals** panel: what has been refused, and what could not be derived.
+///
+/// This panel is the one that matters most. `refuse, never default` is this
+/// project's first rule, and a refusal that only reaches `stderr` in a windowed
+/// program is a refusal nobody sees. It has **two** sources of bad news, and
+/// both belong here because to a player they are the same thing: something the
+/// world needed was not established.
+///
+/// * the streamer's last refusal, if it has had one;
+/// * the appearance layer's, which is the one that explains a black world. The
+///   layer refuses to invent a reflectance, so materials whose record carries no
+///   colour are shaded by the rim alone — and the least dense opaque material,
+///   which is the regolith on the surface, has a derived roughness of exactly
+///   1.0, and `(1 - roughness)` is exactly zero. So the most common material in
+///   the world is drawn exactly black *by arithmetic*, and the panel says so
+///   instead of leaving a player to guess.
+///
+/// `SurfaceAlt` rather than `Chrome`: MD1 sets the alternative surface above the
+/// chrome one, and this is the one panel that is meant to be noticed.
+pub fn refusal_panel(state: &HudState<'_>) -> Panel {
+    let mut rows = Vec::new();
+    if let Some(refusal) = state.refusal {
+        rows.push(Readout::measured("kind", format!("{:?}", refusal.kind())));
+        rows.push(Readout::measured("detail", refusal.detail().to_string()));
+    }
+    let shading = &state.shading;
+    if shading.with_base_colour < shading.materials {
+        rows.push(Readout::measured(
+            "shadeable materials",
+            format!("{} of {}", shading.with_base_colour, shading.materials),
+        ));
+    }
+
+    if rows.is_empty() {
+        return Panel::new("refusals", Role::SurfaceAlt, "Refusals", Vec::new())
+            .with_note("Nothing has been refused this session.")
+            .expect("the note is not blank");
+    }
+
+    let mut panel = Panel::new("refusals", Role::SurfaceAlt, "Refused", rows);
+    if shading.with_base_colour == 0 {
+        panel = panel
+            .with_note("No material carries a reflectance, so only the rim is drawn.")
+            .expect("the note is not blank");
+    }
+    panel
+}
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+
+/// The vertex layout the panel pipeline expects: eleven floats, made of the clip
+/// position, the linear colour, the offset from the rect's centre, the half
+/// extent, and the corner radius. Everything but the position is in pixels.
+const SOLID_FLOATS: usize = 11;
+const SOLID_STRIDE: u32 = (SOLID_FLOATS * 4) as u32;
+const BYTES_PER_VERTEX: usize = SOLID_FLOATS * 4;
+/// Two triangles and no index buffer. A rect is 264 bytes; an index buffer would
+/// cost more than it saves.
+const VERTICES_PER_RECT: usize = 6;
+/// How many rects the buffer starts able to hold. Four panels and their rules is
+/// a little over twenty, so this is the round number above that and growth is the
+/// fallback rather than the path.
+const INITIAL_RECTS: usize = 32;
+/// The line box, as a multiple of the type size. This is the one number here
+/// that is a text-shaping convention rather than a design decision, so it lives
+/// beside the shaping call and not in `voxel-ui`'s constant table.
+const LINE_BOX: f32 = 1.25;
+
+/// Glyphon's state plus the panel pipeline: everything the HUD needs to draw.
+pub struct HudRenderer {
+    font_system: glyphon::FontSystem,
+    swash_cache: glyphon::SwashCache,
+    viewport: glyphon::Viewport,
+    atlas: glyphon::TextAtlas,
+    text: glyphon::TextRenderer,
+    solid: wgpu::RenderPipeline,
+    vertices: wgpu::Buffer,
+    vertex_capacity_bytes: usize,
+    /// One shaped buffer per text element, and the box, paint and type size each
+    /// was shaped for. Two parallel vectors because a `TextArea` has to borrow a
+    /// shaped buffer, and a `Buffer` cannot hold the rect it was shaped into.
+    buffers: Vec<glyphon::Buffer>,
+    boxes: Vec<(Rect, Paint, Align, f32)>,
+    prepared_vertices: u32,
+    width: u32,
+    height: u32,
+}
+
+impl HudRenderer {
+    /// Build the HUD's pipelines for one target `format`. The format is the
+    /// swapchain's, or the offscreen test target's — the atlas is created for it
+    /// so that glyph coverage and the target agree about sRGB.
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+        let cache = glyphon::Cache::new(device);
+        let viewport = glyphon::Viewport::new(device, &cache);
+        let mut atlas = glyphon::TextAtlas::new(device, queue, &cache, format);
+        let text = glyphon::TextRenderer::new(
+            &mut atlas,
+            device,
+            wgpu::MultisampleState::default(),
+            // No depth. A HUD draws in order, in one pass, on top of the world.
+            None,
+        );
+
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("panels.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("panels.wgsl").into()),
+        });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("hud panels"),
+            bind_group_layouts: &[],
+            immediate_size: 0,
+        });
+        let solid = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("hud panels"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: SOLID_STRIDE as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &[
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 0,
+                            shader_location: 0,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x4,
+                            offset: 8,
+                            shader_location: 1,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 24,
+                            shader_location: 2,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 32,
+                            shader_location: 3,
+                        },
+                        wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32,
+                            offset: 40,
+                            shader_location: 4,
+                        },
+                    ],
+                })],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    // The panel is translucent, so the world shows through it.
+                    // The hardware linearises an `*Srgb` target before blending,
+                    // which is the same model `voxel_ui::Rgb::blend_over` uses.
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let vertex_capacity_bytes = INITIAL_RECTS * VERTICES_PER_RECT * BYTES_PER_VERTEX;
+        let vertices = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("hud vertices"),
+            size: vertex_capacity_bytes as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        HudRenderer {
+            font_system: glyphon::FontSystem::new(),
+            swash_cache: glyphon::SwashCache::new(),
+            viewport,
+            atlas,
+            text,
+            solid,
+            vertices,
+            vertex_capacity_bytes,
+            buffers: Vec::new(),
+            boxes: Vec::new(),
+            prepared_vertices: 0,
+            width: 1,
+            height: 1,
+        }
+    }
+
+    pub fn extent(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
+    /// How many glyphs were shaped for the last [`Self::prepare`]. Not used to
+    /// draw — used by the test that measures a HUD to know whether the shaping
+    /// found any text at all, so an empty HUD cannot pass a test about text.
+    pub fn shaped_runs(&self) -> usize {
+        self.buffers.len()
+    }
+
+    /// Shape every text run and build every rect, for a viewport `extent_px`
+    /// physical pixels at `scale` device-independent pixels per pixel.
+    ///
+    /// The layout is in **dp** and only this function knows about pixels, which is
+    /// the property that lets a whole design system be tested without a display.
+    pub fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        extent_px: (u32, u32),
+        scale: f32,
+        elements: &[Element],
+    ) -> Result<(), ClientError> {
+        let (width, height) = (extent_px.0.max(1), extent_px.1.max(1));
+        self.width = width;
+        self.height = height;
+        let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+
+        self.viewport
+            .update(queue, glyphon::Resolution { width, height });
+
+        // ---- the rects ---------------------------------------------------
+        let mut bytes: Vec<u8> = Vec::new();
+        for element in elements {
+            let (rect, paint, radius) = match element {
+                Element::Surface { rect, paint } => (*rect, *paint, radius_dp()),
+                Element::Rule { rect, paint } => (*rect, *paint, 0.0),
+                Element::Text { .. } => continue,
+            };
+            push_rect(&mut bytes, rect, paint, radius, scale, width, height);
+        }
+        self.prepared_vertices = (bytes.len() / BYTES_PER_VERTEX) as u32;
+        if bytes.len() > self.vertex_capacity_bytes {
+            // Grow once and keep it. A window resize changes the HUD's size; a
+            // counter changing does not.
+            self.vertex_capacity_bytes = bytes.len().next_power_of_two();
+            self.vertices = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("hud vertices"),
+                size: self.vertex_capacity_bytes as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+        }
+        if !bytes.is_empty() {
+            queue.write_buffer(&self.vertices, 0, &bytes);
+        }
+
+        // ---- the glyphs ---------------------------------------------------
+        // The shaped buffers have to outlive the text areas that borrow them, so
+        // they live in `self` and the areas are built from them below.
+        self.buffers.clear();
+        self.boxes.clear();
+        for element in elements {
+            let Element::Text { rect, text, paint, size_dp, align } = element else {
+                continue;
+            };
+            let size_px = (*size_dp as f32) * scale;
+            let mut buffer = glyphon::Buffer::new(
+                &mut self.font_system,
+                glyphon::Metrics::new(size_px, size_px * LINE_BOX),
+            );
+            buffer.set_size(
+                Some((rect.width_dp as f32) * scale),
+                // One line box, rounded up: a readout that wrapped would be a
+                // readout that acquired a second line nobody laid out.
+                Some(size_px * LINE_BOX * 2.0),
+            );
+            buffer.set_text(
+                text,
+                &glyphon::Attrs::new().family(glyphon::Family::SansSerif),
+                glyphon::Shaping::Advanced,
+                None,
+            );
+            buffer.shape_until_scroll(&mut self.font_system, false);
+            self.boxes.push((*rect, *paint, *align, size_px));
+            self.buffers.push(buffer);
+        }
+
+        let areas: Vec<glyphon::TextArea<'_>> = self
+            .buffers
+            .iter()
+            .zip(self.boxes.iter())
+            .map(|(buffer, (rect, paint, align, size_px))| {
+                // Right alignment is computed here because a shaping engine does
+                // not do it: it is the run's own measured width that has to be
+                // subtracted, not the box's.
+                let line_w = buffer.layout_runs().next().map(|run| run.line_w).unwrap_or(0.0);
+                let left = match align {
+                    Align::Start => (rect.x as f32) * scale,
+                    Align::End => ((rect.x + rect.width_dp) as f32) * scale - line_w,
+                };
+                // The rect is sized to the type and the line box is taller, so
+                // the box is pulled up by half the difference. That centres the
+                // glyphs in the rect the layout gave them, which is what makes
+                // the layout's 48 dp row mean anything to a reader.
+                let top = (rect.y as f32) * scale - (size_px * LINE_BOX - size_px) / 2.0;
+                glyphon::TextArea {
+                    buffer,
+                    left,
+                    top,
+                    scale: 1.0,
+                    bounds: glyphon::TextBounds {
+                        left: (rect.x as f32 * scale) as i32,
+                        top: ((rect.y as f32) * scale) as i32,
+                        right: (((rect.x + rect.width_dp) as f32) * scale).ceil() as i32,
+                        bottom: (((rect.y + rect.height_dp) as f32) * scale).ceil() as i32,
+                    },
+                    default_color: glyphon::Color::rgba(
+                        paint.rgb.r,
+                        paint.rgb.g,
+                        paint.rgb.b,
+                        (255.0 * paint.alpha.clamp(0.0, 1.0)) as u8,
+                    ),
+                    custom_glyphs: &[],
+                }
+            })
+            .collect();
+
+        self.text
+            .prepare(
+                device,
+                queue,
+                &mut self.font_system,
+                &mut self.atlas,
+                &self.viewport,
+                areas,
+                &mut self.swash_cache,
+            )
+            .map_err(|e| ClientError::TextRender { detail: e.to_string() })
+    }
+
+    /// Draw the prepared HUD into `target`, on top of whatever is already there.
+    pub fn draw(&mut self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("hud"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                depth_slice: None,
+                resolve_target: None,
+                // **Load**, not clear: the world is already in this attachment.
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.solid);
+        pass.set_vertex_buffer(0, self.vertices.slice(..));
+        pass.draw(0..self.prepared_vertices, 0..1);
+        if let Err(e) = self.text.render(&self.atlas, &self.viewport, &mut pass) {
+            // Nothing to draw on, but an event loop must not die inside a render
+            // pass. The panic-free path is to draw what is there and say so.
+            eprintln!("shploingus: the HUD's text pass failed: {e}");
+        }
+    }
+
+    /// Trim the glyph atlas. Called once a frame by the window, because an atlas
+    /// that only grows is a leak with a nice name.
+    pub fn trim(&mut self) {
+        self.atlas.trim();
+    }
+}
+
+/// Append one rectangle as two triangles, in the layout [`SOLID_FLOATS`]
+/// describes.
+fn push_rect(
+    bytes: &mut Vec<u8>,
+    rect: Rect,
+    paint: Paint,
+    radius_dp: f64,
+    scale: f32,
+    width: u32,
+    height: u32,
+) {
+    let x = (rect.x as f32) * scale;
+    let y = (rect.y as f32) * scale;
+    let w = (rect.width_dp as f32) * scale;
+    let h = (rect.height_dp as f32) * scale;
+    let [r, g, b] = paint.rgb.linear();
+    let colour = [r as f32, g as f32, b as f32, paint.alpha as f32];
+    let radius = (radius_dp as f32) * scale;
+    let half = [w / 2.0, h / 2.0];
+    let clip = |px: f32, py: f32| [px / width as f32 * 2.0 - 1.0, 1.0 - py / height as f32 * 2.0];
+
+    let corners = [
+        (x, y, -half[0], -half[1]),
+        (x + w, y, half[0], -half[1]),
+        (x + w, y + h, half[0], half[1]),
+        (x, y, -half[0], -half[1]),
+        (x + w, y + h, half[0], half[1]),
+        (x, y + h, -half[0], half[1]),
+    ];
+    for (px, py, lx, ly) in corners {
+        for value in clip(px, py)
+            .into_iter()
+            .chain(colour)
+            .chain([lx, ly])
+            .chain(half)
+            .chain([radius])
+        {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use voxel_ui::{panel_opacity, Palette, Rgb};
+
+    fn frame(resident: usize) -> voxel_work::Frame {
+        voxel_work::Frame {
+            wanted: 605,
+            resident,
+            bytes: 2 * 1024 * 1024,
+            ceiling: 256 * 1024 * 1024,
+            scratch_bytes: 72 * 1024 * 1024,
+            in_flight: 14,
+            ..Default::default()
+        }
+    }
+
+    fn state<'a>(frame: &'a voxel_work::Frame, refusal: Option<&'a Refusal>) -> HudState<'a> {
+        HudState {
+            frame,
+            adapter: "NVIDIA GeForce RTX 2070 SUPER (Vulkan)",
+            workers: 15,
+            fps: Some(61.5),
+            position_m: [0.0, 45.0, -160.0],
+            quads: 21_526,
+            seed: 2468,
+            tick: 0,
+            digest: Digest::of(b"the resident world"),
+            refusal,
+            shading: shading::ShadingReport { materials: 7, with_base_colour: 0 },
+        }
+    }
+
+    #[test]
+    fn the_refusal_panel_is_a_note_when_there_is_nothing_to_report() {
+        let f = frame(605);
+        let mut quiet = state(&f, None);
+        // The world shades, so there is genuinely nothing to say.
+        quiet.shading = shading::ShadingReport { materials: 7, with_base_colour: 7 };
+        let none = refusal_panel(&quiet);
+        assert!(none.is_empty(), "an empty view is empty, and says so");
+        assert!(none.validate().is_empty());
+        assert!(none.note.is_some());
+        assert!(none.note.as_deref().unwrap().contains("Nothing has been refused"));
+
+        let refusal = Refusal::owned(voxel_model::RefusalKind::UnknownComponent, "no such shaper");
+        let some = refusal_panel(&state(&f, Some(&refusal)));
+        assert!(!some.is_empty());
+        assert_eq!(some.rows.len(), 3, "kind, detail, and the shading count");
+        assert!(some.rows[1].value.contains("no such shaper"));
+        // A refusal is the thing to look at, so it gets the alternative surface.
+        assert_eq!(some.role, Role::SurfaceAlt);
+    }
+
+    #[test]
+    fn a_world_with_no_reflectance_says_why_it_is_black() {
+        // The regression guard for the finding the user made: a black world is a
+        // **stated** state, not a mystery. `0 of 7` plus a sentence, on screen.
+        let f = frame(605);
+        let panel = refusal_panel(&state(&f, None));
+        assert_eq!(panel.role, Role::SurfaceAlt);
+        let row = panel
+            .rows
+            .iter()
+            .find(|r| r.label == "shadeable materials")
+            .expect("the count is a row");
+        assert_eq!(row.value, "0 of 7");
+        let note = panel.note.as_deref().expect("and the reason is a note");
+        assert!(note.contains("reflectance"), "{note}");
+        // A note is a whole row, so the panel is one row taller than its rows.
+        assert_eq!(panel.drawn_rows(), panel.rows.len() + 1);
+        // And it is not the empty view, so the note is secondary text rather
+        // than the empty state's ink.
+        assert!(panel.validate().is_empty());
+    }
+
+    #[test]
+    fn a_partly_shading_world_reports_the_count_without_the_note() {
+        // Something is shadeable, so the world is visible; the count is still
+        // worth reporting, and a sentence about a black world would be wrong.
+        let f = frame(605);
+        let mut st = state(&f, None);
+        st.shading = shading::ShadingReport { materials: 7, with_base_colour: 3 };
+        let panel = refusal_panel(&st);
+        assert_eq!(panel.rows.len(), 1);
+        assert_eq!(panel.rows[0].value, "3 of 7");
+        assert!(panel.note.is_none());
+    }
+
+    #[test]
+    fn the_digest_readout_is_absent_rather_than_wrong_when_nothing_is_resident() {
+        let empty = frame(0);
+        let panel = determinism_panel(&state(&empty, None));
+        let row = panel
+            .rows
+            .iter()
+            .find(|r| r.label == "resident digest")
+            .expect("the row exists either way");
+        assert_eq!(row.state, voxel_ui::State::Empty);
+        assert!(row.value.contains("no chunk is resident yet"));
+
+        let full = frame(605);
+        let panel = determinism_panel(&state(&full, None));
+        let row = panel.rows.iter().find(|r| r.label == "resident digest").unwrap();
+        let hex = Digest::of(b"the resident world").to_hex();
+        assert_eq!(row.value, format!("{}…", &hex[..DIGEST_CHARS]));
+        assert_ne!(row.value, hex, "the readout says it is a prefix");
+    }
+
+    #[test]
+    fn the_worker_count_is_reported_beside_the_digest_as_a_knob() {
+        let f = frame(605);
+        let panel = determinism_panel(&state(&f, None));
+        let workers = panel.rows.iter().find(|r| r.label == "workers").unwrap();
+        assert!(workers.value.contains("perf knob"), "{}", workers.value);
+        // And the digest is in the same panel, so the two read together.
+        assert!(panel.rows.iter().any(|r| r.label == "resident digest"));
+    }
+
+    #[test]
+    fn the_panel_geometry_is_the_grid_the_design_system_declares() {
+        let panel = world_panel(&state(&frame(605), None));
+        let spacing = 8.0;
+        let row = 48.0;
+        let rule = 1.0;
+        let rows = panel.rows.len() as f64;
+        assert_eq!(panel.height_dp(), 2.0 * spacing + row + rule + rows * row + (rows - 1.0) * rule);
+    }
+
+    // -----------------------------------------------------------------------
+    // The GPU measurement
+    // -----------------------------------------------------------------------
+
+    /// An offscreen target in an sRGB format — the format a swapchain is most
+    /// likely to offer, and the one `glyphon`'s atlas wants.
+    const TEST_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+    struct Target {
+        texture: wgpu::Texture,
+        view: wgpu::TextureView,
+        readback: wgpu::Buffer,
+        width: u32,
+        height: u32,
+        padded_row_bytes: u32,
+    }
+
+    fn target(device: &wgpu::Device, width: u32, height: u32) -> Target {
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("hud target"),
+            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TEST_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let unpadded = width * 4;
+        let align = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded_row_bytes = unpadded.div_ceil(align) * align;
+        let readback = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("hud readback"),
+            size: padded_row_bytes as u64 * height as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        Target { texture, view, readback, width, height, padded_row_bytes }
+    }
+
+    fn read_back(device: &wgpu::Device, target: &Target) -> Vec<[u8; 4]> {
+        let slice = target.readback.slice(..);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |result| {
+            let _ = sender.send(result);
+        });
+        device
+            .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+            .expect("poll");
+        receiver.recv().expect("the map callback runs").expect("the map succeeds");
+        let data = slice.get_mapped_range().expect("the range is mapped");
+        let stride = target.padded_row_bytes as usize;
+        let mut out = Vec::with_capacity((target.width * target.height) as usize);
+        for y in 0..target.height as usize {
+            for x in 0..target.width as usize {
+                let i = y * stride + x * 4;
+                out.push([data[i], data[i + 1], data[i + 2], data[i + 3]]);
+            }
+        }
+        drop(data);
+        target.readback.unmap();
+        out
+    }
+
+    fn at(pixels: &[[u8; 4]], width: u32, x: u32, y: u32) -> Rgb {
+        let p = pixels[(y * width + x) as usize];
+        Rgb::new(p[0], p[1], p[2])
+    }
+
+    #[test]
+    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
+    fn the_shell_chrome_is_legible_over_the_worst_backdrop() {
+        // The design system's contrast floor, checked on pixels a GPU actually
+        // produced — and checked on the **shell's** chrome rather than on four
+        // corner panels, because H-9.8 replaced the corner HUD with pinned
+        // windows. The backdrop is **white**, the brightest a swapchain can be,
+        // and the bar is translucent, so this is the drawn thing at its worst.
+        let (device, queue, adapter) = crate::renderer::offscreen_device().expect("a GPU");
+        println!("adapter: {adapter}");
+
+        let (width, height) = (1280u32, 720u32);
+        let target = target(&device, width, height);
+        let mut hud_renderer = HudRenderer::new(&device, &queue, TEST_FORMAT);
+
+        let palette = Palette::declared();
+        let f = frame(605);
+        // Scale 1.0, so one dp is one pixel and a layout rect is a pixel rect.
+        // Stated rather than assumed: the assertions below index pixels with
+        // layout coordinates.
+        let scale = 1.0f32;
+        let mut mount = {
+            let package = voxel_package::recipe::compile(MEASURE_RECIPE.as_bytes())
+                .expect("the measure recipe compiles");
+            let loaded = voxel_package::recipe::load(&package)
+                .expect("the measure package loads");
+            let mut mount = crate::shell::Mount::new(&loaded).expect("the measure package mounts");
+            mount.set_viewport(Rect::new(0.0, 0.0, width as f64, height as f64));
+            mount
+        };
+        let views = crate::shell::hud::views(&state(&f, None), mount.console());
+        let viewport = mount.viewport();
+        let elements = crate::shell::hud::frame(&mut mount, &palette, viewport, &views)
+            .expect("the shell layer lays out");
+        hud_renderer
+            .prepare(&device, &queue, (width, height), scale, &elements)
+            .expect("the shell prepares");
+        assert!(hud_renderer.shaped_runs() > 20, "the shell's chrome is text and glyphs");
+        assert!(hud_renderer.prepared_vertices > 0, "the shell's chrome is rects");
+
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("hud test"),
+        });
+        {
+            // A white world: the worst case the HUD is designed against.
+            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("backdrop"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &target.view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::WHITE),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+        }
+        hud_renderer.draw(&mut encoder, &target.view);
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &target.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &target.readback,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(target.padded_row_bytes),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        );
+        queue.submit(Some(encoder.finish()));
+        let pixels = read_back(&device, &target);
+
+        // A pixel outside every panel is untouched white.
+        assert_eq!(at(&pixels, width, width - 2, height / 2), WHITE, "the world shows through");
+
+        // The bar's own colour: the most common colour inside the strip, which is
+        // the surface every tab's glyph sits on.
+        let panel = Rect::new(0.0, 0.0, width as f64, voxel_ui::bar_height_dp());
+        let inside: Vec<Rgb> = (panel.y as u32..panel.bottom() as u32)
+            .flat_map(|y| (panel.x as u32..panel.right() as u32).map(move |x| (x, y)))
+            .map(|(x, y)| at(&pixels, width, x, y))
+            .collect();
+        assert!(!inside.is_empty());
+        let surface = most_common(&inside);
+
+        // The picture is the design: the panel really is chrome at the declared
+        // opacity over white, and the glyphs really are white ink on it.
+        let expected = palette
+            .get(Role::Chrome)
+            .expect("chrome is declared")
+            .blend_over(WHITE, panel_opacity());
+        println!("panel drawn: {surface:?}, designed: {expected:?}");
+        for (drawn, want) in [(surface.r, expected.r), (surface.g, expected.g), (surface.b, expected.b)]
+        {
+            assert!(
+                (drawn as i32 - want as i32).abs() <= 2,
+                "the drawn panel is {surface:?} and the design says {expected:?}"
+            );
+        }
+        assert!(surface.luminance() < 0.5, "the panel must darken the white world: {surface:?}");
+
+        // The measurement the design system's floor is about: the **brightest**
+        // glyph pixel inside the panel, against the panel it sits on.
+        let brightest = inside.iter().copied().max_by(|a, b| {
+            a.luminance().partial_cmp(&b.luminance()).expect("finite")
+        }).expect("non-empty");
+        let contrast = brightest.contrast(surface);
+        println!("brightest glyph pixel: {brightest:?}, contrast {contrast:.2}:1");
+        assert!(
+            contrast >= 4.5,
+            "the HUD's own text is under the WCAG floor on real pixels: {contrast:.2}:1"
+        );
+
+        // And there really are glyphs, rather than one white rectangle.
+        let distinct: std::collections::BTreeSet<[u8; 3]> =
+            inside.iter().map(|c| [c.r, c.g, c.b]).collect();
+        println!("{} distinct colours inside the panel", distinct.len());
+        assert!(distinct.len() > 8, "only {} colours — is any text being drawn?", distinct.len());
+    }
+
+    /// The smallest package that can measure the shell's chrome: one pinned window
+    /// (so the pinned layer is exercised) and one tab (so the bar carries a label).
+    const MEASURE_RECIPE: &str = "shploingus.recipe/3\n\
+package\tmeasure\tv0\n\
+window\tworld\n\
+\ttitle\tWorld\n\
+\tcontent\tworld-view\n\
+\tlane\tworld\n\
+\textent\tsquare-pixels\n\
+\tgeometry\t16 48 336 360\n\
+\tmin-size\t240 192\n\
+\topacity\t930\n\
+\televation\t0\n\
+\ttheme-role\thud\n\
+\tpinnable\ttrue\n\
+\tlayout\tclose,title-position\n\
+\tbehavior\tdrag\n\
+\trecord-id\twindow-world\n\
+window\tmods\n\
+\ttitle\tMods\n\
+\tcontent\tmods\n\
+\tlane\ttab\n\
+\textent\tsquare-pixels\n\
+\tgeometry\t400 96 480 384\n\
+\tmin-size\t240 192\n\
+\topacity\t930\n\
+\televation\t1\n\
+\ttheme-role\tsurface\n\
+\tpinnable\tfalse\n\
+\tlayout\tclose,title-position\n\
+\tbehavior\tdrag\n\
+\trecord-id\twindow-mods\n\
+tab\tmods\n\
+pin\tworld\n";
+
+    fn most_common(colours: &[Rgb]) -> Rgb {
+        let mut counts: std::collections::BTreeMap<(u8, u8, u8), usize> = Default::default();
+        for c in colours {
+            *counts.entry((c.r, c.g, c.b)).or_default() += 1;
+        }
+        let ((r, g, b), _) = counts.iter().max_by_key(|(_, n)| **n).expect("non-empty");
+        Rgb::new(*r, *g, *b)
+    }
+}

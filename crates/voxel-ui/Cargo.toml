@@ -1,0 +1,15 @@
+[package]
+name = "voxel-ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# **No dependencies at all**, and that is a deliberate statement about what this
+# crate is. The design system is a set of *rules about constants* — an opacity
+# ladder, a radius, a minimum touch target, a contrast floor, a palette, and the
+# four-bucket label that says where each number came from. None of that needs a
+# GPU, a window, or a colour library, and putting it behind one would make the
+# rules untestable without a display. `voxel-client` draws what this crate
+# declares; this crate never draws.
+[dependencies]

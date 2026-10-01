@@ -1,0 +1,46 @@
+[package]
+name = "shploingus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# The bin is the ONLY place in this repository with a windowing dependency, and
+# that is the point of it existing separately from `voxel-client`. Everything
+# `voxel-client` does — geometry, materials, shading, the frame measurement — is
+# reachable with no display attached. This crate adds exactly two things on top:
+# a surface to present to, and a device's input.
+#
+#   winit  — window creation and input. Nothing else here can do it.
+#   wgpu   — needed directly for the surface, the adapter, and the depth texture;
+#            the *pipeline* still comes from `voxel-client`, so the window draws
+#            with the same pipeline the offscreen tests verify.
+#   pollster — the same single-function async bridge `voxel-client` uses.
+#
+#   voxel-ui — the design system, for the palette the HUD is composed on. The
+#              bin names it because it is the **caller** of `hud()`: the layer
+#              that decides which palette a screen is built from is the one that
+#              owns the screen, and hard-coding `Palette::declared()` inside
+#              `voxel-client` would take that decision away from the only place
+#              that could ever have a second one.
+#
+# `glyphon` is deliberately NOT named here. It is named by `voxel-client`, which
+# is where the HUD is drawn — so the HUD is reachable, and measurable, with no
+# window. A text dependency in the bin would put the HUD out of reach of a test.
+# The same package compiler/loader runs at build time and at runtime.
+[build-dependencies]
+voxel-package = { path = "../voxel-package" }
+
+[dependencies]
+voxel-package = { path = "../voxel-package" }
+voxel-model = { path = "../voxel-model" }
+voxel-shapers = { path = "../voxel-shapers" }
+voxel-mesh = { path = "../voxel-mesh" }
+voxel-stream = { path = "../voxel-stream" }
+voxel-appearance = { path = "../voxel-appearance" }
+voxel-work = { path = "../voxel-work" }
+voxel-client = { path = "../voxel-client" }
+voxel-ui = { path = "../voxel-ui" }
+wgpu = "30"
+winit = "0.30"
+pollster = "0.3"

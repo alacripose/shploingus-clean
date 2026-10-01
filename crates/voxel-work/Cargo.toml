@@ -1,0 +1,27 @@
+[package]
+name = "voxel-work"
+description = "The continuous build engine: a bounded, deterministic worker pool over the shapers, and the mesh residency it feeds."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Coordinates and the refusal vocabulary.
+voxel-model = { path = "../voxel-model" }
+# The mesher, and the scratch space one worker needs — which is the single
+# largest allocation in the whole program, so this crate's budget is built
+# around being able to name it.
+voxel-mesh = { path = "../voxel-mesh" }
+# The world as voxels, and the four horizons that decide which voxels exist.
+voxel-stream = { path = "../voxel-stream" }
+# The material registry, because whether a face is drawn is a property of the
+# material and not of the number the mesher stored.
+voxel-shapers = { path = "../voxel-shapers" }
+
+# **No dependencies beyond the workspace.** Threads come from `std::thread` and
+# the queue from `std::sync`; a job system is a few hundred lines and a channel
+# library is a second thing to audit. `voxel-stream`'s own docs say the
+# single-threaded layer deliberately has no threads and that "a caller decides how
+# many workers there are" — this crate is that caller, and it is the only crate in
+# the workspace that spawns a thread.

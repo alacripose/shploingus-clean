@@ -1,0 +1,16 @@
+[package]
+name = "voxel-mesh"
+description = "The sparse voxel octree and the greedy visible mesh, meshed at subvoxel resolution."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# The world model: coordinates, the 4x4x4 subvoxel shape, material ids, the
+# content digest and the refusal type. Nothing else.
+#
+# Deliberately NOT a dependency: any GPU type, and `voxel-shapers`. The mesher
+# reads voxels through a trait, so a test can mesh a hand-built chunk without a
+# world, and the GPU crates can consume a `Mesh` without a world.
+voxel-model = { path = "../voxel-model" }

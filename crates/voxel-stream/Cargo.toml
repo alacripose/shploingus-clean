@@ -1,0 +1,16 @@
+[package]
+name = "voxel-stream"
+description = "The world's voxels as a source a mesher can read, the four horizons, and the resident set."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# The world model: coordinates, the subvoxel shape, material ids.
+voxel-model = { path = "../voxel-model" }
+# The shapers, because this crate's whole job is to turn a `WorldSpec` into
+# voxels. It is the layer where the abstract world meets the concrete one.
+voxel-shapers = { path = "../voxel-shapers" }
+# The octree, the mesher and the neighbourhood trait this crate implements.
+voxel-mesh = { path = "../voxel-mesh" }

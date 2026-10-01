@@ -1,0 +1,44 @@
+[package]
+name = "voxel-appearance"
+description = "OpenPBR inputs derived from block truth, the Valve Source 2 stylisation over them, and the 256x detail lattice evaluated on demand."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# The world model: the 4x4x4 composition grid, the 256x detail *address*, the
+# material registry and the refusal vocabulary. This crate reads block truth and
+# never writes it. There is deliberately no path from here to
+# `voxel_model::conservation`: every quantity in this crate is in the
+# **approximate** family of DESIGN-SPEC 2.1, and a tolerance-bearing value that
+# could reach mass would weaken the audited-to-the-gram claim. That the
+# dependency is absent is the strongest form of that statement.
+voxel-model = { path = "../voxel-model" }
+
+# The hash and the vector, both already here as pure functions of their inputs —
+# which is the one property the detail lattice needs (C-2: *addressed, never
+# stored*). Reusing them means the repository has one hash function and one
+# vector type rather than two that can drift.
+voxel-noise = { path = "../voxel-noise" }
+
+# The terrain shapers, for the **sky radiance model** (`src/sky.rs`, BLD-0011).
+#
+# **This was a dev-dependency first, on the stated ground that "the appearance
+# layer must not depend on the shapers (it is not the authority on what the world
+# is made of)". Nothing in the record says that, and the claim was checked rather
+# than believed:**
+#
+#  - DESIGN-SPEC §2.1 draws the exact/approximate line, and *both* crates are on
+#    the approximate side — shapers are terrain, weather and atmosphere, named in
+#    that list verbatim. There is no exact quantity anywhere near this edge.
+#  - The one boundary this crate does have a ruling for is C-27's: **no path to
+#    `voxel_model::conservation`**. That is an absent dependency, and it is still
+#    absent.
+#  - C-5's layout rule is "a boundary that earns independent compilation", and
+#    deriving sky radiance from a solar position earns nothing by inverting.
+#
+# So the radiance model needs the solar geometry, the edge is legal, and the
+# comment that forbade it is corrected here rather than left standing as a rule
+# nobody wrote down.
+voxel-shapers = { path = "../voxel-shapers" }

@@ -1,0 +1,13 @@
+# The build tree lives on F:, and the reason is measured rather than stylistic.
+#
+# `C:` is at 100% (about 300 MB free of 465 GB) and the client needs a `wgpu` +
+# `naga` + `winit` debug tree, which is on the order of 1-2 GB. `F:` has 57 GB.
+# Nothing in this repository was deleted to make room.
+#
+# The kache store is on F: too (`~/.config/kache/config.toml`). That is not
+# tidiness: kache restores a cache hit as a HARDLINK when the store and the
+# target directory are on the same volume, and as a COPY when they are not.
+# Same volume means a cache hit costs zero extra bytes; split volumes means it
+# costs the artifact twice.
+[build]
+target-dir = "F:/shploingus-target"

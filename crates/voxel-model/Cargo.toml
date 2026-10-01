@@ -1,0 +1,12 @@
+[package]
+name = "voxel-model"
+description = "Shploingus world model: coordinates, the 4x4x4 subvoxel model, 256x material detail, identity, refusal."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# Content identity. The world is content-addressed, and this is the one hash the
+# project accepts. Nothing else is needed: the model crate has no I/O and no GPU.
+sha2 = { workspace = true }

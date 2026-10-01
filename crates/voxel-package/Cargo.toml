@@ -1,0 +1,24 @@
+[package]
+name = "voxel-package"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Two workspace dependencies, and no external one — which is the whole point of
+# the "package API" boundary this repository was created to consume (C-1):
+# intake is built on the model's own identity and refusal types rather than on a
+# second hashing library or a second error vocabulary.
+#
+#   voxel-model   — `Digest` for content identity, `MaterialRegistry` for
+#                   material conformance, `Refusal`/`RefusalKind` for the
+#                   refusals. **`sha2` is not named here**: only `voxel-model`
+#                   names it, and `Digest` is how everything else asks for a
+#                   hash. That is what keeps "one hashing implementation" a
+#                   property of the dependency graph rather than a convention.
+#   voxel-shapers — `Stage` and `Declared`, so a package's stage requirements
+#                   are conformance-checked against the stages the world
+#                   actually runs rather than against a list of strings.
+[dependencies]
+voxel-model = { path = "../voxel-model" }
+voxel-shapers = { path = "../voxel-shapers" }

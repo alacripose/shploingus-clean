@@ -1,0 +1,247 @@
+//! `WorldSpec` — the world as a pure function of its arguments.
+//!
+//! F1's contract is that the world is a pure function of
+//! `(seed, tick, declared period)`. This module is where `seed` and `tick` live,
+//! beside the **per-world configuration** the design spec calls for (§3:
+//! *"configuration per world"* for every package).
+//!
+//! Everything here is a declared number with a stated reason. A generator whose
+//! constants are anonymous is a generator nobody can tune, and — more to the
+//! point — a generator whose constants are anonymous cannot be *rebuilt*, because
+//! two runs cannot be shown to have used the same ones (WG-Q4).
+
+use voxel_model::Refusal;
+
+/// Per-world generator configuration.
+///
+/// Every field is a **tuning knob that is part of the world's identity**: change
+/// one and the world is a different world, which is why the design spec's
+/// identity rule (F4) binds *by effect, not by kind*.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Config {
+    /// Height of the sea surface, in metres above the datum.
+    pub sea_level_m: f64,
+    /// The datum the whole terrain is measured from.
+    pub base_elevation_m: f64,
+    /// Peak-to-trough relief the terrain field can reach.
+    pub relief_m: f64,
+    /// Frequency of the continental masses — low, because continents are large.
+    pub continent_frequency: f64,
+    /// How many tectonic plates the world is partitioned into.
+    pub plate_count: u32,
+    /// Edge length of a tectonic plate cell, in metres. A **declared** constant
+    /// rather than one derived from `continent_frequency`: plates and continents
+    /// are different scales in the real world and a generator that ties them
+    /// together cannot be tuned to make them differ.
+    pub plate_cell_size_m: f64,
+    /// Half-width of the orogenic belt a plate boundary raises, in metres.
+    ///
+    /// This is the number that makes a mountain **range** a range and not a
+    /// plateau: uplift falls off exponentially from the seam with this length
+    /// scale, so a column 2 km inside a plate is untouched while a column on the
+    /// seam is fully raised. Without it, proximity normalised by cell size sits
+    /// around 0.5 *everywhere* — a Voronoi cell has no deep interior relative to
+    /// its own size, so a ratio can never reach zero.
+    pub plate_boundary_width_m: f64,
+    /// Vertical layers a column's stratigraphy is divided into.
+    pub layer_count: u32,
+    /// Regional-field samples per region edge (F4's ladder is aligned to the octree).
+    pub region_size: u32,
+    /// Hydraulic-erosion droplets per column, as a *performance* knob.
+    pub erosion_droplets_per_column: u32,
+    /// Sea level below which a surface cell is submerged.
+    pub soil_max_slope: f64,
+    /// Dry adiabatic-ish lapse rate, °C per metre. US Standard Atmosphere, 1976.
+    pub lapse_rate_c_per_m: f64,
+    /// Sea-level mean temperature, °C at the datum.
+    pub base_temperature_c: f64,
+    /// Latitude of the world origin in degrees, which sets the insolation band.
+    pub origin_latitude_deg: f64,
+    /// Fraction of arriving moisture dropped per metre of orographic rise
+    /// (Smith & Barstad 2004, in its linearised form).
+    pub orographic_efficiency: f64,
+    /// Cave carve threshold on the karst field.
+    pub cave_threshold: f64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            // **These three place the world inside the first playable band**
+            // (z = -16 … +47, C-6), which is why they are not round numbers: at
+            // a datum of 16 m and a relief of 40 m the surface spans roughly
+            // -22 … +54, so the band contains it rather than sitting under it.
+            // An earlier default of (sea 0, datum 64, relief 140) produced a
+            // world with a land fraction of 1.00 — no sea at all — which the
+            // test below caught by measuring rather than assuming.
+            sea_level_m: 16.0,
+            base_elevation_m: 16.0,
+            relief_m: 40.0,
+            continent_frequency: 0.0025,
+            plate_count: 12,
+            plate_cell_size_m: 6000.0,
+            plate_boundary_width_m: 600.0,
+            layer_count: 24,
+            region_size: 32,
+            erosion_droplets_per_column: 0,
+            soil_max_slope: 0.62,
+            lapse_rate_c_per_m: 0.0065,
+            base_temperature_c: 15.0,
+            origin_latitude_deg: 45.0,
+            orographic_efficiency: 0.0012,
+            cave_threshold: 0.62,
+        }
+    }
+}
+
+impl Config {
+    /// Refuse a configuration whose numbers cannot describe a world.
+    ///
+    /// This is the "a declared layer that is absent is a blocker, not an
+    /// omission" rule (WG-Q3) applied to configuration: a `plate_count` of zero
+    /// would make the tectonic partition empty, and an empty partition is not a
+    /// world with no plates — it is a world with no *answer*.
+    pub fn validate(&self) -> Result<(), Refusal> {
+        let bad = |what: &str| -> Result<(), Refusal> {
+            Err(Refusal::owned(
+                voxel_model::RefusalKind::OutOfDeclaredRange,
+                format!("config {what}"),
+            ))
+        };
+        if self.plate_count == 0 {
+            return bad("plate_count is 0: there would be no plates to partition");
+        }
+        if self.layer_count == 0 {
+            return bad("layer_count is 0: there would be no stratigraphy");
+        }
+        if self.region_size == 0 {
+            return bad("region_size is 0");
+        }
+        if !(self.plate_cell_size_m > 0.0 && self.plate_cell_size_m.is_finite()) {
+            return bad("plate_cell_size_m must be positive and finite");
+        }
+        if !(self.plate_boundary_width_m > 0.0 && self.plate_boundary_width_m.is_finite()) {
+            return bad("plate_boundary_width_m must be positive and finite");
+        }
+        if self.plate_boundary_width_m > self.plate_cell_size_m {
+            return bad(
+                "plate_boundary_width_m exceeds plate_cell_size_m: the orogenic belt \
+                 would be wider than the plate, so there would be no undisturbed interior",
+            );
+        }
+        if !(self.relief_m > 0.0 && self.relief_m.is_finite()) {
+            return bad("relief_m must be positive and finite");
+        }
+        if !(self.continent_frequency > 0.0 && self.continent_frequency.is_finite()) {
+            return bad("continent_frequency must be positive and finite");
+        }
+        if !(0.0..=90.0).contains(&self.origin_latitude_deg) {
+            return bad("origin_latitude_deg outside [0, 90]");
+        }
+        if !(0.0..=1.0).contains(&self.cave_threshold) {
+            return bad("cave_threshold outside [0, 1]");
+        }
+        for (name, v) in [
+            ("sea_level_m", self.sea_level_m),
+            ("base_elevation_m", self.base_elevation_m),
+            ("lapse_rate_c_per_m", self.lapse_rate_c_per_m),
+            ("base_temperature_c", self.base_temperature_c),
+            ("soil_max_slope", self.soil_max_slope),
+            ("orographic_efficiency", self.orographic_efficiency),
+        ] {
+            if !v.is_finite() {
+                return bad(&format!("{name} is not finite"));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The world: an identity (seed) and an instant (tick), plus its configuration.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct WorldSpec {
+    pub seed: u64,
+    pub tick: u64,
+    pub config: Config,
+}
+
+impl WorldSpec {
+    pub fn new(seed: u64, config: Config) -> Self {
+        WorldSpec { seed, tick: 0, config }
+    }
+
+    pub fn at_tick(mut self, tick: u64) -> Self {
+        self.tick = tick;
+        self
+    }
+
+    /// The seed a **named stage** uses.
+    ///
+    /// Stage seeds are derived rather than reused so that two shapers cannot
+    /// accidentally be driven by the same field. Sharing a raw seed between
+    /// terrain and, say, caves is how a cave system ends up tracing the
+    /// mountains exactly, which reads as a bug and is one.
+    pub fn stage_seed(&self, stage: &str) -> u64 {
+        let mut h = 0xcbf2_9ce4_8422_2325u64; // FNV-1a offset basis
+        for b in stage.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01B3);
+        }
+        voxel_noise::mix(h ^ self.seed ^ self.tick.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+    }
+
+    /// Validate the configuration before anything is generated from it.
+    pub fn validate(&self) -> Result<(), Refusal> {
+        self.config.validate()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_config_describes_a_world() {
+        assert!(Config::default().validate().is_ok());
+    }
+
+    #[test]
+    fn a_config_that_cannot_describe_a_world_is_refused_by_name() {
+        let c = Config { plate_count: 0, ..Config::default() };
+        let r = c.validate().unwrap_err();
+        assert!(r.detail().contains("plate_count"));
+
+        let c = Config { relief_m: -1.0, ..Config::default() };
+        assert!(c.validate().is_err());
+
+        let c = Config { origin_latitude_deg: 120.0, ..Config::default() };
+        assert!(c.validate().is_err());
+
+        let c = Config { sea_level_m: f64::NAN, ..Config::default() };
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn stage_seeds_are_distinct_per_stage() {
+        let w = WorldSpec::new(42, Config::default());
+        let names = [
+            "tectonics", "geology", "terrain", "hydrology", "erosion", "climate", "atmosphere",
+            "weather", "caves", "substrate", "ecology", "delta", "transition",
+        ];
+        let mut seeds: Vec<u64> = names.iter().map(|n| w.stage_seed(n)).collect();
+        let before = seeds.len();
+        seeds.sort_unstable();
+        seeds.dedup();
+        assert_eq!(seeds.len(), before, "two stages share a seed");
+    }
+
+    #[test]
+    fn the_world_changes_with_the_seed_and_the_tick_and_is_stable_otherwise() {
+        let a = WorldSpec::new(1, Config::default());
+        let b = WorldSpec::new(2, Config::default());
+        let c = WorldSpec::new(1, Config::default()).at_tick(1);
+        assert_ne!(a.stage_seed("terrain"), b.stage_seed("terrain"));
+        assert_ne!(a.stage_seed("terrain"), c.stage_seed("terrain"));
+        assert_eq!(a.stage_seed("terrain"), WorldSpec::new(1, Config::default()).stage_seed("terrain"));
+    }
+}
