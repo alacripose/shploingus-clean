@@ -236,6 +236,26 @@ pub struct Component {
 pub enum OpticalClass {
     Opaque,
     Transmissive,
+    /// A **participating medium**: air, vapour, cloud, haze.
+    ///
+    /// Added because the first two cannot express one, and that is not a
+    /// limitation of the renderer — it is a limitation of the *vocabulary*. With
+    /// only [`Self::Opaque`] and [`Self::Transmissive`], a gaseous system cannot be
+    /// written down at all, so "the atmosphere is a sky shader and nothing draws
+    /// the air" was not a rendering gap but an absent category.
+    ///
+    /// **Deliberately not a per-voxel material**, and that distinction is the
+    /// whole of the class. A participating medium has no surface: it has a
+    /// **density** over a volume, and it is lit along the way rather than at an
+    /// interface. So a `Scattering` row describes a medium, not a thing a mesher
+    /// puts in a cell — which is why the mesher's `Transmissive` test
+    /// (`voxel-mesh/src/mesh.rs`) does **not** cover it, and why admitting one is a
+    /// separate decision from admitting a rock.
+    ///
+    /// Admitting no medium of this class is a legitimate state: the registry is
+    /// bounded by criterion rather than by count, and an empty category is not a
+    /// gap in the set.
+    Scattering,
 }
 
 /// How much of the light arriving at a surface comes back off it, per channel,
