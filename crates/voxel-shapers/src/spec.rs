@@ -181,13 +181,51 @@ impl WorldSpec {
     /// accidentally be driven by the same field. Sharing a raw seed between
     /// terrain and, say, caves is how a cave system ends up tracing the
     /// mountains exactly, which reads as a bug and is one.
+    ///
+    /// **The `^ self.seed` is load-bearing and was briefly dropped.** Extracting
+    /// [`WorldSpec::stage_hash`] to share the FNV loop with
+    /// [`WorldSpec::stationary_stage_seed`] left this line as
+    /// `stage_hash(stage) ^ tick`, and with the world seed gone every world shared one
+    /// prevailing wind. `weather::tests::the_prevailing_wind_is_a_property_of_the_world_
+    /// not_the_place` caught it immediately — two different seeds produced the identical
+    /// bearing `3.5371731874879977` — which is the test doing exactly its job.
     pub fn stage_seed(&self, stage: &str) -> u64 {
+        voxel_noise::mix(
+            self.stage_hash(stage) ^ self.seed ^ self.tick.wrapping_mul(0x9E37_79B9_7F4A_7C15),
+        )
+    }
+
+    /// The same derivation as [`WorldSpec::stage_seed`] **with the tick left out**.
+    ///
+    /// # Why a second accessor, and what using the first one would have cost
+    ///
+    /// [`WorldSpec::stage_seed`] mixes `self.tick` into the seed. That is right for a
+    /// field which is *re-derived* whenever the tick moves — each tick is then
+    /// independent, which is what you want from a stage sample.
+    ///
+    /// It is **wrong** for a field that carries its own time coordinate. Sampling a
+    /// Perlin field at `(x, z, tick / 2000)` under a seed that also encodes `tick`
+    /// produces a completely different field at *every* tick: the seed changes, the
+    /// coordinate changes, and the result is white noise rather than weather. It looks
+    /// like working code — the values are in range, deterministic, and reproducible —
+    /// and it has no continuity in time at all, which is precisely the property the
+    /// caller was reaching for.
+    ///
+    /// **So: use this when the tick is in the sample position, and
+    /// [`WorldSpec::stage_seed`] when the tick selects the field.** The onset layer in
+    /// [`crate::weather`] is the first caller that needs the distinction.
+    pub fn stationary_stage_seed(&self, stage: &str) -> u64 {
+        voxel_noise::mix(self.stage_hash(stage) ^ self.seed)
+    }
+
+    /// FNV-1a over the stage name, before the world and tick are folded in.
+    fn stage_hash(&self, stage: &str) -> u64 {
         let mut h = 0xcbf2_9ce4_8422_2325u64; // FNV-1a offset basis
         for b in stage.as_bytes() {
             h ^= *b as u64;
             h = h.wrapping_mul(0x0000_0100_0000_01B3);
         }
-        voxel_noise::mix(h ^ self.seed ^ self.tick.wrapping_mul(0x9E37_79B9_7F4A_7C15))
+        h
     }
 
     /// Validate the configuration before anything is generated from it.

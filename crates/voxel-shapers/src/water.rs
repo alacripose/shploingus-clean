@@ -422,7 +422,11 @@ impl Ledger {
         let mut transfers = Vec::new();
 
         // 1. Precipitation: the only source. mm/year -> m/year -> m this tick.
-        let rate_mm = weather::precipitation_now(spec, x, z, tick).rate_mm_per_year;
+        //    Read through `weather::rate_at`, which is `Stage::Weather`'s named
+        //    entry point — so the ledger consumes the stage's rate rather than
+        //    reaching into its `Precipitation` struct, and the wiring is the thing
+        //    being consumed rather than merely being available.
+        let rate_mm = weather::rate_at(spec, x, z, tick);
         let rain_m = (rate_mm / 1_000.0) * ratios.precipitation_years_per_tick;
         let area = CELL_M * CELL_M;
         let rain_m3 = rain_m * area;
@@ -939,6 +943,66 @@ mod tests {
         // one percent of it, which is what makes the mm/year -> m/tick conversion
         // sane rather than a rounding error in disguise.
         assert!(1000.0 * r.precipitation_years_per_tick < 0.001);
+    }
+
+    #[test]
+    fn the_rain_that_reaches_the_ledger_is_the_onset_rate_and_not_the_flag() {
+        // The onset layer is **wired**, not merely present: the ledger's inflow has
+        // to be exactly proportional to the onset-modulated rate, so a broken onset
+        // changes the ledger and a broken flag does not.
+        //
+        // Two columns with the same annual mean and different onsets is the case
+        // that separates them — if the ledger read `is_raining`, both would rain the
+        // same. Proportionality is checked rather than equality because the two
+        // columns' ground and surface storage differ.
+        let s = spec();
+        let mut pairs: Vec<(f64, f64)> = Vec::new();
+        for i in -30..30 {
+            let x = i as f64 * 190.0;
+            let a = weather::rate_at(&s, x, 0.0, 4);
+            let b = weather::rate_at(&s, x + 190.0, 0.0, 4);
+            if a > 1.0 && b > 1.0 && (a / b - 1.0).abs() > 0.05 {
+                pairs.push((x, x + 190.0));
+            }
+        }
+        assert!(!pairs.is_empty(), "no two columns differed in onset, so this is vacuous");
+
+        let (xa, xb) = pairs[0];
+        let ratio_rate = weather::rate_at(&s, xa, 0.0, 4) / weather::rate_at(&s, xb, 0.0, 4);
+        // **The sharpest form of the claim**: the two columns carry the *same*
+        // boolean and different rates. A consumer built on `is_raining` cannot tell
+        // them apart; a consumer built on the rate can, and the ledger does.
+        let (pa, pb) = (
+            weather::precipitation_now(&s, xa, 0.0, 4),
+            weather::precipitation_now(&s, xb, 0.0, 4),
+        );
+        assert_eq!(
+            pa.is_raining, pb.is_raining,
+            "the two columns no longer agree on the flag, so this pair cannot separate them"
+        );
+        assert!(
+            (pa.rate_mm_per_year - pb.rate_mm_per_year).abs() > 1.0,
+            "the two columns' rates are within 1 mm/yr, so the rate separates nothing"
+        );
+
+        let (la, lb) = (ledger(xa, 0.0, 4), ledger(xb, 0.0, 4));
+        // Equal column areas, so the ratio of the two columns' rain is exactly the
+        // ratio of their rates — the reservoir differences cancel, because only
+        // precipitation crosses into the ledger at all.
+        let ratio_rain = la.source_m3() / lb.source_m3();
+        assert!(
+            (ratio_rain - ratio_rate).abs() / ratio_rate < 1e-9,
+            "the ledger's rain ratio {ratio_rain} is not the onset rate's ratio {ratio_rate}"
+        );
+
+        // And the rung is reachable from the stage it governs: the ×4 rung serves
+        // the onset, and a tick between rungs does not.
+        assert!(!weather::is_due_at(1) && weather::is_due_at(4));
+        assert_eq!(
+            weather::is_due_at(4),
+            crate::stages::Stage::Weather.cadence().is_due_at(4),
+            "the seam and the ladder disagree about when weather is due"
+        );
     }
 
     #[test]
