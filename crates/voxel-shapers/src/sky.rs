@@ -252,8 +252,8 @@ pub fn declination_deg(day_of_year: u64) -> f64 {
     // few centuries of play.
     let days = day_of_year as f64;
     let t = days / 365.25;
-    let l0 = 280.466_46 + 36000.769_83 * t + 0.000_303_2 * t * t;
-    let m = 357.529_11 + 35999.050_29 * t - 0.000_153_7 * t * t;
+    let l0 = 280.466_46 + 36_000.769_83 * t + 0.000_303_2 * t * t;
+    let m = 357.529_11 + 35_999.050_29 * t - 0.000_153_7 * t * t;
     let mr = m.to_radians();
     let c = (1.914_602 - 0.004_817 * t - 0.000_014 * t * t) * mr.sin()
         + (0.019_993 - 0.000_101 * t) * (2.0 * mr).sin()

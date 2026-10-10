@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 1550" width="1050" height="1550" role="img" aria-label="Architecture diagram showing software elements and their relationships. Bold lines indicate outbound relationships from the primary element.">
+  <defs>
+    <marker id="arrow-707070" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#707070"/>
+    </marker>
+    <marker id="arrow-bold-707070" markerWidth="15" markerHeight="15" refX="13" refY="7.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 15 7.5 L 0 15 z" fill="#707070"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1050" height="1550" fill="transparent"/>
+  <path d="M 250.0 700.0 L 250.0 740.0 L 560.0 740.0 L 560.0 80.0 L 680.0 80.0 L 680.0 125.0" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="c6bcbfde-1a06-4b96-8831-b35de4116bff" data-target="400728f4-9e42-424f-b7af-be9c768a13c4" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: one implementation of the seam (the in-project layer)" marker-end="url(#arrow-707070)"/>
+  <path d="M 250.0 300.0 L 250.0 340.0 L 560.0 340.0 L 560.0 80.0 L 920.0 80.0 L 920.0 125.0" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="e43a77bd-721e-449e-8be9-689fba3950b6" data-target="400728f4-9e42-424f-b7af-be9c768a13c4" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: one implementation of the seam (the model instrument)" marker-end="url(#arrow-707070)"/>
+  <text x="453" y="404" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 453, 404)" class="relationship-label" data-source="c6bcbfde-1a06-4b96-8831-b35de4116bff" data-target="400728f4-9e42-424f-b7af-be9c768a13c4" data-label-type="description">one implementation of the seam (the in-project layer)</text>
+  <text x="581" y="198" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 581, 198)" class="relationship-label" data-source="e43a77bd-721e-449e-8be9-689fba3950b6" data-target="400728f4-9e42-424f-b7af-be9c768a13c4" data-label-type="description">one implementation of the seam (the model instrument)</text>
+  <g class="draggable-element" data-element-id="400728f4-9e42-424f-b7af-be9c768a13c4" transform="translate(0, 0)">
+    <rect x="615" y="125" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="600" y="145" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="600" y="175" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="800" y="165" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The seam</text>
+    <text x="800" y="183" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="800" y="199" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="800" y="217" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">decision::Decider — Subject -&gt;</text>
+    <text x="800" y="233" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">Assessment, one vocabulary for every</text>
+    <text x="800" y="249" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">decision; a missing instrument is a</text>
+  </g>
+  <g class="draggable-element" data-element-id="d3c68c34-d108-4cc3-8fbe-132ecf5500fb" transform="translate(0, 0)">
+    <rect x="65" y="850" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="870" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="900" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="890" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The action matrix</text>
+    <text x="250" y="908" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="924" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="250" y="942" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">policy::decide — one matrix, one</text>
+    <text x="250" y="958" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">decision function, one audit sink; deny</text>
+    <text x="250" y="974" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">by default</text>
+  </g>
+  <g class="draggable-element" data-element-id="c6bcbfde-1a06-4b96-8831-b35de4116bff" transform="translate(0, 0)">
+    <rect x="65" y="450" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="470" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="500" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="490" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The in-project decider</text>
+    <text x="250" y="508" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="524" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="250" y="542" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">decision::Deterministic — answers by</text>
+    <text x="250" y="558" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">delegating to the readers, never by</text>
+    <text x="250" y="574" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">re-deciding</text>
+  </g>
+  <g class="draggable-element" data-element-id="e43a77bd-721e-449e-8be9-689fba3950b6" transform="translate(0, 0)">
+    <rect x="65" y="50" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="70" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="100" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="90" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The model instrument</text>
+    <text x="250" y="108" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="124" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="250" y="142" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">oracle::Oracle — one implementation of</text>
+    <text x="250" y="158" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">the seam, with oracle::UnreachableOracle</text>
+    <text x="250" y="174" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">for the skipped case; model-oracle</text>
+  </g>
+  <g class="draggable-element" data-element-id="e6085bc9-2e9c-4d44-ad6d-41259599d962" transform="translate(0, 0)">
+    <rect x="65" y="1250" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="1270" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="1300" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="1290" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The judge</text>
+    <text x="250" y="1308" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="1324" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust / voxel-model]</text>
+    <text x="250" y="1342" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">laya — typed questions (Choice / Score</text>
+    <text x="250" y="1358" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">/ Noul) and calibrated answers; no test</text>
+    <text x="250" y="1374" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">succeeds unless the client carries one</text>
+  </g>
+</svg>

@@ -59,15 +59,18 @@
 
 pub mod composition;
 pub mod detail;
+pub mod fluid;
 pub mod npr;
 pub mod openpbr;
 pub mod provenance;
 pub mod response;
 pub mod sky;
+pub mod tonemap;
 pub mod wrap;
 
 pub use composition::VoxelComposition;
 pub use detail::{DetailLattice, DetailSample};
+pub use fluid::{reflected_ray, schlick, surface_radiance, WATER_F0, WATER_IOR};
 pub use npr::{shade, Light, LightRig, Shaded, SurfaceFrame, Terms};
 pub use openpbr::{
     blend, derive, from_composition, Availability, Colour, Emission, LinearRgb, OpenPbrInputs,
@@ -75,6 +78,7 @@ pub use openpbr::{
 };
 pub use provenance::{Provenance, CONSTANTS};
 pub use response::{measure, shading_response, ShadingResponse, BAR_BANDS};
+pub use tonemap::{tone_map, tone_map_luminance};
 pub use wrap::{
     is_flat, pillar_height, pillar_tangency, wrapped_normal, wrapped_normal_with_detail,
     INSCRIBED_RADIUS,

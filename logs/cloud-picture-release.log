@@ -1,0 +1,31 @@
+   Compiling simd-adler32 v0.3.10
+   Compiling crc32fast v1.5.2
+   Compiling adler2 v2.0.1
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+   Compiling miniz_oxide v0.9.1
+   Compiling miniz_oxide v0.8.9
+   Compiling fdeflate v0.3.7
+   Compiling flate2 v1.1.10
+   Compiling png v0.18.1
+   Compiling voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+   Compiling voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+   Compiling voxel-work v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-work)
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+warning: unused variable: `wireframe`
+   --> crates\voxel-client\src\world.rs:852:9
+    |
+852 |         wireframe: bool,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_wireframe`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-client` (lib) generated 1 warning (run `cargo fix --lib -p voxel-client` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 1m 34s
+     Running `F:/shploingus-target\release\examples\cloud-picture.exe`
+mesh: 108 chunks, 9901 quads, 4279 ms | world x 0..192 y 8..26 z 0..192 m
+clouds: 2996 of 16384 columns hold a cloud (18.3 %), slab 432.92731288333783..2270.493040883454 m, fill 119.3 ms of the atmosphere cadence
+frame: 10.4 ms with the sky alone, 10.3 ms with the clouds (-0.0 ms for the pass); 213729 of 518400 pixels moved, 139221 of them brighter, alpha claimed by 119622 pixels
+luminance: sky-only mean 0.08068 max 0.41625 | with clouds mean 0.08073 max 0.41414
+wrote logs/clouds.png and logs/clouds-none.png
+exit=0

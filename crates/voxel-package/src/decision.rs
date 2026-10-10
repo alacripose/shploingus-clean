@@ -44,6 +44,8 @@ use std::path::Path;
 
 use voxel_model::{RefusalKind, RefusalSet};
 
+use voxel_model::axis::AxisKind;
+
 use crate::census::{self, Axis, Crate, AXES, AXIS_COUNT, CRATES, CRATE_COUNT};
 use crate::features::{self, Establishment, Feature, FEATURES, FEATURE_COUNT};
 use crate::recipe;
@@ -71,22 +73,66 @@ pub enum Subject {
     /// through it, so no subject, no pass and no Panel can see it. Adding the arm is what puts
     /// the record's numbers on the same two-reader path as its crates and its feature rows.
     Number(&'static crate::numbers::NumberClaim),
+    /// **One ladder of the civilians' evidence.** The DSL's binding sentence for the civilian
+    /// container is that *"its evidence is the proof of work for solutions, graded against
+    /// `axis.rs`"*, so a civilian subject is one **ladder** — [`AxisKind`], the seven ladders
+    /// `axis.rs` declares — and not one aggregate grade.
+    ///
+    /// **Why one per ladder, measured rather than preferred.** [`Assessment`] carries a single
+    /// `state: Establishment`, and `axis.rs`'s rules 51 and 53 refuse both comparing across
+    /// ladders and reducing one to a number (`refuse_interchange`, `refuse_reduction`). A single
+    /// aggregate subject therefore *cannot carry* seven ladder verdicts: it would have to either
+    /// collapse them — refused by the tree's own rules — or keep one and discard six. One
+    /// subject per ladder is the only shape that can hold the grading at all.
+    Civilian(AxisKind),
+    /// **One row of the bridge's surface** — the port's tool table and the four capability names
+    /// that partition it.
+    ///
+    /// **The row is a decided subject, and that is the point rather than a completeness flourish.**
+    /// A capability map living beside the seam would be a fifth decision surface, which is the exact
+    /// defect this module was created to close (*"the tree had four decision surfaces that each
+    /// answered in their own code"*). So the surface is asked here, with every other subject, and
+    /// the gate's report carries it.
+    ///
+    /// **The subject holds the row, not its name**, so a subject naming a tool the surface does not
+    /// carry is unrepresentable — the same argument [`Subject::Axis`] makes by holding a `Crate` and
+    /// an `Axis` rather than two strings.
+    Tool(crate::bridge::Tool),
 }
 
 /// How many axis subjects: the whole grid, every crate on every axis.
 pub const AXIS_SUBJECT_COUNT: usize = CRATE_COUNT * AXIS_COUNT;
 
+/// How many civilian subjects: **one per ladder**, so the count is `axis.rs`'s own
+/// `AXIS_COUNT` and is never a hand-written number that can drift from the ladder set.
+pub const CIVILIAN_SUBJECT_COUNT: usize = voxel_model::axis::AXIS_COUNT;
+
 /// **How many subjects there are. A literal, as everywhere else** — so adding an axis, a feature
 /// or a number without deciding how it is asked is caught here rather than at the end of a
 /// report.
 ///
-/// **80 → 86: `+ CLAIM_COUNT`.** The value is meaningless; the **type** is the assertion, and it
-/// is what stopped this arm from being added without the six rows that go with it.
-pub const SUBJECT_COUNT: usize = AXIS_SUBJECT_COUNT + FEATURE_COUNT + 1 + crate::numbers::CLAIM_COUNT;
+/// **80 → 86 → 98 → 105 → 128: `+ CLAIM_COUNT`, then the sixth census axis, then the civilian
+/// ladders, then the bridge's surface.** The value is meaningless; the **type** is the assertion,
+/// and it is what stopped each arm from being added without the rows that go with it.
+///
+/// **The bridge's rows are counted from `bridge::TOOLS.len()` rather than written as a literal,
+/// and the two cannot be made to disagree**: that table's length *is* `Action::COUNT`, pinned by
+/// `bridge::TOOLS_ARE_TOTAL`, so a literal here would be a second place to keep in step for
+/// nothing.
+pub const SUBJECT_COUNT: usize = AXIS_SUBJECT_COUNT
+    + FEATURE_COUNT
+    + 1
+    + crate::numbers::CLAIM_COUNT
+    + CIVILIAN_SUBJECT_COUNT
+    + crate::bridge::TOOLS.len();
 
 /// The compile-time check that [`SUBJECT_COUNT`] and the vocabulary agree.
-pub const SUBJECTS_ARE_TOTAL: [(); SUBJECT_COUNT] =
-    [(); CRATE_COUNT * AXIS_COUNT + FEATURE_COUNT + 1 + crate::numbers::CLAIM_COUNT];
+pub const SUBJECTS_ARE_TOTAL: [(); SUBJECT_COUNT] = [(); CRATE_COUNT * AXIS_COUNT
+    + FEATURE_COUNT
+    + 1
+    + crate::numbers::CLAIM_COUNT
+    + CIVILIAN_SUBJECT_COUNT
+    + crate::bridge::TOOLS.len()];
 
 impl Subject {
     /// A stable, machine-readable name. **Never prose**, because a name is compared and prose is
@@ -99,6 +145,11 @@ impl Subject {
             Subject::Feature(feature) => format!("feature/{}", feature.name()),
             Subject::Recipe => "recipe".to_string(),
             Subject::Number(claim) => format!("number/{}", claim.name),
+            // The ladder's own recorded name, so a reader who knows `axis.rs` knows this name.
+            Subject::Civilian(ladder) => format!("civilian/{}", ladder.name()),
+            // The row's own recorded verb, so a reader who knows the matrix's vocabulary knows this
+            // name — the tool table is named after `Action` for exactly this reason.
+            Subject::Tool(row) => format!("tool/{}", row.name),
         }
     }
 }
@@ -122,6 +173,17 @@ pub fn subjects() -> Vec<Subject> {
     for claim in crate::numbers::CLAIMS {
         out.push(Subject::Number(claim));
     }
+    // **The civilians' ladders, last and in `axis.rs`'s own order** — one subject per ladder, so
+    // the count beside them is how a reader knows the ladder set is whole.
+    for ladder in AxisKind::ALL {
+        out.push(Subject::Civilian(ladder));
+    }
+    // **The bridge's surface, last.** One `tool/<name>` subject per row, in the table's own order, so
+    // the surface this tree exposes through the port is decided by this seam and reported by the
+    // gate rather than being a table the checker in `bridge` is the only thing to have looked at.
+    for row in crate::bridge::TOOLS {
+        out.push(Subject::Tool(row));
+    }
     out
 }
 
@@ -140,7 +202,9 @@ pub struct Assessment {
     /// disagreement.
     pub reached: bool,
     /// Never empty unless the state is `Active` — the same rule [`crate::features::FeatureState`]
-    /// follows, for the same reason.
+    /// follows, for the same reason. **A holding subject may still carry one when it has a catch
+    /// to report** — the ticket-evidence ladder does, naming the citations it graded — because a
+    /// settled reading can still owe the reader a fact, and the report prints it (`Pass::report`).
     pub reason: Option<String>,
 }
 
@@ -346,6 +410,69 @@ pub fn rule_for_axis(
                 )),
             ),
         },
+        // **The doc stage.** The facts come from `census::observe`; the rule is here so a second
+        // instrument is handed the same numbers and rules them its own way.
+        Axis::Documented => match &observation.prose {
+            None => (
+                Establishment::Refused,
+                Some(format!(
+                    "{} has no readable source, so where its rationale lives was not measured",
+                    observation.crate_.name()
+                )),
+            ),
+            Some(prose) => {
+                // A second record beside the chain is refused whatever the prose share reads:
+                // `forbidden.second-record` is not a matter of degree.
+                if !prose.invented.is_empty() {
+                    return (
+                        Establishment::Refused,
+                        Some(format!(
+                            "{} keeps {} invented record(s) beside the chain: {}. The chain is \
+                             the one append-only record, and a store beside it becomes the next \
+                             agent's source of truth",
+                            observation.crate_.name(),
+                            prose.invented.len(),
+                            prose.invented.join(", ")
+                        )),
+                    );
+                }
+                let Some(percent) = prose.comment_percent else {
+                    return (
+                        Establishment::Refused,
+                        Some(format!(
+                            "{}'s prose share was not measured ({}), so this axis has no reading",
+                            observation.crate_.name(),
+                            prose.why_unmeasured.as_deref().unwrap_or("no reason recorded")
+                        )),
+                    );
+                };
+                match &prose.document {
+                    None => (
+                        Establishment::Refused,
+                        Some(format!(
+                            "{percent}% of {}'s source over {} of {} covered file(s) is comment, and \
+                             no document under docs/ defines it — no heading there begins with its \
+                             name. The documentation was not created: prose in a code artifact is \
+                             documentation written where a reader does not look for it",
+                            observation.crate_.name(),
+                            prose.files,
+                            prose.ruled_files
+                        )),
+                    ),
+                    Some(document) if percent > census::PROSE_FRAME_PERCENT => (
+                        Establishment::Inactive,
+                        Some(format!(
+                            "{} is documented at {document} and {percent}% of its source is \
+                             still comment (frame {}%). Reported every build rather than refused: \
+                             the rationale has a home, and the copy in the code is the remainder",
+                            observation.crate_.name(),
+                            census::PROSE_FRAME_PERCENT
+                        )),
+                    ),
+                    Some(_) => (Establishment::Active, None),
+                }
+            }
+        },
     }
 }
 
@@ -354,6 +481,169 @@ impl Assessment {
     pub fn holds(&self) -> bool {
         self.state == Establishment::Active
     }
+}
+
+/// **What a civilian ladder's witness means.** The rule the reader does not hold.
+///
+/// `civilians::observe` reports whether the governed record carries the ladder's witness;
+/// **this** says what that is worth. Deliberately the same shape as [`rule_for_feature`],
+/// because the two report the same kind of fact: a witness that is there, absent, or
+/// unreadable.
+///
+/// **A present witness is `Active`; an absent one is `Unchecked`; an unreadable record is
+/// `Refused`.** The difference between the last two is the whole reason there are three:
+/// *"the record could not be read"* is a refusal, and *"the record does not carry this"* is a
+/// state a reader can act on. **Neither is a pass** — the same rule `census`'s `None` arm and
+/// `features`' missing row already keep.
+pub fn rule_for_civilian(
+    observation: &crate::civilians::LadderObservation,
+) -> (Establishment, Option<String>) {
+    // **The second arm, and it exists because the rows landed.** The first arm grades the
+    // *instrument* — whether the record has somewhere on this ladder to put evidence at all.
+    // The rows are the evidence itself: the tickets' citations, read back from the record with
+    // the cited document opened and the cited sha256 checked against the bytes on disk. Only the
+    // ticket-evidence ladder carries rows, so only it takes this arm; the other six ladders fall
+    // through to the witness reading unchanged.
+    if observation.ladder == AxisKind::TicketEvidence {
+        if let Some(unread) = &observation.rows_unread {
+            return (
+                Establishment::Refused,
+                Some(format!(
+                    "the record's tickets could not be read back, so the citations this ladder \
+                     grades were not read at all: {unread}"
+                )),
+            );
+        }
+        if !observation.rows.is_empty() {
+            use crate::civilians::TicketRow;
+            // **The rungs, three ways, and they are three different facts:**
+            //
+            //   * `holds == Some(true)` — a citation whose document was opened and whose sha256
+            //     still matches: **read back from the record** (`ticket-evidence B`);
+            //   * an answer that names no citation at all — **self-report** (`ticket-evidence C`),
+            //     which is evidence and not authority, and is counted here rather than refused:
+            //     the rung exists for exactly this evidence;
+            //   * anything else — a citation that could not be checked, or one whose digest no
+            //     longer matches the bytes on disk — is **broken**, and a broken read-back is a
+            //     refusal that names the ticket, because a claimed B that cannot be verified must
+            //     not pass as a C.
+            let read_back = observation
+                .rows
+                .iter()
+                .filter(|row| row.holds == Some(true))
+                .count();
+            let self_report = observation
+                .rows
+                .iter()
+                .filter(|row| row.document.is_none())
+                .count();
+            let broken: Vec<&TicketRow> = observation
+                .rows
+                .iter()
+                .filter(|row| row.holds != Some(true) && row.document.is_some())
+                .collect();
+            if broken.is_empty() {
+                return (
+                    Establishment::Active,
+                    Some(format!(
+                        "{} ticket row(s) on this ladder: {read_back} read back from the document \
+                         they cite (ticket-evidence B) with every cited sha256 still verifying, \
+                         {self_report} self-report (ticket-evidence C — evidence, but not \
+                         authority), none broken",
+                        observation.rows.len()
+                    )),
+                );
+            }
+            // **Every broken row is named with its own reason**, and the tail says how many
+            // were left unprinted rather than sampling invisibly (`Board::describe`'s own rule).
+            let named: Vec<String> = broken
+                .iter()
+                .take(8)
+                .map(|row| {
+                    format!(
+                        "{}: {}",
+                        row.ticket,
+                        row.reason.as_deref().unwrap_or("no reason recorded")
+                    )
+                })
+                .collect();
+            return (
+                Establishment::Refused,
+                Some(format!(
+                    "{} of {} ticket row(s) are broken — {}{}",
+                    broken.len(),
+                    observation.rows.len(),
+                    named.join("; "),
+                    if broken.len() > 8 {
+                        format!("; and {} more", broken.len() - 8)
+                    } else {
+                        String::new()
+                    }
+                )),
+            );
+        }
+    }
+    match (observation.readable, observation.present) {
+        (true, true) => (Establishment::Active, None),
+        (true, false) => (
+            Establishment::Unchecked,
+            Some(format!(
+                "the governed record carries no witness for {}, so the civilians have nowhere on \
+                 that ladder to put evidence and nothing on it is graded: {} does not contain \
+                 {:?}. That is a state and not a refusal — the row is readable and this is what \
+                 it says",
+                observation.ladder.name(),
+                observation.witness,
+                observation.token
+            )),
+        ),
+        (false, _) => (
+            Establishment::Refused,
+            Some(format!(
+                "{} could not be read, so whether the record carries {}'s witness is unknown. \
+                 Unwitnessed is not claimed",
+                observation.witness,
+                observation.ladder.name()
+            )),
+        ),
+    }
+}
+
+/// **What one row of the bridge's surface means.** The rule that `bridge::row_refusals` does not
+/// hold, completing the same pair — the reader reports, the layer decides — that
+/// [`rule_for_feature`] and [`rule_for_civilian`] complete.
+///
+/// It is also **why the port's four capability names are a decided subject instead of a table
+/// beside the seam.**
+///
+/// | the row | state | why |
+/// |---|---|---|
+/// | reports no problem | **`Active`** | the row is coherent: a spellable name, and a capability that agrees with the matrix's class for the act |
+/// | reports one | **`Refused`** | **with the row's own words attached**, because a refusal that names nothing is a refusal nobody can act on |
+///
+/// **`Unchecked` is unreachable here, and that is not an omission.** `Unchecked` means *"this was
+/// not measured"*, and a row is a value this build holds — there is no row that could not be read.
+/// That state belongs to a subject made of names, which is why [`Subject::Tool`] holds the row
+/// itself.
+///
+/// **`Refused` here is not a build failure, and it does not mean "denied."** The row this tree
+/// forbids outright ([`crate::policy::Action::DeleteContent`]) **holds**: it is a coherent row whose
+/// class is `always_denied`, and the whole reason it ships is so that calling it is a recorded
+/// denial rather than an absent verb nobody can read. What this rules on is *whether the surface is
+/// coherent* — never *whether a particular caller may act*, which needs an authority and a grant and
+/// is [`crate::bridge::call`]'s question.
+pub fn rule_for_tool(row: &crate::bridge::Tool) -> (Establishment, Option<String>) {
+    let refusals = crate::bridge::row_refusals(row);
+    if refusals.is_empty() {
+        // No reason: a coherent row owes the reader nothing, which is `Pass::report`'s own rule
+        // (*"a holding subject with no reason is not printed"*) and keeps the gate's body the size
+        // of what is actually wrong.
+        return (Establishment::Active, None);
+    }
+    (
+        Establishment::Refused,
+        Some(format!("{}: {refusals}", row.name)),
+    )
 }
 
 /// **The seam.** Everything that decides asks this, and nothing decides by asking something else.
@@ -497,6 +787,55 @@ impl Decider for Deterministic<'_> {
                 };
                 Ok(assessment)
             }
+            Subject::Civilian(ladder) => {
+                // The same pair again: `civilians::observe` **reads** the record and
+                // `rule_for_civilian` **rules** on the reading. Going through a function that
+                // already applied the rule here would hide where the decision lives, which is
+                // the thing `the_seam_answers_what_the_surfaces_answer` exists to prevent.
+                let observations = crate::civilians::observe(self.root);
+                let assessment = match observations
+                    .iter()
+                    .find(|observed| observed.ladder == ladder)
+                {
+                    Some(observed) => {
+                        let (state, reason) = rule_for_civilian(observed);
+                        Assessment {
+                            subject: subject.name(),
+                            state,
+                            instrument: self.name(),
+                            reached: true,
+                            reason,
+                        }
+                    }
+                    // A ladder this build knows with no row in the table: named, never defaulted
+                    // to `Active`.
+                    None => Assessment {
+                        subject: subject.name(),
+                        state: Establishment::Unchecked,
+                        instrument: self.name(),
+                        reached: true,
+                        reason: Some(format!(
+                            "the ladder table returned no row for {}, so nothing was evaluated",
+                            ladder.name()
+                        )),
+                    },
+                };
+                Ok(assessment)
+            }
+            Subject::Tool(row) => {
+                // Read, then rule — the same pair as every other arm. `bridge::row_refusals`
+                // reports what is wrong with the row and `rule_for_tool` says what that is worth;
+                // going through `bridge::check_surface` here would fold the whole table and lose
+                // which row this subject is about, which is the thing the pairs exist to prevent.
+                let (state, reason) = rule_for_tool(&row);
+                Ok(Assessment {
+                    subject: subject.name(),
+                    state,
+                    instrument: self.name(),
+                    reached: true,
+                    reason,
+                })
+            }
             Subject::Recipe => {
                 let Some(source) = self.recipe else {
                     let mut refusals = RefusalSet::new();
@@ -560,25 +899,18 @@ impl Decider for Deterministic<'_> {
 
 /// A decider that cannot be reached. **Refuses every subject, on purpose.**
 ///
-/// Its purpose is the same as [`crate::oracle::UnreachableOracle`]'s: it makes *"the decision layer
-/// was skipped"* impossible to mistake for *"the decision layer passed"*.
-pub struct Unreachable {
-    pub why: String,
-}
-
-impl Decider for Unreachable {
-    fn name(&self) -> &'static str {
-        "unreachable"
-    }
-
-    fn decide(&self, subject: Subject) -> Result<Assessment, RefusalSet> {
-        Err(one_refusal(&format!(
-            "{} could not be decided: {}",
-            subject.name(),
-            self.why
-        )))
-    }
-}
+/// **This is [`crate::oracle::UnreachableOracle`], and that is the ruling rather than a
+/// tidy-up.** H-14.1 made Laya the decision layer and `oracle::Oracle` *one implementation of
+/// the seam*; this module's own header says so (*"the seam is here, and `oracle::Oracle` is one
+/// implementation of it"*), and the DSL names the skipped case in the oracle's component:
+/// *"`oracle::Oracle` — one implementation of the seam, with `oracle::UnreachableOracle` for
+/// the skipped case"*. A second `Unreachable` here would be two names for one meaning — D-07,
+/// the defect that made `voxel_model::grant` move **down** rather than be duplicated.
+///
+/// So the seam's skipped case is declared where the DSL says it is, and implements
+/// [`Decider`] there. Its purpose is unchanged: it makes *"the decision layer was skipped"*
+/// impossible to mistake for *"the decision layer passed"*.
+pub use crate::oracle::UnreachableOracle as Unreachable;
 
 /// **One pass over every subject.** Returns a [`Pass`] and never stops early.
 pub fn audit(decider: &dyn Decider) -> Pass {
@@ -605,13 +937,6 @@ pub fn audit(decider: &dyn Decider) -> Pass {
         }
     }
     Pass { decider: decider.name(), assessments, refusals }
-}
-
-/// One refusal, collected the same way [`RefusalSet`] collects.
-fn one_refusal(detail: &str) -> RefusalSet {
-    let mut refusals = RefusalSet::new();
-    refusals.refuse(RefusalKind::NoReading, detail);
-    refusals
 }
 
 /// What one pass decided.
@@ -749,8 +1074,13 @@ impl Pass {
         }
         // Every subject that does not hold, with its reason — the report a reader actually wants,
         // because "which decision is not settled" is the question and a count is not the answer.
+        //
+        // **And every holding subject that carries a reason**, because a settled subject can
+        // still owe the reader a fact: the ticket-evidence ladder holds *with a catch* — the
+        // rows it graded — and this is the only surface the client reads (BLD-0026). A holding
+        // subject with no reason is not printed, exactly as before.
         for assessment in &self.assessments {
-            if assessment.holds() {
+            if assessment.holds() && assessment.reason.is_none() {
                 continue;
             }
             let reason = assessment.reason.as_deref().unwrap_or("no reason recorded");
@@ -799,8 +1129,10 @@ pub struct ReportedPass {
     pub inactive: usize,
     pub unchecked: usize,
     pub refused: usize,
-    /// **Every subject that does not hold, with its reason** — C-83.5's rule, carried: *"which
-    /// decision is not settled* is the question and a count is not the answer".
+    /// **Every subject the report printed with a reason** — C-83.5's rule, carried: *"which
+    /// decision is not settled* is the question and a count is not the answer". A holding
+    /// subject appears here when it carries a reason (the ticket-evidence ladder does), so a
+    /// reader of `pending` sees every reasoned row the report wrote, not only the failures.
     pub pending: Vec<ReportedSubject>,
 }
 
@@ -948,7 +1280,13 @@ pub fn read_report(text: &str) -> Result<(ReportedPass, ReportedTwo), RefusalSet
         }
     }
 
-    for line in lines_between(text, two_start, text.len()) {
+    // **The section ends where the next one begins.** The gate's report continues after the
+    // two passes — `# what this gate is not` carries `integrity` and `identity` — and a reader
+    // that ran to the end of the text read those keys as keys `TwoPass::report` never writes.
+    // Measured on the console, which refused the build's own report: `logs/live.out` line 307.
+    // The writer's keys and subject rows never begin `# `; the writer's sections all do.
+    let two_end = next_section(text, two_start);
+    for line in lines_between(text, two_start, two_end) {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
@@ -1015,16 +1353,22 @@ pub fn read_report(text: &str) -> Result<(ReportedPass, ReportedTwo), RefusalSet
         );
     }
     // **Every subject that does not hold is printed**, so a pending row the reader cannot see is
-    // a decision nobody is shown is unsettled.
+    // a decision nobody is shown is unsettled. **A holding row may appear in `pending` too** —
+    // the writer prints a settled subject that carries a catch, the ticket-evidence ladder does —
+    // so the count that must close is the *non-holding* rows against `subjects - active`, and
+    // the holding rows are named as the extra facts they are.
     let printed = pass.subjects.saturating_sub(pass.active);
-    if pass.pending.len() != printed {
+    let unsettled = pass
+        .pending
+        .iter()
+        .filter(|row| row.state != Establishment::Active)
+        .count();
+    if unsettled != printed {
         refusals.refuse(
             RefusalKind::DigestMismatch,
             format!(
-                "{} subject(s) do not hold and the report names {} of them, so the client would \
-                 render a count the reader cannot check",
-                printed,
-                pass.pending.len()
+                "{printed} subject(s) do not hold and the report names {unsettled} of them, so the \
+                 client would render a count the reader cannot check"
             ),
         );
     }
@@ -1068,6 +1412,21 @@ fn lines_between(text: &str, from: usize, to: usize) -> impl Iterator<Item = &st
     text.lines().skip(from + 1).take(to.saturating_sub(from + 1))
 }
 
+/// Where the section beginning at `start` ends: the first following line that begins a new
+/// `# ` section, or the end of the text.
+///
+/// **A section reader must know where its section stops**, or the next section's keys arrive
+/// as rows of this one. That is not hypothetical here: the build's report has a section after
+/// the two passes, and running the reader to the end made it refuse the build's own keys.
+fn next_section(text: &str, start: usize) -> usize {
+    text.lines()
+        .enumerate()
+        .skip(start + 1)
+        .find(|(_, line)| line.starts_with("# "))
+        .map(|(index, _)| index)
+        .unwrap_or_else(|| text.lines().count())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1104,9 +1463,9 @@ mod tests {
         // **The count is pinned as well as compared.** A round trip alone would agree with any
         // number the writer chose, so it cannot catch the count drifting; C-59.7's rule is that a
         // count is a literal somebody decided, and `SUBJECT_COUNT` is that literal's type. This
-        // tree reads **86** today, not the 80 C-83 recorded, because `numbers::CLAIM_COUNT` is
-        // inside the vocabulary — and a test that had asserted `80` would be reporting a stale
-        // number as though it were the gate's.
+        // tree reads **98** today, not the 80 C-83 recorded, because `numbers::CLAIM_COUNT` and
+        // the doc stage's sixth axis are inside the vocabulary — and a test that had asserted
+        // `80` would be reporting a stale number as though it were the gate's.
         assert_eq!(
             read_pass.subjects,
             SUBJECT_COUNT,
@@ -1118,11 +1477,13 @@ mod tests {
         assert_eq!(read_pass.refused, two.system.in_state(Establishment::Refused).len());
         assert_eq!(read_pass.holding(), two.system.holding());
 
+        // **The writer's own rule, mirrored exactly**: the report prints a subject that does not
+        // hold, and a holding subject that carries a reason (the ticket-evidence ladder does).
         let mut expected: Vec<(String, Establishment, String)> = two
             .system
             .assessments
             .iter()
-            .filter(|assessment| !assessment.holds())
+            .filter(|assessment| !assessment.holds() || assessment.reason.is_some())
             .map(|assessment| {
                 (
                     assessment.subject.clone(),
@@ -1154,6 +1515,21 @@ mod tests {
             two.model.assessments.len(),
             "the model's decided and unreached counts partition every subject"
         );
+    }
+
+    #[test]
+    fn a_section_after_the_two_passes_is_not_read_as_the_model_s_rows() {
+        // **The gate's own shape.** The build's report continues after the two passes
+        // (`# what this gate is not`), and a reader that ran to the end of the text read those
+        // keys as keys this writer never emits — the console refused the build's own report.
+        let two = run(&shipped(), &Unreachable { why: "the model is not built yet".into() });
+        let mut text = two.report();
+        text.push_str("\n# what this gate is not\n");
+        text.push_str("integrity\testablished\n");
+        text.push_str("identity\tnot-established-no-signature\n");
+        let (_, read_model) =
+            read_report(&text).expect("the trailing section is not the model's rows");
+        assert_eq!(read_model.model_decided, 0);
     }
 
     #[test]
@@ -1471,13 +1847,16 @@ divergences\t0
     fn the_subject_vocabulary_is_closed_and_counted() {
         // A literal, checked against the vocabulary it counts — the same mutation test the axis gate
         // relies on. Change a crate to add an axis and this is the compile error that says so.
-        assert_eq!(AXIS_SUBJECT_COUNT, 60, "12 crates x 5 axes");
-        // **80 → 86.** The six declared numbers join the vocabulary, so they are decided by the
-        // seam and printed by the gate beside the other eighty rather than living in a module
-        // nothing calls. A literal, so an arm added without its rows does not compile.
+        assert_eq!(AXIS_SUBJECT_COUNT, 72, "12 crates x 6 axes");
+        // **80 → 86 → 98 → 105 → 128.** The six declared numbers join the vocabulary, then the doc
+        // stage adds a sixth axis, then the civilian ladders, and now the bridge's surface: each is
+        // decided by the seam and printed by the gate rather than living in a module nothing calls.
+        // A literal, so an arm added without its rows does not compile.
         assert_eq!(
-            SUBJECT_COUNT, 86,
-            "60 axis subjects + 19 features + the recipe + 6 declared numbers"
+            SUBJECT_COUNT, 128,
+            "72 axis subjects + 19 features + the recipe + 6 declared numbers + 7 civilian \
+             ladders + 23 tool rows — the bridge's surface, so a capability is a decided subject \
+             rather than a table beside the seam"
         );
         assert_eq!(SUBJECTS_ARE_TOTAL.len(), SUBJECT_COUNT);
         let all = subjects();
@@ -1490,5 +1869,57 @@ divergences\t0
         names.sort();
         names.dedup();
         assert_eq!(names.len(), SUBJECT_COUNT, "two subjects share a name");
+    }
+
+    #[test]
+    fn every_row_of_the_bridge_s_surface_holds_as_a_decided_subject() {
+        // **The change this test exists for.** The port's tool rows are asked of *this* seam, beside
+        // the crates, the features, the recipe, the numbers and the ladders — so a capability map
+        // cannot become a fifth decision surface answering "may this act proceed?" in its own code,
+        // which is the exact defect this module was created to close.
+        //
+        // The rows are decided **through the seam's own arm** rather than by calling `rule_for_tool`
+        // directly, and the root is deliberately not the tree: the tool arm reads its row and nothing
+        // else, so a test that needed a workspace here would be hiding a file read behind a table.
+        let decider = Deterministic::new(std::path::Path::new("."));
+        for row in crate::bridge::TOOLS {
+            let subject = Subject::Tool(row);
+            assert_eq!(subject.name(), format!("tool/{}", row.name));
+            let assessment = decider
+                .decide(subject)
+                .expect("the tool arm reads its row and refuses nothing");
+            assert!(assessment.reached, "{}: the seam did not reach it", subject.name());
+            assert_eq!(assessment.instrument, decider.name());
+            assert_eq!(
+                assessment.state,
+                Establishment::Active,
+                "{}: {}",
+                subject.name(),
+                assessment.reason.as_deref().unwrap_or("no reason")
+            );
+            // A coherent row owes the reader nothing, so a surface with nothing wrong with it adds no
+            // line to the gate — `Pass::report` prints what does not hold, and what holds *with a
+            // catch*, and nothing else.
+            assert!(assessment.reason.is_none(), "{}", subject.name());
+        }
+
+        // And the row this tree forbids outright is among them, **holding** — it is a coherent row
+        // whose class is `always_denied`, and that coherence is what makes calling it a recorded
+        // denial instead of an absent verb nobody can read. `Refused` here would mean the row was
+        // malformed rather than forbidden, which is the distinction the whole arm exists to draw.
+        let forbidden = crate::bridge::TOOLS
+            .iter()
+            .find(|row| row.class() == crate::policy::PermissionClass::AlwaysDenied)
+            .expect("the vocabulary holds an act the record forbids");
+        let assessment = decider
+            .decide(Subject::Tool(*forbidden))
+            .expect("a decision");
+        assert!(
+            assessment.holds(),
+            "{} is {} and must hold: {:?}",
+            forbidden.name,
+            forbidden.class().slug(),
+            assessment.reason
+        );
     }
 }

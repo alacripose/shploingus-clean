@@ -1,0 +1,3 @@
+   Compiling shploingus v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\shploingus)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 11.91s
+BUILD_EXIT:0

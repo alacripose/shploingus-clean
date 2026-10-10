@@ -1,0 +1,43 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.28s
+     Running tests\retire_the_broken_rows.rs (F:/shploingus-target\debug\deps\retire_the_broken_rows-90fea4d4e72684a5.exe)
+
+running 1 test
+497 row(s): 105 verified, 245 broken, 147 self-report
+214 fragment(s) to retire, 0 already retired, 31 unbacked
+  unbacked: CSE-0088: the objective names no ledger entry: "record a decision the tooling could not write as a NAMED GAP with its count left unreconciled, rather than leaving a silence a later session would be free to fill with an invention"
+  unbacked: CSE-0132: the objective names no ledger entry: "record a decision the tooling could not write as a NAMED GAP with its count left unreconciled, rather than leaving a silence a later session would be free to fill with an invention"
+  unbacked: CSE-0174: the objective names no ledger entry: "record a decision the tooling could not write as a NAMED GAP with its count left unreconciled, rather than leaving a silence a later session would be free to fill with an invention"
+  unbacked: CSE-0224: the objective names no ledger entry: "docs/LEDGER.md entry 0 (# LEDGER — decisions taken in shploingus-clean) — part 1/2, lines 1..=63"
+  unbacked: CSE-0225: the objective names no ledger entry: "docs/LEDGER.md entry 0 (# LEDGER — decisions taken in shploingus-clean) — part 2/2, lines 64..=64"
+  unbacked: CSE-0226: the objective names no ledger entry: "docs/LEDGER.md entry 1 (## Corrections found by measurement) — part 1/2, lines 65..=115"
+  unbacked: CSE-0227: the objective names no ledger entry: "docs/LEDGER.md entry 1 (## Corrections found by measurement) — part 2/2, lines 116..=116"
+  unbacked: CSE-0228: the objective names no ledger entry: "docs/LEDGER.md entry 2 (## The mesh layer (`crates/voxel-mesh`, 2026-09-29)) — part 1/2, lines 117..=165"
+  unbacked: CSE-0229: the objective names no ledger entry: "docs/LEDGER.md entry 2 (## The mesh layer (`crates/voxel-mesh`, 2026-09-29)) — part 2/2, lines 166..=166"
+  unbacked: CSE-0230: the objective names no ledger entry: "docs/LEDGER.md entry 3 (## Measured performance, and what it cost to get (2026-09-29)) — part 1/2, lines 167..=218"
+  unbacked: CSE-0231: the objective names no ledger entry: "docs/LEDGER.md entry 3 (## Measured performance, and what it cost to get (2026-09-29)) — part 2/2, lines 219..=219"
+  unbacked: CSE-0232: the objective names no ledger entry: "docs/LEDGER.md entry 4 (## The instrument layer (`crates/voxel-instrument`, 2026-09-29)) — part 1/2, lines 220..=252"
+  unbacked: CSE-0233: the objective names no ledger entry: "docs/LEDGER.md entry 4 (## The instrument layer (`crates/voxel-instrument`, 2026-09-29)) — part 2/2, lines 253..=253"
+  unbacked: CSE-0234: the objective names no ledger entry: "docs/LEDGER.md entry 5 (## The appearance layer (`crates/voxel-appearance`, 2026-09-29)) — part 1/3, lines 254..=307"
+  unbacked: CSE-0235: the objective names no ledger entry: "docs/LEDGER.md entry 5 (## The appearance layer (`crates/voxel-appearance`, 2026-09-29)) — part 2/3, lines 308..=326"
+  unbacked: CSE-0236: the objective names no ledger entry: "docs/LEDGER.md entry 5 (## The appearance layer (`crates/voxel-appearance`, 2026-09-29)) — part 3/3, lines 327..=327"
+  unbacked: CSE-0237: the objective names no ledger entry: "docs/LEDGER.md entry 6 (## The work layer (`crates/voxel-work`, 2026-09-29)) — part 1/4, lines 328..=389"
+  unbacked: CSE-0238: the objective names no ledger entry: "docs/LEDGER.md entry 6 (## The work layer (`crates/voxel-work`, 2026-09-29)) — part 2/4, lines 390..=442"
+  unbacked: CSE-0239: the objective names no ledger entry: "docs/LEDGER.md entry 6 (## The work layer (`crates/voxel-work`, 2026-09-29)) — part 3/4, lines 443..=453"
+  unbacked: CSE-0240: the objective names no ledger entry: "docs/LEDGER.md entry 6 (## The work layer (`crates/voxel-work`, 2026-09-29)) — part 4/4, lines 454..=454"
+  unbacked: CSE-0241: the objective names no ledger entry: "docs/LEDGER.md entry 7 (## The client (`crates/voxel-client`, 2026-09-29)) — part 1/4, lines 455..=513"
+  unbacked: CSE-0242: the objective names no ledger entry: "docs/LEDGER.md entry 7 (## The client (`crates/voxel-client`, 2026-09-29)) — part 2/4, lines 514..=577"
+  unbacked: CSE-0243: the objective names no ledger entry: "docs/LEDGER.md entry 7 (## The client (`crates/voxel-client`, 2026-09-29)) — part 3/4, lines 578..=591"
+  unbacked: CSE-0244: the objective names no ledger entry: "docs/LEDGER.md entry 7 (## The client (`crates/voxel-client`, 2026-09-29)) — part 4/4, lines 592..=592"
+  unbacked: CSE-0245: the objective names no ledger entry: "docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 1/6, lines 593..=647"
+  unbacked: CSE-0246: the objective names no ledger entry: "docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 2/6, lines 648..=704"
+  unbacked: CSE-0247: the objective names no ledger entry: "docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 3/6, lines 705..=756"
+  unbacked: CSE-0248: the objective names no ledger entry: "docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 4/6, lines 757..=812"
+  unbacked: CSE-0249: the objective names no ledger entry: "docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 5/6, lines 813..=851"
+  unbacked: CSE-0250: the objective names no ledger entry: "docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 6/6, lines 852..=852"
+  unbacked: CSE-0570: ledger entry C-106 has no verified successor filing
+test retire_the_old_tilers_broken_fragments_on_the_record has been running for over 60 seconds
+attached 214 of 214 filed retirement(s); 0 missing
+test retire_the_old_tilers_broken_fragments_on_the_record ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 174.83s
+

@@ -27,34 +27,33 @@
 //! rectangle they meant to put there; **a lane's** declared rectangle is a claim about the client,
 //! and a claim that no longer matches the client is not a claim.
 //!
-//! # The class set is open, and the hue is owed
+//! # The class set is open, and the hue is the class's
 //!
 //! The class vocabulary here is **not six entries frozen forever** — *more views do not mean more
 //! hues*, and a class is a kind of claim, not a colour. Classes are added as views arrive, and the
 //! count is **measured by a test** rather than asserted as a number.
 //!
-//! **No lane carries a hue today, and that is a named absence rather than a grey.** A lane is a mark
-//! drawn inside the shell's theme, and under **H-16.1** a *scheme* decides the chrome's form while a
-//! **colour theme** comes in over it. Neither `voxel-ui`'s nine roles nor the reference `Theme`
-//! record's seventeen rows declares a **lane / debug / annotation** row, so `LaneClass::hue` is
-//! [`None`] for every class, with the reason recorded on the type. Adding a hue without a theme row
-//! that carries it would be an invented colour, and this project refuses rather than defaults.
+//! **Every class declares a hue, and a lane draws in its class's hue.** The user's ruling,
+//! 2026-10-03: *"the hues per lane was nice."* The five values are **adapted from the ancestor's
+//! six-hue table** (the `shploingus-game` tree's `client/debug.rs` — Frame amber, Control violet,
+//! Tab blue, World green, Beacon warm white, Motion red) onto this tree's own classes: Structure ←
+//! Frame, Affordance ← Control, World ← World, Change ← Motion, State ← Beacon. **The ancestor's
+//! class semantics are not carried** — its Beacon (*"the one voxel the simulation moves each
+//! tick"*) and Motion were invented there and are not this tree's (the shapers are not one voxel
+//! per tick); only the colour values anchor to that table. The ancestor's Tab blue is not carried
+//! either: this tree folds the strip cells into `Affordance` (`shell::debug`'s `bar-cell`), so a
+//! sixth hue would be a hue for a class nothing is in — *more views do not mean more hues*.
+//!
+//! A lane is still measured **where it lands**: the class hue is contrast-measured over the
+//! surface the lane covers, because ink is measured where it lands and a lane that cannot be read
+//! is not a test. That is the one place the adapted values are checked; the hue is the class's
+//! declaration, not a per-call-site choice.
 
 use voxel_model::Digest;
-use voxel_ui::{Align, Element, Ink, Paint, Rect};
+use voxel_ui::{Align, Element, Paint, Rect};
 
 /// The ink step a lane is drawn in over `backdrop`, or `None` when **no** step clears the floor.
 ///
-/// **Walked from the strongest step down, and refused at the bottom rather than drawn anyway.** A
-/// lane drawn below the contrast floor is a lane that reports a region it cannot actually be read
-/// over, which is the same lie as a clamped bounds.
-fn readable_ink(backdrop: voxel_ui::Rgb) -> Option<voxel_ui::Rgb> {
-    Ink::ALL
-        .iter()
-        .map(|step| step.composited_over(backdrop))
-        .find(|ink| voxel_ui::contrast_over_backdrop(*ink, backdrop).is_ok())
-}
-
 /// The unit a lane's volume is measured in.
 ///
 /// **Two overflows in different units are different defects**, so the unit is part of the lane's
@@ -83,8 +82,8 @@ impl LaneUnit {
 /// The kind of claim a lane makes.
 ///
 /// **This is an open vocabulary, not a frozen list of hues.** A class says *what kind of thing is
-/// being claimed here*; the colour that carries it is a separate, theme-owned question that is
-/// **unanswered** (see the module docs and [`LaneClass::hue`]).
+/// being claimed here*; the hue that carries it is the class's own ([`LaneClass::hue`]), adapted
+/// rather than open — *more views do not mean more hues*.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 pub enum LaneClass {
     /// The shell's own structure: the bar, a window's title bar, its body, a pane.
@@ -130,14 +129,27 @@ impl LaneClass {
         }
     }
 
-    /// The hue this class is drawn in, or `None` — **and `None` is the honest answer today.**
+    /// **The hue this class is drawn in.**
     ///
-    /// Under **H-16.1** a *scheme* owns the chrome's form and a **colour theme** is composed over
-    /// it, and **no theme in this tree declares a lane row**. So there is no hue to draw and none
-    /// is invented: a lane draws as a labelled outline in the design system's own ink ladder, and
-    /// the colour arrives with the theme that owns it.
-    pub const fn hue(self) -> Option<&'static str> {
-        None
+    /// The user's ruling, 2026-10-03 — *"the hues per lane was nice"* — and the values are adapted
+    /// from the ancestor's six-hue table (see the module docs). Brightness is the anchor: the
+    /// ancestor's rationale is that its six read *"against the shell's own dark panels and against
+    /// a voxel of any colour in the terrain palette"*, which is exactly what a mark over the world
+    /// needs. `Change` is the reddest of the five because a change is the mark a reader most needs
+    /// to pick out of the picture — the vector change view draws in it.
+    pub const fn hue(self) -> voxel_ui::Rgb {
+        match self {
+            // Frame amber: [1.00, 0.74, 0.16].
+            LaneClass::Structure => voxel_ui::Rgb::new(255, 189, 41),
+            // Control violet: [0.72, 0.44, 1.00].
+            LaneClass::Affordance => voxel_ui::Rgb::new(184, 112, 255),
+            // World green: [0.30, 0.95, 0.52].
+            LaneClass::World => voxel_ui::Rgb::new(77, 242, 133),
+            // Motion red: [1.00, 0.32, 0.36].
+            LaneClass::Change => voxel_ui::Rgb::new(255, 82, 92),
+            // Beacon warm white: [1.00, 0.97, 0.82].
+            LaneClass::State => voxel_ui::Rgb::new(255, 247, 209),
+        }
     }
 }
 
@@ -417,14 +429,13 @@ impl LaneSet {
     /// The lanes as elements: a labelled outline per screen lane, drawn in the design system's own
     /// ink ladder.
     ///
-    /// **No hue, and that is the theme's row and not a grey** (see the module docs). The ink is
-    /// composited onto **the backdrop the lane actually lands on** and contrast-measured there,
-    /// because ink is measured where it lands rather than where it was authored — and a lane that
-    /// cannot be read over the surface it is drawn on is not a test. A lane whose ink cannot clear
-    /// the floor over the backdrop it was given is **skipped rather than drawn unreadable**.
+    /// **The class's hue, measured where the lane lands** (see the module docs). The hue is
+    /// contrast-measured over **the backdrop the lane actually covers**, because ink is measured
+    /// where it lands rather than where it was authored — and a lane that cannot be read over the
+    /// surface it is drawn on is **skipped rather than drawn unreadable**.
     ///
     /// **No palette role is asked for**: a lane is an annotation over the surface, not a surface,
-    /// and asking the palette for a role it does not admit would be a second opinion about colour.
+    /// and its colour is its class's declaration rather than a role the palette happens to admit.
     ///
     /// **World lanes are refused here rather than projected by guesswork**: the vector change view
     /// owns that projection (H-7.9) and this is the surface it draws into.
@@ -436,20 +447,23 @@ impl LaneSet {
             }
             // **Measured where this lane lands, not where another one lands.** A lane over a window
             // body and a lane over a title bar sit on different surfaces, and one backdrop for the
-            // whole set would be a number about neither.
-            let Some(ink) = readable_ink(backdrop_of(lane)) else {
+            // whole set would be a number about neither — so a hue that fails over one surface is
+            // still drawn where it reads.
+            let hue = lane.class.hue();
+            if voxel_ui::contrast_over_backdrop(hue, backdrop_of(lane)).is_err() {
                 continue;
-            };
+            }
+            let paint = Paint { rgb: hue, alpha: 1.0 };
             let Ok(edges) = lane.outline() else { continue };
             for edge in edges {
-                out.push(Element::Rule { rect: edge, paint: Paint { rgb: ink, alpha: 1.0 } });
+                out.push(Element::Rule { rect: edge, paint });
             }
             let Region::Rect(r) = lane.region else { continue };
             // The label sits **at the lane's own position**, not in a legend.
             out.push(Element::Text {
                 rect: Rect::new(r.x, r.y, r.width_dp, voxel_ui::text_size_dp()),
                 text: format!("{} {}", lane.class.label(), lane.label),
-                paint: Paint { rgb: ink, alpha: 1.0 },
+                paint,
                 size_dp: voxel_ui::text_size_dp(),
                 align: Align::Start,
             });
@@ -618,16 +632,33 @@ mod tests {
     }
 
     #[test]
-    fn every_class_is_named_and_no_class_carries_a_hue_yet() {
-        // **The absence is the point.** A hue per class is theme-owned (H-16.1) and no theme in
-        // this tree declares a lane row, so every class is `None` — and the test fails the moment
-        // one is invented without the theme row that carries it.
+    fn every_class_declares_a_distinct_hue_that_reads_over_the_surfaces_lanes_land_on() {
+        // The user's ruling, 2026-10-03: *"the hues per lane was nice."* The count is still
+        // measured here rather than asserted elsewhere, and a class added without a hue does not
+        // compile — the match in `hue` has no wildcard arm.
+        let mut seen: Vec<voxel_ui::Rgb> = Vec::new();
         for class in LaneClass::ALL {
             assert!(!class.slug().is_empty());
             assert!(!class.label().is_empty());
-            assert_eq!(class.hue(), None, "{} has a hue with no theme row", class.slug());
+            let hue = class.hue();
+            assert!(!seen.contains(&hue), "{} shares a hue with another class", class.slug());
+            seen.push(hue);
         }
         assert_eq!(LaneClass::ALL.len(), 5, "the class set is measured here, not asserted elsewhere");
+        // **Readable where lanes are drawn**, over the two backdrops `shell::debug` hands them:
+        // the window body and the title bar. A hue that failed here would be a lane the overlay
+        // silently skipped on every window.
+        let palette = voxel_ui::Palette::declared();
+        for role in [voxel_ui::Role::Surface, voxel_ui::Role::Chrome] {
+            let backdrop = palette.get(role).expect("the declared palette names both roles");
+            for class in LaneClass::ALL {
+                assert!(
+                    voxel_ui::contrast_over_backdrop(class.hue(), backdrop).is_ok(),
+                    "{} is unreadable over the surface its lanes land on",
+                    class.slug()
+                );
+            }
+        }
     }
 
     #[test]

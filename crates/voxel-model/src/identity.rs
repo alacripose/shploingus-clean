@@ -14,7 +14,7 @@ use core::fmt;
 use sha2::{Digest as _, Sha256};
 
 /// A 32-byte SHA-256 digest.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, musli::Encode, musli::Decode)]
 pub struct Digest([u8; 32]);
 
 impl Digest {
@@ -41,6 +41,21 @@ impl Digest {
             h.update(f);
         }
         Digest(h.finalize().into())
+    }
+
+    /// The sha256 of everything `reader` yields, taken in bounded chunks — the
+    /// streaming shape: the whole input is never held in memory to be hashed.
+    pub fn of_reader(mut reader: impl std::io::Read) -> std::io::Result<Self> {
+        let mut h = Sha256::new();
+        let mut chunk = [0u8; 8192];
+        loop {
+            let read = reader.read(&mut chunk)?;
+            if read == 0 {
+                break;
+            }
+            h.update(&chunk[..read]);
+        }
+        Ok(Digest(h.finalize().into()))
     }
 
     pub const fn as_bytes(&self) -> &[u8; 32] {

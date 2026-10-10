@@ -64,6 +64,7 @@ use std::path::Path;
 
 use voxel_model::{Refusal, RefusalKind, RefusalSet};
 
+use crate::census::Axis;
 use crate::features::Establishment;
 
 /// What the oracle said about one line. A **closed** vocabulary.
@@ -478,6 +479,39 @@ impl Oracle for UnreachableOracle {
                  pass",
                 request.subject, self.why
             ),
+        ));
+        Err(refusals)
+    }
+}
+
+/// **The skipped case, answered through the seam.**
+///
+/// H-14.1 made Laya the decision layer and this module's oracle *one implementation of the
+/// seam*; the DSL's own words for the component are *"`oracle::Oracle` — one implementation of
+/// the seam, with `oracle::UnreachableOracle` for the skipped case"*. So the oracle module does
+/// not only supply an instrument for the oracle path — it supplies the seam's skipped case too,
+/// which is why `decision::Unreachable` is **this type** rather than a second struct with the
+/// same shape and the same purpose. Two names for one meaning is D-07, and it is the defect
+/// that made `voxel_model::grant` move down rather than be duplicated.
+///
+/// **The refusal kind is `NoReading`, unchanged from the seam's own skip**, because this
+/// collapse is about *identity* and not about re-kind-ing refusals. `UnreachableOracle::judge`
+/// below is the oracle path and answers `OracleUnreachable`; a `Decider` that cannot be reached
+/// has *no reading*, which is the fact `refusal.rs` separates from the other absences. Changing
+/// the kind here would be a behaviour change smuggled inside a structural one.
+impl crate::decision::Decider for UnreachableOracle {
+    fn name(&self) -> &'static str {
+        "unreachable"
+    }
+
+    fn decide(
+        &self,
+        subject: crate::decision::Subject,
+    ) -> Result<crate::decision::Assessment, RefusalSet> {
+        let mut refusals = RefusalSet::new();
+        refusals.push(Refusal::owned(
+            RefusalKind::NoReading,
+            format!("{} could not be decided: {}", subject.name(), self.why),
         ));
         Err(refusals)
     }
@@ -1141,6 +1175,470 @@ pub const KNOWN_ANSWERS: &[KnownAnswer] = &[
         licensed: &["window", "shell", "mount"],
         expected: Verdict::NotBelongs,
     },
+    // ================= the tree's whole vocabulary, one pair per system (C-106) =================
+    // The user's ruling: *"the full vocab set is probably way higher than that … expand it's
+    // vocab … the thing has the 5 modes, an observer/civilian/citizen, the audio engine, the
+    // chunk system"*. Each pair below quotes the system's own declaration and licenses — or
+    // refuses — the line that names it.
+    // ---- the decision layer's five named parts (§98.8) ----
+    KnownAnswer {
+        subject: "decision.rs",
+        line: "decide(seam, matrix, decider, instrument, judge);",
+        recipe: "the decision layer's five named parts are the seam the matrix the in-project \
+                 decider the model instrument and the judge",
+        licensed: &[
+            "decide", "seam", "matrix", "decider", "instrument", "judge", "decision", "layer",
+            "part", "model", "project",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "decision.rs",
+        line: "decide(seam, matrix, decider, instrument, payroll);",
+        recipe: "the decision layer's five named parts are the seam the matrix the in-project \
+                 decider the model instrument and the judge",
+        licensed: &["decide", "seam", "matrix", "decider", "instrument", "judge"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the observer at the single commit point ----
+    KnownAnswer {
+        subject: "observer/recorder.rs",
+        line: "observer.record(act, commit_point);",
+        recipe: "the observer records every accepted act at the single commit point",
+        licensed: &[
+            "observer", "record", "act", "commit_point", "accepted", "commit", "point",
+            "single",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "observer/recorder.rs",
+        line: "observer.publish(act);",
+        recipe: "the observer records every accepted act at the single commit point",
+        licensed: &["observer", "act", "commit", "point"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the civilian's governed book ----
+    KnownAnswer {
+        subject: "civilian/agency/action.rs",
+        line: "book.apply_transition(permission);",
+        recipe: "every machine act passes through the governed book under a write permission",
+        licensed: &[
+            "book", "apply_transition", "permission", "machine", "act", "pass", "governed",
+            "write",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "civilian/agency/action.rs",
+        line: "book.apply_payroll(permission);",
+        recipe: "every machine act passes through the governed book under a write permission",
+        licensed: &["book", "permission", "machine", "act", "governed", "write"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the audio engine (voxel-audio's own header) ----
+    KnownAnswer {
+        subject: "voxel-audio/src/lib.rs",
+        line: "synth.sample(seed, onset, length);",
+        recipe: "synthesis is arithmetic with no audio dependency and every sample is a \
+                 function of seed onset and length",
+        licensed: &[
+            "synth", "synthesis", "sample", "seed", "onset", "length", "arithmetic", "audio",
+            "dependency", "function",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "voxel-audio/src/lib.rs",
+        line: "synth.sample(seed, onset, reverb);",
+        recipe: "synthesis is arithmetic with no audio dependency and every sample is a \
+                 function of seed onset and length",
+        licensed: &["synth", "sample", "seed", "onset", "length"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the chunk system (voxel-stream's own header) ----
+    KnownAnswer {
+        subject: "voxel-stream/src/world_source.rs",
+        line: "source.material_at(voxel);",
+        recipe: "the world source is the one place where an abstract spec becomes concrete \
+                 voxels",
+        licensed: &[
+            "source", "material_at", "voxel", "world", "place", "abstract", "spec",
+            "concrete", "voxels",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "voxel-stream/src/world_source.rs",
+        line: "source.terrain_at(voxel);",
+        recipe: "the world source is the one place where an abstract spec becomes concrete \
+                 voxels",
+        licensed: &["source", "voxel", "world", "concrete"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the mesher (voxel-mesh's own header) ----
+    KnownAnswer {
+        subject: "voxel-mesh/src/octree.rs",
+        line: "octree.insert(chunk, voxels);",
+        recipe: "the octree is canonical and two runs that build the same chunk produce the \
+                 same digest",
+        licensed: &[
+            "octree", "insert", "chunk", "voxels", "canonical", "run", "build", "same",
+            "digest", "produce", "two",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "voxel-mesh/src/octree.rs",
+        line: "octree.insert(chunk, sprites);",
+        recipe: "the octree is canonical and two runs that build the same chunk produce the \
+                 same digest",
+        licensed: &["octree", "insert", "chunk", "canonical", "digest"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the work pool (voxel-work's own header) ----
+    KnownAnswer {
+        subject: "voxel-work/src/pool.rs",
+        line: "pool.collect(mesh);",
+        recipe: "worker count is a performance knob and never changes output",
+        licensed: &[
+            "pool", "collect", "mesh", "worker", "count", "performance", "knob", "change",
+            "output", "never",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "voxel-work/src/pool.rs",
+        line: "pool.collect(bananas);",
+        recipe: "worker count is a performance knob and never changes output",
+        licensed: &["pool", "collect", "worker", "count", "performance"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the noise (voxel-noise's own header) ----
+    KnownAnswer {
+        subject: "voxel-noise/src/rng.rs",
+        line: "rng.next(seed);",
+        recipe: "the generator evaluates a chunk in any thread in any order",
+        licensed: &[
+            "rng", "next", "seed", "generator", "evaluate", "chunk", "thread", "order",
+            "any",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "voxel-noise/src/rng.rs",
+        line: "rng.next(coin);",
+        recipe: "the generator evaluates a chunk in any thread in any order",
+        licensed: &["rng", "next", "generator", "chunk", "thread"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the instruments (voxel-instrument's own header) ----
+    KnownAnswer {
+        subject: "voxel-instrument/src/gauge_wall.rs",
+        line: "gauge.evaluate(sensor);",
+        recipe: "an unmeasured gauge is not a satisfied gauge",
+        licensed: &["gauge", "evaluate", "sensor", "unmeasured", "satisfied"],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "voxel-instrument/src/gauge_wall.rs",
+        line: "gauge.evaluate(thermometer);",
+        recipe: "an unmeasured gauge is not a satisfied gauge",
+        licensed: &["gauge", "evaluate", "unmeasured", "satisfied"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the design system (voxel-ui's own header) ----
+    KnownAnswer {
+        subject: "voxel-ui/src/lib.rs",
+        line: "palette.get(role);",
+        recipe: "every geometry constant is labelled and a missing value is never turned into \
+                 an invented one",
+        licensed: &[
+            "palette", "get", "role", "geometry", "constant", "label", "missing", "value",
+            "invent",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "voxel-ui/src/lib.rs",
+        line: "palette.get(swatch);",
+        recipe: "every geometry constant is labelled and a missing value is never turned into \
+                 an invented one",
+        licensed: &["palette", "get", "constant", "value"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the console's five levels ----
+    KnownAnswer {
+        subject: "shell/console.rs",
+        line: "console.log(level, subject);",
+        recipe: "the console's levels are five and closed",
+        licensed: &["console", "log", "level", "subject", "five", "closed"],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "shell/console.rs",
+        line: "console.log(severity, subject);",
+        recipe: "the console's levels are five and closed",
+        licensed: &["console", "log", "subject", "five", "closed"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the hud ----
+    KnownAnswer {
+        subject: "shell/hud.rs",
+        line: "hud.pin(window);",
+        recipe: "the hud is a pinned subset that stays visible while the shell is hidden",
+        licensed: &[
+            "hud", "pin", "pinned", "window", "subset", "visible", "shell", "hidden",
+            "stay",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "shell/hud.rs",
+        line: "hud.stick(window);",
+        recipe: "the hud is a pinned subset that stays visible while the shell is hidden",
+        licensed: &["hud", "window", "subset", "visible", "shell"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the agent's inbox ----
+    KnownAnswer {
+        subject: "mount.rs",
+        line: "inbox.notify(ticket, package);",
+        recipe: "the inbox is work the agent owes until it is read",
+        licensed: &[
+            "inbox", "notify", "ticket", "package", "work", "agent", "owe", "read",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "mount.rs",
+        line: "inbox.shout(ticket, package);",
+        recipe: "the inbox is work the agent owes until it is read",
+        licensed: &["inbox", "ticket", "package", "agent"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the back-compiler ----
+    KnownAnswer {
+        subject: "compiler.rs",
+        line: "board.back_compile(solution);",
+        recipe: "the board's tickets back-compile into solutions and a solution is what one \
+                 ticket asks the arrangement to contain",
+        licensed: &[
+            "board", "back_compile", "solution", "ticket", "back", "compile", "arrangement",
+            "contain", "ask",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "compiler.rs",
+        line: "board.back_compile(trampoline);",
+        recipe: "the board's tickets back-compile into solutions and a solution is what one \
+                 ticket asks the arrangement to contain",
+        licensed: &["board", "back_compile", "solution", "ticket", "arrangement"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the recipe's rows ----
+    KnownAnswer {
+        subject: "recipe.rs",
+        line: "recipe.row(id, text);",
+        recipe: "a recipe that declares no window and no row declares nothing",
+        licensed: &["recipe", "row", "id", "text", "window", "declare", "nothing"],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "recipe.rs",
+        line: "recipe.sock(id, text);",
+        recipe: "a recipe that declares no window and no row declares nothing",
+        licensed: &["recipe", "id", "text", "window"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the filing chokepoint ----
+    KnownAnswer {
+        subject: "filing.rs",
+        line: "filing.grow(records);",
+        recipe: "one writer computes the linkage so a second record cannot form",
+        licensed: &[
+            "filing", "grow", "records", "writer", "compute", "linkage", "second", "record",
+                        "form",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "filing.rs",
+        line: "filing.append(payroll);",
+        recipe: "one writer computes the linkage so a second record cannot form",
+        licensed: &["filing", "writer", "linkage", "record"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the compiler's audit ----
+    KnownAnswer {
+        subject: "compiler.rs",
+        line: "auditor.gate(stage, grant);",
+        recipe: "a denied stage stops the compile and there is no compile-anyway path",
+        licensed: &[
+            "auditor", "gate", "stage", "grant", "denied", "compile", "anyway", "path",
+            "stop",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "compiler.rs",
+        line: "auditor.gate(stage, sausage);",
+        recipe: "a denied stage stops the compile and there is no compile-anyway path",
+        licensed: &["auditor", "gate", "stage", "denied", "compile"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the evidence origins ----
+    KnownAnswer {
+        subject: "ticket.rs",
+        line: "proof.origin(read_back);",
+        recipe: "the three evidence origins are oracle read-back and self-report",
+        licensed: &[
+            "proof", "origin", "read_back", "read", "back", "three", "evidence", "oracle",
+            "self", "report",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "ticket.rs",
+        line: "proof.origin(seven);",
+        recipe: "the three evidence origins are oracle read-back and self-report",
+        licensed: &["proof", "origin", "evidence", "oracle", "report"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the axis ladders ----
+    KnownAnswer {
+        subject: "axis.rs",
+        line: "ladder.graduate(unit);",
+        recipe: "each ladder its own type and cross-axis and scalar reduction refuse",
+        licensed: &[
+            "ladder", "graduate", "unit", "each", "type", "cross", "axis", "scalar",
+            "reduction", "refuse",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "axis.rs",
+        line: "ladder.graduate(banana);",
+        recipe: "each ladder its own type and cross-axis and scalar reduction refuse",
+        licensed: &["ladder", "graduate", "type", "axis"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the census ----
+    KnownAnswer {
+        subject: "census.rs",
+        line: "census.check_coverage();",
+        recipe: "a report full of unchecked reads as complete to anyone who does not know the \
+                 difference",
+        licensed: &[
+            "census", "check_coverage", "check", "coverage", "unchecked", "report",
+            "complete", "difference", "know",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "census.rs",
+        line: "census.check_trophy();",
+        recipe: "a report full of unchecked reads as complete to anyone who does not know the \
+                 difference",
+        licensed: &["census", "check", "coverage", "unchecked", "report"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the features ----
+    KnownAnswer {
+        subject: "features.rs",
+        line: "features.evaluate(witness);",
+        recipe: "a feature with no witness or no row is a compile error",
+        licensed: &[
+            "features", "evaluate", "witness", "feature", "row", "compile", "error",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "features.rs",
+        line: "features.evaluate(sock);",
+        recipe: "a feature with no witness or no row is a compile error",
+        licensed: &["features", "evaluate", "feature", "row"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the game's judgement, written to the queue ----
+    KnownAnswer {
+        subject: "notifications.rs",
+        line: "evaluation.write_queue(notification);",
+        recipe: "the game asks laya for this run's judgement and the queue stays laya's own",
+        licensed: &[
+            "evaluation", "write_queue", "write", "queue", "notification", "game", "ask",
+            "laya", "judgement", "own", "run",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "notifications.rs",
+        line: "evaluation.write_queue(marmalade);",
+        recipe: "the game asks laya for this run's judgement and the queue stays laya's own",
+        licensed: &["evaluation", "write_queue", "queue", "game", "laya"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the chain and its seasons ----
+    KnownAnswer {
+        subject: "chain.rs",
+        line: "chain.append(namespace, kind, question);",
+        recipe: "the one append-only record is the chain and a season is one of winter spring \
+                 summer autumn",
+        licensed: &[
+            "chain", "append", "namespace", "kind", "question", "record", "season", "winter",
+            "spring", "summer", "autumn",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "chain.rs",
+        line: "chain.append(namespace, kind, holiday);",
+        recipe: "the one append-only record is the chain and a season is one of winter spring \
+                 summer autumn",
+        licensed: &["chain", "append", "namespace", "kind", "record", "season"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the plan's milestones and blockers ----
+    KnownAnswer {
+        subject: "plan.rs",
+        line: "milestone.deliverable();",
+        recipe: "a milestone is ordered work with a finish condition and a blocker is a rule \
+                 that stops work",
+        licensed: &[
+            "milestone", "deliverable", "ordered", "work", "finish", "condition", "blocker",
+            "rule", "stops",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "plan.rs",
+        line: "milestone.sausage();",
+        recipe: "a milestone is ordered work with a finish condition and a blocker is a rule \
+                 that stops work",
+        licensed: &["milestone", "work", "finish", "condition"],
+        expected: Verdict::NotBelongs,
+    },
+    // ---- the design system's four buckets ----
+    KnownAnswer {
+        subject: "lib.rs",
+        line: "constant.bucket(project_extension);",
+        recipe: "every constant carries a label inside it and the four buckets are md1 rule \
+                 md1 example platform translation and project extension",
+        licensed: &[
+            "constant", "bucket", "project_extension", "project", "extension", "label",
+            "four", "md1", "rule", "example", "platform", "translation", "carry", "inside",
+        ],
+        expected: Verdict::Belongs,
+    },
+    KnownAnswer {
+        subject: "lib.rs",
+        line: "constant.bucket(trophy);",
+        recipe: "every constant carries a label inside it and the four buckets are md1 rule \
+                 md1 example platform translation and project extension",
+        licensed: &["constant", "bucket", "label", "four", "md1", "rule", "example"],
+        expected: Verdict::NotBelongs,
+    },
 ];
 
 /// Calibrate the structural judge against the alpha's own known-answer set.
@@ -1179,9 +1677,412 @@ pub fn gate(root: &Path) -> (Establishment, CalibrationReport, RefusalSet) {
     (report.establishment, report, refusals)
 }
 
+// ============================================================================
+// The model instrument: the seam's second decider
+// ============================================================================
+
+/// The model instrument's own name, for the record.
+///
+/// **It is the structural judge's name, because that is what ran**: the instrument is
+/// [`StructuralJudge`] reached through the seam. `TwoPass::report` prints it, and the build
+/// gate measures `oracle-is-laya` from the pass's own decider rather than printing a literal.
+pub const MODEL_NAME: &str = "structural";
+
+/// **The model instrument: the calibrated judge, reached through the seam.**
+///
+/// H-14.2's second pass is an instrument of the same kind as the first — a
+/// [`crate::decision::Decider`] over the same [`crate::decision::Subject`] vocabulary — and
+/// this is it. It reads **the record's own declaration of a subject** as the judge's recipe
+/// and **the tree's own evidence for it** as the line, and answers through [`StructuralJudge`],
+/// the instrument [`calibrate_structural`] measures on [`KNOWN_ANSWERS`]. Every reading
+/// therefore travels with the calibration that says whether it may be quoted at all:
+/// *"a run that has not been calibrated in the same pass is refused, and a `not_belongs`
+/// reading is refused unless a human's reason is recorded in the same act"* (H-14.2).
+///
+/// # The four rules, and they are [`lint`]'s own
+///
+/// * an **uncalibrated** run decides nothing — the guard runs here **before any file is
+///   read**, so an unmeasured instrument cannot even look at the tree;
+/// * a **`no_reading`** is an absence: the instrument declining to read, which is not a
+///   verdict, and the seam reports it as an assessment that was not reached;
+/// * a **`not_belongs`** without a human's reason recorded in the same act is refused by
+///   [`RefusalKind::UnreasonedOverride`] — the model may not convict on its own word;
+/// * a **`not_belongs` with a reason** is a reading: a `Refused` assessment that *was*
+///   reached, which is the disagreement the two passes exist to preserve.
+///
+/// # What it reads, and what it refuses to invent
+///
+/// The recipe is always text the record already carries — a `FEATURES` row's `declared_by`
+/// and `means`, a `NumberClaim`'s document and sentence, a ladder's witness and token, the
+/// document `census` found defining a crate. The line is always text the tree already
+/// carries — the comment prose in a witness file, a crate's whole comment prose for the
+/// **doc stage** (*dissecting the prose comment blocks in the code*), the verbatim line of a
+/// document, the witness line that carries a ladder's token.
+///
+/// **Where a subject carries no prose, this instrument says so instead of rendering a fact
+/// into fake prose.** An axis read as `named: true` is a fact, not a sentence; turning it
+/// into text would hand the judge words nobody wrote and measure the rendering rather than
+/// the tree. The absence is named, and a reader of the pass sees which subjects have a second
+/// reading and which do not.
+pub struct Model<'a> {
+    root: &'a Path,
+    calibration: Calibration,
+    /// A human's reason, recorded in the same act, allowing a negative reading to be kept as
+    /// a disagreement. **`None` by default: the gate does not manufacture reasons.**
+    reason: Option<String>,
+}
+
+impl<'a> Model<'a> {
+    /// The instrument over a workspace, calibrated by the measurement this module already
+    /// runs — not by a flag anyone can set.
+    pub fn calibrated(root: &'a Path) -> Self {
+        Model { root, calibration: calibrate_structural().calibration, reason: None }
+    }
+
+    /// The instrument with **no measurement taken**: it refuses every subject, which is what
+    /// an uncalibrated run must do. Exists so the refusal is a test rather than a hope.
+    pub fn unmeasured(root: &'a Path) -> Self {
+        Model { root, calibration: Calibration::unmeasured(), reason: None }
+    }
+
+    /// Record a human's reason for this run, letting a negative reading be kept as a
+    /// disagreement rather than refused by the [`RefusalKind::UnreasonedOverride`] rule.
+    pub fn with_reason(mut self, why: impl Into<String>) -> Self {
+        self.reason = Some(why.into());
+        self
+    }
+
+    /// Whether anything this instrument reads in this run may be quoted.
+    pub fn is_quotable(&self) -> bool {
+        self.calibration.is_quotable()
+    }
+
+    /// The measurement every reading travels with.
+    pub fn calibration(&self) -> &Calibration {
+        &self.calibration
+    }
+
+    /// **Read the declaration and the evidence for one subject**, or refuse to read — and
+    /// every refusal names which of the two was missing.
+    fn request(&self, subject: crate::decision::Subject) -> Result<LintRequest, RefusalSet> {
+        use crate::decision::Subject;
+        match subject {
+            Subject::Feature(feature) => {
+                let Some(row) = crate::features::FEATURES
+                    .iter()
+                    .find(|row| row.feature == feature)
+                else {
+                    return Err(self.absent(
+                        subject,
+                        "the feature table carries no row for it, so there is no declaration \
+                         to read",
+                    ));
+                };
+                let witness = crate::features::witness_of(feature);
+                let text = std::fs::read_to_string(self.root.join(witness)).map_err(|failure| {
+                    self.absent(
+                        subject,
+                        &format!(
+                            "the witness at {witness} could not be read ({failure}), so there \
+                             is no evidence to read"
+                        ),
+                    )
+                })?;
+                let prose = crate::bloat::comment_lines(&[(
+                    std::path::PathBuf::from(witness),
+                    text,
+                )]);
+                if prose.is_empty() {
+                    return Err(self.absent(
+                        subject,
+                        &format!(
+                            "the witness at {witness} carries no comment prose, and this \
+                             instrument reads prose rather than asserting presence"
+                        ),
+                    ));
+                }
+                Ok(LintRequest {
+                    subject: subject.name(),
+                    line: prose.join("\n"),
+                    recipe: format!("{}: {}", row.declared_by, row.means),
+                    licensed: terms(&format!(
+                        "{} {} {}",
+                        row.declared_by,
+                        row.means,
+                        feature.name()
+                    )),
+                })
+            }
+            Subject::Axis { crate_, axis: Axis::Documented } => {
+                let observations = crate::census::observe(self.root)?;
+                let Some(observed) =
+                    observations.iter().find(|observed| observed.crate_ == crate_)
+                else {
+                    return Err(self.absent(
+                        subject,
+                        &format!("the census returned no observation for {}", crate_.name()),
+                    ));
+                };
+                let Some(prose) = &observed.prose else {
+                    return Err(self.absent(
+                        subject,
+                        &format!(
+                            "{} has no readable source, so where its rationale lives was not \
+                             measured",
+                            crate_.name()
+                        ),
+                    ));
+                };
+                let covered = crate::provenance::covered_files(self.root);
+                let Some(sources) = crate::census::read_sources(&covered, crate_, self.root)
+                else {
+                    return Err(self.absent(
+                        subject,
+                        &format!("{}'s sources could not be read", crate_.name()),
+                    ));
+                };
+                let lines = crate::bloat::comment_lines(&sources.read);
+                if lines.is_empty() {
+                    return Err(self.absent(
+                        subject,
+                        &format!(
+                            "{} carries no comment prose to dissect — the doc stage has \
+                             nothing to read",
+                            crate_.name()
+                        ),
+                    ));
+                }
+                let Some(document) = &prose.document else {
+                    // **The state the sixth axis exists to name**, said for the second
+                    // instrument rather than only counted: the prose has no home to belong to.
+                    return Err(self.absent(
+                        subject,
+                        &format!(
+                            "{} carries comment prose in its sources and no document under \
+                             docs/ defines it — no heading there begins with its name. The \
+                             prose has no declaration to belong to, which is the state this \
+                             axis exists to name",
+                            crate_.name()
+                        ),
+                    ));
+                };
+                let text = std::fs::read_to_string(self.root.join(document)).map_err(|failure| {
+                    self.absent(
+                        subject,
+                        &format!("{document} could not be read ({failure})"),
+                    )
+                })?;
+                Ok(LintRequest {
+                    subject: subject.name(),
+                    line: lines.join("\n"),
+                    recipe: text,
+                    licensed: terms(crate_.name()),
+                })
+            }
+            Subject::Axis { crate_, axis } => Err(self.absent(
+                subject,
+                &format!(
+                    "the {} axis was read as a fact about {}, not as prose; this instrument \
+                     reads declarations against text, and this axis carries no text to read",
+                    axis.name(),
+                    crate_.name()
+                ),
+            )),
+            Subject::Number(claim) => {
+                let observations = crate::numbers::observe(self.root);
+                let Some(observed) = observations
+                    .iter()
+                    .find(|observed| observed.claim.name == claim.name)
+                else {
+                    return Err(self.absent(
+                        subject,
+                        "the numbers table returned no observation for it",
+                    ));
+                };
+                let Some(line) = &observed.line else {
+                    return Err(self.absent(
+                        subject,
+                        &format!(
+                            "{} carries no line with {:?}, so there is nothing to judge",
+                            claim.document, claim.sentence
+                        ),
+                    ));
+                };
+                Ok(LintRequest {
+                    subject: subject.name(),
+                    line: line.clone(),
+                    recipe: format!(
+                        "{} must carry {:?}, and the record expects {:?}",
+                        claim.document,
+                        claim.sentence,
+                        claim.expected()
+                    ),
+                    licensed: terms(&format!(
+                        "{} {} {}",
+                        claim.document,
+                        claim.sentence,
+                        claim.expected()
+                    )),
+                })
+            }
+            Subject::Civilian(ladder) => {
+                let observations = crate::civilians::observe(self.root);
+                let Some(observed) =
+                    observations.iter().find(|observed| observed.ladder == ladder)
+                else {
+                    return Err(self.absent(
+                        subject,
+                        "the ladder table returned no observation for it",
+                    ));
+                };
+                if !observed.readable {
+                    return Err(self.absent(
+                        subject,
+                        &format!(
+                            "{} could not be read, so whether the record carries {:?} is \
+                             unknown",
+                            observed.witness, observed.token
+                        ),
+                    ));
+                }
+                let text = std::fs::read_to_string(self.root.join(observed.witness))
+                    .map_err(|failure| {
+                        self.absent(
+                            subject,
+                            &format!("{} could not be read ({failure})", observed.witness),
+                        )
+                    })?;
+                let Some(line) = text.lines().find(|line| line.contains(observed.token))
+                else {
+                    return Err(self.absent(
+                        subject,
+                        &format!(
+                            "{} does not carry {:?}, which is the declaration this ladder \
+                             rests on",
+                            observed.witness, observed.token
+                        ),
+                    ));
+                };
+                Ok(LintRequest {
+                    subject: subject.name(),
+                    line: line.to_string(),
+                    recipe: format!(
+                        "{}: the record carries {:?} in {}",
+                        ladder.name(),
+                        observed.token,
+                        observed.witness
+                    ),
+                    licensed: terms(&format!(
+                        "{} {} {}",
+                        ladder.name(),
+                        observed.token,
+                        observed.witness
+                    )),
+                })
+            }
+            Subject::Tool(row) => Err(self.absent(
+                subject,
+                &format!(
+                    "{} is a row of this build's own tool table, and this instrument reads \
+                     declarations against text: the surface is declared in code and the row's \
+                     class is the matrix's own answer, so there is no document here to read it \
+                     against. The deterministic decider is what decides this subject, and an \
+                     absence is the right reading for an instrument with nothing to read",
+                    row.name
+                ),
+            )),
+            Subject::Recipe => Err(self.absent(
+                subject,
+                "the arrangement is its own declaration — the recipe's source is both the \
+                 claim and the evidence — so a judge reading one against the other would \
+                 license itself. The codec's compile-then-load is what decides this subject, \
+                 and the model's reading waits for a declaration of the arrangement it can be \
+                 read against",
+            )),
+        }
+    }
+
+    /// The refusal for a subject this instrument was not handed anything to read.
+    ///
+    /// **A named absence, never a default**: the reason says which half — declaration or
+    /// evidence — was missing, so the report distinguishes *"the tree has no prose here"*
+    /// from *"the record declares nothing to read it against"*.
+    fn absent(&self, subject: crate::decision::Subject, why: &str) -> RefusalSet {
+        let mut refusals = RefusalSet::new();
+        refusals.refuse(RefusalKind::NoReading, format!("{}: {why}", subject.name()));
+        refusals
+    }
+}
+
+impl crate::decision::Decider for Model<'_> {
+    fn name(&self) -> &'static str {
+        MODEL_NAME
+    }
+
+    fn decide(
+        &self,
+        subject: crate::decision::Subject,
+    ) -> Result<crate::decision::Assessment, RefusalSet> {
+        // **Rule 1, before any file is read.** An uncalibrated run cannot reach the judge —
+        // that is `lint`'s own order — and it must not reach the tree either, so the guard
+        // is here rather than only inside `lint`.
+        if !self.calibration.is_quotable() {
+            let mut refusals = RefusalSet::new();
+            refusals.refuse(
+                RefusalKind::UncalibratedOracle,
+                format!(
+                    "{}: the model instrument has not been calibrated in this run ({} \
+                     known-answer decision(s)), so nothing it says may be quoted — not even \
+                     which subjects it would have read",
+                    subject.name(),
+                    self.calibration.known_answers
+                ),
+            );
+            return Err(refusals);
+        }
+
+        let request = self.request(subject)?;
+        let finding =
+            lint(&StructuralJudge, &request, &self.calibration, self.reason.as_deref())?;
+        let (state, reason) = match finding.verdict {
+            // A positive reading is the instrument's answer, and it owes no catch.
+            Verdict::Belongs => (Establishment::Active, None),
+            // A negative reading only arrives here with a reason recorded in the same act
+            // (`lint` refuses the alternative), and it is a reading that was **reached** —
+            // the disagreement the two passes exist to preserve.
+            Verdict::NotBelongs => (
+                Establishment::Refused,
+                Some(format!(
+                    "the model read the evidence as not belonging to the declaration{}. The \
+                     reason was recorded in the same act: {}",
+                    match culprits(&StructuralJudge, &request) {
+                        Some(found) => format!(
+                            " (the terms the declaration does not license: {})",
+                            found.join(", ")
+                        ),
+                        None => String::new(),
+                    },
+                    self.reason.as_deref().unwrap_or("no reason recorded"),
+                )),
+            ),
+            Verdict::NoReading => {
+                unreachable!("`lint` refuses a no_reading rather than returning it")
+            }
+        };
+        Ok(crate::decision::Assessment {
+            subject: subject.name(),
+            state,
+            instrument: self.name(),
+            reached: true,
+            reason,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decision::Decider;
 
     /// A double that says whatever a test needs it to say.
     struct Scripted(Option<Verdict>);
@@ -1568,5 +2469,146 @@ mod tests {
         for refusal in refusals.all() {
             assert!(!refusal.detail().is_empty(), "a refusal without a reason is not actionable");
         }
+    }
+
+    // ---- the model instrument (BLD-0025) ------------------------------------
+
+    /// A directory this test owns and removes, so a failed run cannot leave a tree behind.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("shploingus-oracle-model-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("the scratch root");
+        path
+    }
+
+    #[test]
+    fn the_model_s_name_is_the_judge_s_name_rather_than_a_second_name_for_it() {
+        // D-07: a second name for one meaning is the defect. The model instrument **is** the
+        // structural judge reached through the seam, so it answers with the judge's own name —
+        // and `build.rs` measures `oracle-is-laya` from that name rather than printing a literal.
+        assert_eq!(MODEL_NAME, StructuralJudge.name());
+    }
+
+    #[test]
+    fn an_unmeasured_model_refuses_every_subject_before_reading_anything() {
+        // **The guard is the instrument's, not the tree's.** The root does not exist: if the
+        // model read anything before checking the calibration this test would panic instead of
+        // refusing — and the order is `lint`'s own rule, calibration before the judge.
+        let root = std::path::Path::new("a-root-the-model-must-not-read");
+        let model = Model::unmeasured(root);
+        assert!(!model.is_quotable());
+        let pass = crate::decision::audit(&model);
+        assert_eq!(pass.assessments.len(), crate::decision::SUBJECT_COUNT);
+        for assessment in &pass.assessments {
+            assert!(
+                !assessment.reached,
+                "{}: an uncalibrated run decided something",
+                assessment.subject
+            );
+            assert_eq!(assessment.state, Establishment::Refused);
+            assert!(assessment.reason.is_some(), "{}: no reason", assessment.subject);
+        }
+        assert!(
+            !pass.refusals.all().is_empty(),
+            "the refusals are the absence, recorded"
+        );
+    }
+
+    #[test]
+    fn a_negative_reading_is_refused_without_a_reason_and_kept_with_one() {
+        let root = scratch("negative-reading");
+        let witness = root.join(crate::features::witness_of(crate::features::Feature::PinnedHud));
+        std::fs::create_dir_all(witness.parent().expect("a parent")).expect("the witness tree");
+        std::fs::write(
+            &witness,
+            "//! xylophone\n", // a word the feature's declaration never licenses
+        )
+        .expect("the witness writes");
+
+        let subject = crate::decision::Subject::Feature(crate::features::Feature::PinnedHud);
+
+        // Without a human's reason, the conviction is refused by name — the model may not
+        // convict on its own word.
+        let refusals = Model::calibrated(&root)
+            .decide(subject)
+            .expect_err("the model may not convict on its own word");
+        assert!(
+            refusals
+                .all()
+                .iter()
+                .any(|refusal| refusal.kind() == RefusalKind::UnreasonedOverride),
+            "{refusals}"
+        );
+
+        // With a reason recorded in the same act, the negative reading is kept: a `Refused`
+        // assessment that was **reached**, which is the disagreement the two passes preserve.
+        let assessment = Model::calibrated(&root)
+            .with_reason("the witness describes a shape the record has not ruled")
+            .decide(subject)
+            .expect("a reason is the one door through");
+        assert!(assessment.reached);
+        assert_eq!(assessment.state, Establishment::Refused);
+        assert!(
+            assessment
+                .reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains("xylophone"),
+            "the conviction names the word it convicted: {:?}",
+            assessment.reason
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_model_pass_offers_every_subject_and_names_what_it_could_not_read() {
+        // **The pass over the real tree, with its reading printed.** The contract is
+        // structural — every subject offered, every reached reading positive, every absence
+        // named — and the *set* of readings is the measurement, printed for the record rather
+        // than asserted into a number that would drift from the tree.
+        let root = crate::features::workspace_root(std::path::Path::new(env!("CARGO_MANIFEST_DIR")))
+            .expect("a workspace root above the crate");
+        let model = Model::calibrated(&root);
+        assert!(
+            model.is_quotable(),
+            "the measured bar is accuracy 1.0 against a majority class of 0.56"
+        );
+        let pass = crate::decision::audit(&model);
+        assert_eq!(pass.assessments.len(), crate::decision::SUBJECT_COUNT);
+        let mut reached = 0usize;
+        for assessment in &pass.assessments {
+            if assessment.reached {
+                reached += 1;
+                assert_eq!(
+                    assessment.state,
+                    Establishment::Active,
+                    "{}: a reading that is not an absence is a positive one",
+                    assessment.subject
+                );
+                println!("read\t{}\t{}", assessment.subject, assessment.state.slug());
+            } else {
+                assert_eq!(assessment.state, Establishment::Refused);
+                assert!(
+                    assessment.reason.is_some(),
+                    "{}: an absence must name itself",
+                    assessment.subject
+                );
+                println!(
+                    "absent\t{}\t{}",
+                    assessment.subject,
+                    assessment.reason.as_deref().unwrap_or("")
+                );
+            }
+        }
+        println!(
+            "the model instrument read {reached} of {} subject(s)",
+            pass.assessments.len()
+        );
+        assert!(
+            reached > 0,
+            "a second pass that decides nothing is not a second instrument"
+        );
     }
 }

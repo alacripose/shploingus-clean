@@ -1,0 +1,1488 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libversion_check-83b85b2dd80bcad7.rmeta
+warning: function `signed_area` is never used
+   --> crates\voxel-mesh\src\mesh.rs:858:4
+    |
+858 | fn signed_area(corners: &[[i16; 2]]) -> i64 {
+    |    ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `synthetic_for_test` is never used
+   --> crates\voxel-shapers\src\field_sampler.rs:502:19
+    |
+464 | impl FieldSpec {
+    | -------------- associated function in this implementation
+...
+502 |     pub(crate) fn synthetic_for_test(
+    |                   ^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-mesh` (lib) generated 1 warning
+warning: `voxel-shapers` (lib test) generated 1 warning
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libvoxel_model-9a369128f8379b65.rmeta
+warning: unused import: `voxel_model::MaterialId`
+  --> crates\voxel-client\src\scene.rs:37:5
+   |
+37 | use voxel_model::MaterialId;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `wireframe`
+   --> crates\voxel-client\src\world.rs:896:9
+    |
+896 |         wireframe: bool,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_wireframe`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `CHUNK_SIDE` and `MaterialId`
+   --> crates\voxel-client\src\scene.rs:516:23
+    |
+516 |     use voxel_model::{MaterialId, CHUNK_SIDE};
+    |                       ^^^^^^^^^^  ^^^^^^^^^^
+
+warning: function `empty_light` is never used
+   --> crates\voxel-client\src\scene.rs:520:8
+    |
+520 |     fn empty_light(_x: i32, _y: i32, _z: i32) -> Option<[f32; 6]> {
+    |        ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `mesh_at` is never used
+   --> crates\voxel-client\src\scene.rs:524:8
+    |
+524 |     fn mesh_at(x: i32, y: i32, z: i32) -> Mesh {
+    |        ^^^^^^^
+
+warning: `voxel-client` (lib) generated 2 warnings (run `cargo fix --lib -p voxel-client` to apply 2 suggestions)
+warning: `voxel-client` (lib test) generated 5 warnings (2 duplicates) (run `cargo fix --lib -p voxel-client --tests` to apply 1 suggestion)
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.68s
+     Running unittests src\main.rs (target\debug\deps\shploingus-641f3d1d13b5842e.exe)
+
+running 1 test
+test tests::a_press_pairs_only_inside_the_interval_and_the_rectangle ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\voxel_appearance-7a6c43e2038c18b6.exe)
+
+running 106 tests
+test composition::tests::a_quarter_empty_face_reports_the_hole_rather_than_filling_it ... ok
+test composition::tests::a_half_and_half_face_is_two_materials_of_equal_coverage ... ok
+test detail::tests::nothing_is_stored ... ok
+test composition::tests::coverage_plus_holes_is_exactly_one_on_every_face_of_a_mixed_voxel ... ok
+test composition::tests::an_unadmitted_material_is_refused_rather_than_blended_as_grey ... ok
+test composition::tests::a_solid_voxel_s_face_is_one_material_and_no_hole ... ok
+test detail::tests::adjacent_addresses_differ_so_the_lattice_really_resolves_its_side ... ok
+test detail::tests::an_address_outside_the_lattice_is_refused_rather_than_wrapped ... ok
+test composition::tests::the_order_matches_the_model_s_own_face_blend_rule ... ok
+test detail::tests::detail_is_a_pure_function_of_its_address ... ok
+test composition::tests::an_empty_voxel_has_no_composition_and_names_no_material ... ok
+test detail::tests::the_dense_figures_are_two_to_the_thirty_third_and_not_the_superseded_one ... ok
+test detail::tests::the_material_the_cell_and_the_seed_all_change_the_lattice ... ok
+test composition::tests::the_whole_voxel_blends_all_sixty_four_cells ... ok
+test detail::tests::every_channel_of_the_lattice_is_in_range ... ok
+test detail::tests::the_mean_deviation_is_zero_as_the_hash_s_symmetry_says ... ok
+test detail::tests::the_pattern_does_not_repeat_every_block ... ok
+test detail::tests::the_two_channels_are_domain_separated ... ok
+test fluid::tests::a_vertical_mirror_sends_the_ray_back_along_the_view ... ok
+test fluid::tests::the_fresnel_ends_are_the_two_physical_limits ... ok
+test fluid::tests::the_reflected_ray_is_the_mirror_of_the_view ... ok
+test fluid::tests::the_surface_is_the_body_head_on_and_the_sky_at_grazing ... ok
+test npr::tests::a_bad_input_is_refused_before_any_shading_happens ... ok
+test npr::tests::a_broken_frame_is_refused_with_every_problem_named_at_once ... ok
+test npr::tests::a_hole_in_the_face_takes_sky_away_from_it ... ok
+test npr::tests::a_stated_surface_draws_all_four_terms ... ok
+test npr::tests::a_transmissive_surface_receives_more_ambient_than_a_solid_one ... ok
+test npr::tests::an_absent_input_removes_a_term_rather_than_dimming_it ... ok
+test npr::tests::emission_adds_light_that_no_lamp_supplied ... ok
+test npr::tests::every_declared_openpbr_term_changes_the_picture ... ok
+test npr::tests::half_lambert_keeps_a_back_lit_face_visible_where_lambert_gives_zero ... ok
+test npr::tests::shading_is_deterministic ... ok
+test npr::tests::the_rim_is_view_facing_so_it_survives_a_light_behind_the_surface ... ok
+test npr::tests::the_specular_warp_is_a_step_and_not_a_gradient ... ok
+test openpbr::emission_tests::a_declared_emission_reaches_the_shading_inputs ... ok
+test openpbr::emission_tests::a_material_that_declares_no_emission_still_emits_nothing ... ok
+test openpbr::emission_tests::an_emission_of_zero_is_an_empty_record_and_not_a_live_emitter ... ok
+test openpbr::tests::a_blend_of_two_stated_materials_is_weighted_by_coverage ... ok
+test openpbr::tests::a_complete_set_validates_and_a_placeholder_does_not_survive_the_ranges ... ok
+test openpbr::tests::a_blend_that_lacks_a_parameter_anywhere_lacks_it_everywhere ... ok
+test openpbr::tests::a_cells_saturation_becomes_its_coat_and_an_absent_one_does_not ... ok
+test openpbr::tests::a_material_with_no_reflectance_still_derives_no_colour ... ok
+test openpbr::tests::a_face_with_no_matter_is_refused_rather_than_shaded_as_a_hole ... ok
+test openpbr::tests::a_non_finite_detail_sample_is_refused ... ok
+test openpbr::tests::a_non_finite_value_is_refused_by_its_own_kind ... ok
+test openpbr::tests::a_registry_with_no_density_range_is_refused_rather_than_defaulted ... ok
+test openpbr::tests::a_rock_derives_exactly_seven_of_the_twelve_and_the_rest_are_named ... ok
+test openpbr::tests::an_emission_free_blend_stays_emission_free ... ok
+test openpbr::tests::a_two_material_face_blends_both_derivations ... ok
+test openpbr::tests::a_transmissive_material_has_no_weathering_scale_to_read ... ok
+test openpbr::tests::detail_moves_the_value_toward_the_edge_it_has_room_for_and_never_past_it ... ok
+test openpbr::tests::detail_cannot_invent_an_albedo_a_material_does_not_have ... ok
+test openpbr::tests::an_unadmitted_neighbour_or_material_is_refused ... ok
+test openpbr::tests::every_parameter_has_a_name_and_a_reason_and_no_two_are_the_same ... ok
+test openpbr::tests::the_luminance_of_a_grey_is_that_grey ... ok
+test openpbr::tests::the_absent_parameters_are_exactly_the_ones_the_rule_calls_absent ... ok
+test openpbr::tests::roughness_comes_from_the_material_s_own_density_and_is_monotone ... FAILED
+test provenance::tests::every_constant_is_named_once_and_sourced ... ok
+test openpbr::tests::transmission_is_never_on_a_solid ... ok
+test provenance::tests::the_luminance_weights_are_the_rec_709_triple ... ok
+test provenance::tests::the_project_s_own_extensions_are_counted_here_and_nowhere_else ... ok
+test response::tests::a_flat_rig_measures_one_band_because_nothing_varies ... ok
+test response::tests::a_rim_only_surface_is_reported_as_rim_only_however_many_bands_it_shows ... ok
+test response::tests::a_stated_surface_under_the_standard_rig_passes_the_bar ... ok
+test response::tests::a_white_factor_placeholder_measures_one_band_and_fails_the_bar ... ok
+test response::tests::an_empty_or_non_finite_measurement_is_refused ... ok
+test response::tests::the_band_count_never_exceeds_the_declared_resolution ... ok
+test response::tests::the_measurement_of_a_surface_is_reproducible ... ok
+test response::tests::two_bands_of_a_known_step_are_counted_as_two ... ok
+test response::tests::zero_views_is_refused_rather_than_defaulted ... ok
+test sky::tests::an_impossible_atmosphere_is_refused_rather_than_read_as_a_clear_sky ... ok
+test sky::tests::every_constant_is_named_once_and_finite ... ok
+test sky::tests::the_air_column_is_a_transmittance_between_a_source_and_its_ceiling ... ok
+test sky::tests::the_aureole_follows_the_sun_now_that_the_angle_is_spherical ... ok
+test sky::tests::the_moon_is_five_orders_of_magnitude_dimmer_than_the_sun ... ok
+test sky::tests::the_moon_travels_through_the_same_air_column_as_the_sun ... ok
+test sky::tests::the_phase_functions_are_the_published_ones_at_their_own_limits ... ok
+test sky::tests::the_rayleigh_coefficients_are_the_sources_and_their_ratio_is_the_sky ... ok
+test sky::tests::the_sky_is_pure_in_the_tick ... ok
+test sky::tests::the_sun_is_black_below_the_horizon_and_nothing_extrapolates_a_dusk ... ok
+test sky::tests::the_zenith_is_blue_because_of_the_scattering_ratio_and_nothing_else ... ok
+test sky::tests::the_zero_azimuth_directional_sky_is_the_elevation_summary ... ok
+test sky::tests::this_module_has_no_project_extensions_at_all ... ok
+test sky::tests::turbidity_is_a_published_input_and_more_of_it_makes_the_sky_whiter ... ok
+test tonemap::tests::a_grey_stays_grey ... ok
+test tonemap::tests::a_scene_referred_frame_loses_only_its_headroom ... ok
+test tonemap::tests::black_stays_black_and_a_negative_radiance_is_refused_as_black ... ok
+test tonemap::tests::it_can_never_brighten_a_colour ... ok
+test tonemap::tests::it_is_monotonic_so_no_two_radiances_change_order ... ok
+test tonemap::tests::it_moves_brightness_and_not_chromaticity ... ok
+test tonemap::tests::it_never_presents_more_than_one_and_never_reaches_one ... ok
+test tonemap::tests::the_world_s_measured_brightest_pixel_becomes_displayable ... ok
+test wrap::tests::a_cap_s_recess_is_the_profiles_own_outward_pattern ... ok
+test wrap::tests::a_face_coordinate_outside_the_face_is_refused_rather_than_clamped ... ok
+test wrap::tests::a_flat_face_comes_back_unchanged_bit_for_bit ... ok
+test wrap::tests::a_side_s_recess_is_half_the_face_and_the_tie_is_named ... ok
+test wrap::tests::the_bend_grows_monotonically_from_the_centre_to_the_rim ... ok
+test wrap::tests::every_normal_is_a_unit_vector_and_finite_everywhere_on_the_face ... ok
+test wrap::tests::the_bend_is_symmetric_in_u_and_v_which_a_cylinder_has_to_be ... ok
+test wrap::tests::the_centre_of_a_pillar_face_looks_straight_out ... ok
+test wrap::tests::the_inscribed_radius_is_half_a_block_because_that_is_what_inscribed_means ... ok
+test wrap::tests::the_lattice_gradient_tilts_an_already_wrapped_face_further ... ok
+test wrap::tests::the_law_here_is_the_profiles_law_and_not_a_second_copy ... ok
+test wrap::tests::the_recess_slot_order_matches_the_models_face_cells_order ... ok
+test wrap::tests::the_rim_of_a_pillar_face_turns_to_look_sideways ... ok
+test sky::tests::the_sun_reddens_rather_than_being_tinted ... ok
+
+failures:
+
+---- openpbr::tests::roughness_comes_from_the_material_s_own_density_and_is_monotone stdout ----
+
+thread 'openpbr::tests::roughness_comes_from_the_material_s_own_density_and_is_monotone' (9152) panicked at crates\voxel-appearance\src\openpbr.rs:960:9:
+assertion `left == right` failed
+  left: Some(0.9551282051282052)
+ right: Some(1.0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    openpbr::tests::roughness_comes_from_the_material_s_own_density_and_is_monotone
+
+test result: FAILED. 105 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p voxel-appearance --lib`
+     Running unittests src\lib.rs (target\debug\deps\voxel_audio-db128d38128c1424.exe)
+
+running 8 tests
+test tests::the_audio_seed_is_the_worlds_own_and_not_a_constant ... ok
+test tests::a_silent_column_is_exactly_silent ... ok
+test tests::the_buffer_is_the_declared_length_and_is_finite_and_bounded ... ok
+test tests::this_crate_cannot_open_a_device_and_says_so_in_its_manifest ... ok
+test tests::the_onset_changes_the_sound_and_not_only_the_volume ... ok
+test tests::the_same_seed_and_onset_give_the_same_samples ... ok
+test tests::a_wetter_column_is_audibly_wetter ... ok
+test tests::a_column_is_audible_exactly_when_the_onset_layer_is_not_silent ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src\lib.rs (target\debug\deps\voxel_client-a39abb0453707c55.exe)
+
+running 428 tests
+test camera::tests::a_point_behind_the_eye_has_a_negative_w ... ok
+test camera::tests::moving_the_eye_far_out_does_not_move_the_picture ... ok
+test camera::tests::a_point_straight_ahead_lands_at_the_centre_of_the_screen ... ok
+test camera::tests::the_basis_is_orthonormal_and_right_handed ... ok
+test camera_overhaul::tests::a_fast_right_flick_banks_and_decays ... ok
+test camera::tests::the_depth_range_is_zero_to_one_and_never_reversed ... ok
+test camera::tests::yaw_zero_looks_down_positive_z ... ok
+test camera_overhaul::tests::a_bad_frame_delta_changes_nothing ... ok
+test camera::tests::a_positive_roll_banks_the_camera_to_the_left ... ok
+test camera_overhaul::tests::a_right_strafe_rolls_opposite_to_a_right_turn ... ok
+test camera_overhaul::tests::the_forward_pitch_follows_the_reference_factor ... ok
+test camera_overhaul::tests::the_noise_is_deterministic_and_bounded ... ok
+test camera_overhaul::tests::the_offsets_are_added_to_a_copy_and_never_touch_the_players_camera ... ok
+test camera_overhaul::tests::the_turning_easing_is_the_references_cubic ... ok
+test camera_overhaul::tests::the_sway_fades_in_while_still_and_out_when_the_player_acts ... ok
+test camera_overhaul::tests::the_contexts_crossfade_rather_than_switch ... ok
+test camera_overhaul::tests::the_vertical_pitch_ignores_slow_falls_and_follows_fast_ones ... ok
+test camera_overhaul::tests::walking_does_not_smooth_the_look_where_sprinting_does ... ok
+test clock::tests::a_frame_at_exactly_the_bound_is_honoured_and_one_past_it_is_not ... ok
+test clock::tests::a_clock_at_rest_does_not_move_and_a_tick_advances_by_exactly_one ... ok
+test clock::tests::a_long_frame_is_capped_and_what_it_dropped_is_counted ... ok
+test clock::tests::a_negative_or_non_finite_frame_is_refused_rather_than_clamped ... ok
+test clock::tests::a_resumed_world_starts_at_its_saved_tick_not_at_zero ... ok
+test clock::tests::hitting_the_bound_does_not_drift_the_remainder ... ok
+test clock::tests::interpolation_is_the_fraction_of_the_current_tick ... ok
+test clock::tests::the_base_rate_is_the_ruling_and_the_seconds_are_derived_from_it ... ok
+test clock::tests::the_bound_is_a_round_fraction_of_a_second_not_a_round_number_of_ticks ... ok
+test clock::tests::the_sub_tick_remainder_is_carried_so_no_time_is_lost ... ok
+test clock::tests::twenty_ticks_of_real_time_are_twenty_ticks_of_world ... ok
+test clock::tests::two_clocks_given_the_same_time_reach_the_same_tick ... ok
+test cloud_field::tests::the_cloud_lattice_is_stated_in_chunks_and_is_not_the_chunk_lattice ... ok
+test cloud_field::tests::the_kind_encoding_is_injective_over_every_kind ... ok
+test debug::tests::a_pixel_lane_is_never_inside_a_world_lane ... ok
+test debug::tests::a_world_lane_is_not_projected_by_guesswork ... ok
+test debug::tests::a_lane_draws_its_outline_and_its_label_at_its_own_position ... ok
+test debug::tests::a_lane_that_leaves_the_surface_is_refused_rather_than_clamped ... ok
+test debug::tests::a_lane_with_no_label_is_refused ... ok
+test debug::tests::the_budget_is_per_unit_and_declared ... ok
+test debug::tests::a_lane_exactly_on_the_surface_edge_is_inside_it ... ok
+test debug::tests::the_vocabulary_covers_every_class_or_says_which_one_is_empty ... ok
+test debug::tests::the_vocabulary_is_frozen_and_a_lane_outside_it_has_no_class ... ok
+test debug::tests::validate_collects_every_refusal_rather_than_the_first ... ok
+test cloud_field::tests::the_profile_is_zero_outside_the_layer ... ok
+test frame::tests::a_frame_of_one_colour_is_not_a_picture_and_says_so ... ok
+test frame::tests::a_non_finite_pixel_is_refused_rather_than_counted ... ok
+test debug::tests::an_inverted_cuboid_is_refused_rather_than_sorted ... ok
+test debug::tests::every_class_declares_a_distinct_hue_that_reads_over_the_surfaces_lanes_land_on ... ok
+test frame::tests::luminance_goes_through_the_crates_own_function ... ok
+test frame::tests::indexing_is_row_major_from_the_top_left_and_out_of_range_is_none ... ok
+test frame::tests::a_two_tone_frame_passes_the_bars_band_count ... ok
+test frame::tests::terms_travel_with_the_measurement_rather_than_being_guessed ... ok
+test game::tests::a_world_carries_its_seed_and_its_tick ... ok
+test hud::tests::the_shell_chrome_is_legible_over_the_worst_backdrop ... ignored, needs a GPU adapter; run explicitly with --ignored
+test hud::tests::a_world_with_no_reflectance_says_why_it_is_black ... ok
+test hud::tests::the_digest_readout_is_absent_rather_than_wrong_when_nothing_is_resident ... ok
+test hud::tests::the_panel_geometry_is_the_grid_the_design_system_declares ... ok
+test hud::tests::the_refusal_panel_is_a_note_when_there_is_nothing_to_report ... ok
+test hud::tests::a_stroke_is_a_quad_in_the_segment_s_own_frame ... ok
+test motion::tests::a_diagonal_walk_is_not_faster_than_a_straight_one ... ok
+test hud::tests::a_partly_shading_world_reports_the_count_without_the_note ... ok
+test motion::tests::a_held_jump_falling_into_water_keeps_eighty_percent_of_its_fall ... ok
+test motion::tests::a_held_jump_skips_the_ground_friction_a_released_one_keeps ... ok
+test motion::tests::a_jump_reaches_the_apex_the_reference_arithmetic_describes ... ok
+test game::tests::the_eye_is_the_eye_height_above_the_spawn_feet ... ok
+test hud::tests::the_worker_count_is_reported_beside_the_digest_as_a_knob ... ok
+test motion::tests::a_body_in_a_shallow_sea_comes_to_rest_on_the_sea_floor ... ok
+test game::tests::the_spawn_is_ground_the_body_can_stand_on ... ok
+test motion::tests::a_one_voxel_ledge_still_needs_a_jump ... ok
+test motion::tests::a_released_key_costs_exactly_the_slipperiness_each_step ... ok
+test motion::tests::a_sneaking_jump_over_the_base_speed_trimp_and_it_stays_enabled ... ok
+test motion::tests::sharking_holds_a_held_jump_at_the_surface_and_never_sinks ... ok
+test motion::tests::no_speed_gets_the_body_through_a_one_voxel_wall ... ok
+test motion::tests::a_stalled_or_backwards_frame_moves_nothing ... ok
+test motion::tests::a_step_up_of_this_size_cannot_fire_on_a_voxel_grid_at_all ... ok
+test motion::tests::a_sprint_jump_adds_no_horizontal_boost ... ok
+test motion::tests::a_stalled_frame_costs_time_rather_than_queueing_a_burst ... ok
+test motion::tests::sneaking_walks_at_the_references_sneak_speed ... ok
+test motion::tests::crouching_lowers_the_eye_and_not_the_body ... ok
+test motion::tests::holding_the_jump_key_re_launches_on_every_landing ... ok
+test cloud_field::tests::equality_ignores_the_measurement ... ok
+test motion::tests::the_body_cannot_walk_into_a_solid_wall ... ok
+test motion::tests::the_body_never_ends_a_step_inside_a_solid_voxel ... ok
+test motion::tests::the_body_rests_on_the_floor_instead_of_falling_through_it ... ok
+test motion::tests::the_air_acceleration_caps_the_projection_and_never_decays ... ok
+test motion::tests::the_reference_caps_are_inert_at_their_own_thresholds ... ok
+test motion::tests::the_step_is_the_world_clocks_tick ... ok
+test motion::tests::the_eye_is_the_eye_height_above_the_feet ... ok
+test motion::tests::the_walk_speed_is_the_declared_one_and_not_a_multiple_of_it ... ok
+test pattern::tests::a_footprint_between_the_rungs_is_carried_by_a_coarser_one ... ok
+test motion::tests::the_trajectory_is_a_function_of_the_step_count_and_not_of_the_framing ... ok
+test motion::tests::the_walk_direction_is_where_the_camera_looks ... ok
+test pattern::tests::a_prefiltered_rung_does_not_slide_within_its_own_coarse_cell ... ok
+test pattern::tests::a_rung_s_weight_does_not_move_under_a_walk_sized_step ... ok
+test motion::tests::the_interpolated_eye_stays_between_the_last_two_steps ... ok
+test motion::tests::the_models_constants_are_the_references_own_numbers ... ok
+test pattern::tests::a_material_the_field_does_not_vary_shows_no_deviation ... ok
+test pattern::tests::a_point_addresses_to_its_own_world_subvoxel_and_lattice_cell ... ok
+test pattern::tests::the_blend_cannot_tell_the_vertical_axis_from_the_horizontal_one ... ok
+test pattern::tests::below_the_resolvable_rung_movement_changes_nothing ... ok
+test pattern::tests::each_shaper_stretches_the_noise_along_the_axis_its_material_reads ... ok
+test pattern::tests::every_deviation_stays_inside_the_range_the_model_states ... ok
+test pattern::tests::no_rung_s_weight_has_a_step_in_it ... ok
+test pattern::tests::the_ladder_handed_a_vanishing_step_does_not_jump ... ok
+test pattern::tests::the_ladder_is_never_flat_while_a_rung_resolves ... ok
+test pattern::tests::the_footprint_is_one_pixel_carried_out_to_the_surface ... ok
+test quad::tests::bytes_are_the_fields_in_order ... ok
+test quad::tests::of_composition_packs_two_ids ... ok
+test quad::tests::of_yields_a_record_whose_rectangle_is_the_quad ... ok
+test quad::tests::round_trip_keeps_the_rectangle ... ok
+test pattern::tests::the_shader_recovers_the_world_cell_from_the_eye_s_two_halves ... ok
+test renderer::tests::a_frame_with_no_sky_written_is_the_black_it_was_before ... ignored, needs a GPU adapter; run explicitly with --ignored
+test pattern::tests::the_staged_weight_keeps_the_ladder_s_silence_and_its_draw ... ok
+test renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe ... ignored, needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored
+test pattern::tests::two_points_a_block_apart_share_their_lattice_address_and_not_their_cell ... ok
+test pattern::tests::the_ladder_s_geometry_is_the_lattice_s_own ... ok
+test renderer::tests::the_derived_rig_reaches_the_pixels_and_moves_with_the_tick ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_dither_moves_a_shade_by_less_than_a_step_and_not_the_average ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_gpu_presents_a_radiance_the_crate_says_it_does ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_gpu_shades_a_surface_exactly_as_the_crate_does ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_pattern_is_drawn_where_the_greedy_mesh_has_no_geometry ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_player_starts_on_the_ground_and_the_frame_proves_it ... ignored, needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored
+test renderer::tests::the_quad_format_and_the_vertex_format_draw_the_same_surface ... ignored, needs a GPU adapter
+test renderer::tests::the_shipped_view_is_not_a_black_screen ... ignored, needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored
+test renderer::tests::the_sky_is_drawn_where_there_is_no_geometry_and_never_claims_to_be_geometry ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_sun_is_drawn_as_the_cuboid_the_model_says ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_water_surface_reflects_the_sky_the_model_says_it_does ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::what_six_hundred_chunks_cost_the_cpu_every_frame ... ignored, needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored
+test shading::tests::an_absent_input_packs_as_absent_and_not_as_zero ... ok
+test shading::tests::an_unadmitted_material_is_refused_by_the_table ... ok
+test scene::tests::a_vertex_encodes_to_exactly_one_stride_of_bytes ... ok
+test scene::tests::the_stride_matches_the_attributes_that_claim_offsets_into_it ... ok
+test shading::tests::no_absent_openpbr_term_is_unexplained ... ok
+test shading::tests::no_material_loses_its_rim_to_arithmetic ... FAILED
+test shading::tests::a_present_input_packs_its_value_and_its_flag ... ok
+test shading::tests::a_rig_with_more_lights_than_the_buffer_holds_is_refused_not_truncated ... ok
+test shading::tests::bytes_are_little_endian_in_field_order ... ok
+test shading::tests::every_admitted_material_gets_a_row_and_the_rest_are_absent ... ok
+test shading::tests::the_named_debt_is_zero_and_is_named ... ok
+test shading::tests::the_packed_sizes_are_the_strides_wgsl_will_use ... ok
+test shading::tests::the_corpus_names_what_each_unadmitted_substance_is_missing ... ok
+test shading::tests::the_cpu_reference_is_the_crate_and_refuses_what_the_crate_refuses ... ok
+test shading::tests::no_openpbr_term_is_silently_dropped_on_the_way_to_the_gpu ... FAILED
+test cloud_field::tests::the_field_is_deterministic_and_the_span_is_four_blocks ... ok
+test shell::arrangement::tests::a_matching_orientation_inserts_and_re_divides ... ok
+test shell::arrangement::tests::a_same_orientation_parent_inserts_beside_the_target ... ok
+test shading::tests::not_every_admitted_material_derives_a_roughness_and_the_table_says_so ... ok
+test shading::tests::the_shading_report_counts_materials_and_not_the_never_read_sentinel_row ... ok
+test shell::arrangement::tests::a_deeper_target_is_lifted_out_of_its_own_parent_not_the_whole_subtree ... ok
+test shell::arrangement::tests::a_seam_drag_stops_at_the_floor_and_refuses_a_pair_already_under_it ... ok
+test shell::arrangement::tests::a_seam_drag_moves_a_boundary_and_keeps_the_splitters_total ... ok
+test shell::arrangement::tests::a_seam_the_tree_does_not_hold_is_refused_by_name ... ok
+test shell::arrangement::tests::a_slot_is_addressed_by_the_path_the_tree_walks ... ok
+test shell::arrangement::tests::a_slot_is_a_pane_for_close ... ok
+test shell::arrangement::tests::a_window_cannot_be_in_two_panes ... ok
+test shell::arrangement::tests::a_slot_split_creates_the_reference_s_unnamed_pane ... ok
+test shell::arrangement::tests::a_window_with_no_split_is_one_pane ... ok
+test shell::arrangement::tests::closing_collapses_one_child_splitters_all_the_way_up ... ok
+test shell::arrangement::tests::a_wrap_preserves_the_outer_splits_shares ... ok
+test shell::arrangement::tests::an_insert_before_lands_at_the_targets_own_index ... ok
+test shell::arrangement::tests::filling_a_slot_gives_it_the_window_once ... ok
+test shell::arrangement::tests::closing_the_last_pane_has_no_arrangement_left ... ok
+test shell::arrangement::tests::splitting_a_bare_root_wraps_it ... ok
+test shell::arrangement::tests::the_floor_accumulates_through_nesting ... ok
+test shell::arrangement::tests::the_seam_index_walks_nested_splitters_in_tree_order ... ok
+test shell::arrangement::tests::undock_leaves_the_window_free_floating ... ok
+test shell::changes::tests::a_change_expires_and_the_window_is_declared_and_half_open ... ok
+test shell::changes::tests::a_point_behind_the_eye_is_refused_rather_than_drawn_at_an_edge ... ok
+test shell::changes::tests::a_point_on_the_axis_lands_at_the_viewport_centre ... ok
+test shell::changes::tests::a_point_to_the_right_lands_to_the_right_of_centre ... ok
+test shell::changes::tests::a_region_draws_as_its_boundary_edges_in_world_order ... ok
+test shell::changes::tests::a_change_with_no_reason_is_refused ... ok
+test shell::changes::tests::a_degenerate_viewport_projects_nothing ... ok
+test shell::changes::tests::a_solid_block_draws_its_own_surface_and_no_interior_face ... ok
+test shell::changes::tests::an_edge_crossing_the_camera_plane_is_cut_and_not_dropped ... ok
+test shell::changes::tests::an_edit_that_changed_nothing_is_refused_rather_than_drawn_as_an_empty_box ... ok
+test shell::changes::tests::an_expired_change_draws_nothing ... ok
+test shell::changes::tests::an_l_shape_keeps_the_step_that_a_box_would_hide ... ok
+test shell::changes::tests::negative_cells_are_cells_rather_than_an_error ... ok
+test shell::changes::tests::only_the_live_regions_are_drawn_and_they_come_back_in_record_order ... ok
+test shell::changes::tests::one_cell_is_a_cube_of_six_faces_and_twelve_edges ... ok
+test shell::changes::tests::the_outline_is_the_same_whichever_order_the_edits_arrived_in ... ok
+test shell::changes::tests::two_adjacent_cells_are_one_outline_and_not_two_boxes ... ok
+test shell::console::tests::autoscroll_off_freezes_the_view_and_counts_what_it_is_not_showing ... ok
+test shell::console::tests::clearing_the_output_keeps_what_you_typed ... ok
+test shell::changes::tests::world_positions_come_from_the_declared_cell_size ... ok
+test shell::console::tests::a_record_with_no_tick_says_so_rather_than_reading_as_tick_zero ... ok
+test shell::console::tests::an_unknown_verb_is_refused_by_name_and_names_the_whole_vocabulary ... ok
+test shell::console::tests::a_filtered_console_shows_one_level_and_says_so ... ok
+test shell::changes::tests::two_changes_recorded_in_the_same_instant_are_both_live ... ok
+test shell::changes::tests::world_edges_come_from_the_declared_cell_size ... ok
+test shell::console::tests::clearing_the_output_re_anchors_the_frozen_view ... ok
+test shell::console::tests::every_verb_in_the_table_is_reachable_by_parsing_its_own_name ... ok
+test shell::console::tests::the_parser_agrees_with_the_help_text_about_arity ... ok
+test shell::console::tests::the_filter_cycles_through_the_reference_s_entries_and_back_to_all ... ok
+test shell::console::tests::the_help_text_is_generated_from_the_table_it_documents ... ok
+test shell::console::tests::the_level_vocabulary_is_five_and_closed ... ok
+test shell::console::tests::log_is_the_only_way_in_and_the_console_is_bounded ... ok
+test shell::console::tests::the_search_box_filters_the_view_and_never_executes ... ok
+test shell::console::tests::warn_is_the_only_level_that_is_persistent ... ok
+test shell::console::tests::the_verb_table_is_total_and_covers_every_variant ... ok
+test shell::console::tests::the_wrong_number_of_arguments_is_a_different_refusal_from_an_unknown_verb ... ok
+test shell::debug::tests::a_bar_cell_lane_is_the_cell_the_bar_drew ... ok
+test shell::debug::tests::the_bar_is_claimed_only_while_the_shell_is_shown ... ok
+test shell::debug::tests::a_control_lane_is_the_rectangle_the_pointer_hits ... ok
+test shell::debug::tests::every_lane_the_shell_declares_is_inside_the_viewport_and_within_budget ... ok
+test shell::debug::tests::the_lane_set_is_bounded_by_the_declared_pixel_budget ... ok
+test shell::debug::tests::every_lane_the_shell_declares_is_in_the_frozen_vocabulary ... ok
+test shell::debug::tests::a_lane_that_leaves_the_viewport_is_refused_rather_than_clamped ... ok
+test shell::debug::tests::the_lanes_draw_as_outlines_over_the_shell_without_asking_the_palette_for_a_role ... ok
+test shell::desktop::tests::a_docked_window_keeps_its_own_desktop_entry ... ok
+test shell::desktop::tests::removing_the_focused_window_focuses_the_topmost_one_still_drawn ... ok
+test shell::desktop::tests::removing_the_last_window_leaves_nothing_focused ... ok
+test shell::desktop::tests::the_desktop_draws_no_ground_at_all ... ok
+test shell::desktop::tests::toggle_maximize_runs_the_windows_own_arithmetic_and_focuses_it ... ok
+test shell::desktop::tests::focusing_a_window_the_desktop_does_not_hold_is_a_no_op ... ok
+test shell::desktop::tests::minimize_clears_focus_and_restore_returns_it ... ok
+test shell::drop::tests::a_tiny_pane_s_preview_still_meets_the_twenty_dp_floor ... ok
+test shell::drop::tests::inside_a_pane_the_nearest_edge_dominates_and_the_pane_is_the_target ... ok
+test shell::debug::tests::a_pinned_window_is_claimed_on_both_layers_and_an_unpinned_one_only_on_the_shell ... ok
+test shell::debug::tests::every_lane_is_drawn_in_its_class_hue_and_the_palette_is_not_asked_for_one ... ok
+test shell::desktop::tests::a_press_resolves_the_topmost_window_and_the_background_clears_focus ... ok
+test shell::drop::tests::a_point_outside_the_window_has_no_target ... ok
+test shell::drop::tests::no_pane_under_the_point_falls_back_to_the_reference_s_right ... ok
+test shell::drop::tests::the_bands_are_the_window_s_own_wherever_the_window_sits ... ok
+test shell::drop::tests::the_label_is_the_reference_s_own_words_with_the_declared_marks ... ok
+test shell::drop::tests::the_outer_band_wins_over_the_pane_under_it ... ok
+test shell::drop::tests::a_tie_prefers_left_then_right_then_top_as_the_reference_orders_it ... ok
+test shell::drop::tests::the_preview_is_a_dashed_wash_with_the_label_on_a_declared_pill ... ok
+test shell::desktop::tests::adding_a_window_focuses_it_and_puts_it_on_top ... ok
+test shell::drop::tests::the_top_band_is_measured_from_below_the_title_bar_as_the_reference_measures_it ... ok
+test shell::drop::tests::the_preview_splits_the_panes_own_rect_and_docks_into_the_window_s_content ... ok
+test shell::hud::tests::a_pinned_window_stays_in_the_view_while_the_shell_is_hidden ... ok
+test shell::mount::tests::a_bar_entry_that_is_not_a_tab_opens_its_window_without_a_menu ... ok
+test shell::mount::tests::a_click_on_the_close_glyph_closes_the_window_and_not_its_neighbour ... ok
+test shell::mount::tests::a_double_click_on_the_bar_maximizes_where_the_declaration_permits_it ... ok
+test shell::hud::tests::a_toast_is_drawn_on_both_layers_and_after_the_one_it_covers ... ok
+test shell::mount::tests::a_drag_shows_the_landing_and_the_release_lands_where_it_showed ... ok
+test shell::mount::tests::a_docked_window_draws_with_its_content_bounded_to_the_pane ... ok
+test shell::hud::tests::the_pinned_layer_draws_no_bar_and_no_menu ... ok
+test shell::mount::tests::a_filing_with_no_workspace_is_refused_by_name_rather_than_guessing_a_path ... ok
+test shell::mount::tests::a_filing_onto_an_unfiled_workspace_is_refused_because_grow_refuses_to_create ... ok
+test shell::mount::tests::a_placeholder_offer_fills_a_slot_with_its_window ... ok
+test shell::mount::tests::a_panel_that_does_not_fit_its_pane_is_refused_with_both_numbers ... ok
+test shell::mount::tests::a_filing_whose_package_declares_nothing_is_compiled_again_under_a_new_name ... ok
+test shell::mount::tests::a_pane_tree_that_cannot_hold_its_floor_is_refused_before_it_is_drawn ... ok
+test shell::mount::tests::a_maximized_window_keeps_the_rect_it_will_restore_to ... ok
+test shell::mount::tests::a_missing_argument_and_an_unknown_window_are_two_different_refusals ... ok
+test shell::mount::tests::a_refusal_is_logged_and_never_toasted_and_a_timeless_record_is_not_raised ... ok
+test shell::mount::tests::a_filed_ticket_is_emitted_to_disk_and_the_shell_reloads_from_it ... ok
+test shell::mount::tests::a_refused_command_is_logged_with_its_reason_and_not_only_the_attempt ... ok
+test shell::mount::tests::a_report_the_reader_cannot_understand_is_refused_by_name_and_says_nothing_is_wrong ... ok
+test shell::mount::tests::a_resize_edge_drag_moves_that_edge_and_leaves_the_far_one ... ok
+test cloud_field::tests::the_field_is_snapped_to_its_own_columns ... ok
+test shell::mount::tests::a_verb_with_no_target_in_this_shell_is_refused_by_name_and_with_the_reason ... ok
+test shell::mount::tests::a_window_split_beside_another_derives_its_title_from_the_pane_set ... ok
+test shell::mount::tests::a_transient_record_goes_on_screen_as_a_toast_and_its_timer_runs_down ... ok
+test shell::mount::tests::a_seam_drag_moves_the_boundary_and_stops_at_the_floor ... ok
+test cloud_field::tests::the_model_is_asked_on_its_own_lattice_and_the_between_is_interpolated ... ok
+test shell::mount::tests::a_tab_s_menu_offers_its_own_window_and_the_windows_filed_under_it ... ok
+test shell::mount::tests::a_window_verb_moves_the_window_and_takes_the_keyboard_with_it ... ok
+test shell::mount::tests::a_filed_ticket_puts_a_recipe_in_the_agents_inbox_and_the_agent_stream_reads_it ... ok
+test shell::mount::tests::a_package_emitted_while_the_game_runs_is_adopted_exactly_once ... ok
+test shell::mount::tests::closing_a_host_releases_its_panes_instead_of_taking_them_with_it ... ok
+test shell::mount::tests::a_windows_declared_elevation_is_the_one_drawn ... ok
+test shell::mount::tests::an_edge_trigger_splits_the_window_and_the_new_pane_is_an_empty_slot ... ok
+test shell::mount::tests::an_empty_notifications_window_says_why_it_is_empty ... ok
+test shell::mount::tests::an_empty_enter_is_nothing_at_all ... ok
+test shell::mount::tests::backspace_on_an_empty_draft_says_nothing_changed ... ok
+test shell::mount::tests::an_unpermitted_control_is_absent_rather_than_drawn_disabled ... ok
+test shell::mount::tests::an_empty_console_is_a_named_absence_rather_than_a_blank_pane ... ok
+test shell::mount::tests::hand_the_boards_tickets_to_the_agent_on_the_real_record ... ignored, hands the whole real board's recipes over on the repository's own record
+test shell::mount::tests::history_recalls_the_last_line_and_empties_past_the_end ... ok
+test shell::mount::tests::keys_reach_the_console_only_while_it_holds_focus ... ok
+test shell::mount::tests::the_console_s_wheel_moves_the_view_and_a_step_back_is_the_freeze_request ... ok
+test shell::mount::tests::a_typed_ticket_lands_on_the_chain_and_compiles_to_a_solution ... ok
+test shell::mount::tests::every_window_on_screen_draws_with_the_palette_the_record_declares ... ok
+test shell::mount::tests::the_console_s_controls_act_where_they_are_drawn ... ok
+test shell::mount::tests::one_window_that_refuses_does_not_take_the_others_with_it ... ok
+test shell::mount::tests::the_bar_is_the_declared_tabs_in_strip_order_then_the_entries_that_are_not_tabs ... ok
+test shell::mount::tests::the_console_window_clamps_at_both_ends_and_reserves_the_note_row ... ok
+test shell::mount::tests::the_console_window_is_hosted_by_the_console_and_not_by_the_empty_view_rule ... ok
+test shell::mount::tests::the_draft_is_a_row_on_the_panel_so_a_command_can_be_checked_before_it_is_run ... ok
+test shell::mount::tests::the_console_window_is_the_reference_s_toolbar_output_and_command_bar ... ok
+test shell::mount::tests::the_gate_is_read_before_the_window_opens_and_survives_a_reload ... ok
+test shell::mount::tests::a_ticket_whose_package_would_take_the_console_window_is_refused_and_nothing_is_lost ... ok
+test shell::mount::tests::the_gates_pass_is_on_the_console_with_every_unsettled_subject_and_its_reason ... ok
+test shell::mount::tests::the_console_window_is_bounded_by_the_pane_it_is_drawn_in_and_says_what_it_holds ... ok
+test shell::mount::tests::the_log_window_has_its_own_scroll_and_it_is_not_the_console_s ... ok
+test shell::mount::tests::the_log_window_is_the_event_record_and_not_the_console_s_view ... ok
+test shell::mount::tests::the_ink_used_by_the_bar_and_the_windows_is_measured_not_assumed ... ok
+test shell::mount::tests::the_notifications_window_reads_the_persistent_records_and_not_the_console_s_view ... ok
+test shell::mount::tests::the_pane_close_control_closes_that_pane_and_not_the_host ... ok
+test shell::mount::tests::the_boards_tickets_are_handed_to_the_agent_once_and_then_skipped ... ok
+test cloud_field::tests::the_fill_reports_what_it_costs_the_cadence ... ok
+test shell::mount::tests::the_sizing_rule_is_the_drawing_s_own_arithmetic ... ok
+test shell::mount::tests::the_trigger_lanes_follow_the_pointer_onto_a_window_and_off_it ... ok
+test shell::mount::tests::the_typed_command_is_on_the_record_before_anything_acts_on_it ... ok
+test shell::notifications::tests::a_committed_act_is_minted_into_one_proof_of_work_on_the_artifact_that_committed_it ... ok
+test shell::mount::tests::the_shipped_package_declares_windows_that_can_hold_the_views_they_host ... ok
+test shell::mount::tests::the_loader_reads_the_path_it_is_given_and_refuses_rather_than_serving_the_last_package ... ok
+test shell::notifications::tests::a_toast_lasts_the_duration_the_design_system_declares_in_the_world_s_ticks ... ok
+test shell::notifications::tests::a_toast_queue_renders_one_record_at_a_time_and_each_record_once ... ok
+test shell::notifications::tests::a_queued_toast_gets_its_whole_life_from_the_tick_it_is_promoted_not_from_its_enqueue_tick ... ok
+test shell::notifications::tests::a_minted_proof_reaches_the_gate_on_its_artifact_with_axis_rs_grading ... ok
+test shell::mount::tests::the_pass_compiles_the_ledgers_ticket_and_the_read_names_both_worlds ... ok
+test shell::notifications::tests::a_tampered_artifact_is_refused_before_it_is_shown ... ok
+test shell::pane::tests::a_hovered_lane_is_drawn_one_step_raised_and_its_glyph_at_full_ink ... ok
+test shell::pane::tests::a_press_lower_than_the_header_is_the_body_and_focuses_it ... ok
+test shell::pane::tests::a_press_on_a_control_answers_that_control_and_a_hidden_one_never_answers ... ok
+test shell::pane::tests::an_empty_slot_carries_the_reference_s_own_title ... ok
+test shell::notifications::tests::the_agent_inbox_streams_the_recipe_laya_wrote_for_the_package ... ok
+test shell::placeholder::tests::the_border_is_drawn_as_dashes_not_a_single_rule ... ok
+test shell::placeholder::tests::a_press_inside_an_offer_returns_its_index_and_elsewhere_is_none ... ok
+test shell::placeholder::tests::an_empty_slot_says_why_it_is_empty ... ok
+test shell::pane::tests::the_actions_are_the_reference_s_four_and_undock_hides_with_one_pane ... ok
+test shell::pane::tests::the_header_is_one_pointer_row_and_the_body_starts_under_it ... ok
+test shell::placeholder::tests::the_note_names_the_record_s_unit_and_the_offer_rows_meet_the_target ... ok
+test shell::placeholder::tests::the_offers_are_laid_out_three_per_row_and_a_short_row_is_centred ... ok
+test shell::splitter::tests::a_hovered_seam_brightens_one_ink_step ... ok
+test cloud_field::tests::the_stride_is_reported_against_the_full_rate_model ... ok
+test shell::splitter::tests::a_point_on_a_seam_picks_the_seam_and_never_two_panes ... ok
+test shell::pane::tests::the_lanes_are_pointer_targets_flush_with_the_end_and_carry_the_gap ... ok
+test shell::pane::tests::the_title_never_runs_under_the_controls ... ok
+test shell::splitter::tests::a_pane_the_tree_does_not_hold_has_no_rect ... ok
+test shell::notifications::tests::the_games_own_pass_writes_one_notification_per_decision ... ok
+test shell::splitter::tests::a_nested_split_lays_out_inside_its_parent_s_half ... ok
+test shell::splitter::tests::one_pane_is_the_whole_rect_and_has_no_seams ... ok
+test shell::splitter::tests::the_floor_is_the_arrangements_own_arithmetic ... ok
+test shell::theme::tests::an_unadmitted_field_refuses_by_name_the_same_way_the_palette_does ... ok
+test shell::theme::tests::every_field_states_a_source_and_the_debt_is_exactly_the_accent ... ok
+test shell::splitter::tests::two_equal_shares_meet_at_a_seam_centred_on_the_boundary ... ok
+test shell::taskbar::tests::a_label_is_the_reference_s_own_derivation ... ok
+test shell::theme::tests::no_field_carries_a_colour_literal ... ok
+test shell::theme::tests::the_admitted_fields_resolve_through_the_same_palette_the_rest_of_the_shell_uses ... ok
+test shell::splitter::tests::a_seam_carries_the_splitter_and_boundary_it_divides ... ok
+test shell::taskbar::tests::an_entry_is_checked_only_when_focused_and_not_minimized ... ok
+test shell::taskbar::tests::the_clock_s_format_is_the_reference_s_two_settings ... ok
+test shell::taskbar::tests::a_press_names_the_reference_s_three_cases_in_order ... ok
+test shell::taskbar::tests::a_running_entry_is_a_bar_entry_that_is_not_a_tab ... ok
+test shell::theme::tests::the_five_reference_themes_are_carried_as_candidates_and_not_admitted ... ok
+test shell::titlebar::tests::a_double_press_maximizes_only_where_the_policy_permits ... ok
+test shell::titlebar::tests::a_press_on_a_control_is_never_a_drag ... ok
+test shell::titlebar::tests::a_window_narrower_than_its_controls_keeps_the_close_control ... ok
+test shell::titlebar::tests::the_bar_is_one_pointer_row_and_its_glyphs_are_the_dense_pointer_pair ... ok
+test shell::titlebar::tests::a_policy_without_title_position_draws_no_bar_and_answers_nothing ... ok
+test shell::window::tests::a_drag_keeps_the_offset_and_the_preview_it_is_showing ... ok
+test shell::window::tests::a_double_click_asks_the_bar_first_and_answers_maximize ... ok
+test shell::window::tests::a_drag_over_two_windows_targets_the_topmost_and_the_pane_under_the_cursor ... ok
+test shell::window::tests::a_maximized_rect_never_goes_below_the_declared_minimum_size ... ok
+test shell::titlebar::tests::the_controls_are_the_declared_ones_in_the_reference_order_and_not_one_more ... ok
+test shell::theme::tests::the_desktop_s_ground_is_the_world_and_resolves_to_nothing ... ok
+test shell::titlebar::tests::the_title_never_runs_under_the_controls ... ok
+test shell::titlebar::tests::the_unfocused_title_dims_one_step_and_the_contrast_is_measured ... ok
+test shell::titlebar::tests::the_lanes_are_targets_flush_with_the_end_and_separated_by_eight ... ok
+test shell::window::tests::a_press_on_an_empty_slot_s_offer_answers_the_offer_and_the_body_focuses_it ... ok
+test shell::window::tests::a_new_window_is_one_pane_holding_itself ... ok
+test shell::theme::tests::the_coverage_is_the_reference_s_own_field_list_in_its_own_order ... ok
+test shell::window::tests::a_pane_split_control_carries_the_reference_s_own_axis ... ok
+test shell::window::tests::a_press_on_the_resize_strip_resizes_and_a_press_on_the_bar_drags ... ok
+test shell::window::tests::a_window_without_title_position_has_no_bar_and_the_content_is_the_inner_rect ... ok
+test shell::window::tests::an_edge_trigger_press_is_the_zone_the_lane_shows ... ok
+test shell::window::tests::the_composite_is_the_border_then_the_bar_then_the_content ... ok
+test shell::window::tests::an_empty_slot_draws_the_placeholder_and_says_so ... ok
+test shell::window::tests::closing_a_guest_keeps_the_window_and_closing_the_last_pane_does_not ... ok
+test shell::window::tests::maximize_saves_the_previous_rect_and_restore_returns_to_it ... ok
+test shell::window::tests::minimize_and_restore_move_the_state_and_not_the_rect ... ok
+test shell::window::tests::docking_into_a_pane_target_splits_that_pane_and_its_zone_decides_the_axis ... ok
+test shell::window::tests::the_drawing_and_the_hit_tests_resolve_the_same_pane_rects ... ok
+test shell::window::tests::the_drop_preview_is_drawn_by_the_window_the_drop_lands_in ... ok
+test shell::window::tests::docking_keeps_the_input_order_on_both_sides ... ok
+test shell::window::tests::the_resize_arithmetic_grows_from_the_far_edge_and_stops_at_the_floor ... ok
+test shell::window::tests::the_focused_windows_outline_is_one_ink_step_brighter ... ok
+test shell::window::tests::the_edge_triggers_appear_inside_the_band_and_answer_their_zone ... ok
+test shell::window::tests::the_trigger_lanes_hold_the_rect_the_window_is_drawn_at ... ok
+test shell::window::tests::the_resize_strip_answers_one_edge_per_axis_and_its_cursor ... ok
+test shell::window::tests::undocking_a_pane_frees_it_and_closes_an_emptied_window ... ok
+test skylight::tests::a_shorter_sky_table_is_still_read_at_its_own_endpoints ... ok
+test skylight::tests::a_hazier_world_normalises_against_its_own_dimmer_sun ... ok
+test skylight::tests::an_atmosphere_the_model_refuses_yields_no_rig_rather_than_a_black_one ... ok
+test skylight::tests::a_flat_water_surface_reflects_the_sky_in_the_mirror_direction ... ok
+test skylight::tests::the_ambient_is_the_skys_own_dome_radiance_and_not_a_constant ... ok
+test skylight::tests::the_declared_ambient_fraction_is_half_and_is_counted ... ok
+test skylight::tests::the_declared_couplings_are_named_and_counted ... ok
+test skylight::tests::a_night_has_no_sun_light_and_a_black_ambient ... ok
+test skylight::tests::the_direction_convention_is_the_one_the_shaders_use ... ok
+test skylight::tests::the_rig_carries_a_direction_that_moves_and_an_intensity_that_is_one_at_noon ... ok
+test skylight::tests::the_rig_is_one_unit_so_no_field_of_it_is_a_raw_radiance ... ok
+test skylight::tests::the_readout_fields_are_the_rigs_own_fields_and_not_a_second_computation ... ok
+test skylight::tests::the_rig_is_pure_in_the_tick ... ok
+test skylight::tests::the_sky_and_the_rig_that_lights_the_world_share_one_exposure ... ok
+test skylight::tests::the_exposure_scales_both_terms_or_neither ... ok
+test skylight::tests::the_onset_reaches_the_sky_even_where_the_mean_never_moves ... ok
+test skylight::tests::the_normaliser_is_measured_through_the_air_it_normalises_and_not_above_it ... ok
+test skylight::tests::the_sky_table_reproduces_the_model_it_samples ... ok
+test skylight::tests::the_sky_is_driven_by_the_worlds_weather_and_not_by_a_default ... ok
+test skylight::tests::the_sky_table_is_black_at_night_and_the_sky_below_the_horizon_clamps ... ok
+test skylight::tests::the_sky_is_a_normalised_ratio_like_the_rig_is ... ok
+test skylight::tests::the_sun_direction_moves_across_the_day_and_points_up_at_noon ... ok
+test skylight::tests::the_tick_the_client_opens_at_is_not_a_black_world ... ok
+test skylight::tests::the_sun_moves_across_the_day_and_the_readout_moves_with_it ... ok
+test sun::tests::an_occluder_edge_gives_a_penumbra_and_not_a_step ... ok
+test sun::tests::no_samples_is_not_a_claim_of_daylight ... ok
+test sun::tests::a_clear_sky_lights_a_whole_surface ... ok
+test sun::tests::a_fully_blocked_sun_is_dark_and_says_so ... ok
+test sun::tests::a_sun_below_the_horizon_is_refused_and_not_a_light_from_underneath ... ok
+test skylight::tests::where_this_worlds_day_actually_is ... ok
+test skylight::tests::the_sky_does_not_step_across_ground_while_walking ... ok
+test sun::tests::the_drawn_face_is_a_square_and_not_a_disc ... ok
+test sun::tests::the_body_is_drawn_exactly_when_the_rig_carries_a_sun ... ok
+test sun::tests::the_derived_angular_size_is_the_sky_s_own_diameter ... ok
+test sun::tests::the_drawn_radiance_is_the_irradiance_over_the_body_s_own_solid_angle ... ok
+test sun::tests::the_drawn_body_points_where_the_rig_s_light_points ... ok
+test sun::tests::the_eye_relative_centre_costs_under_two_e_minus_seven_radians ... ok
+test sun::tests::the_penumbra_is_centimetres_at_a_ten_metre_occluder ... ok
+test sun::tests::the_shadow_rule_refuses_a_sun_the_drawn_body_still_places ... ok
+test sun::tests::the_sun_is_about_one_hundred_and_sixty_thousand_kilometres_across ... ok
+test sun::tests::the_sun_is_one_object_in_the_world_and_not_one_per_observer ... ok
+test world::tests::the_display_stage_is_one_file_and_every_presenting_pass_receives_it ... ok
+test skylight::tests::the_clamp_is_what_holds_the_sky_inside_the_models_range ... ok
+test world::tests::every_composed_pass_is_valid_wgsl ... ok
+test skylight::tests::the_dome_table_is_the_directional_model_it_samples ... ok
+test shell::mount::tests::the_console_window_counts_records_it_dropped_rather_than_reading_as_complete ... ok
+test shell::notifications::tests::the_queue_streams_every_decision_the_gate_made ... ok
+test shell::mount::tests::the_board_read_catches_the_ledgers_tickets_on_the_real_record ... ok
+test shell::mount::tests::the_evaluator_hands_the_whole_real_board_to_the_agent ... ok
+test shell::mount::tests::a_persons_plain_prose_ticket_files_and_compiles_like_any_other ... ok
+test shell::mount::tests::the_console_files_against_the_real_chain_bytes_and_not_only_a_scratch_one ... ok
+test game::tests::the_collider_sees_the_players_own_edits has been running for over 60 seconds
+test game::tests::the_collider_sees_the_players_own_edits ... ok
+
+failures:
+
+---- shading::tests::no_material_loses_its_rim_to_arithmetic stdout ----
+
+thread 'shading::tests::no_material_loses_its_rim_to_arithmetic' (14984) panicked at crates\voxel-client\src\shading.rs:446:9:
+4 material(s) shade identically head-on and at a grazing view, so `npr.rs`'s rim contributes nothing measurable at any angle: [("water", "roughness absent, so the rim has no input to scale by"), ("ice", "roughness absent, so the rim has no input to scale by"), ("plant_fibre", "roughness 1.0, so (1 - roughness) is exactly zero"), ("fibre_dust", "roughness 1.0, so (1 - roughness) is exactly zero")]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- shading::tests::no_openpbr_term_is_silently_dropped_on_the_way_to_the_gpu stdout ----
+
+thread 'shading::tests::no_openpbr_term_is_silently_dropped_on_the_way_to_the_gpu' (19960) panicked at crates\voxel-client\src\shading.rs:733:9:
+OpenPbrInputs carries 5 term(s) that MaterialParams (80 bytes) has nowhere to put, so `derive` computes them and the shader never sees them: ["specular_ior", "coat_weight", "coat_roughness", "transmission_depth", "subsurface_weight"]
+
+
+failures:
+    shading::tests::no_material_loses_its_rim_to_arithmetic
+    shading::tests::no_openpbr_term_is_silently_dropped_on_the_way_to_the_gpu
+
+test result: FAILED. 410 passed; 2 failed; 16 ignored; 0 measured; 0 filtered out; finished in 123.78s
+
+error: test failed, to rerun pass `-p voxel-client --lib`
+     Running unittests examples\adapter-features.rs (target\debug\examples\adapter_features-f80ed67f85169139.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples\daylight-hue.rs (target\debug\examples\daylight_hue-61231f49a0731df3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples\exposure-steps.rs (target\debug\examples\exposure_steps-7bf5f814667851d2.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples\pattern-flicker.rs (target\debug\examples\pattern_flicker-1f1734ed3d131b55.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples\remesh-timing.rs (target\debug\examples\remesh_timing-c0843d7685f0cf92.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples\rung-attribution.rs (target\debug\examples\rung_attribution-00f3703ae8c15f29.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples\sun-in-the-sky.rs (target\debug\examples\sun_in_the_sky-86c5f9a7b3c433c9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples\surface-colours.rs (target\debug\examples\surface_colours-3e90425b0cbec86e.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples\surface-format-check.rs (target\debug\examples\surface_format_check-1000f7a255d7594c.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\voxel_instrument-21fa1b624e4037b6.exe)
+
+running 33 tests
+test band::tests::a_band_with_its_ends_the_wrong_way_round_is_refused_by_name ... ok
+test band::tests::a_controller_reads_the_three_positions_and_carries_the_tick ... ok
+test band::tests::a_controller_refuses_a_mass_reading_because_a_band_is_per_item ... ok
+test band::tests::the_same_reading_gives_the_same_verdict_twice ... ok
+test gauge_wall::tests::a_mass_reaching_a_watched_sensor_is_still_refused_one_layer_down ... ok
+test band::tests::a_controller_refuses_a_reading_about_a_different_material ... ok
+test gauge_wall::tests::the_wall_is_satisfied_only_when_every_gauge_is ... ok
+test gauge_wall::tests::a_band_gauge_cannot_watch_a_boundary_because_a_boundary_reports_only_mass ... ok
+test band::tests::an_open_ended_band_is_a_case_of_a_band_not_a_second_concept ... ok
+test gauge_wall::tests::a_reading_no_gauge_watches_is_refused_not_answered_false ... ok
+test band::tests::both_ends_of_a_band_are_inside_it ... ok
+test gauge_wall::tests::an_unadmitted_material_still_has_to_be_admitted_somewhere ... ok
+test gauge_wall::tests::removing_a_gauge_that_is_not_there_is_refused_rather_than_silent ... ok
+test gauge_wall::tests::the_wall_iterates_gauges_in_id_order_not_insertion_order ... ok
+test gauge_wall::tests::a_sweep_reports_every_refusal_rather_than_the_first ... ok
+test gauge_wall::tests::one_controller_holds_many_gauges_and_reads_each_by_its_sensor ... ok
+test gauge_wall::tests::the_wall_refuses_to_call_an_unmeasured_gauge_satisfied ... ok
+test gauge_wall::tests::two_gauges_on_one_sensor_are_refused_rather_than_replacing_the_band ... ok
+test stock::tests::adding_and_removing_refuse_the_impossible_rather_than_wrapping ... ok
+test stock::tests::a_stock_holds_counts_and_absence_is_zero ... ok
+test stock::tests::a_gate_weighs_mixed_matter_as_one_number ... ok
+test stock::tests::an_unadmitted_material_is_refused_by_the_registry_not_counted_as_zero ... ok
+test stock::tests::an_overflowing_network_total_is_refused_and_names_the_container ... ok
+test stock::tests::mass_is_exact_and_is_count_times_the_admitted_density ... ok
+test stock::tests::the_model_has_no_exact_subtraction_so_a_net_mass_cannot_be_reported ... ok
+test stock::tests::the_aggregate_does_not_depend_on_the_order_containers_were_added ... ok
+test stock::tests::the_gate_reports_one_raw_mass_per_direction ... ok
+test stock::tests::the_network_total_is_over_every_container ... ok
+test stock::tests::two_containers_at_one_place_are_refused ... ok
+test stock::tests::total_mass_is_the_mass_of_everything ... ok
+test tests::a_reading_knows_whether_it_is_a_count_or_a_mass ... ok
+test tests::the_overlay_renders_the_reading_it_was_given ... ok
+test tests::two_readings_at_the_same_place_and_tick_are_the_same_moment ... ok
+
+test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\voxel_light-3286bb5db8ddf723.exe)
+
+running 17 tests
+test spectra::tests::a_table_from_another_schema_is_refused_by_name ... ok
+test spectra::tests::a_table_with_the_wrong_band_count_is_refused ... ok
+test spectra::tests::bytes_left_over_after_the_last_band_are_refused ... ok
+test spectra::tests::rayleigh_scattering_falls_off_with_wavelength ... ok
+test spectra::tests::an_undeclared_transport_class_is_refused_and_names_its_band ... ok
+test spectra::tests::a_truncated_table_is_refused_rather_than_padded ... ok
+test spectra::tests::planck_peaks_where_wien_says_it_does ... ok
+test spectra::tests::the_bands_sum_to_the_solar_constant_exactly ... ok
+test spectra::tests::the_agreed_numbers_are_pinned ... ok
+test spectra::tests::the_water_band_puts_absorption_where_rayleigh_has_none ... ok
+test spectra::tests::the_table_round_trips_through_its_own_bytes ... ok
+test spectra::tests::the_far_bands_are_links_and_the_rest_are_a_field ... ok
+test spectra::tests::the_moon_is_a_grey_regolith_and_slightly_red ... ok
+test spectra::tests::ozone_absorbs_at_its_declared_head_and_nowhere_else ... ok
+test spectra::tests::the_table_is_twelve_bands_spanning_the_spectrum ... ok
+test spectra::tests::each_band_separates_absorption_from_scattering ... ok
+test spectra::tests::the_sun_is_mostly_visible_and_near_infrared ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples\bands.rs (target\debug\examples\bands-638573599d1a4e54.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\voxel_mesh-3aecb8e63ac698cb.exe)
+
+running 69 tests
+test chunk::tests::a_chunk_spans_the_whole_chunk_side ... ok
+test chunk::tests::a_new_chunk_is_empty_and_dirty ... ok
+test chunk::tests::the_content_digest_ignores_the_position_and_the_edits_change_it ... ok
+test mesh::tests::a_diagonal_pinch_is_two_loops_and_not_one_braid ... ok
+test chunk::tests::generating_from_a_source_adopts_the_whole_tree ... ok
+test chunk::tests::writing_a_voxel_dirties_the_chunk_and_marking_it_meshed_clears_it ... ok
+test mesh::tests::a_hole_is_its_own_loop_wound_against_the_region_around_it ... ok
+test mesh::tests::a_shape_a_rectangle_cannot_be_is_one_loop_and_fewer_primitives ... ok
+test mesh::tests::an_empty_chunk_meshes_to_nothing_without_refusing ... ok
+test mesh::tests::every_loop_winds_so_its_normal_is_the_faces_own ... ok
+test mesh::tests::coalesce_joins_aligned_neighbours_and_nothing_else ... ok
+test mesh::tests::the_mesher_holds_its_scratch_rather_than_allocating_per_chunk ... ok
+test mesh::tests::a_neighbour_only_culls_the_faces_that_touch_it ... ok
+test mesh::tests::the_visible_set_comes_from_the_registry_not_from_a_hardcoded_id ... ok
+test mesh::tests::the_loops_cover_the_quads_on_a_jagged_mask ... ok
+test mesh::tests::corner_positions_are_chunk_local_metres ... ok
+test mesh::tests::water_is_see_through_and_rock_is_not ... ok
+test mesh::tests::a_lone_voxel_emits_exactly_six_quads_one_per_face ... ok
+test mesh::tests::the_plane_of_each_lone_voxel_face_is_where_it_should_be ... ok
+test octree::tests::a_genuinely_mixed_voxel_stays_a_shape ... ok
+test octree::tests::an_empty_tree_is_one_empty_leaf ... ok
+test octree::tests::an_out_of_range_local_coordinate_is_refused_by_name ... ok
+test octree::tests::a_uniform_chunk_is_one_node_and_a_uniform_shape_is_one_node ... ok
+test octree::tests::carving_every_subvoxel_back_out_returns_the_voxel_to_empty ... ok
+test mesh::tests::the_winding_rule_is_the_one_the_corners_use ... ok
+test mesh::tests::a_half_soil_voxel_shows_its_subvoxel_detail ... ok
+test octree::tests::octant_index_and_its_inverse_agree ... ok
+test octree::tests::sparse_and_leaf_count_agree_by_construction ... ok
+test octree::tests::regions_at_a_level_partition_the_chunk_exactly_once_each ... ok
+test octree::tests::the_digest_changes_when_anything_changes ... ok
+test mesh::tests::the_winding_of_every_face_points_outwards ... ok
+test octree::tests::setting_a_subvoxel_promotes_a_uniform_voxel_to_a_shape ... ok
+test octree::tests::set_and_get_round_trip_including_negative_octants ... ok
+test raycast::tests::a_ray_down_an_axis_hits_the_voxel_and_names_the_face ... ok
+test raycast::tests::a_ray_pointing_away_from_the_chunk_terminates_immediately ... ok
+test octree::tests::visit_leaves_covers_the_chunk_exactly_once ... ok
+test raycast::tests::a_degenerate_ray_has_no_walk ... ok
+test raycast::tests::a_zero_direction_on_one_axis_does_not_break_the_traversal ... ok
+test raycast::tests::max_distance_is_respected ... ok
+test mesh::tests::a_solid_slab_merges_to_six_quads ... ok
+test raycast::tests::a_ray_that_begins_inside_reports_no_entry_face ... ok
+test raycast::tests::a_ray_that_misses_returns_nothing ... ok
+test octree::tests::the_digest_does_not_depend_on_insertion_order ... ok
+test raycast::tests::a_degenerate_ray_is_none_rather_than_a_hit_at_zero_distance ... ok
+test mesh::tests::meshing_the_same_chunk_twice_produces_the_same_digest ... ok
+test raycast::tests::a_ray_across_a_diagonal_reaches_the_voxel_it_should ... ok
+test octree::tests::the_region_count_is_the_same_however_well_the_chunk_compresses ... ok
+test raycast::tests::the_first_voxel_along_the_ray_wins_not_the_nearest_to_the_origin ... ok
+test raycast::tests::the_walk_stops_at_the_reach_rather_than_running_on ... ok
+test raycast::tests::the_walk_yields_the_starting_voxel_then_the_crossings_in_order ... ok
+test refine::tests::a_bare_amplitude_translates_a_plane_and_still_costs_two_triangles ... ok
+test raycast::tests::the_walk_is_the_walk_the_octree_uses ... ok
+test refine::tests::a_config_refuses_a_rate_with_no_samples_and_a_cap_that_cannot_hold_a_triangle ... ok
+test source::tests::a_grid_sources_a_chunk_and_out_of_range_coordinates_read_as_air ... ok
+test source::tests::an_all_air_neighbourhood_says_air_and_never_refuses ... ok
+test refine::tests::every_refined_normal_is_a_unit_vector_and_leans_outward ... ok
+test refine::tests::the_meshs_face_axes_and_the_profiles_law_agree_about_which_way_is_u ... ok
+test refine::tests::a_merged_quad_is_split_at_block_boundaries_because_the_law_is_per_block ... ok
+test source::tests::setting_an_empty_shape_removes_the_cell ... ok
+test refine::tests::an_undisplaced_face_is_two_triangles_and_that_is_the_measure_to_beat ... ok
+test refine::tests::a_profiled_face_subdivides_and_the_law_is_sampled_and_not_approximated ... ok
+test refine::tests::a_resolution_past_the_cap_is_refused_by_name_and_not_lowered ... ok
+test source::tests::the_default_chunk_walks_every_voxel ... ok
+test mesh::tests::the_loops_are_reproducible_from_the_same_chunk ... ok
+test mesh::tests::no_greedy_quad_covers_a_face_twice_on_a_jagged_mask ... ok
+test mesh::tests::a_solid_chunk_is_six_quads_and_a_buried_one_is_none ... ok
+test mesh::tests::the_coverage_guard_has_teeth_and_would_catch_a_mesher_that_drops_a_face ... ok
+test mesh::tests::the_loops_cover_exactly_the_faces_the_quads_cover ... ok
+test mesh::tests::the_greedy_mesh_covers_exactly_the_faces_the_naive_mesher_draws ... ok
+
+test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.49s
+
+     Running unittests src\lib.rs (target\debug\deps\voxel_model-6e79edde7a2609d6.exe)
+
+running 295 tests
+test axis::tests::a_contested_token_is_ambiguous_and_names_every_claimant ... ok
+test axis::tests::a_fabricated_row_is_refused_because_it_looks_checked ... ok
+test axis::tests::a_ladder_with_no_representation_is_a_failure_not_a_todo ... ok
+test axis::tests::a_maximum_over_a_metric_set_is_refused_with_the_sources_own_example ... ok
+test axis::tests::a_token_no_ladder_claims_is_not_this_rules_business ... ok
+test axis::tests::a_single_claimant_is_unqualified_not_ambiguous ... ok
+test axis::tests::an_origin_letter_may_not_be_compared_to_a_unit_grade ... ok
+test axis::tests::a_support_level_may_not_be_compared_to_an_evidence_grade ... ok
+test axis::tests::no_requirements_holds_no_tier_rather_than_a_floor ... ok
+test axis::tests::parsing_refuses_an_unknown_token_rather_than_defaulting ... ok
+test axis::tests::advance_at_the_ceiling_refuses_because_no_destination_exists ... ok
+test axis::tests::advance_moves_one_rung_and_graduate_ends_only_at_the_ceiling ... ok
+test axis::tests::every_ladder_declares_all_of_its_tokens ... ok
+test axis::tests::no_ladder_is_a_quantity ... ok
+test axis::tests::the_contested_set_is_visible_rather_than_resolved ... ok
+test axis::tests::the_bands_are_a_threshold_ladder_over_the_whole_vector ... ok
+test axis::tests::the_coverage_table_describes_every_axis_exactly_once ... ok
+test axis::tests::a_percentage_and_a_score_are_refused_for_every_axis ... ok
+test axis::tests::the_office_ceiling_is_reached_by_election_not_by_iterating ... ok
+test axis::tests::the_ticket_evidence_ladder_is_the_crates_existing_origin ... ok
+test axis::tests::the_two_a_values_point_in_opposite_directions ... ok
+test axis::tests::two_members_of_one_ladder_compare_freely ... ok
+test chain::tests::a_hash_is_never_called_permission ... ok
+test chain::tests::a_link_parses_and_garbage_is_refused_rather_than_read_as_unevaluated ... ok
+test chain::tests::a_linked_chain_is_tamper_evident_and_says_so ... ok
+test chain::tests::a_namespace_with_no_world_or_no_campaign_is_refused ... ok
+test chain::tests::a_relinked_chain_is_detected_because_the_link_no_longer_matches ... ok
+test chain::tests::a_rewritten_event_is_detected_by_verify ... ok
+test chain::tests::a_season_follows_the_tick_and_the_constants_are_this_trees_own ... ok
+test chain::tests::a_season_is_one_of_four_and_a_campaign_is_not_a_season ... ok
+test chain::tests::an_empty_chain_is_neither_and_says_which ... ok
+test chain::tests::an_empty_detail_is_refused_because_it_records_nothing ... ok
+test chain::tests::an_unlinked_chain_is_never_called_tamper_evident ... ok
+test chain::tests::appending_is_deterministic_and_the_chain_digest_covers_every_event ... ok
+test chain::tests::the_projection_is_a_function_of_the_chain_and_carries_its_digest ... ok
+test civilian::gov::season::tests::a_record_with_an_empty_detail_is_refused_rather_than_appended ... ok
+test civilian::gov::season::tests::a_caller_supplied_chain_is_the_record_the_view_reads ... ok
+test civilian::gov::season::tests::an_unnamed_period_is_refused ... ok
+test civilian::gov::season::tests::ids_come_from_positions_in_the_record ... ok
+test civilian::gov::season::tests::the_governance_period_is_the_campaign_field_and_the_store_is_the_chain ... ok
+test civilian::sim::citizen::tests::interpolation_uses_work_done_not_a_clock ... ok
+test civilian::sim::citizen::tests::an_agent_with_no_route_has_nothing_to_draw ... ok
+test chain::tests::the_projection_groups_by_campaign_and_never_by_season_as_a_period ... ok
+test chain::tests::every_event_kind_has_a_row_and_round_trips ... ok
+test civilian::sim::citizen::tests::step_work_is_clamped_when_it_is_used_for_rendering ... ok
+test civilian::sim::citizen::tests::the_last_step_has_no_next_tile ... ok
+test civilian::sim::task::tests::a_gather_walks_to_its_patch_before_its_site ... ok
+test civilian::sim::task::tests::a_process_declares_its_work_in_ticks ... ok
+test conservation::tests::a_non_finite_approximation_is_refused_at_construction ... ok
+test civilian::sim::citizen::tests::a_new_citizen_has_a_home_and_no_job ... ok
+test chain::tests::a_second_writer_is_refused_and_the_first_keeps_its_lock ... ok
+test conservation::tests::a_family_that_is_not_crossing_refuses_mass_and_the_refusal_names_it ... ok
+test civilian::sim::task::tests::the_verb_list_is_closed_and_quotes_itself ... ok
+test conservation::tests::a_zero_mass_entry_records_nothing_and_is_refused ... ok
+test conservation::tests::an_approximate_quantity_cannot_feed_mass_without_a_declared_tolerance ... ok
+test conservation::tests::a_zero_tolerance_is_an_exact_claim_about_an_inexact_value ... ok
+test civilian::gov::season::tests::the_period_rides_the_namespace_campaign_and_the_world_keeps_its_season ... ok
+test conservation::tests::a_ledger_that_moves_mass_must_declare_a_pump_or_balance ... ok
+test civilian::sim::task::tests::the_declared_process_table_is_well_formed ... ok
+test conservation::tests::an_empty_ledger_balances_trivially ... ok
+test conservation::tests::an_exact_withdrawal_larger_than_the_deposit_is_refused_not_defaulted ... ok
+test conservation::tests::exact_arithmetic_is_exact ... ok
+test conservation::tests::pressure_and_flow_gates_at_one_millimetre_of_head_and_may_not_feed_mass ... ok
+test conservation::tests::the_family_list_is_exactly_the_six_the_ruling_declares ... ok
+test conservation::tests::the_weather_family_crosses_because_rain_deposits_mass ... ok
+test conservation::tests::with_a_declared_tolerance_the_boundary_is_crossed_deliberately ... ok
+test coord::tests::a_local_offset_outside_the_chunk_is_refused ... ok
+test coord::tests::an_overflowing_coordinate_is_refused_by_name ... ok
+test coord::tests::chunk_and_local_round_trip_across_the_origin ... ok
+test coord::tests::constants_are_the_settled_contract ... ok
+test coord::tests::manhattan_distance_is_integer_and_symmetric ... ok
+test coord::tests::negative_voxels_land_in_negative_chunks ... ok
+test coord::tests::the_playable_band_is_half_open ... ok
+test envelope::tests::a_digest_distinguishes_an_unevaluated_link_from_an_empty_one ... ok
+test envelope::tests::a_supersession_must_name_what_it_supersedes ... ok
+test envelope::tests::an_empty_actor_is_refused_because_a_record_needs_someone_to_have_written_it ... ok
+test envelope::tests::an_oversized_field_is_refused_rather_than_truncated ... ok
+test envelope::tests::an_unresolved_record_may_not_carry_an_answer ... ok
+test envelope::tests::append_only_is_never_reported_as_tamper_evident ... ok
+test envelope::tests::every_ported_enum_has_a_row_and_round_trips ... ok
+test envelope::tests::the_control_vocabulary_is_pinned_like_the_other_three ... ok
+test envelope::tests::the_envelope_is_small_where_the_reference_record_is_not ... ok
+test envelope::tests::the_vocabulary_is_the_measured_one_and_not_a_smaller_invention ... ok
+test envelope::tests::there_is_no_details_field_because_that_was_eighty_one_percent_of_the_bloat ... ok
+test grant::tests::a_grant_carries_its_name_and_its_bound_and_nothing_else ... ok
+test grant::tests::a_grant_with_no_granter_is_refused_construction ... ok
+test grant::tests::a_grant_with_no_scope_is_refused_because_it_authorizes_everything ... ok
+test grant::tests::both_refusals_are_collected_rather_than_the_first_returned ... ok
+test identity::tests::a_known_vector_pins_the_hash_function ... ok
+test identity::tests::an_identity_round_trips_through_its_text_form ... ok
+test identity::tests::field_digests_are_length_prefixed_so_they_cannot_collide ... ok
+test identity::tests::every_wrong_spelling_is_refused ... ok
+test laya::tests::a_hand_rolled_wire_format_is_named_with_the_line_that_triggered_it ... ok
+test laya::tests::a_judge_that_loses_to_the_majority_class_is_not_quotable ... ok
+test identity::tests::the_digest_is_over_the_bytes_and_not_over_a_view ... ok
+test laya::tests::a_line_built_from_the_basis_own_terms_belongs ... ok
+test laya::tests::a_line_naming_something_the_basis_does_not_is_refused_and_the_term_is_named ... ok
+test laya::tests::a_malformed_record_is_refused_rather_than_half_read ... ok
+test laya::tests::a_judge_that_beats_the_majority_class_is_quotable_and_says_so ... ok
+test laya::tests::a_notification_carries_the_whole_decision_and_round_trips ... ok
+test laya::tests::an_answer_carries_a_type_and_a_bounded_confidence_but_no_prose ... ok
+test laya::tests::an_artifact_with_no_proof_of_work_fails_by_default ... ok
+test material::tests::a_blend_of_nothing_is_refused_rather_than_black ... ok
+test material::tests::a_material_admits_when_its_ratios_sum_to_one ... ok
+test laya::tests::the_known_answer_set_carries_both_verdicts_and_no_majority ... ok
+test laya::tests::every_known_answer_agrees_with_the_vocabulary_rule ... ok
+test laya::tests::the_question_vocabulary_is_closed ... ok
+test material::tests::a_ratio_with_a_zero_denominator_is_refused ... ok
+test material::tests::a_composition_blend_is_exact_and_weights_each_channel ... ok
+test material::tests::a_material_whose_ratios_do_not_sum_to_one_is_refused_by_name ... ok
+test material::tests::an_unadmitted_material_is_refused_rather_than_defaulted ... ok
+test material::tests::material_id_zero_is_empty_and_never_admitted ... ok
+test material::tests::division_is_exact_and_a_zero_divisor_is_refused ... ok
+test material::tests::every_reason_a_material_is_bad_is_reported_at_once ... ok
+test material::tests::ratios_are_exact_and_reduce ... ok
+test materials::declaration::tests::a_float_is_refused_and_the_row_is_named ... ok
+test materials::declaration::tests::a_process_side_parses_and_a_bad_item_is_refused ... ok
+test materials::declaration::tests::every_shallow_thing_wrong_with_a_file_is_refused_at_once ... ok
+test materials::declaration::tests::the_declaration_parses_into_typed_rows ... ok
+test materials::declaration::tests::tiers_and_vocabulary_parse ... ok
+test materials::schema::tests::a_count_without_a_unit_mass_is_refused ... ok
+test materials::schema::tests::a_gas_that_declares_holding_is_refused ... ok
+test materials::schema::tests::a_not_yet_sourced_row_may_not_carry_a_number ... ok
+test materials::schema::tests::a_reason_is_open_work_and_not_a_defect ... ok
+test materials::schema::tests::fluid_capacity_may_not_exceed_porosity ... ok
+test materials::schema::tests::every_enum_round_trips_through_its_name ... ok
+test materials::schema::tests::a_process_with_no_mechanism_is_refused ... ok
+test materials::schema::tests::a_vocabulary_entry_nothing_requires_is_refused ... ok
+test materials::schema::tests::a_substance_with_no_consumer_and_no_reason_is_refused ... ok
+test materials::schema::tests::floats_are_refused_by_name ... ok
+test materials::schema::tests::heat_without_a_kind_is_refused ... ok
+test materials::schema::tests::a_volume_without_a_density_is_refused ... ok
+test materials::schema::tests::a_gather_may_only_hand_out_what_the_world_holds ... ok
+test materials::schema::tests::the_converters_are_exact ... ok
+test materials::schema::tests::the_level_deltas_are_exact ... ok
+test materials::schema::tests::an_undeclared_name_is_refused_wherever_it_appears ... ok
+test materials::schema::tests::an_unbalanced_process_quotes_both_totals ... ok
+test matter::rational::tests::a_non_positive_denominator_is_refused_rather_than_flipped ... ok
+test materials::schema::tests::the_worked_chain_balances_and_gates_clean ... ok
+test matter::rational::tests::a_comparison_that_would_overflow_refuses_rather_than_guessing ... ok
+test matter::rational::tests::a_required_non_negative_quantity_names_the_field_it_was ... ok
+test matter::rational::tests::a_zero_numerator_normalizes_to_exactly_zero ... ok
+test matter::rational::tests::arithmetic_is_exact_and_keeps_the_sign ... ok
+test matter::rational::tests::equal_values_reduce_to_the_same_components ... ok
+test matter::rational::tests::multiplication_and_division_are_inverse_on_exact_values ... ok
+test matter::rational::tests::rounding_lands_on_the_nearest_multiple_or_refuses_past_the_tolerance ... ok
+test matter::tests::every_lifecycle_state_is_named ... ok
+test matter::tests::every_species_has_a_reservoir ... ok
+test matter::tests::the_phase_rule_is_the_sources ... ok
+test observer::recorder::tests::a_drained_row_is_not_offered_twice ... ok
+test observer::recorder::tests::a_recorded_action_names_its_commit_site_and_reads_back_whole ... ok
+test plan::tests::a_blocker_reads_its_rule_and_its_two_optional_fields ... ok
+test plan::tests::a_blocker_with_no_rule_is_refused_rather_than_given_a_provisional_one ... ok
+test plan::tests::a_bold_paragraph_is_not_a_label ... ok
+test plan::tests::a_milestone_filed_under_the_marker_parses_to_the_same_milestone ... ok
+test plan::tests::a_milestone_reads_all_seven_fields_verbatim ... ok
+test plan::tests::a_milestone_with_no_deliverable_is_refused_by_name ... ok
+test plan::tests::identity_moves_when_a_field_changes_and_not_with_map_order ... ok
+test plan::tests::the_consequence_is_recognised_under_any_of_its_measured_spellings ... ok
+test profile::tests::a_columns_side_normal_is_exact_for_a_cylinder_and_for_a_frustum ... ok
+test profile::tests::a_coordinate_outside_the_face_is_refused ... ok
+test profile::tests::a_da_of_one_is_exactly_the_hemisphere_and_that_is_the_papers_own_columnar_case ... ok
+test profile::tests::a_degenerate_profile_is_refused_rather_than_clamped ... ok
+test profile::tests::a_flat_profile_returns_the_face_normal_for_every_input ... ok
+test profile::tests::a_taper_makes_the_pattern_differ_from_layer_to_layer ... ok
+test profile::tests::the_radial_sample_of_a_face_is_a_disc_and_the_corner_pattern_is_its_coarse_form ... ok
+test profile::tests::the_daekohler_number_derives_the_three_forms_and_nothing_declares_them ... ok
+test refusal::tests::an_empty_set_is_ok_and_a_non_empty_set_is_err ... ok
+test profile::tests::the_axial_fraction_samples_cell_centres_and_not_edges ... ok
+test profile::tests::every_normal_of_every_profile_is_a_unit_vector_everywhere ... ok
+test profile::tests::the_cap_normal_is_the_face_normal_at_the_centre_and_radial_at_the_rim ... ok
+test profile::tests::the_column_axis_and_the_face_basis_agree_about_which_way_is_up ... ok
+test refusal::tests::a_refusal_names_its_kind_and_its_value ... ok
+test refusal::tests::a_set_collects_every_refusal_rather_than_the_first ... ok
+test profile::tests::the_daekohler_number_comes_from_the_world_and_not_from_a_constant ... ok
+test refusal::tests::distinct_kinds_are_not_interchangeable ... ok
+test profile::tests::the_cross_section_is_the_silhouette_and_not_the_base_radius ... ok
+test shaper::tests::a_physical_shaper_changes_occupancy_and_a_material_shaper_cannot ... ok
+test shaper::tests::a_profile_displaces_with_its_own_shape_and_derives_its_own_amplitude ... ok
+test shaper::tests::a_material_shaper_reaching_for_an_empty_cell_is_refused_by_name ... ok
+test shaper::tests::a_displacement_may_not_cross_a_cell_boundary_and_the_refusal_says_why ... ok
+test shaper::tests::a_shading_gain_outside_the_unit_range_is_refused ... ok
+test shaper::tests::a_shape_writer_set_cannot_smuggle_an_occupancy_change ... ok
+test shaper::tests::a_shaper_that_claims_the_256_level_and_declares_nothing_is_refused_by_name ... ok
+test shaper::tests::a_shaper_that_does_not_apply_never_opens_a_writer ... ok
+test shaper::tests::a_shaper_without_a_source_stops_the_set_at_audit ... ok
+test shaper::tests::replace_refuses_to_change_occupancy_in_either_direction ... ok
+test shaper::tests::the_level_mask_is_a_mask_and_not_two_booleans_that_can_disagree ... ok
+test shaper::tests::the_neighbourhood_answers_the_questions_a_shaper_asks ... ok
+test shaper::tests::the_order_of_the_set_is_the_order_of_the_effects ... ok
+test shaper::tests::the_same_context_always_produces_the_same_shape ... ok
+test shaper::tests::the_taxonomy_is_two_kinds_crossed_with_two_levels_and_every_cell_is_reachable ... ok
+test shaper::tests::two_shapers_may_not_displace_one_face_and_the_second_is_refused ... ok
+test shaper::tests::two_shapers_with_one_name_stop_the_set ... ok
+test subvoxel::tests::a_corner_pattern_recesses_exactly_the_corners ... ok
+test subvoxel::tests::a_detail_address_outside_the_lattice_is_refused ... ok
+test subvoxel::tests::a_half_and_half_face_recesses_the_side_that_covers_less ... ok
+test subvoxel::tests::a_half_and_half_voxel_reports_a_face_blend_of_two ... ok
+test subvoxel::tests::a_subvoxel_index_out_of_range_is_refused_not_clamped ... ok
+test subvoxel::tests::a_tie_recesses_the_material_the_blend_names_second_and_that_is_deterministic ... ok
+test subvoxel::tests::detail_fractions_map_within_range_and_refuse_outside_it ... ok
+test ticket::retirement_section_tests::a_field_the_parser_does_not_know_is_refused_rather_than_skipped ... ok
+test ticket::retirement_section_tests::a_duplicated_scalar_is_refused ... ok
+test subvoxel::tests::opposite_faces_point_away_from_each_other ... ok
+test subvoxel::tests::face_blend_breaks_ties_by_material_id_so_it_is_deterministic ... ok
+test subvoxel::tests::a_uniform_face_has_nothing_recessed ... ok
+test ticket::tests::a_blocked_ticket_is_terminal_so_the_board_can_drain ... ok
+test subvoxel::tests::an_empty_voxel_has_no_matter_and_a_solid_one_has_no_empties ... ok
+test ticket::retirement_section_tests::a_retirement_round_trips_through_the_section_the_chain_carries ... ok
+test ticket::retirement_section_tests::the_one_validated_token_cannot_be_manufactured_on_an_unchecked_read_back ... ok
+test subvoxel::tests::flat_and_index_round_trip_over_all_64 ... ok
+test ticket::tests::a_correction_is_appended_and_never_rewrites_the_retirement ... ok
+test ticket::tests::a_closed_ticket_is_not_reopened_by_a_second_retirement ... ok
+test ticket::tests::a_retirement_with_a_detected_regression_cannot_claim_validated ... ok
+test ticket::tests::a_retirement_for_the_wrong_ticket_is_refused ... ok
+test subvoxel::tests::all_enumerates_exactly_64_in_index_order ... ok
+test ticket::tests::a_ticket_id_is_its_kind_prefix_and_its_position ... ok
+test ticket::tests::a_ticket_cannot_be_called_validated_without_a_retirement ... ok
+test ticket::tests::a_validated_retirement_cannot_be_issued_on_an_unchecked_read_back ... ok
+test ticket::tests::a_ticket_with_no_objective_or_no_gate_is_refused_and_leaves_no_trace ... ok
+test ticket::tests::an_allowed_ticket_lands_on_the_chain_and_is_readable_back ... ok
+test ticket::tests::an_event_with_no_marker_is_a_build_and_the_fallback_is_visible ... ok
+test ticket::tests::an_expectation_names_the_coordinates_it_touches ... ok
+test ticket::tests::an_origin_is_not_a_grade_and_carries_no_order ... ok
+test ticket::tests::an_unauthorized_or_empty_correction_is_refused ... ok
+test ticket::tests::an_unduplicated_board_says_so_rather_than_printing_nothing ... ok
+test ticket::tests::every_kind_prefix_and_origin_round_trips ... ok
+test ticket::tests::evidence_with_no_id_or_no_detail_is_refused ... ok
+test ticket::tests::filing_goes_through_the_chokepoint_and_a_denial_is_on_the_record ... ok
+test ticket::tests::one_objective_filed_twice_is_reported_with_both_positions ... ok
+test ticket::tests::the_bracket_marker_is_the_chains_bookkeeping_and_never_the_tickets_text ... ok
+test ticket::tests::the_four_way_classification_needs_the_before_state_as_an_argument ... ok
+test ticket::tests::the_governed_status_set_is_nine_and_nothing_else_parses ... ok
+test ticket::tests::the_report_says_the_chain_is_not_tamper_evident_when_it_is_not ... ok
+test ticket::tests::the_retirement_taxonomy_is_fourteen_and_only_one_validates ... ok
+test wire::tests::a_field_that_looks_like_two_fields_cannot_be_misread ... ok
+test wire::tests::a_foreign_frame_version_is_refused_not_migrated ... ok
+test wire::tests::a_foreign_schema_version_is_refused_not_migrated ... ok
+test wire::tests::a_hex_rendering_is_refused_where_a_digest_is_declared ... ok
+test wire::tests::a_missing_required_field_is_refused_by_name_and_quotes_its_doc ... ok
+test wire::tests::a_payload_with_a_tail_is_refused ... ok
+test wire::tests::a_projection_round_trips_to_identical_bytes ... ok
+test wire::tests::a_truncated_payload_is_refused_rather_than_read_up_to_its_own_end ... ok
+test wire::tests::a_wrong_magic_is_refused_alone_and_honestly ... ok
+test wire::tests::a_wrongly_typed_field_is_refused_rather_than_read_as_either ... ok
+test wire::tests::an_undeclared_field_is_refused_by_name ... ok
+test wire::tests::the_encoding_does_not_depend_on_insertion_order ... ok
+test wire::tests::the_digest_is_domain_separated ... ok
+test wire::tests::the_magic_is_not_the_references_magic ... ok
+test wire::tests::the_schema_documents_itself ... ok
+test wire::tests::a_valid_chain_event_validates ... ok
+test wire::tests::an_unknown_type_tag_is_refused_by_tag ... ok
+test wire::tests::an_integer_is_never_silently_rendered_as_text ... ok
+test wire::tests::an_identity_is_thirty_two_raw_bytes_and_not_a_hex_rendering ... ok
+test wire::tests::the_type_tags_are_distinct_so_from_tag_cannot_return_the_wrong_arm ... ok
+test wire::tests::every_refusal_is_collected_rather_than_the_first_returned ... ok
+test world::book::tests::a_cancelled_reservation_is_gone_and_can_be_reclaimed ... ok
+test world::book::tests::a_matter_transfer_moves_mass_and_conserves_it ... ok
+test world::book::tests::a_reservation_commits_once_and_a_committed_one_is_never_cancelled ... ok
+test world::book::tests::a_snapshot_that_disagrees_with_its_own_digest_is_a_violation ... ok
+test world::book::tests::an_excavation_is_a_transfer_the_book_can_commit ... ok
+test world::book::tests::an_overdraft_is_refused_and_nothing_changes ... ok
+test world::book::tests::an_occupancy_change_needs_its_matching_transfer ... ok
+test world::book::tests::evidence_rows_are_readable_by_reservation_and_by_transition ... ok
+test world::change::tests::a_fluid_address_refuses_a_phase_its_species_cannot_have ... ok
+test world::change::tests::a_lineage_is_its_parts_and_refuses_an_empty_one ... ok
+test world::change::tests::a_matter_transfer_may_not_be_negative_and_keeps_its_lineage ... ok
+test world::change::tests::an_evidence_output_requires_a_message ... ok
+test world::change::tests::an_excavation_moves_matter_and_refuses_a_negative_amount ... ok
+test world::change::tests::an_occupancy_change_requires_provenance ... ok
+test world::change::tests::canonical_order_is_the_sources_order_and_not_a_new_one ... ok
+test world::change::tests::every_id_trims_and_refuses_empty ... ok
+test world::change::tests::occupancy_cannot_be_negative_and_has_two_declared_values ... ok
+test world::governed::tests::a_claim_must_exist_and_belong_to_the_actor_who_spends_it ... ok
+test world::governed::tests::a_claim_on_one_target_does_not_authorize_a_change_to_another ... ok
+test world::governed::tests::a_committed_change_leaves_a_receipt_and_an_evidence_row ... ok
+test world::governed::tests::a_committed_change_moves_the_mass_and_the_books_balance ... ok
+test world::governed::tests::a_permission_carries_its_author_and_its_bound ... ok
+test world::governed::tests::a_different_nonce_is_a_different_act ... ok
+test world::governed::tests::a_spent_claim_is_named_as_spent_rather_than_missing ... ok
+test world::governed::tests::an_overdraft_is_a_conservation_failure_and_changes_nothing ... ok
+test world::region::tests::a_region_that_misses_the_band_is_refused_not_clamped ... ok
+test world::region::tests::the_band_is_this_trees_band_and_the_conventions_differ_by_one ... ok
+test world::region::tests::chunking_is_euclidean_because_the_trees_own_type_says_so ... ok
+test world::tests::every_refusal_has_a_stable_name ... ok
+test world::transition::tests::a_transition_carries_its_own_identity ... ok
+test world::transition::tests::the_identity_separates_fields_that_would_otherwise_concatenate_alike ... ok
+test world::transition::tests::a_voxel_target_is_a_voxel_target ... ok
+test world::transition::tests::the_player_is_an_actor_with_one_declared_spelling ... ok
+test world::governed::tests::the_same_act_is_never_applied_twice ... ok
+test world::transition::tests::every_refusal_names_itself_as_the_record_spells_it ... ok
+test world::governed::tests::the_receipt_survives_the_change_it_describes ... ok
+test world::transition::tests::an_id_may_not_be_empty_or_whitespace ... ok
+test laya::tests::the_gate_is_red_until_the_project_carries_proof_of_work ... ok
+test laya::tests::every_decision_produces_exactly_one_notification ... ok
+
+test result: ok. 295 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+
+     Running unittests src\bin\materials-generator.rs (target\debug\deps\materials_generator-c9679024271123b1.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\materials_declaration.rs (target\debug\deps\materials_declaration-907a765ec28f82bd.exe)
+
+running 3 tests
+test the_shipped_declaration_gates_clean ... ok
+test the_committed_table_is_exactly_the_gated_declaration ... ok
+test the_digest_record_matches_the_declaration ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\spectra.rs (target\debug\deps\spectra-703f1aaa21d3ecf7.exe)
+
+running 5 tests
+test every_reflectance_constructs_within_unity_and_keeps_its_source ... ok
+test every_sample_joins_its_spectrum_to_its_instrument_grid ... ok
+test the_open_ocean_is_chromatic_and_the_stand_in_is_flagged ... ok
+test the_sentinel_is_never_turned_into_a_number ... ok
+test the_visible_channels_are_exact_means_of_the_retained_spectrum ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\voxel_noise-acb9c4256ad12ee2.exe)
+
+running 23 tests
+test fractal::tests::value_and_perlin_kinds_are_different_fields ... ok
+test noise::tests::different_seeds_give_different_fields ... ok
+test fractal::tests::ridged_and_fbm_are_different_fields ... ok
+test fractal::tests::warping_displaces_the_sample_and_changes_the_value ... ok
+test fractal::tests::zero_octaves_is_zero_rather_than_a_nan_from_dividing_by_zero ... ok
+test noise::tests::perlin_is_continuous_so_the_mesher_can_take_normals ... ok
+test noise::tests::perlin_is_zero_at_lattice_points ... ok
+test noise::tests::the_27_neighbour_search_is_actually_needed ... ok
+test fractal::tests::ridged_is_in_unit_range_and_reaches_both_ends ... ok
+test noise::tests::value_noise_is_in_range_and_blocky ... ok
+test point::tests::arithmetic_is_the_obvious_thing ... ok
+test point::tests::normalising_zero_is_zero_rather_than_nan ... ok
+test noise::tests::the_stated_clamp_is_the_stated_bound ... ok
+test point::tests::voxel_sample_points_are_at_the_centre ... ok
+test rng::tests::changing_any_component_changes_the_hash ... ok
+test rng::tests::hashing_is_a_pure_function_of_its_inputs ... ok
+test noise::tests::perlin_is_deterministic_and_spans_its_range ... ok
+test rng::tests::negative_coordinates_hash_as_their_own_values ... ok
+test rng::tests::signed_values_are_in_range ... ok
+test rng::tests::hashes_are_well_distributed_over_a_small_box ... ok
+test noise::tests::worley_is_in_unit_range_and_has_zeroes_at_feature_points ... ok
+test fractal::tests::adding_an_octave_does_not_rescale_the_field ... ok
+test fractal::tests::fbm_is_bounded_by_construction ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src\lib.rs (target\debug\deps\voxel_package-74358bfcfdb77547.exe)
+
+running 258 tests
+test bloat::tests::a_crate_with_no_sources_has_no_prose_share_rather_than_a_share_of_zero ... ok
+test bloat::tests::an_unmeasured_report_prints_no_counts_at_all ... ok
+test bloat::tests::a_zero_byte_file_is_a_measurement_and_not_a_missing_one ... ok
+test bridge::tests::a_capability_the_session_does_not_hold_refuses_before_the_matrix_runs ... ok
+test bloat::tests::a_measured_report_states_the_linkage_caveat_beside_the_number ... ok
+test bloat::tests::prose_is_counted_by_line_and_the_share_is_a_percentage_of_the_whole ... ok
+test bridge::tests::a_call_runs_only_when_every_check_ran_and_all_of_them_passed ... ok
+test bridge::tests::a_capability_nobody_can_spell_is_refused_rather_than_guessed ... ok
+test bridge::tests::a_row_no_caller_can_spell_is_reported_by_the_row_check ... ok
+test bridge::tests::a_tool_name_the_surface_does_not_carry_is_refused_by_name ... ok
+test bloat::tests::measuring_a_file_that_is_not_there_says_so_rather_than_reporting_zero ... ok
+test bridge::tests::holding_every_capability_is_still_not_permission ... ok
+test bridge::tests::the_act_the_record_forbids_is_refused_at_the_gate_and_not_by_the_matrix ... ok
+test bridge::tests::the_capability_map_and_the_always_denied_set_are_the_same_actions ... ok
+test bridge::tests::a_refusal_goes_on_the_record_and_a_permitted_call_files_nothing ... ok
+test bridge::tests::every_capability_carries_at_least_one_act_so_none_is_decorative ... ok
+test bridge::tests::the_surface_is_total_over_the_action_vocabulary_and_named_after_it ... ok
+test census::tests::a_crate_name_round_trips_and_an_unknown_one_is_refused ... ok
+test census::tests::a_heading_defines_only_what_it_begins_with ... ok
+test census::tests::a_short_census_is_refused_rather_than_being_called_one ... ok
+test census::tests::an_unmeasured_cell_is_refused_rather_than_reported_as_a_pass ... ok
+test census::tests::every_crate_has_a_row_and_a_witness ... ok
+test census::tests::the_axes_are_six_and_each_names_itself ... ok
+test civilians::tests::every_ladder_has_exactly_one_witness_and_they_are_distinct ... ok
+test civilians::tests::an_unreadable_record_is_not_a_record_that_lacks_the_witness ... ok
+test compendium::tests::a_citing_heading_is_not_mistaken_for_a_decision ... ok
+test census::tests::every_crate_has_a_witness_file_on_disk ... ok
+test bloat::tests::an_invented_record_is_found_by_extension_and_an_empty_result_is_a_measurement ... ok
+test compendium::tests::a_decision_body_is_verbatim_so_the_record_cannot_drift_from_the_format ... FAILED
+test civilians::tests::a_record_whose_rows_all_hold_says_so_in_its_reason ... ok
+test compendium::tests::a_derived_document_is_read_even_though_it_declares_no_anchors ... ok
+test compendium::tests::a_decision_can_be_found_by_the_anchor_the_record_writes_it_under ... ok
+test compendium::tests::a_hash_inside_a_fenced_block_is_not_a_heading ... ok
+test compendium::tests::a_malformed_anchor_is_refused_by_name_rather_than_guessed ... ok
+test compendium::tests::a_derived_recipe_licenses_the_words_the_record_used ... ok
+test compendium::tests::a_recipe_citing_a_decision_nobody_made_is_refused ... ok
+test compendium::tests::a_recipe_with_no_anchors_licenses_nothing_rather_than_everything ... ok
+test compendium::tests::an_anchor_round_trips_through_its_rendered_form ... ok
+test compendium::tests::an_empty_compendium_is_refused_rather_than_shipped ... ok
+test compendium::tests::an_indented_hash_is_a_code_block_and_not_a_heading ... ok
+test compendium::tests::a_subsections_content_is_part_of_its_entry_and_not_dropped_between_headings ... ok
+test compendium::tests::a_recipe_is_derived_from_the_record_s_own_words ... ok
+test compendium::tests::an_unknown_series_is_refused_and_the_refusal_names_the_letter ... ok
+test civilians::tests::the_tickets_rows_verify_against_the_documents_they_cite ... ok
+test compendium::tests::every_series_has_a_row ... ok
+test compendium::tests::research_is_not_authority_and_the_type_says_so ... ok
+test compendium::tests::a_twice_written_anchor_contributes_both_occurrences ... ok
+test compendium::tests::the_record_digest_changes_when_any_document_changes ... ok
+test compendium::tests::research_cannot_license_a_recipe_unless_the_caller_says_so_in_the_open ... ok
+test compendium::tests::the_compression_reports_what_it_found ... ok
+test compiler::tests::a_bare_token_the_recipe_could_not_carry_is_not_a_window_id ... ok
+test compiler::tests::a_closed_ticket_is_not_recompiled ... ok
+test compiler::tests::a_compiler_does_not_verify_the_world_and_does_not_claim_to ... ok
+test compendium::tests::the_record_compresses_to_decisions_and_the_check_passes ... ok
+test compiler::tests::a_denied_stage_stops_the_compile_and_is_still_recorded ... ok
+test compendium::tests::an_entry_written_at_subsection_depth_is_still_its_own_entry ... ok
+test compiler::tests::a_line_that_is_one_token_is_a_bare_window_id ... ok
+test compiler::tests::a_prose_line_naming_a_window_in_words_declares_nothing ... ok
+test compiler::tests::a_rendered_solution_compiles_and_round_trips ... ok
+test compiler::tests::a_prose_ticket_renders_and_compiles_to_a_package_with_no_window ... ok
+test compiler::tests::a_solution_names_only_the_windows_the_ticket_mentions ... ok
+test compiler::tests::a_ticket_naming_no_window_compiles_to_a_solution_with_none ... ok
+test compiler::tests::a_whole_compile_without_a_grant_stops_at_the_first_write_stage ... ok
+test compiler::tests::every_stage_is_audited_and_the_audit_is_on_the_chain ... ok
+test compiler::tests::an_arrangement_over_the_window_ceiling_is_refused_not_truncated ... ok
+test compiler::tests::prose_does_not_become_windows ... ok
+test compiler::tests::every_stage_names_an_action_and_every_action_is_one_the_matrix_has ... ok
+test compiler::tests::provenance_is_verified_by_round_trip_and_not_by_assertion ... ok
+test compiler::tests::the_two_reader_stages_are_reads_and_the_two_chain_writes_need_a_grant ... ok
+test compiler::tests::the_bare_form_and_the_bracket_form_declare_the_same_window ... ok
+test context::tests::an_empty_chain_gives_an_empty_projection_that_says_which_empty_it_is ... ok
+test compiler::tests::the_emitter_produces_a_package_from_a_ticket_on_the_chain ... ok
+test context::tests::the_address_names_the_campaign_the_world_and_the_season_separately ... ok
+test context::tests::the_lineage_stops_where_the_record_stops_being_a_descent ... ok
+test context::tests::the_lineage_walks_back_to_the_first_event ... ok
+test context::tests::the_projection_is_a_function_of_the_chain_alone ... ok
+test context::tests::the_projection_partitions_every_event_exactly_once ... ok
+test context::tests::the_refusals_are_carried_rather_than_left_to_be_found ... ok
+test decision::tests::a_count_that_does_not_add_up_to_what_it_counts_is_refused ... ok
+test decision::tests::a_report_with_no_decision_layer_is_refused_rather_than_read_as_four_zeros ... ok
+test compendium::tests::the_record_keeps_its_three_twice_written_anchors_rather_than_being_tidied ... ok
+test compendium::tests::compression_is_deterministic ... ok
+test decision::tests::a_subject_printed_without_a_reason_is_refused ... ok
+test decision::tests::an_unreachable_decider_refuses_every_subject_and_nothing_passes ... ok
+test decision::tests::every_row_of_the_bridge_s_surface_holds_as_a_decided_subject ... ok
+test compendium::tests::the_record_s_open_questions_are_found_by_its_own_convention ... ok
+test civilians::tests::the_landed_record_carries_every_witness ... ok
+test census::tests::a_single_file_crate_is_measured_by_its_tests_not_by_its_file_count ... ok
+test census::tests::the_census_finds_the_untested_crates_rather_than_this_module_asserting_it ... ok
+test decision::tests::the_subject_vocabulary_is_closed_and_counted ... ok
+test census::tests::the_census_measures_every_crate_and_every_cell ... ok
+test features::tests::a_feature_name_round_trips_and_an_unknown_one_is_refused ... ok
+test features::tests::a_feature_this_file_implements_is_reported_active ... ok
+test features::tests::a_forged_table_claiming_a_feature_with_no_witness_is_refused_by_name ... ok
+test features::tests::a_required_feature_and_a_pending_feature_are_different_decisions ... ok
+test features::tests::a_required_missing_feature_fails_the_build_and_a_pending_one_does_not ... ok
+test features::tests::a_row_with_no_meaning_is_refused ... ok
+test features::tests::every_establishment_has_a_distinct_slug_and_a_rendering ... ok
+test features::tests::every_feature_has_exactly_one_row ... ok
+test features::tests::every_feature_name_is_unique_so_a_name_can_address_one_feature ... ok
+test features::tests::every_feature_names_a_witness_and_a_declaring_authority ... ok
+test features::tests::every_problem_is_collected_rather_than_the_first_one ... ok
+test features::tests::missing_lists_only_what_is_actually_absent ... ok
+test features::tests::table_shape_is_checkable_on_a_tree_that_is_mid_build ... ok
+test features::tests::the_missing_feature_report_is_printed_so_it_can_be_read_and_not_merely_asserted ... ok
+test features::tests::the_real_tree_is_evaluated_and_every_feature_gets_a_state ... ok
+test features::tests::the_required_check_refuses_only_what_the_build_depends_on ... ok
+test features::tests::the_row_count_is_pinned_to_the_feature_count ... ok
+test features::tests::the_workspace_root_is_found_by_walking_up_and_is_not_guessed ... ok
+test features::tests::unchecked_and_refused_are_different_states ... ok
+test filing::tests::a_chain_doubled_twice_is_compacted_to_the_frames_that_link ... ok
+test filing::tests::a_dangling_symlink_is_not_absent ... ok
+test filing::tests::a_first_filing_writes_and_a_second_refuses ... ok
+test filing::tests::growing_a_chain_extends_it_and_never_shortens_what_was_already_filed ... ok
+test filing::tests::growing_a_chain_that_was_never_filed_is_refused_rather_than_creating_one ... ok
+test filing::tests::reading_an_unfiled_workspace_is_empty_rather_than_a_failure ... ok
+test migration::tests::an_empty_record_is_refused_rather_than_filing_a_chain_of_nothing ... ok
+test migration::tests::an_import_does_not_file_the_record_as_tickets ... ok
+test migration::tests::file_the_record_once ... ignored, a one-shot that writes the record; run it deliberately, once
+test migration::tests::the_importer_is_not_wired_into_the_build_gate ... ok
+test census::tests::a_crate_that_cannot_refuse_is_reported_as_inactive_with_a_reason ... ok
+test migration::tests::the_oversize_count_is_reported_rather_than_hidden ... ok
+test migration::tests::the_record_yields_every_c_entry_whole ... ok
+test numbers::tests::a_row_always_declares_something_to_check ... ok
+test numbers::tests::a_row_declared_stale_is_reported_inactive_and_does_not_fail_the_build ... ok
+test numbers::tests::an_unreadable_document_is_not_agreement ... ok
+test numbers::tests::every_row_names_a_document_the_record_carries ... ok
+test numbers::tests::the_reader_reports_and_the_layer_decides ... ok
+test numbers::tests::the_table_is_total_and_handed_written ... ok
+test numbers::tests::the_two_known_stale_numbers_are_still_stale_and_the_gate_says_so ... ok
+test oracle::tests::a_calibration_against_zero_answers_is_not_calibrated_however_the_flag_is_set ... ok
+test oracle::tests::a_comment_and_a_pure_shape_line_have_nothing_to_judge ... ok
+test oracle::tests::a_holding_reading_passes_with_no_reason_needed ... ok
+test oracle::tests::a_judge_that_never_answers_is_unmeasured ... ok
+test oracle::tests::a_licensed_term_is_licensed_whatever_its_spelling ... ok
+test oracle::tests::a_misread_with_a_reason_is_recorded_and_the_reason_travels_with_it ... ok
+test oracle::tests::a_misread_without_a_reason_is_refused_and_returns_no_finding ... ok
+test oracle::tests::a_negative_reading_is_refused_without_a_reason_and_kept_with_one ... ok
+test oracle::tests::a_numeric_literal_is_a_value_and_not_a_word ... ok
+test oracle::tests::a_recipe_can_widen_the_declared_set_but_never_narrow_it ... ok
+test oracle::tests::an_empty_known_answer_set_is_unmeasured_rather_than_a_pass ... ok
+test oracle::tests::an_undeclared_reading_names_the_culprit ... ok
+test oracle::tests::an_underscored_identifier_is_one_term_and_is_not_silently_split ... ok
+test oracle::tests::an_unmeasured_calibration_refuses_before_the_oracle_is_consulted ... ok
+test oracle::tests::an_unmeasured_model_refuses_every_subject_before_reading_anything ... ok
+test oracle::tests::an_unreachable_oracle_is_refused_because_a_missing_instrument_is_not_a_pass ... ok
+test oracle::tests::no_reading_and_unreachable_are_different_verdicts ... ok
+test oracle::tests::no_reading_at_all_is_refused_because_absence_is_not_a_free_pass ... ok
+test oracle::tests::terms_are_lowercased_split_and_deduplicated ... ok
+test oracle::tests::the_bar_is_the_majority_class_and_tying_does_not_pass ... ok
+test oracle::tests::the_gate_checks_the_feature_table_as_well_as_the_oracle ... ok
+test oracle::tests::the_judge_is_measured_and_the_measurement_is_reported_honestly ... ok
+test oracle::tests::the_known_answer_set_is_not_one_sided ... ok
+test census::tests::the_census_prints_its_own_measurements ... ok
+test oracle::tests::the_model_s_name_is_the_judge_s_name_rather_than_a_second_name_for_it ... ok
+test oracle::tests::the_unreachable_oracle_is_the_bound_default_and_it_refuses ... ok
+test oracle::tests::the_verdict_vocabulary_is_closed ... ok
+test policy::tests::a_denial_comes_with_a_refusal_that_names_the_action ... ok
+test policy::tests::a_forbidden_act_stays_forbidden_under_a_perfect_grant ... ok
+test policy::tests::a_read_only_act_needs_no_grant ... ok
+test policy::tests::a_scoped_and_attributed_grant_permits_a_gated_action_and_names_who ... ok
+test policy::tests::an_action_with_no_permission_entry_would_not_compile ... ok
+test policy::tests::an_authorization_with_no_author_is_not_an_authorization ... ok
+test policy::tests::an_authorization_with_no_scope_is_refused_too ... ok
+test policy::tests::both_defects_are_collected_rather_than_the_first_one ... ok
+test policy::tests::every_action_name_round_trips_and_an_unknown_one_is_refused ... ok
+test policy::tests::every_permission_class_has_a_distinct_slug_and_a_rendering ... ok
+test policy::tests::raising_a_toast_is_allowed_because_a_refusal_must_be_visible ... ok
+test policy::tests::silence_is_not_permission ... ok
+test policy::tests::the_matrix_is_total_and_every_action_is_described ... ok
+test policy::tests::the_three_classes_are_all_represented_in_the_matrix ... ok
+test projection::tests::a_filed_event_renders_once_not_twice ... ok
+test projection::tests::a_projection_is_never_written_over_a_disagreement ... ok
+test projection::tests::an_empty_chain_against_a_written_record_is_a_disagreement_and_never_a_pass ... ok
+test projection::tests::the_projection_uses_the_record_s_own_heading_shape ... ok
+test projection::tests::two_views_that_both_hold_an_entry_with_different_bytes_are_divergent ... ok
+test provenance::tests::a_digest_moves_when_a_file_moves_even_if_its_bytes_do_not ... ok
+test provenance::tests::a_digest_that_could_not_be_computed_says_so_rather_than_hashing_nothing ... ok
+test provenance::tests::a_symbolic_head_is_a_branch_and_not_a_commit ... ok
+test provenance::tests::an_absent_git_directory_is_a_condition_and_never_a_zero ... ok
+test census::tests::a_gap_is_reported_with_its_axis_and_reason ... ok
+test census::tests::an_incomplete_crate_is_reported_as_incomplete_and_not_hidden ... ok
+test recipe::tests::a_bar_entry_that_is_not_a_tab_is_declared_and_a_window_has_one_home ... ok
+test recipe::tests::a_comment_is_part_of_the_format_and_cannot_smuggle_a_key ... ok
+test recipe::tests::a_compile_and_load_round_trip_preserves_the_exact_source ... ok
+test recipe::tests::a_complete_window_parses_and_carries_every_field_uispec_requires ... ok
+test recipe::tests::a_duplicate_key_is_refused_rather_than_silently_overwriting ... ok
+test recipe::tests::a_missing_required_key_is_refused_and_every_one_is_reported ... ok
+test recipe::tests::a_policy_denies_by_default_because_the_empty_mask_permits_nothing ... ok
+test recipe::tests::a_policy_naming_something_the_window_may_not_have_is_refused ... ok
+test recipe::tests::a_recipe_that_declares_no_window_and_no_row_declares_nothing ... ok
+test recipe::tests::a_row_carries_the_records_own_words_and_its_id_is_the_records_shape ... ok
+test recipe::tests::a_row_with_a_tab_or_no_text_is_refused_rather_than_split ... ok
+test recipe::tests::a_second_window_block_is_read_and_the_first_is_not_swallowed ... ok
+test recipe::tests::a_tab_that_names_no_window_or_appears_twice_is_refused ... ok
+test recipe::tests::a_tampered_payload_is_refused_rather_than_mounted ... ok
+test recipe::tests::a_truncated_or_trailing_frame_is_refused ... ok
+test recipe::tests::a_window_is_addressed_by_id_and_two_may_not_share_one ... ok
+test recipe::tests::a_window_may_be_a_tab_and_pinned_because_those_are_different_questions ... ok
+test recipe::tests::an_older_source_is_refused_rather_than_converted ... ok
+test recipe::tests::an_unknown_content_kind_or_lane_is_refused_by_name ... ok
+test recipe::tests::elevation_above_four_is_refused_rather_than_clamped ... ok
+test recipe::tests::non_utf8_and_oversized_sources_are_refusals_not_panics ... ok
+test recipe::tests::opacity_outside_its_declared_range_is_refused ... ok
+test recipe::tests::pinning_a_window_that_does_not_exist_is_refused ... ok
+test recipe::tests::pinning_a_window_that_is_not_pinnable_is_refused ... ok
+test recipe::tests::the_bar_s_tabs_are_declared_and_read_in_strip_order ... ok
+test recipe::tests::the_content_vocabulary_is_the_records_twelve_plus_four_extensions ... ok
+test recipe::tests::the_declared_vocabulary_carries_every_enum_value_the_parser_accepts ... ok
+test recipe::tests::the_lane_vocabulary_is_exactly_six ... ok
+test record::tests::a_citation_that_names_no_ruling_is_refused_by_name ... ok
+test record::tests::a_digest_binds_the_bytes_that_were_read_and_changes_when_the_text_does ... ok
+test record::tests::every_declared_feature_cites_an_anchor_that_exists_in_the_record ... ok
+test record::tests::every_document_is_described_and_has_a_role_with_a_rendering ... ok
+test record::tests::every_document_of_the_record_exists_and_reads ... ok
+test record::tests::the_features_this_module_serves_are_real_features ... ok
+test record::tests::the_full_record_check_covers_both_halves_of_the_gate ... ok
+test record::tests::the_handoff_is_derived_and_is_the_only_derived_document ... ok
+test signing::tests::a_key_id_in_a_foreign_scheme_is_refused_rather_than_coerced ... ok
+test signing::tests::a_key_id_is_a_name_for_a_key_and_is_hashed_like_everything_else ... ok
+test signing::tests::a_missing_backend_never_reports_the_signature_as_wrong ... ok
+test signing::tests::a_verifier_is_the_authority_on_whether_it_can_check_a_signature ... ok
+test signing::tests::an_empty_signature_is_no_signature_and_says_so ... ok
+test signing::tests::the_signature_carries_the_attribution_it_was_given ... ok
+test signing::tests::the_three_absences_are_three_different_refusals ... ok
+test signing::tests::with_no_backend_every_verification_is_refused_and_the_reason_survives ... ok
+test signing::tests::with_no_backend_signing_refuses_rather_than_producing_an_empty_signature ... ok
+test provenance::tests::the_workspace_digest_is_computed_and_covers_the_record ... ok
+test tests::a_checksum_is_admitted_and_does_not_claim_to_prove_identity ... ok
+test tests::a_manifest_can_be_checked_before_its_bytes_are_fetched ... ok
+test tests::a_correctly_pinned_signer_is_the_one_case_that_proves_identity ... ok
+test tests::a_material_the_registry_has_not_admitted_is_refused ... ok
+test tests::a_named_signer_nobody_pinned_is_refused_rather_than_assumed ... ok
+test tests::a_pin_for_a_different_payload_is_refused_even_when_the_claim_matches_itself ... ok
+test tests::a_payload_that_changed_after_the_manifest_was_written_is_refused ... ok
+test tests::a_refused_package_is_not_partially_admitted ... ok
+test tests::a_stage_the_world_does_not_run_is_refused_by_name ... ok
+test tests::a_sound_package_is_admitted_and_every_line_says_so ... ok
+test tests::an_empty_trust_list_refuses_every_named_signer ... ok
+test tests::build_and_client_readers_share_the_exact_admitted_report ... ok
+test tests::every_problem_is_collected_rather_than_the_first_one ... ok
+test tests::intake_is_deterministic ... ok
+test tests::rejected_intake_preserves_findings_for_the_client_without_admitting_bytes ... ok
+test tests::payload_admission_cannot_bypass_manifest_structure_validation ... ok
+test census::tests::the_report_prints_every_crate_and_every_axis ... ok
+test provenance::tests::two_reads_of_the_same_tree_agree ... ok
+test census::tests::a_census_is_deterministic ... ok
+test migration::tests::the_migration_lands_and_both_views_can_then_be_compared ... ok
+test decision::tests::the_readers_report_and_the_layer_rules ... ok
+test decision::tests::a_key_the_report_never_writes_is_refused_by_name_rather_than_skipped has been running for over 60 seconds
+test decision::tests::a_recipe_that_does_not_conform_is_decided_and_not_raised has been running for over 60 seconds
+test decision::tests::a_section_after_the_two_passes_is_not_read_as_the_model_s_rows has been running for over 60 seconds
+test decision::tests::an_absent_instrument_is_not_a_disagreement has been running for over 60 seconds
+test decision::tests::every_subject_gets_a_decision_from_the_seam has been running for over 60 seconds
+test decision::tests::the_report_reads_back_exactly_what_the_report_wrote has been running for over 60 seconds
+test decision::tests::the_seam_answers_what_the_surfaces_answer has been running for over 60 seconds
+test decision::tests::the_two_passes_are_side_by_side_and_their_disagreements_are_preserved has been running for over 60 seconds
+test oracle::tests::the_model_pass_offers_every_subject_and_names_what_it_could_not_read has been running for over 60 seconds
+test oracle::tests::the_model_pass_offers_every_subject_and_names_what_it_could_not_read ... ok
+test decision::tests::a_section_after_the_two_passes_is_not_read_as_the_model_s_rows ... ok
+test decision::tests::a_recipe_that_does_not_conform_is_decided_and_not_raised ... ok
+test decision::tests::an_absent_instrument_is_not_a_disagreement ... ok
+test decision::tests::a_key_the_report_never_writes_is_refused_by_name_rather_than_skipped ... ok
+test decision::tests::the_report_reads_back_exactly_what_the_report_wrote ... ok
+test decision::tests::every_subject_gets_a_decision_from_the_seam ... ok
+test decision::tests::the_seam_answers_what_the_surfaces_answer ... ok

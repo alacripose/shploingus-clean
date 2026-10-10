@@ -1,8 +1,20 @@
 //! The canonical sparse voxel octree.
 //!
-//! The tree spans one chunk: [`OCTREE_LEVELS`] = 5, because a chunk is
-//! `CHUNK_SIDE` = 32 = 2⁵ voxels per edge. A node at level `L` covers `2^L`
-//! voxels per axis, so level 0 covers one voxel and is a **leaf**:
+//! A tree spans `2^levels` voxels per edge, and **the span is the tree's own field**
+//! ([`SparseVoxelOctree::with_levels`]), not a constant baked into the arithmetic. A chunk is
+//! `CHUNK_SIDE` = 32 = 2⁵ voxels per edge, so [`OCTREE_LEVELS`] = 5 is the *world's* tree and
+//! [`SparseVoxelOctree::new`] still makes exactly that — byte for byte the tree it always was.
+//! A world-scale system on a coarser lattice (a cloud cell, a terrain block at a different
+//! quantum) asks for its own level count and gets the same nodes, the same canonicalisation, the
+//! same walk and the same merge rule over a different domain.
+//!
+//! **The span is not the feature size and must not be confused with it.** `levels` fixes how many
+//! voxels the root covers; how many *metres* a voxel is belongs to the caller, which is what lets
+//! one tree serve a 32 m chunk of terrain and a 16 km cube of atmosphere without either of them
+//! carrying a constant the other has to know about.
+//!
+//! A node at level `L` covers `2^L` voxels per axis, so level 0 covers one voxel — the tree's own
+//! finest unit — and is a **leaf**:
 //!
 //! | Node | Covers | Means |
 //! |---|---|---|
@@ -35,10 +47,14 @@
 
 use voxel_model::{
     Digest, LocalPos, MaterialId, Refusal, RefusalKind, Refused, SubvoxelIndex, VoxelShape,
-    CHUNK_SIDE, CHUNK_VOLUME, SUBVOXEL_SIDE,
+    CHUNK_SIDE, SUBVOXEL_SIDE,
 };
 
-/// Levels in the tree. A chunk is `2^5` voxels per edge, so there are five.
+/// Levels in a **chunk's** tree — the world's own span. A chunk is `2^5` voxels per edge, so
+/// there are five.
+///
+/// It is the *default* [`SparseVoxelOctree::new`] uses, not a limit on the type: see
+/// [`SparseVoxelOctree::with_levels`] for a tree over any `2^levels` span.
 pub const OCTREE_LEVELS: u32 = 5;
 
 /// One node of the octree. See the module docs for what each variant covers.
@@ -154,6 +170,10 @@ const fn octant_index(local: [i32; 3], half: i32) -> usize {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct SparseVoxelOctree {
     root: Node,
+    /// How many levels the tree has: the root covers `2^levels` voxels per edge. A field rather
+    /// than [`OCTREE_LEVELS`], because the tree's *span* is the caller's business (see the module
+    /// docs) — the same nodes serve a 32 m chunk and a 16 km cube of sky.
+    levels: u32,
 }
 
 impl Default for SparseVoxelOctree {
@@ -163,9 +183,41 @@ impl Default for SparseVoxelOctree {
 }
 
 impl SparseVoxelOctree {
-    /// A chunk of nothing.
+    /// A chunk of nothing — [`OCTREE_LEVELS`] levels, which is the world's own span.
     pub const fn new() -> Self {
-        SparseVoxelOctree { root: Node::Empty }
+        SparseVoxelOctree { root: Node::Empty, levels: OCTREE_LEVELS }
+    }
+
+    /// **A tree of nothing over `2^levels` voxels per edge** — the scale-generic constructor.
+    ///
+    /// The level count is the tree's span and nothing else: a caller drawing a system whose
+    /// lattice is not the world's 32 m chunk (a cloud cell at a kilometre's scale, a terrain
+    /// block at twice the voxel) asks for the levels its own domain needs and gets the same
+    /// canonical tree, the same walks and the same merge rule. What a voxel *is* — a metre, a
+    /// rung of a ladder — is the caller's, and stays the caller's.
+    pub const fn with_levels(levels: u32) -> Self {
+        SparseVoxelOctree { root: Node::Empty, levels }
+    }
+
+    /// A tree that already holds `root`, over `2^levels` voxels per edge.
+    ///
+    /// The caller states the contents: a root that is not canonical (eight identical children
+    /// that should have collapsed) is stored as given, so this is for a builder that constructs
+    /// canonical nodes itself — see [`Self::set_material_region`] for the writing path that keeps
+    /// the guarantee.
+    pub const fn from_root(root: Node, levels: u32) -> Self {
+        SparseVoxelOctree { root, levels }
+    }
+
+    /// How many levels the tree has: the root covers `2^levels` voxels per edge.
+    pub const fn levels(&self) -> u32 {
+        self.levels
+    }
+
+    /// How many voxels the whole tree covers: `(2^levels)³`. For a chunk's tree this is
+    /// `voxel_model::CHUNK_VOLUME`.
+    pub fn voxels(&self) -> u64 {
+        1u64 << (3 * self.levels)
     }
 
     /// The root node, for a caller that wants to walk the tree itself.
@@ -199,7 +251,61 @@ impl SparseVoxelOctree {
     /// which is the same thing said more cheaply.
     pub fn set_voxel(&mut self, local: LocalPos, shape: VoxelShape) {
         let (x, y, z) = (local.x as i32, local.y as i32, local.z as i32);
-        set_at(&mut self.root, OCTREE_LEVELS, [x, y, z], shape);
+        set_at(&mut self.root, self.levels, [x, y, z], shape);
+    }
+
+    /// **Fill a whole region with one material**, in one write.
+    ///
+    /// `origin` is the region's low corner in voxels and `level` says how many voxels a side it
+    /// covers (`2^level`). Filling a region cell by cell through [`Self::set_voxel`] costs `8^level`
+    /// writes, which is why a tree whose *features* are large has to be able to say "this whole box
+    /// is one material" in one go: a 16 km cube of sky asked for at 11 levels would otherwise be
+    /// eight million `set_voxel` calls to say "empty".
+    ///
+    /// A region carries a **material, not a shape**, because a 4×4×4 [`VoxelShape`] is one voxel by
+    /// construction and a shape written over a coarser region would be claiming detail that region
+    /// cannot hold. [`MaterialId::EMPTY`] clears the region, the same way an empty shape clears a
+    /// voxel. Nothing is canonicalised differently by this path: eight identical children collapse
+    /// on the way back up exactly as they do for a single voxel.
+    pub fn set_material_region(&mut self, origin: [i32; 3], level: u32, material: MaterialId) {
+        if level > self.levels {
+            return;
+        }
+        let replacement = if material.is_empty() {
+            Node::Empty
+        } else {
+            Node::Uniform(material)
+        };
+        set_node_at(&mut self.root, self.levels, origin, level, replacement);
+    }
+
+    /// **The node covering a region** of `2^level` voxels at `origin`.
+    ///
+    /// The counterpart [`Self::set_material_region`] needs: a caller meshing a coarse tree asks
+    /// *"what is on the other side of this face?"* and gets that region's own node. A **leaf**
+    /// answer covers the whole region uniformly (its material, or nothing), which is exactly what a
+    /// face test wants; a [`Node::Branch`] answer means the region is subdivided, and therefore
+    /// that its contents are known only a level down.
+    ///
+    /// Outside the tree — a level above the root, or a region off its edge — is [`Node::Empty`],
+    /// which is the honest answer for a tree that only holds what it holds.
+    pub fn region(&self, origin: [i32; 3], level: u32) -> &Node {
+        if level > self.levels {
+            return &Node::Empty;
+        }
+        let mut node = &self.root;
+        let mut half = if self.levels == 0 { 0 } else { 1i32 << (self.levels - 1) };
+        for _ in 0..(self.levels - level) {
+            match node {
+                Node::Branch(children) => {
+                    node = &children[octant_index(origin, half)];
+                    half >>= 1;
+                }
+                // A leaf covers every region below it — including this one, whatever it is.
+                leaf => return leaf,
+            }
+        }
+        node
     }
 
     /// Set one subvoxel of one voxel, promoting the voxel to a `Mixed` leaf if
@@ -216,7 +322,7 @@ impl SparseVoxelOctree {
     pub fn voxel(&self, local: LocalPos) -> VoxelShape {
         get_at(
             &self.root,
-            OCTREE_LEVELS,
+            self.levels,
             [local.x as i32, local.y as i32, local.z as i32],
         )
     }
@@ -225,7 +331,7 @@ impl SparseVoxelOctree {
     pub fn material_at(&self, local: LocalPos, at: SubvoxelIndex) -> MaterialId {
         material_at(
             &self.root,
-            OCTREE_LEVELS,
+            self.levels,
             [local.x as i32, local.y as i32, local.z as i32],
             at,
         )
@@ -235,7 +341,7 @@ impl SparseVoxelOctree {
     /// covers and its level. Branches are walked, never reported, which is the
     /// whole point of a recursive visitor over a tree this shape.
     pub fn visit_leaves(&self, f: &mut impl FnMut([i32; 3], u32, &Node)) {
-        visit(&self.root, OCTREE_LEVELS, [0, 0, 0], f);
+        visit(&self.root, self.levels, [0, 0, 0], f);
     }
 
     /// Visit every region of **exactly `level`**, whether or not the tree
@@ -255,34 +361,34 @@ impl SparseVoxelOctree {
     /// the node is the same one every time. The region count is therefore a
     /// function of `level` and the chunk's size alone.
     ///
-    /// A `level` above [`OCTREE_LEVELS`] visits **nothing** rather than refusing:
-    /// there is no such region, and an empty answer is not a wrong one. Callers
-    /// that need a refusal ask [`Self::leaf_count_at`], which reports zero for the
-    /// same reason and says so.
+    /// A `level` above the tree's own [`Self::levels`] visits **nothing** rather
+    /// than refusing: there is no such region, and an empty answer is not a wrong
+    /// one. Callers that need a refusal ask [`Self::leaf_count_at`], which reports
+    /// zero for the same reason and says so.
     pub fn visit_at_level(&self, level: u32, f: &mut impl FnMut([i32; 3], &Node)) {
-        if level > OCTREE_LEVELS {
+        if level > self.levels {
             return;
         }
-        visit_at(&self.root, OCTREE_LEVELS, [0, 0, 0], level, f);
+        visit_at(&self.root, self.levels, [0, 0, 0], level, f);
     }
 
     /// How many regions [`Self::visit_at_level`] would report at `level`.
     ///
-    /// Equal to `(CHUNK_SIDE >> level)³` for any level at or below
-    /// [`OCTREE_LEVELS`], and zero above it. Stated as its own function because
-    /// "the walk reports the right number" is a claim worth holding rather than
-    /// assuming.
+    /// Equal to `(2^(levels - level))³` — `(CHUNK_SIDE >> level)³` for a chunk's
+    /// own five-level tree — and zero above the tree's root. Stated as its own
+    /// function because "the walk reports the right number" is a claim worth
+    /// holding rather than assuming.
     pub fn leaf_count_at(&self, level: u32) -> u64 {
-        if level > OCTREE_LEVELS {
+        if level > self.levels {
             return 0;
         }
-        let per_axis = (CHUNK_SIDE >> level) as u64;
+        let per_axis = 1u64 << (self.levels - level);
         per_axis * per_axis * per_axis
     }
 
     /// How many voxels hold matter.
     pub fn solid_count(&self) -> u64 {
-        count_solid(&self.root, OCTREE_LEVELS)
+        count_solid(&self.root, self.levels)
     }
 
     /// How many leaf nodes the tree has.
@@ -297,11 +403,12 @@ impl SparseVoxelOctree {
     /// voxel — that is, when the structure is doing something a flat array of
     /// 32,768 shapes could not.
     ///
-    /// Exactly equivalent to `leaf_count() < CHUNK_VOLUME`, because leaves
-    /// partition the chunk's voxels and every leaf covers a whole number of
-    /// them. Stated as an equality of two independent measures in the tests.
+    /// Exactly equivalent to `leaf_count() < voxels()`, because leaves partition
+    /// the tree's voxels and every leaf covers a whole number of them. Stated as
+    /// an equality of two independent measures in the tests. ([`Self::voxels`] is
+    /// `CHUNK_VOLUME` for a chunk's own five-level tree.)
     pub fn is_sparse(&self) -> bool {
-        self.leaf_count() < CHUNK_VOLUME as u64
+        self.leaf_count() < self.voxels()
     }
 
     /// True when every voxel holds the same material — including all-air.
@@ -316,6 +423,15 @@ impl SparseVoxelOctree {
     /// is a test rather than a hope.
     pub fn digest(&self) -> Digest {
         let mut transcript = Vec::new();
+        // **The span is part of the contents.** The same nodes at one more level cover twice the
+        // ground, so a digest that ignored the span would call two different trees equal. The
+        // chunk's own five levels write **nothing**: every digest ever taken over a chunk is
+        // byte-for-byte what it was before the span became a field, so nothing stored needs
+        // re-deriving. A tree at any other span is prefixed with it, and no node tag is `4` or
+        // above, so the two forms cannot collide.
+        if self.levels != OCTREE_LEVELS {
+            transcript.extend_from_slice(&self.levels.to_le_bytes());
+        }
         transcript_node(&self.root, &mut transcript);
         Digest::of_fields(
             "voxel-mesh/octree",
@@ -350,6 +466,35 @@ fn set_at(node: &mut Node, level: u32, local: [i32; 3], shape: VoxelShape) {
     };
 
     set_at(&mut children[index], level - 1, local, shape);
+    *node = Node::Branch(children).canonical();
+}
+
+/// Descend to the region at `target` and put `replacement` there.
+///
+/// [`set_at`] is this function with `target = 0` and a shape for its node: the recursion, the
+/// expansion of a leaf on the way down and the canonicalisation on the way back up are the same
+/// code, so a region write and a voxel write cannot drift apart.
+fn set_node_at(node: &mut Node, level: u32, local: [i32; 3], target: u32, replacement: Node) {
+    if level == target {
+        *node = replacement;
+        return;
+    }
+    if level == 0 {
+        // `target` is below a leaf's own level, which a canonical tree cannot ask for.
+        return;
+    }
+    let half = 1i32 << (level - 1);
+    let index = octant_index(local, half);
+
+    let taken = core::mem::replace(node, Node::Empty);
+    let mut children = match taken {
+        Node::Branch(c) => c,
+        Node::Empty => Box::new(core::array::from_fn(|_| Node::Empty)),
+        Node::Uniform(m) => Box::new(core::array::from_fn(|_| Node::Uniform(m))),
+        Node::Mixed(b) => Box::new(core::array::from_fn(|_| Node::Mixed(b.clone()))),
+    };
+
+    set_node_at(&mut children[index], level - 1, local, target, replacement);
     *node = Node::Branch(children).canonical();
 }
 
@@ -509,6 +654,76 @@ pub const SUBVOXEL_SIDE_I32: i32 = SUBVOXEL_SIDE as i32;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use voxel_model::CHUNK_VOLUME;
+
+    #[test]
+    fn a_trees_span_is_its_own_and_the_chunk_default_is_unchanged() {
+        // **The scale-generic claim.** A tree of 11 levels spans 2,048 voxels per edge and covers
+        // eight billion of them — a domain four hundred and fifty times a chunk's — and **one
+        // region write** fills a 512-voxel box of it, which is the operation a coarse lattice needs
+        // and a per-voxel `set_voxel` cannot provide (it would be 134 million calls). The chunk's
+        // own tree is checked last, against the numbers it has always reported, because making the
+        // span a field must not move the world.
+        let mut sky = SparseVoxelOctree::with_levels(11);
+        assert_eq!(sky.levels(), 11);
+        assert_eq!(sky.voxels(), 2048 * 2048 * 2048);
+        assert_eq!(sky.leaf_count_at(11), 1, "the root is one region");
+        assert_eq!(sky.leaf_count_at(9), 64, "level 9 is 4 regions a side");
+        assert_eq!(sky.leaf_count_at(0), 2048u64.pow(3), "level 0 is one region a voxel");
+        assert_eq!(sky.leaf_count_at(12), 0, "above the root there is no region");
+
+        let region = 512u64.pow(3);
+        sky.set_material_region([0, 0, 0], 9, MaterialId(7));
+        assert_eq!(sky.solid_count(), region, "the region is not 2⁹ voxels a side");
+        assert_eq!(
+            sky.region([0, 0, 0], 9),
+            &Node::Uniform(MaterialId(7)),
+            "the region does not read back as what was written"
+        );
+        assert_eq!(
+            sky.region([0, 0, 0], 3),
+            &Node::Uniform(MaterialId(7)),
+            "a leaf must cover every region below it, not only its own level"
+        );
+        assert!(matches!(sky.region([0, 0, 0], 10), Node::Branch(_)), "level 10 is subdivided: it is not one region");
+        assert_eq!(
+            sky.region([512, 0, 0], 9),
+            &Node::Empty,
+            "the box next door was filled by a write to its neighbour"
+        );
+        assert_eq!(
+            sky.region([0, 0, 0], 12),
+            &Node::Empty,
+            "a level above the root is not empty — it does not exist"
+        );
+
+        // A second region write subdivides, and the two read back independently.
+        sky.set_material_region([512, 0, 0], 9, MaterialId(8));
+        assert_eq!(sky.solid_count(), 2 * region);
+        assert_eq!(sky.region([0, 0, 0], 9), &Node::Uniform(MaterialId(7)));
+        assert_eq!(sky.region([512, 0, 0], 9), &Node::Uniform(MaterialId(8)));
+        // Clearing a region is a write too, and it gives the space back.
+        sky.set_material_region([512, 0, 0], 9, MaterialId::EMPTY);
+        assert_eq!(sky.solid_count(), region);
+        assert_eq!(sky.region([512, 0, 0], 9), &Node::Empty);
+
+        // **And the chunk's own tree is exactly what it was.** Same span, same counts, same
+        // regions, and a digest a chunk built before the span was a field would still match.
+        let chunk = solid_everywhere(MaterialId(1));
+        assert_eq!(chunk.levels(), OCTREE_LEVELS);
+        assert_eq!(chunk.voxels(), CHUNK_VOLUME as u64);
+        assert_eq!(chunk.leaf_count_at(OCTREE_LEVELS), 1);
+        assert_eq!(chunk.region([0, 0, 0], OCTREE_LEVELS), &Node::Uniform(MaterialId(1)));
+        assert_eq!(chunk.digest(), solid_everywhere(MaterialId(1)).digest());
+        assert_ne!(
+            chunk.digest(),
+            SparseVoxelOctree::with_levels(OCTREE_LEVELS + 1).digest(),
+            "two spans digested alike"
+        );
+        // The same *nodes* at a different span are a different tree, and the digest says so.
+        let same_nodes_bigger = SparseVoxelOctree::from_root(chunk.root().clone(), OCTREE_LEVELS + 1);
+        assert_ne!(chunk.digest(), same_nodes_bigger.digest());
+    }
 
     fn pos(x: u32, y: u32, z: u32) -> LocalPos {
         LocalPos::new(x, y, z).unwrap()

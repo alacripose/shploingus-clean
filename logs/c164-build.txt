@@ -1,0 +1,6 @@
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+   Compiling shploingus v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\shploingus)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 2m 08s

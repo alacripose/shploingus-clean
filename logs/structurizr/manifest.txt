@@ -1,0 +1,117 @@
+manifest for the renderings of architecture/workspace.dsl
+generated_at: 2026-10-02T13:23:49 (the mtimes of the images, read with
+             `ls -la --time-style=+"%Y-%m-%dT%H:%M:%S" logs/structurizr/`)
+
+source:
+  path:      architecture/workspace.dsl
+  sha256:    728d7d2b26c693db128848374945c097291472ae7bdc4ae85b3cab51579563ea
+  lines:     280
+  shape:     8 containers, 5 components (inside the decision layer), 22 relationships, 6 views
+  change:    `board -> civilians` DECLARED — "the cases whose citations the ticket-evidence ladder
+             grades". Declared 2026-10-02 **before the code moved**, per rule.interface-contracts
+             ("the arrow first, and say so"): `civilians::observe` now reads the record's ticket
+             rows — each ticket filing's `answer`, the evidence filed against it — and
+             `decision::rule_for_civilian` grades them on `axis.rs`'s ticket-evidence ladder (read
+             back B with its cited sha256 verified / self-report C / broken), so the reading is a
+             path this model declares rather than one it would otherwise travel unstated. One
+             relationship added; no element moved. The CivilianLayer and GameLayer views were
+             added by earlier changes after the 23:45 render and are rendered here for the first
+             time.
+
+renderer:
+  identity:  Helms-AI/structurizr-rs, commit 59a5c4a93bfcb11e501d81a06cd4492c01f1f890 (committed 2026-01-07T22:00:36-05:00)
+  version:   structurizr 0.1.0
+  binary:    F:/structurizr-rs/target/release/structurizr.exe
+  toolchain: RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc
+             (the GNU default fails at dlltool with no MinGW assembler — the failure C-32 records)
+  caveat:    a community port of Structurizr Lite. Its own comparison table claims "Most features",
+             so it is not the reference DSL implementation. No Java CLI and no Docker are installed
+             on this host, so the reference has not been run against this file.
+
+validation:
+  command: /f/structurizr-rs/target/release/structurizr.exe validate architecture/workspace.dsl
+  log:     logs/structurizr-validate.log
+  result:  Valid workspace: Shploingus — People 2, Software Systems 1, Relationships 22, Views 6
+           Errors 0, Warnings 0, Info 8
+  info:    the system has no relationships (the container-level `player -> chain` — C-98 §98.4),
+           and the seven civilian components have none. The validator counts container-level
+           relationships; a component view draws components and does not draw the container's own
+           links, so `board -> civilians` is counted (22) and not drawn as a component line.
+
+images:
+  SystemContext view:   logs/structurizr/SystemContext.svg   sha256 3a251d935b93537a5a584f269ec145775c94b80b2f77bb4d6aabab24b589e217
+  Containers view:      logs/structurizr/Containers.svg      sha256 5f145e6f74defa847e58e8fe1f4d4ae63ee88976f30cffc6aee110cd91dd09ef
+  DecisionLayer view:   logs/structurizr/DecisionLayer.svg   sha256 259fa1c6aa087850ac31081ac96ae7fd98d14059a4205a1c3889f1168f9edfcd
+  CivilianLayer view:   logs/structurizr/CivilianLayer.svg   sha256 b9958a2af159c1e0c652827f832b9a4330b38b49d4f6d8bc458270f3847646ca
+  GameLayer view:       logs/structurizr/GameLayer.svg       sha256 e68c159dabdc68a14a76a9f1c547a595bb653dc7f6c2d544ee4c55eb78348e56
+  TicketPipeline view:  logs/structurizr/TicketPipeline.svg  sha256 6060f08ee3bff6ed1ccc5fd6b841c0037a443babdbd1a13a38e50c9b20024857
+
+superseded:
+  The 13:23 rendering above replaces the 23:45 rendering (2026-10-01), from source sha256
+  af5890aa78914e700e651c579ca8e93dda001b06c25b0c6eacb4bead9e87d71c (151 lines, 8 containers,
+  14 relationships, 4 views — the audio package's declaration). Those four images were overwritten
+  by the render above, so their digests are recorded here because they are no longer recoverable
+  from disk:
+
+    SystemContext.svg   38d6c7208ce4dd37604a887c56d6e23a1e9b89f703d3b381b4529605a0a815eb
+    Containers.svg      50c46930eeb4b2c347eba26ce3f2c6f749efd74aa935ca2382900b2ef4efaa6a
+    DecisionLayer.svg   c35ee6f453bf7e99d23c04a3b2360224854c242ecf1f32772639f0cf609b3a49
+    TicketPipeline.svg  6724fe86c3294ae4c90f52ca3c2b27460f2d4d60ed2c84f12dd1ca4249cbdc77
+
+  CivilianLayer.svg and GameLayer.svg have **no superseded digest**: the views were added to the
+  file after the 23:45 render, so this is their first rendering rather than a replacement.
+
+  And the 23:45 rendering replaced the 23:11 rendering, from source sha256
+  92d6977bedcde27e1cc1cd95811153ae1c146d5c8497c5a3f4dd35da9119c575 (140 lines, 7 containers,
+  no audio container, 12 relationships). Those four images were overwritten by the render above,
+  so their digests are recorded here because they are no longer recoverable from disk:
+
+    SystemContext.svg   a6cb379d5bd85b34ccc0dbb5d7cc505c7c825c234e3208bbcc4e749d7ad0e741
+    Containers.svg      e63dc00f2e17f00d88cf2f9e0bac9fd65dedf1a04fc4d9487df213d82cc15b66
+    DecisionLayer.svg   e10c629530a718b6a5873b4d15ab4912ffc0753f5d8e21a4b126b4185903e018
+    TicketPipeline.svg  4a1cf81208e9ab14e483757674b129f8980f821072fa9bb44a2a60ee664f26bb
+
+  And the 23:11 rendering replaced the source sha256
+  cffe5234ad8959d62876737e1d6f4a6c7eb10ea1369b354e2382d8e5d25d07d1 (135 lines, no properties
+  beyond audit.who):
+    SystemContext.svg   928899e602181698e7f4b2b51b2c0ba01ece30f4ce0544d3ac59439fa6a1ef13
+    Containers.svg      323755cf5e896ccd4ef0caa4f4db4080a28d47216dd1b7594f1730378ad82a71
+    DecisionLayer.svg   b04da3e13511369aa2bd290d22f8c2917665d4a9b0d4dcd6f71378f44880e481
+    TicketPipeline.svg  f167e41de3bef768cfa9859963e757b3c1008ea65977eb00c5923e3e0a74d54a
+
+  And before that, the 20:43 rendering described three images, from source
+  sha256 7e1f2a10f3b077ba7763cfcee535a7d32e58262a51b60139c06a2e11c228fd30 (106 lines):
+    SystemContext.svg   08a8c6e49c5ea1383d1ef2e2486187674638f560b1e69e6604a8bebe088ca29b
+    Containers.svg      833514dc6250e7c01ee1c9c72a8cecec80a4b63acae2549bb902c789e279048b
+    TicketPipeline.svg  9c2c759967e78a2267ad29f0b74afa8269d372be77670c5957dc10e49bc80b78
+
+render_limits:
+  The DecisionLayer view draws the five components and the two intra-container links
+  (deterministic -> seam, oracle -> seam). Its CROSS-container links are declared and counted by
+  the validator but do not appear in DecisionLayer.svg. Re-established on the 13:23 image by
+  counting label occurrences rather than by eye: `compiler` 0, `queue` 0, `matrix` 2, `judge` 1,
+  `audio` 0, `board` 0, `civilians` 0. Three cross-container links drop in this view
+  (compiler -> matrix, judge -> queue, decision -> audio), unchanged from the 23:45 image.
+  The Containers view DOES draw the container set: `voxel-audio` 3 label hits in Containers.svg
+  (measured again on this render), against 1 each for the other containers — the audio
+  declaration still reaches the container view, and the new `board -> civilians` line is counted
+  by the validator (22 relationships) whether or not this renderer labels it there.
+  `board` 0 occurrences in CivilianLayer.svg: a component view draws components, not the
+  container's own links, which is the same limit one layer over. See docs/LEDGER.md C-98 §98.5.
+
+inspection:
+  status: not_inspected
+  reason: no person has looked at these images. The text labels were read by machine, which is
+          evidence about text and not the eye C-40 requires.
+
+freshness:
+  status: current
+  rule:   any change to architecture/workspace.dsl marks every image above stale; rerender with
+          the render command below. A stale source may not reuse an old image.
+
+commands:
+  validate: /f/structurizr-rs/target/release/structurizr.exe validate architecture/workspace.dsl
+  render:   /f/structurizr-rs/target/release/structurizr.exe render --workspace architecture/workspace.dsl --output logs/structurizr
+
+previous_manifest: the 2026-10-01T23:45:48 manifest, which described the af5890aa source and the
+                   23:45 rendering.

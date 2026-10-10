@@ -28,8 +28,56 @@ pub enum Provenance {
 }
 
 /// Schlick's approximation exponent (Schlick 1994). Used for the fresnel-shaped
-/// rim term and by nothing else.
+/// rim term and for the fluid surface's reflectance, which is the same
+/// approximation at the same exponent applied to a different boundary.
 pub const RIM_SCHLICK_EXPONENT: i32 = 5;
+
+/// The refractive index of liquid water in the visible band, `n = 1.333`.
+///
+/// The standard figure at 20 °C and the sodium D line (IAPWS's formulation of
+/// the refractive index of water; the value is quoted to three places in every
+/// optics table). It is the input [`WATER_F0`] is derived from, so the two can
+/// never disagree.
+pub const WATER_IOR: f64 = 1.333;
+
+/// The refractive index of a **clear coat** layer, `n = 1.5`.
+///
+/// OpenPBR's coat is specified as a smooth dielectric layer with this index, so the coat's
+/// normal-incidence reflectance is [`COAT_F0`] by the same relation as any other boundary.
+/// It is published, not a project extension, and the coat reads *no* other number.
+pub const COAT_IOR: f64 = 1.5;
+
+/// **The normal-incidence reflectance of a material's own specular boundary**, from its
+/// `specular_ior`.
+///
+/// This is what gives `specular_ior` a home: it is the base layer's reflectance, where
+/// `COAT_F0` is the coat's. The warp's *step* is untouched — it still fires at full
+/// `specular_weight` — so the stylisation survives, and what changes is how much the
+/// material reflects at all, which is the physically meaningful difference between a
+/// mineral at `n = 1.6` and one at `n = 1.9`.
+pub const fn specular_f0(ior: f64) -> f64 {
+    normal_incidence_reflectance(ior)
+}
+
+/// The normal-incidence reflectance of a boundary, `((n − 1)/(n + 1))²`.
+///
+/// **The relation, named once**, so a material's `specular_ior` becomes a reflectance
+/// by arithmetic instead of by a second quoted number.
+pub const fn normal_incidence_reflectance(n: f64) -> f64 {
+    let ratio = (n - 1.0) / (n + 1.0);
+    ratio * ratio
+}
+
+/// The normal-incidence reflectance of a water surface, `((n − 1)/(n + 1))²`.
+///
+/// **Derived from [`WATER_IOR`] rather than quoted**: a water/air boundary
+/// reflects `2.0 %` of the light hitting it head-on, and the Fresnel formula is
+/// what turns the refractive index into that figure. Quoting both would let a
+/// later edit change one and not the other.
+pub const WATER_F0: f64 = normal_incidence_reflectance(WATER_IOR);
+
+/// The normal-incidence reflectance of a clear coat, from [`COAT_IOR`]: about `4 %`.
+pub const COAT_F0: f64 = normal_incidence_reflectance(COAT_IOR);
 
 /// The luminance weights of **Rec. 709** (ITU-R BT.709). Named, because
 /// [`.2126 .7152 .0722`](LUMINANCE_RED) is a standard and not a preference —
@@ -69,6 +117,22 @@ pub const CONSTANTS: &[(&str, f64, Provenance)] = &[
         "luminance_band_resolution",
         LUMINANCE_BAND_RESOLUTION as f64,
         Provenance::ProjectExtension,
+    ),
+    (
+        "water_ior",
+        WATER_IOR,
+        Provenance::Paper("IAPWS, Release on the Refractive Index of Ordinary Water Substance"),
+    ),
+    ("water_f0", WATER_F0, Provenance::Paper("Fresnel, 1823 — ((n−1)/(n+1))²")),
+    (
+        "coat_ior",
+        COAT_IOR,
+        Provenance::OpenPbrSpec,
+    ),
+    (
+        "coat_f0",
+        COAT_F0,
+        Provenance::Paper("Fresnel, 1823 — ((n−1)/(n+1))²"),
     ),
 ];
 

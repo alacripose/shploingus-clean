@@ -58,7 +58,10 @@ pub const DEFAULT_QUEUE_CAPACITY: usize = 4096;
 pub struct Request {
     pub pos: ChunkPos,
     /// **Lower is sooner.** Distance-squared from the viewer, so the world fills
-    /// outward from where somebody is standing rather than in scan order.
+    /// outward from where somebody is standing rather than in scan order. A caller
+    /// with a chunk that must jump the queue — one the picture is behind on after an
+    /// edit — submits it with a lower number and [`Pool::submit`] re-keys the entry;
+    /// see [`Submitted::Promoted`].
     pub priority: i64,
 }
 
@@ -69,6 +72,12 @@ pub enum Submitted {
     /// Already in the queue or already being built. Not an error: a caller that
     /// asks for the same chunk every frame is asking correctly.
     AlreadyQueued,
+    /// **Already queued, and the new request carries a better priority**, so the
+    /// entry was re-keyed. This is what gets a chunk the picture is behind on out
+    /// of the queue ahead of the routine streaming it was slotted into: a caller
+    /// re-asks for a stale chunk every frame, and the first ask may have been
+    /// routine.
+    Promoted,
     /// The queue is at capacity. Backpressure, reported.
     QueueFull,
 }
@@ -116,8 +125,75 @@ struct Entry {
 struct Queue {
     pending: BinaryHeap<Entry>,
     queued: BTreeSet<ChunkPos>,
+    /// Chunks a worker has **taken and not yet finished**. A position moves here
+    /// from `queued` in the same critical section that pops it, so a re-ask
+    /// while the build runs is answered [`Submitted::AlreadyQueued`] rather than
+    /// buying the same chunk a second time.
+    building: BTreeSet<ChunkPos>,
     capacity: usize,
     refused: u64,
+}
+
+impl Queue {
+    /// Classify a submission against the queue's own state — the whole of
+    /// [`Pool::submit`]'s decision, on data with no threads in it, so the four
+    /// answers are unit-testable without timing.
+    fn classify(&mut self, request: Request) -> Submitted {
+        if self.queued.contains(&request.pos) {
+            // **A better priority re-keys the entry.** The binary heap has no
+            // decrement-key, so the old entry is removed and the new one pushed —
+            // the queue is bounded by `capacity` and this runs for the edited
+            // chunks a caller re-asks for, not for the queue as a whole.
+            let key = (request.priority, request.pos.x, request.pos.y, request.pos.z);
+            let mut better = false;
+            self.pending.retain(|entry| {
+                if entry.pos != request.pos {
+                    return true;
+                }
+                better = key < entry.key.0;
+                !better
+            });
+            if better {
+                self.pending.push(Entry { key: Reverse(key), pos: request.pos });
+                return Submitted::Promoted;
+            }
+            return Submitted::AlreadyQueued;
+        }
+        if self.building.contains(&request.pos) {
+            // **Already under way.** A priority cannot reorder work that has
+            // started, and queueing it again would pay for the same chunk twice
+            // while the first build still runs — the duplicate the
+            // [`Submitted::AlreadyQueued`] doc has always promised to report.
+            return Submitted::AlreadyQueued;
+        }
+        if self.pending.len() >= self.capacity {
+            self.refused += 1;
+            return Submitted::QueueFull;
+        }
+        self.queued.insert(request.pos);
+        self.pending.push(Entry {
+            key: Reverse((request.priority, request.pos.x, request.pos.y, request.pos.z)),
+            pos: request.pos,
+        });
+        Submitted::Queued
+    }
+
+    /// The worker's side of a job: the next entry, moved from `queued` to
+    /// `building` **in one critical section**, so there is no instant where a
+    /// taken chunk is in neither set.
+    fn take(&mut self) -> Option<ChunkPos> {
+        let entry = self.pending.pop()?;
+        self.queued.remove(&entry.pos);
+        self.building.insert(entry.pos);
+        Some(entry.pos)
+    }
+
+    /// A build finished, either way: the chunk leaves `building`, so the next
+    /// ask for it is fresh work — which is what lets a mesh built from a
+    /// superseded world be rebuilt after the caller discards it.
+    fn finished(&mut self, pos: ChunkPos) {
+        self.building.remove(&pos);
+    }
 }
 
 /// The mutable world: the record every worker reads and the version of it.
@@ -160,6 +236,27 @@ pub struct Pool {
     scratch_bytes: usize,
 }
 
+/// A hand edit, **named rather than positional**.
+///
+/// Same reason as `voxel_shapers::earthworks::HandChange`: three coordinates in a row, two of
+/// which share a type, is a call that can be transposed without the compiler noticing. Naming
+/// the fields is the difference between a swapped coordinate being a type error and being a
+/// hole in the world.
+///
+/// The `from` material is deliberately **absent**. This door reads it under the write lock, so
+/// the record cannot be built from a material the world no longer holds — the chain connects by
+/// construction rather than by the caller's care.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Edit {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub to: MaterialId,
+    pub reason: String,
+    pub actor: voxel_model::world::ActorId,
+    pub verb: voxel_model::world::PhysicalVerb,
+}
+
 impl Pool {
     /// Start `workers` threads over `source`.
     ///
@@ -187,6 +284,7 @@ impl Pool {
             queue: Mutex::new(Queue {
                 pending: BinaryHeap::new(),
                 queued: BTreeSet::new(),
+                building: BTreeSet::new(),
                 capacity,
                 refused: 0,
             }),
@@ -211,28 +309,22 @@ impl Pool {
         Ok(Pool { shared, workers: handles, scratch_bytes })
     }
 
-    /// Ask for a chunk. See [`Submitted`] for the three answers.
+    /// Ask for a chunk. See [`Submitted`] for the four answers.
     pub fn submit(&self, request: Request) -> Submitted {
-        {
+        let answer = {
             let mut q = self.shared.queue.lock().unwrap();
             if self.shared.closed.load(Ordering::SeqCst) {
-                return Submitted::QueueFull;
+                Submitted::QueueFull
+            } else {
+                q.classify(request)
             }
-            if q.queued.contains(&request.pos) {
-                return Submitted::AlreadyQueued;
-            }
-            if q.pending.len() >= q.capacity {
-                q.refused += 1;
-                return Submitted::QueueFull;
-            }
-            q.queued.insert(request.pos);
-            q.pending.push(Entry {
-                key: Reverse((request.priority, request.pos.x, request.pos.y, request.pos.z)),
-                pos: request.pos,
-            });
+        };
+        // **Only a new entry wakes a worker.** A promotion re-keys an entry some
+        // worker was already signalled for, and a refusal changes nothing.
+        if answer == Submitted::Queued {
+            self.shared.ready.notify_one();
         }
-        self.shared.ready.notify_one();
-        Submitted::Queued
+        answer
     }
 
     /// Drop every queued request the predicate says is **no longer wanted**,
@@ -284,23 +376,61 @@ impl Pool {
         self.shared.world.read().unwrap().generation
     }
 
+    /// **The world's modification record, as a snapshot** — the record itself, not a summary of it.
+    ///
+    /// A caller that kept its own list of edits would be a second record, and the two would
+    /// disagree the first time one was dropped. The vector change view (the client's
+    /// `shell::changes`) is *a view over the chain, not a second record* (C-56), so its regions
+    /// are read from here rather than remembered at the edit sites.
+    pub fn modifications(&self) -> Vec<Modification> {
+        self.shared.world.read().unwrap().source.earthworks().entries().to_vec()
+    }
+
     /// **Change the world.** One voxel, recorded in the earthworks ledger.
     ///
     /// `from` is read under the write lock rather than passed in, so the record
     /// cannot be built from a material the world no longer holds — the chain
     /// connects by construction. The generation is bumped in the same lock, so
     /// every worker either sees the whole edit or none of it.
-    pub fn edit(
-        &self,
-        x: i32,
-        y: i32,
-        z: i32,
-        to: MaterialId,
-        reason: &str,
-    ) -> Refused<Modification> {
+    ///
+    /// **Who, and what act.** The record names its actor and its verb, so this door
+    /// asks for both rather than assuming them: `ActorId::player()` for the person at
+    /// the console, and the [`PhysicalVerb`](voxel_model::world::PhysicalVerb) that
+    /// says *which* act it was. A verb is not inferable from the target material —
+    /// breaking stone and digging stone are different acts that replace the same
+    /// block — so deriving it here would invent a field the record exists to hold.
+    pub fn edit(&self, edit: Edit) -> Refused<Modification> {
         let mut world = self.shared.world.write().unwrap();
-        let from = world.source.material_at(x, y, z)?;
-        let modification = hand_change(x, y, z, from, to, reason)?;
+        let from = world.source.material_at(edit.x, edit.y, edit.z)?;
+        // **A fluid is not a block** (C-152.2). `hand_change` refuses a fluid
+        // *material* — the sea, a flooded void. This is the other half: a **lake**
+        // is fluid state with **no material voxel**, so an edit into one would
+        // delete water the ledger books while the materials all looked like air.
+        // One query per edit, and only when the target is not already a fluid
+        // material, so the common underground edit pays nothing (`fluid_state`
+        // declares the query's cost).
+        if !voxel_shapers::column::is_fluid(from)
+            && voxel_shapers::fluid_state::fluid_at(
+                &world.source.spec(),
+                edit.x,
+                edit.y,
+                edit.z,
+                world.source.hydro_radius(),
+            )?
+            .is_some()
+        {
+            return Err(voxel_shapers::fluid_state::refuse_edit(edit.x, edit.y, edit.z));
+        }
+        let modification = hand_change(voxel_shapers::earthworks::HandChange {
+            x: edit.x,
+            y: edit.y,
+            z: edit.z,
+            from,
+            to: edit.to,
+            reason: edit.reason,
+            actor: edit.actor,
+            verb: edit.verb,
+        })?;
         world
             .source
             .earthworks_mut()
@@ -414,6 +544,12 @@ fn work(shared: Arc<Shared>) {
             Ok(built) => deliver(&shared, built),
             Err(refusal) => shared.failures.lock().unwrap().push((pos, refusal)),
         }
+        // **The chunk is no longer being built**, so the next ask for it is fresh
+        // work rather than a report that it is already under way. A mesh built
+        // from a superseded world is discarded by the caller as stale, and this is
+        // what lets its position be queued afresh instead of the duplicate being
+        // bought while the doomed build was still running.
+        shared.queue.lock().unwrap().finished(pos);
         // **After** the hand-off, never before. `wait_until_idle` reads this to
         // decide the work is done, so a decrement that happened between finishing
         // and delivering would let a caller look at the results and find them
@@ -429,13 +565,12 @@ fn next_request(shared: &Shared) -> Option<ChunkPos> {
         if shared.closed.load(Ordering::SeqCst) {
             return None;
         }
-        if let Some(entry) = queue.pending.pop() {
-            queue.queued.remove(&entry.pos);
+        if let Some(pos) = queue.take() {
             // Counted as running **inside the lock and in the same instant as the
-            // pop**, so there is no window in which a job is taken but nothing
-            // says it is in flight.
+            // pop and the building mark**, so there is no window in which a job is
+            // taken but nothing says it is in flight.
             shared.running.fetch_add(1, Ordering::SeqCst);
-            return Some(entry.pos);
+            return Some(pos);
         }
         queue = shared.ready.wait(queue).unwrap();
     }
@@ -464,16 +599,31 @@ fn deliver(shared: &Shared, built: Built) {
 /// steady-state footprint is one chunk's octree (~89 kB) plus one mesh
 /// (~1.3 kB), not a resident world.
 fn build_one(mesher: &mut Mesher, shared: &Shared, pos: ChunkPos) -> Refused<Built> {
-    // **One read guard for the whole build.** A write (an edit) waits for the
-    // builds in flight, which is a few milliseconds; a build sees one record,
-    // start to finish. Cloning the record per build instead would make every
-    // chunk pay for the whole history.
-    let world = shared.world.read().unwrap();
-    let tree = world.source.build_chunk(pos)?;
+    // **A snapshot, then a lock-free build.** The read guard is held for one
+    // clone, not for the whole build — and that is a measured decision, not a
+    // preference. The guard used to span `build_chunk`, `neighborhood` and
+    // `Mesher::build`, and one `build_chunk` costs **163 ms** (measured:
+    // `voxel_work::stream::tests::measure_the_edit_hitch_and_where_it_comes_from`),
+    // so every edit's write lock waited for the builds in flight: a click that
+    // costs **46 µs** against an idle pool cost **153–525 ms** against a busy
+    // one, which is the freeze a player feels while the window streams.
+    //
+    // The snapshot is consistent by construction: the record and the generation
+    // are read under one lock, so a build still sees exactly one world. An edit
+    // that lands mid-build is caught by the generation stamp exactly as before —
+    // the finished mesh is discarded as stale rather than entering a world it was
+    // not built from. The cost is the clone: the spec is small, and the
+    // earthworks record is already scanned per voxel by `build_chunk` itself, so
+    // one more copy per chunk is not what the history costs.
+    let (source, generation) = {
+        let world = shared.world.read().unwrap();
+        (world.source.clone(), world.generation)
+    };
+    let tree = source.build_chunk(pos)?;
     let chunk = Chunk::from_tree(pos, tree);
-    let neighborhood = world.source.neighborhood(pos);
+    let neighborhood = source.neighborhood(pos);
     let mesh = mesher.build(&chunk, &shared.config, Some(&neighborhood))?;
-    Ok(Built { generation: world.generation, mesh })
+    Ok(Built { generation, mesh })
 }
 
 #[cfg(test)]
@@ -569,6 +719,61 @@ mod tests {
         assert_eq!(a, b);
     }
 
+    fn queue() -> Queue {
+        Queue {
+            pending: BinaryHeap::new(),
+            queued: BTreeSet::new(),
+            building: BTreeSet::new(),
+            capacity: 8,
+            refused: 0,
+        }
+    }
+
+    #[test]
+    fn a_better_priority_re_keys_a_queued_chunk_and_a_worse_one_does_not() {
+        let mut q = queue();
+        let pos = ChunkPos::new(4, 0, -2);
+        assert_eq!(q.classify(Request { pos, priority: 900 }), Submitted::Queued);
+        assert_eq!(
+            q.classify(Request { pos, priority: 5 }),
+            Submitted::Promoted,
+            "a better priority must re-key the entry"
+        );
+        assert_eq!(q.pending.len(), 1, "a promotion holds one entry, not two");
+        assert_eq!(
+            q.pending.peek().expect("one entry").key.0,
+            (5, 4, 0, -2),
+            "the entry's key is the promoted one"
+        );
+        assert_eq!(
+            q.classify(Request { pos, priority: 5 }),
+            Submitted::AlreadyQueued,
+            "the same ask again is not a promotion"
+        );
+        assert_eq!(q.classify(Request { pos, priority: 900 }), Submitted::AlreadyQueued);
+        assert_eq!(q.pending.len(), 1);
+    }
+
+    #[test]
+    fn a_chunk_already_being_built_is_not_queued_a_second_time() {
+        let mut q = queue();
+        let pos = ChunkPos::new(1, 0, 1);
+        assert_eq!(q.classify(Request { pos, priority: 3 }), Submitted::Queued);
+        assert_eq!(q.take(), Some(pos), "the worker takes it");
+        assert_eq!(
+            q.classify(Request { pos, priority: 0 }),
+            Submitted::AlreadyQueued,
+            "a running build cannot be reordered, and it must not be bought twice"
+        );
+        assert!(q.pending.is_empty(), "the answer queued a duplicate");
+        q.finished(pos);
+        assert_eq!(
+            q.classify(Request { pos, priority: 0 }),
+            Submitted::Queued,
+            "after the build finishes the chunk is queued afresh — the rebuild a discarded stale mesh needs"
+        );
+    }
+
     #[test]
     fn a_full_queue_refuses_further_requests_instead_of_growing() {
         let pool = Pool::with_capacity(1, source(), config(), 4).unwrap();
@@ -578,7 +783,7 @@ mod tests {
             match pool.submit(req) {
                 Submitted::Queued => queued += 1,
                 Submitted::QueueFull => full += 1,
-                Submitted::AlreadyQueued => {}
+                Submitted::AlreadyQueued | Submitted::Promoted => {}
             }
         }
         assert!(full > 0, "a 4-slot queue accepted {} requests", queued);
@@ -667,12 +872,128 @@ mod tests {
         let to = if from == materials::IGNEOUS { materials::REGOLITH } else { materials::IGNEOUS };
         assert_eq!(pool.generation(), 0);
 
-        let impact = pool.edit(x, y, z, to, "the test dug here").unwrap();
+        let impact =        pool.edit(Edit {
+            x,
+            y,
+            z,
+            to,
+            reason: "the test dug here".into(),
+            actor: voxel_model::world::ActorId::player(),
+            verb: voxel_model::world::PhysicalVerb::Dig,
+        })
+        .unwrap();
         assert_eq!(impact.from, from, "the record's `from` must be what the world held");
         assert_eq!(pool.material_at(x, y, z).unwrap(), to);
         assert_eq!(pool.generation(), 1, "an edit must move the generation");
         // The record holds it, and its ledger audits.
         assert!(impact.ledger.audit().is_ok(), "the edit's ledger did not audit");
+        pool.shutdown();
+    }
+
+    #[test]
+    fn an_edit_that_targets_a_fluid_is_refused_and_changes_nothing() {
+        // C-152.2's filed defect at the edit path's own door: the sea cannot be
+        // broken. The record stays empty and the generation does not move, because
+        // a refused edit is not an edit.
+        let pool = pool(1);
+        let spec = WorldSpec::new(2468, Config::default());
+        let mut found = None;
+        'search: for x in (-6000..6000).step_by(53) {
+            for z in (-6000..6000).step_by(97) {
+                if voxel_shapers::terrain::elevation_m(&spec, x as f64 + 0.5, z as f64 + 0.5)
+                    < spec.config.sea_level_m - 4.0
+                {
+                    found = Some((x, z));
+                    break 'search;
+                }
+            }
+        }
+        let (x, z) = found.expect("this world has no sea");
+        let y = (spec.config.sea_level_m - 1.0).floor() as i32;
+        assert_eq!(pool.material_at(x, y, z).unwrap(), materials::WATER);
+        let before = pool.generation();
+
+        let refusal = pool
+            .edit(Edit {
+                x,
+                y,
+                z,
+                to: MaterialId::EMPTY,
+                reason: "the test broke the sea".into(),
+                actor: voxel_model::world::ActorId::player(),
+                verb: voxel_model::world::PhysicalVerb::Break,
+            })
+            .unwrap_err();
+        assert_eq!(refusal.kind(), RefusalKind::FluidIsNotABlock);
+        assert!(refusal.detail().contains("targets water"), "got {refusal}");
+
+        // The world did not move: same material, same generation, no record.
+        assert_eq!(pool.material_at(x, y, z).unwrap(), materials::WATER);
+        assert_eq!(pool.generation(), before, "a refused edit moved the generation");
+        assert!(pool.modifications().is_empty(), "a refused edit was recorded");
+        pool.shutdown();
+    }
+
+    #[test]
+    fn a_placement_into_a_lake_is_refused_because_the_lake_has_no_material() {
+        // The derived half: a lake voxel is **air with fluid state above it**, so
+        // `hand_change` cannot see it (it holds no spec) and a placement would
+        // silently delete water the ledger books. The pool is where the lake is
+        // refused, and this test picks a lake by the world's own priority flood.
+        let pool = pool(1);
+        let spec = WorldSpec::new(2468, Config::default());
+        // The grid and the threshold are the ones `fluid_state`'s own tests measured:
+        // over this world's above-sea columns (step 101) the deepest fill is ~2.04 m
+        // and thirteen exceed a metre.
+        let mut found = None;
+        'search: for x in (-6000..6000).step_by(101) {
+            for z in (-6000..6000).step_by(101) {
+                let height =
+                    voxel_shapers::terrain::elevation_m(&spec, x as f64 + 0.5, z as f64 + 0.5);
+                if height < spec.config.sea_level_m + 1.0 {
+                    continue;
+                }
+                let sample = voxel_shapers::hydrology::sample(
+                    &spec,
+                    x as f64 + 0.5,
+                    z as f64 + 0.5,
+                    voxel_shapers::column::DEFAULT_HYDRO_RADIUS,
+                );
+                if sample.water_depth_m > 1.0 {
+                    found = Some((x, z, height, sample.water_depth_m));
+                    break 'search;
+                }
+            }
+        }
+        let (x, z, height, depth) = found.expect("no lake deeper than a metre in the window");
+        // The voxel the lake occupies is **above** the ground and holds no material:
+        // the first voxel whose centre is above the terrain, which a depth over a
+        // metre puts inside the water.
+        let y = (height - 0.5).floor() as i32 + 1;
+        assert!(
+            f64::from(y) + 0.5 > height && f64::from(y) + 0.5 <= height + depth,
+            "the chosen voxel is not inside the lake (height {height}, depth {depth}, y {y})"
+        );
+        assert_eq!(
+            pool.material_at(x, y, z).unwrap(),
+            MaterialId::EMPTY,
+            "a lake voxel should hold no material, or this test measures the material rule"
+        );
+
+        let refusal = pool
+            .edit(Edit {
+                x,
+                y,
+                z,
+                to: materials::REGOLITH,
+                reason: "the test filled a lake".into(),
+                actor: voxel_model::world::ActorId::player(),
+                verb: voxel_model::world::PhysicalVerb::Fill,
+            })
+            .unwrap_err();
+        assert_eq!(refusal.kind(), RefusalKind::FluidIsNotABlock);
+        assert!(refusal.detail().contains("targets water"), "got {refusal}");
+        assert!(pool.modifications().is_empty(), "a refused edit was recorded");
         pool.shutdown();
     }
 
@@ -683,7 +1004,16 @@ mod tests {
         let pool = pool(2);
         let from = pool.material_at(2, 0, 3).unwrap();
         let to = if from == materials::REGOLITH { materials::IGNEOUS } else { materials::REGOLITH };
-        pool.edit(2, 0, 3, to, "the test built here").unwrap();
+        pool.edit(Edit {
+            x: 2,
+            y: 0,
+            z: 3,
+            to,
+            reason: "the test built here".into(),
+            actor: voxel_model::world::ActorId::player(),
+            verb: voxel_model::world::PhysicalVerb::Place,
+        })
+        .unwrap();
         let generation = pool.generation();
         pool.submit(Request { pos: ChunkPos::new(0, 0, 0), priority: 0 });
         pool.wait_until_idle();

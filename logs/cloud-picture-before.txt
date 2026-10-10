@@ -1,0 +1,103 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling version_check v0.9.5
+   Compiling cfg-if v1.0.5
+   Compiling libm v0.2.16
+   Compiling windows-link v0.2.1
+   Compiling cfg_aliases v0.2.2
+   Compiling autocfg v1.5.1
+   Compiling typenum v1.20.1
+   Compiling foldhash v0.2.0
+   Compiling thiserror v2.0.21
+   Compiling bitflags v2.13.2
+   Compiling equivalent v1.0.2
+   Compiling khronos_api v3.1.0
+   Compiling windows-strings v0.5.1
+   Compiling windows-result v0.4.1
+   Compiling once_cell v1.21.4
+   Compiling log v0.4.34
+   Compiling generic-array v0.14.7
+   Compiling hashbrown v0.17.1
+   Compiling cpufeatures v0.2.17
+   Compiling num-traits v0.2.19
+   Compiling zerocopy v0.8.59
+   Compiling rustc-hash v1.1.0
+   Compiling xml-rs v0.8.29
+   Compiling smallvec v1.16.2
+   Compiling naga v30.0.1
+   Compiling libloading v0.8.9
+   Compiling windows-threading v0.2.1
+   Compiling ash v0.38.0+1.3.281
+   Compiling parking_lot_core v0.9.12
+   Compiling libc v0.2.189
+   Compiling bit-vec v0.9.1
+   Compiling unicode-width v0.2.2
+   Compiling indexmap v2.14.2
+   Compiling spirv v0.4.0+sdk-1.4.341.0
+   Compiling raw-window-handle v0.6.2
+   Compiling arrayvec v0.7.8
+   Compiling scopeguard v1.2.0
+   Compiling static_assertions v1.1.0
+   Compiling khronos-egl v6.0.0
+   Compiling allocator-api2 v0.2.21
+   Compiling bit-set v0.10.0
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling codespan-reporting v0.13.1
+   Compiling lock_api v0.4.14
+   Compiling gl_generator v0.14.0
+   Compiling core_maths v0.1.1
+   Compiling hashbrown v0.16.1
+   Compiling digest v0.10.7
+   Compiling wgpu-hal v30.0.1
+   Compiling presser v0.3.1
+   Compiling parking_lot v0.12.5
+   Compiling slotmap v1.1.1
+   Compiling syn v3.0.6
+   Compiling syn v2.0.119
+   Compiling sha2 v0.10.9
+   Compiling glutin_wgl_sys v0.6.1
+   Compiling glow v0.17.0
+   Compiling profiling v1.0.18
+   Compiling ordered-float v5.5.0
+   Compiling voxel-noise v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-noise)
+   Compiling renderdoc-sys v1.1.0
+   Compiling range-alloc v0.1.5
+   Compiling wgpu-core v30.0.1
+   Compiling litrs v1.0.0
+   Compiling simd-adler32 v0.3.10
+   Compiling ttf-parser v0.25.1
+   Compiling wgpu v30.0.1
+   Compiling zeno v0.3.3
+   Compiling adler2 v2.0.1
+   Compiling memmap2 v0.9.11
+   Compiling yazi v0.2.1
+   Compiling crc32fast v1.5.2
+   Compiling tinyvec v1.13.3
+   Compiling euclid v0.22.14
+   Compiling self_cell v1.3.0
+   Compiling document-features v0.2.12
+   Compiling linebender_resource_handle v0.1.1
+   Compiling unicode-segmentation v1.13.3
+   Compiling sys-locale v0.3.2
+   Compiling rangemap v1.8.0
+   Compiling rustc-hash v2.1.3
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+   Compiling unicode-script v0.5.8
+   Compiling unicode-bidi v0.3.18
+   Compiling unicode-linebreak v0.1.5
+   Compiling smol_str v0.3.6
+   Compiling etagere v0.3.0
+   Compiling miniz_oxide v0.9.1
+   Compiling lru v0.16.4
+   Compiling miniz_oxide v0.8.9
+error: could not compile `syn` (lib)
+
+Caused by:
+  process didn't exit successfully: `kache 'C:\Users\ala\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\rustc.exe' --crate-name syn --edition=2021 'C:\Users\ala\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\syn-2.0.119\src\lib.rs' --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C embed-bitcode=no -C debug-assertions=off --cfg 'feature="clone-impls"' --cfg 'feature="default"' --cfg 'feature="derive"' --cfg 'feature="full"' --cfg 'feature="parsing"' --cfg 'feature="printing"' --cfg 'feature="proc-macro"' --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("clone-impls", "default", "derive", "extra-traits", "fold", "full", "parsing", "printing", "proc-macro", "test", "visit", "visit-mut"))' -C metadata=43e33cbe39ed1e2f -C extra-filename=-6c429e553434b801 --out-dir 'C:\Users\ala\Documents\shploingus-clean\target\release\deps' -C strip=debuginfo -L 'dependency=C:\Users\ala\Documents\shploingus-clean\target\release\deps' --extern 'proc_macro2=C:\Users\ala\Documents\shploingus-clean\target\release\deps\libproc_macro2-d0f8ed0d730bc603.rmeta' --extern 'quote=C:\Users\ala\Documents\shploingus-clean\target\release\deps\libquote-f1f1db1f3f12a4ae.rmeta' --extern 'unicode_ident=C:\Users\ala\Documents\shploingus-clean\target\release\deps\libunicode_ident-937c7fc20b394a24.rmeta' --cap-lints allow` (exit code: 1)
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `glow` (lib)
+
+Caused by:
+  process didn't exit successfully: `kache 'C:\Users\ala\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\rustc.exe' --crate-name glow --edition=2021 'C:\Users\ala\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\glow-0.17.0\src\lib.rs' --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg 'cfg(docsrs,test)' --check-cfg 'cfg(feature, values("debug_automatic_glGetError", "debug_trace_calls", "log"))' -C metadata=722004ae462f4a99 -C extra-filename=-c5cea2546038d53e --out-dir 'C:\Users\ala\Documents\shploingus-clean\target\release\deps' -C strip=debuginfo -L 'dependency=C:\Users\ala\Documents\shploingus-clean\target\release\deps' --cap-lints allow` (exit code: 1)

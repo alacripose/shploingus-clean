@@ -1,0 +1,68 @@
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+    Finished `release` profile [optimized] target(s) in 19.91s
+     Running `F:/shploingus-target\release\examples\biome-census.exe`
+the coverage test's diagonal, x in [-6000, 6000) step 300, z = 0.7x, tick 0:
+    tundra                     16
+    boreal_forest               2
+    cool_temperate_forest       6
+    temperate_forest            3
+    grassland                  10
+    desert                      2
+    subtropical_scrub           1
+    biotemperature 2.985 .. 15.080 °C   MAP 36.3 .. 1322.6 mm
+    warmest columns:
+        (  -4800,   -3360)  biotemperature 15.080 °C  MAP    298.2 mm  grassland
+        (   4500,    3150)  biotemperature 14.804 °C  MAP    687.3 mm  subtropical_scrub
+        (    300,     210)  biotemperature 14.336 °C  MAP     45.0 mm  desert
+        (  -4500,   -3150)  biotemperature 14.034 °C  MAP   1322.6 mm  temperate_forest
+        (   5100,    3570)  biotemperature 13.394 °C  MAP    865.6 mm  temperate_forest
+        (  -1200,    -840)  biotemperature 13.264 °C  MAP     54.7 mm  desert
+        (   4200,    2940)  biotemperature 12.345 °C  MAP   1122.5 mm  temperate_forest
+        (   2400,    1680)  biotemperature 12.073 °C  MAP    377.6 mm  grassland
+
+the grid, x and z in [-6000, 6000] step 300 (41 x 41), tick 0:
+    tundra                    829
+    boreal_forest             113
+    cool_temperate_forest     288
+    temperate_forest           20
+    grassland                 300
+    desert                     81
+    subtropical_scrub          40
+    alpine                     10
+    biotemperature 1.499 .. 16.168 °C   MAP 17.4 .. 29510.2 mm
+    warmest columns:
+        (  -4800,   -1200)  biotemperature 16.168 °C  MAP    495.5 mm  subtropical_scrub
+        (  -1200,    3000)  biotemperature 16.163 °C  MAP     62.2 mm  desert
+        (   4200,    4800)  biotemperature 15.593 °C  MAP    418.1 mm  subtropical_scrub
+        (   3600,   -3900)  biotemperature 15.362 °C  MAP     51.3 mm  desert
+        (   -900,    4800)  biotemperature 15.244 °C  MAP    452.9 mm  subtropical_scrub
+        (   6000,     900)  biotemperature 15.053 °C  MAP    846.0 mm  temperate_forest
+        (  -6000,    3300)  biotemperature 14.920 °C  MAP    447.7 mm  subtropical_scrub
+        (   1500,   -6000)  biotemperature 14.803 °C  MAP    648.2 mm  subtropical_scrub
+
+the fine grid, x and z in [-6000, 6000] step 100 (121 x 121), tick 0:
+    tundra                   7035
+    boreal_forest            1083
+    cool_temperate_forest    2510
+    temperate_forest          197
+    grassland                2640
+    desert                    754
+    subtropical_scrub         299
+    alpine                    123
+    biotemperature 1.181 .. 16.677 °C   MAP 11.6 .. 29510.2 mm
+    warmest columns:
+        (   3200,   -4000)  biotemperature 16.677 °C  MAP     54.6 mm  desert
+        (   2400,   -5200)  biotemperature 16.502 °C  MAP     52.4 mm  desert
+        (   4400,    3200)  biotemperature 16.389 °C  MAP    712.2 mm  subtropical_scrub
+        (   6000,     800)  biotemperature 16.326 °C  MAP    304.6 mm  grassland
+        (   6000,    4000)  biotemperature 16.215 °C  MAP    663.0 mm  subtropical_scrub
+        (  -4800,   -1200)  biotemperature 16.168 °C  MAP    495.5 mm  subtropical_scrub
+        (  -1200,    3000)  biotemperature 16.163 °C  MAP     62.2 mm  desert
+        (   2300,   -5200)  biotemperature 16.077 °C  MAP    498.6 mm  subtropical_scrub
+
+the warmest grid columns re-derived across a year, and a later year:
+    (  -4800,   -1200)  biotemperature 16.168 °C  MAP    495.5 mm  biomes: subtropical_scrub, subtropical_scrub, subtropical_scrub, subtropical_scrub, subtropical_scrub
+    (  -1200,    3000)  biotemperature 16.163 °C  MAP     62.2 mm  biomes: desert, desert, desert, desert, desert
+    (   4200,    4800)  biotemperature 15.593 °C  MAP    418.1 mm  biomes: subtropical_scrub, subtropical_scrub, subtropical_scrub, subtropical_scrub, subtropical_scrub
+    (   3600,   -3900)  biotemperature 15.362 °C  MAP     51.3 mm  biomes: desert, desert, desert, desert, desert
+    (   -900,    4800)  biotemperature 15.244 °C  MAP    452.9 mm  biomes: subtropical_scrub, subtropical_scrub, subtropical_scrub, subtropical_scrub, subtropical_scrub

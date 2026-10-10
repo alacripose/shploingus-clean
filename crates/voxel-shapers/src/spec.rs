@@ -53,7 +53,16 @@ pub struct Config {
     pub soil_max_slope: f64,
     /// Dry adiabatic-ish lapse rate, °C per metre. US Standard Atmosphere, 1976.
     pub lapse_rate_c_per_m: f64,
-    /// Sea-level mean temperature, °C at the datum.
+    /// **Equatorial** sea-level annual mean temperature, °C — the value the latitude
+    /// penalty of [`crate::climate::latitude_offset_c`] is measured *down* from.
+    ///
+    /// **Its meaning is what was wrong, and the surface is what showed it.** Read as a
+    /// "sea-level mean at the datum", `15.0` combined with a `45 · sin²φ` latitude
+    /// penalty applied latitude twice: the world's declared 45° came out at **−7.5 °C**,
+    /// so every column classified as tundra, boreal forest or alpine and the whole world
+    /// was surfaced with one material. `26.0` is the published equatorial zonal annual
+    /// mean, paired with a span of `36` so 45° lands on its own published ≈ +8 °C
+    /// (`logs/c159-biome-census.txt`, C-159.7).
     pub base_temperature_c: f64,
     /// Latitude of the world origin in degrees, which sets the insolation band.
     pub origin_latitude_deg: f64,
@@ -86,7 +95,7 @@ impl Default for Config {
             erosion_droplets_per_column: 0,
             soil_max_slope: 0.62,
             lapse_rate_c_per_m: 0.0065,
-            base_temperature_c: 15.0,
+            base_temperature_c: 26.0,
             origin_latitude_deg: 45.0,
             orographic_efficiency: 0.0012,
             cave_threshold: 0.62,
@@ -232,6 +241,41 @@ impl WorldSpec {
     pub fn validate(&self) -> Result<(), Refusal> {
         self.config.validate()
     }
+
+    /// **A value that changes whenever anything a shaper can read changes.**
+    ///
+    /// For **cache keys only**. `flora` memoizes a pure function per `(world, cell)`, and
+    /// two different worlds must not share a row — the `seed` alone is not enough, because
+    /// tests and examples build several `Config`s over one seed inside one process, and a
+    /// cache that answered one world's tree for another's would be a wrong world rather
+    /// than a slow one. The [`Self::fingerprint_covers_every_config_field`] test flips
+    /// every field the struct has, so adding a field to `Config` without adding it here
+    /// fails a test instead of shipping a collision.
+    pub fn fingerprint(&self) -> u64 {
+        let c = &self.config;
+        let mut h = self.seed;
+        for bits in [
+            c.sea_level_m.to_bits(),
+            c.base_elevation_m.to_bits(),
+            c.relief_m.to_bits(),
+            c.continent_frequency.to_bits(),
+            c.plate_count as u64,
+            c.plate_cell_size_m.to_bits(),
+            c.plate_boundary_width_m.to_bits(),
+            c.layer_count as u64,
+            c.region_size as u64,
+            c.erosion_droplets_per_column as u64,
+            c.soil_max_slope.to_bits(),
+            c.lapse_rate_c_per_m.to_bits(),
+            c.base_temperature_c.to_bits(),
+            c.origin_latitude_deg.to_bits(),
+            c.orographic_efficiency.to_bits(),
+            c.cave_threshold.to_bits(),
+        ] {
+            h = voxel_noise::mix(h ^ bits);
+        }
+        h
+    }
 }
 
 #[cfg(test)]
@@ -271,6 +315,54 @@ mod tests {
         seeds.sort_unstable();
         seeds.dedup();
         assert_eq!(seeds.len(), before, "two stages share a seed");
+    }
+
+    #[test]
+    fn fingerprint_covers_every_config_field() {
+        // A `Config` field that is missing from `fingerprint` is a cache collision between
+        // two different worlds, and this list is what makes forgetting one loud.
+        let base = WorldSpec::new(7, Config::default()).fingerprint();
+        let mut flips: Vec<Config> = Vec::new();
+        macro_rules! flip {
+            ($($field:ident : $value:expr),* $(,)?) => { $({
+                let mut c = Config::default();
+                c.$field = $value;
+                flips.push(c);
+            })* };
+        }
+        flip! {
+            sea_level_m: Config::default().sea_level_m + 1.0,
+            base_elevation_m: Config::default().base_elevation_m + 1.0,
+            relief_m: Config::default().relief_m + 1.0,
+            continent_frequency: Config::default().continent_frequency + 1e-6,
+            plate_count: Config::default().plate_count + 1,
+            plate_cell_size_m: Config::default().plate_cell_size_m + 1.0,
+            plate_boundary_width_m: Config::default().plate_boundary_width_m + 1.0,
+            layer_count: Config::default().layer_count + 1,
+            region_size: Config::default().region_size + 1,
+            erosion_droplets_per_column: Config::default().erosion_droplets_per_column + 1,
+            soil_max_slope: Config::default().soil_max_slope + 0.01,
+            lapse_rate_c_per_m: Config::default().lapse_rate_c_per_m + 1e-4,
+            base_temperature_c: Config::default().base_temperature_c + 1.0,
+            origin_latitude_deg: Config::default().origin_latitude_deg + 1.0,
+            orographic_efficiency: Config::default().orographic_efficiency + 1e-4,
+            cave_threshold: Config::default().cave_threshold + 0.01,
+        }
+        assert_eq!(flips.len(), 16, "a config field is not exercised here");
+        for c in flips {
+            assert_ne!(
+                base,
+                WorldSpec::new(7, c).fingerprint(),
+                "a config field is not in the fingerprint"
+            );
+        }
+        // The seed is in it too, and the tick is deliberately not: the fingerprint names
+        // the *world*, and the tick is what the world is sampled at.
+        assert_ne!(base, WorldSpec::new(8, Config::default()).fingerprint());
+        assert_eq!(
+            base,
+            WorldSpec::new(7, Config::default()).at_tick(9_999).fingerprint()
+        );
     }
 
     #[test]

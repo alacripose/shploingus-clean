@@ -131,6 +131,10 @@ pub struct Frame {
     /// flash this crate no longer has: those chunks are covered, not absent.
     pub stale_drawn: usize,
     pub submitted: usize,
+    /// Requests that were **already queued** and whose entry was re-keyed with a
+    /// better priority — the chunks the picture was behind on. Counted apart from
+    /// [`Self::submitted`], which is new work: one adds a job, the other moves one.
+    pub promoted: usize,
     pub completed: usize,
     /// Finished meshes thrown away because the viewer moved off them.
     pub discarded: usize,
@@ -382,18 +386,17 @@ impl Streamer {
     /// kept until a better one exists. See [`Streamer::stale`].
     ///
     /// A build already **in flight** when the edit lands is not cancelled: it
-    /// reads the record under a read lock, so it may finish with the old world in
-    /// its hands — and its generation stamp is what keeps that mesh out of the
-    /// cache ([`Frame::stale`]).
-    pub fn edit(
-        &mut self,
-        x: i32,
-        y: i32,
-        z: i32,
-        to: MaterialId,
-        reason: &str,
-    ) -> Refused<Modification> {
-        let modification = self.pool.edit(x, y, z, to, reason)?;
+    /// builds from a snapshot taken at its start, so it may finish with the old
+    /// world in its hands — and its generation stamp is what keeps that mesh out
+    /// of the cache ([`Frame::stale`]). The edit itself never waits for a build:
+    /// the world's read lock is held for one snapshot clone, not for the whole
+    /// build (measured — see `Pool::build_one`).
+    ///
+    /// **Who, and what act**, for the same reason [`crate::Pool::edit`] asks: the earthworks
+    /// entry names its actor and its verb, and neither is inferable from the material.
+    pub fn edit(&mut self, edit: crate::pool::Edit) -> Refused<Modification> {
+        let (x, y, z) = (edit.x, edit.y, edit.z);
+        let modification = self.pool.edit(edit)?;
         for pos in chunks_touching([x, y, z]) {
             // Demoted, not dropped: the mesh keeps its charge and keeps being
             // drawn, and `absorb` releases it when the replacement lands. A
@@ -408,6 +411,20 @@ impl Streamer {
             self.failed.remove(&pos);
         }
         Ok(modification)
+    }
+
+    /// **The world record's generation** — bumped by every recorded modification.
+    ///
+    /// A cheap watch for "the record moved": a caller that reads [`Streamer::modifications`]
+    /// every frame would copy the whole record even when nothing changed, and this is the number
+    /// that says whether there is anything new to read.
+    pub fn world_generation(&self) -> u64 {
+        self.pool.generation()
+    }
+
+    /// The world's modification record, as a snapshot. See [`Pool::modifications`].
+    pub fn modifications(&self) -> Vec<Modification> {
+        self.pool.modifications()
     }
 
     /// The first non-empty voxel along a ray, within `reach` voxels.
@@ -479,6 +496,8 @@ impl Streamer {
     /// It is a named method rather than an inline sort because the tests assert
     /// this order, and a tested *copy* of an ordering is not the ordering.
     pub fn rank(&self, candidates: &mut [ChunkPos], centre: ChunkPos) {
+        // (see [`Self::ask_priority`] for what a *stale* candidate is asked with; the
+        // sort here is the offering order, and the pool re-orders by priority.)
         // MUTATION-PROBE REVERTED: the sort is load-bearing, and all three tests here
         // were measured failing when it was removed.
         candidates.sort_unstable_by_key(|p| {
@@ -490,6 +509,29 @@ impl Streamer {
                 p.z,
             )
         });
+    }
+
+    /// **The offset that puts a chunk drawn from a stale mesh ahead of every
+    /// routine ask.**
+    ///
+    /// Routine priorities are squared distances from the viewer, so they are never
+    /// negative and never exceed `2·radius² + 4·vertical²`. Subtracting a bound
+    /// larger than any window can produce makes every boosted priority negative —
+    /// below every routine one — and because the subtraction is monotone, the
+    /// nearest stale chunk is still asked for first *among them*.
+    const STALE_PRIORITY_BASE: i64 = 1 << 40;
+
+    /// The priority a chunk is asked with. **Lower is sooner**, and a chunk drawn
+    /// from a stale mesh asks with [`Self::STALE_PRIORITY_BASE`] subtracted, so an
+    /// edit's replacement does not wait behind the horizon fill the chunk happened
+    /// to be slotted into. See [`Request::priority`] and [`Submitted::Promoted`].
+    fn ask_priority(&self, centre: ChunkPos, pos: ChunkPos) -> i64 {
+        let routine = self.window.priority(centre, pos);
+        if self.stale.contains_key(&pos) {
+            routine - Self::STALE_PRIORITY_BASE
+        } else {
+            routine
+        }
     }
 
     /// One frame of streaming: cancel, evict, ask, take.
@@ -553,11 +595,13 @@ impl Streamer {
             .collect();
         self.rank(&mut missing, centre);
         let mut submitted = 0usize;
+        let mut promoted = 0usize;
         let mut queue_full = 0u64;
         for pos in missing {
-            let request = Request { pos, priority: self.window.priority(centre, pos) };
+            let request = Request { pos, priority: self.ask_priority(centre, pos) };
             match self.pool.submit(request) {
                 Submitted::Queued => submitted += 1,
+                Submitted::Promoted => promoted += 1,
                 Submitted::QueueFull => queue_full += 1,
                 Submitted::AlreadyQueued => {}
             }
@@ -568,7 +612,7 @@ impl Streamer {
         let applied = self.absorb(meshes, failures);
 
         self.evicted += evicted;
-        Ok(self.report(submitted, queue_full, applied))
+        Ok(self.report(submitted, promoted, queue_full, applied))
     }
 
     /// Apply a batch of finished work.
@@ -622,12 +666,19 @@ impl Streamer {
         apply
     }
 
-    fn report(&self, submitted: usize, queue_full: u64, applied: Apply) -> Frame {
+    fn report(
+        &self,
+        submitted: usize,
+        promoted: usize,
+        queue_full: u64,
+        applied: Apply,
+    ) -> Frame {
         Frame {
             wanted: self.window.count() as usize,
             resident: self.meshes.len(),
             stale_drawn: self.stale.len(),
             submitted,
+            promoted,
             completed: applied.completed,
             discarded: applied.discarded as usize,
             stale: applied.stale,
@@ -666,7 +717,7 @@ impl Streamer {
                 failures.extend(collected.failures);
             });
             let applied = self.absorb(meshes, failures);
-            last = self.report(0, 0, applied);
+            last = self.report(0, 0, 0, applied);
             if last.in_flight == 0 {
                 return Ok(last);
             }
@@ -859,7 +910,16 @@ mod tests {
             .rev()
             .find(|y| !s.material_at(x, *y, z).unwrap().is_empty())
             .expect("the centre chunk's middle column is empty");
-        s.edit(x, y, z, materials::AIR, "the test dug here").unwrap();
+        s.edit(crate::pool::Edit {
+            x,
+            y,
+            z,
+            to: materials::AIR,
+            reason: "the test dug here".into(),
+            actor: voxel_model::world::ActorId::player(),
+            verb: voxel_model::world::PhysicalVerb::Dig,
+        })
+        .unwrap();
 
         let frame = s.pump().unwrap();
         assert_eq!(frame.stale_drawn, 1, "the edited chunk should be reported as drawn-but-stale");
@@ -928,7 +988,16 @@ mod tests {
         let current_before = s.len();
         let drawn_before = s.drawn(target).expect("the chunk was resident").digest();
 
-        s.edit(x, y, z, to, "the test dug here").unwrap();
+        s.edit(crate::pool::Edit {
+            x,
+            y,
+            z,
+            to,
+            reason: "the test dug here".into(),
+            actor: voxel_model::world::ActorId::player(),
+            verb: voxel_model::world::PhysicalVerb::Dig,
+        })
+        .unwrap();
 
         // The chunk is still on screen, drawn from the mesh it had before.
         assert!(
@@ -968,7 +1037,16 @@ mod tests {
             .find(|p| s.mesh(*p).is_some())
             .expect("the edit reaches a resident chunk");
 
-        s.edit(x, y, z, materials::AIR, "the test dug here").unwrap();
+        s.edit(crate::pool::Edit {
+            x,
+            y,
+            z,
+            to: materials::AIR,
+            reason: "the test dug here".into(),
+            actor: voxel_model::world::ActorId::player(),
+            verb: voxel_model::world::PhysicalVerb::Dig,
+        })
+        .unwrap();
         assert_eq!(
             s.budget().charged(),
             charged_before,
@@ -994,13 +1072,72 @@ mod tests {
             .rev()
             .find(|y| !s.material_at(x, *y, z).unwrap().is_empty())
             .expect("the centre chunk's middle column is empty");
-        s.edit(x, y, z, materials::AIR, "the test dug here").unwrap();
+        s.edit(crate::pool::Edit {
+            x,
+            y,
+            z,
+            to: materials::AIR,
+            reason: "the test dug here".into(),
+            actor: voxel_model::world::ActorId::player(),
+            verb: voxel_model::world::PhysicalVerb::Dig,
+        })
+        .unwrap();
         assert_eq!(s.stale_len(), 1, "the edit made something stale");
 
         // Walk the viewer far enough away that the edited chunk is out of window.
         s.set_centre(ChunkPos::new(c.x + 10_000, c.y, c.z));
         s.pump().unwrap();
         assert_eq!(s.stale_len(), 0, "a stale mesh outlived its residency horizon");
+        s.shutdown();
+    }
+
+    #[test]
+    fn a_stale_chunk_asks_ahead_of_every_routine_one() {
+        // **The caller's half of the promotion contract.** `Request::priority`
+        // says a chunk the picture is behind on is submitted with a lower number;
+        // an edited chunk is drawn from its old mesh until its replacement lands,
+        // and that replacement must not queue behind the horizon fill the chunk
+        // happened to be slotted into.
+        let mut s = streamer(2, 64 * 1024 * 1024);
+        s.settle().unwrap();
+        let c = s.centre();
+        let dig = |s: &mut Streamer, cx: i32, cz: i32| {
+            let (x, z) = (cx * 32 + 16, cz * 32 + 16);
+            let y = (c.y * 32..c.y * 32 + 32)
+                .rev()
+                .find(|y| !s.material_at(x, *y, z).unwrap().is_empty())
+                .expect("the centre chunk's middle column is empty");
+            s.edit(crate::pool::Edit {
+                x,
+                y,
+                z,
+                to: materials::AIR,
+                reason: "the test dug here".into(),
+                actor: voxel_model::world::ActorId::player(),
+                verb: voxel_model::world::PhysicalVerb::Dig,
+            })
+            .unwrap();
+        };
+        dig(&mut s, c.x, c.z); // the near stale chunk: distance 0
+        dig(&mut s, c.x + 1, c.z); // the far stale chunk: distance 1
+        assert_eq!(s.stale_len(), 2, "both edits must leave a stale mesh");
+
+        let near = ChunkPos::new(c.x, c.y, c.z);
+        let far = ChunkPos::new(c.x + 1, c.y, c.z);
+        let fresh = ChunkPos::new(c.x, c.y, c.z + 1);
+
+        let routine = s.ask_priority(c, fresh);
+        assert!(routine >= 0, "a routine ask's priority is a squared distance: {routine}");
+        assert!(
+            s.ask_priority(c, near) < 0 && s.ask_priority(c, far) < 0,
+            "a stale ask must be ahead of every routine ask"
+        );
+        assert!(
+            s.ask_priority(c, near) < s.ask_priority(c, far),
+            "the boost must stay monotone in distance: {near:?} at {} vs {far:?} at {}",
+            s.ask_priority(c, near),
+            s.ask_priority(c, far)
+        );
         s.shutdown();
     }
 
@@ -1018,7 +1155,16 @@ mod tests {
             .rev()
             .find(|y| !s.material_at(x, *y, z).unwrap().is_empty())
             .expect("the centre chunk's middle column is empty");
-        s.edit(x, y, z, materials::AIR, "the test dug here").unwrap();
+        s.edit(crate::pool::Edit {
+            x,
+            y,
+            z,
+            to: materials::AIR,
+            reason: "the test dug here".into(),
+            actor: voxel_model::world::ActorId::player(),
+            verb: voxel_model::world::PhysicalVerb::Dig,
+        })
+        .unwrap();
 
         assert_ne!(
             s.digest(),
@@ -1057,7 +1203,16 @@ mod tests {
         assert_eq!(reached.len(), 1, "a mid-chunk voxel reaches one resident chunk");
         let digest_before = s.digest();
 
-        let impact = s.edit(x, y, z, to, "the test dug here").unwrap();
+        let impact = s.edit(crate::pool::Edit {
+            x,
+            y,
+            z,
+            to,
+            reason: "the test dug here".into(),
+            actor: voxel_model::world::ActorId::player(),
+            verb: voxel_model::world::PhysicalVerb::Dig,
+        })
+        .unwrap();
         assert_eq!(impact.from, from);
         // **Selective still holds, in the currency sense:** only the reached
         // chunk stops being current. It is still *drawn* (the flash fix), so the
@@ -1119,6 +1274,139 @@ mod tests {
         s.settle().unwrap();
         assert_eq!(s.digest(), before, "the rebuilt world was not the same world");
         s.shutdown();
+    }
+
+    #[test]
+    #[ignore = "measurement, not an assertion: run with `cargo test <filter> -- --ignored --nocapture`"]
+    fn measure_the_edit_hitch_and_where_it_comes_from() {
+        use std::time::{Duration, Instant};
+
+        // 1. One chunk, straight from the generator — the unit of work a worker
+        //    holds the world's read lock for.
+        let src = source();
+        let pos = centre();
+        let t0 = Instant::now();
+        let tree = src.build_chunk(pos).unwrap();
+        println!(
+            "build_chunk: {:?} ({} solid voxels of {})",
+            t0.elapsed(),
+            tree.solid_count(),
+            voxel_model::CHUNK_VOLUME
+        );
+
+        // 2. One voxel through the live record: what a pick and a move step
+        //    cost, and where a column's per-(x, z) work is paid per voxel
+        //    instead.
+        let s = streamer(1, 64 * 1024 * 1024);
+        let t0 = Instant::now();
+        let calls = 2_000u32;
+        for i in 0..calls {
+            let _ = s.material_at((i % 32) as i32, centre().y * 32 + 16, 16).unwrap();
+        }
+        println!("material_at: {:?} per call", t0.elapsed() / calls);
+        s.shutdown();
+
+        // 3. A settled pool, so the same edit can be timed against an **idle**
+        //    world first.
+        let mut idle = streamer(8, 64 * 1024 * 1024);
+        idle.settle().unwrap();
+        let c = idle.centre();
+        let (x, z) = (c.x * 32 + 16, c.z * 32 + 16);
+        let y = (c.y * 32..c.y * 32 + 32)
+            .rev()
+            .find(|y| !idle.material_at(x, *y, z).unwrap().is_empty())
+            .expect("the centre chunk's middle column is empty");
+
+        // A pick: the ray a click casts before it edits.
+        let ray = Ray::new([x as f64 + 0.5, y as f64 + 1.5, z as f64 + 0.5], [0.0, -1.0, 0.0]);
+        let t0 = Instant::now();
+        let picked = idle.pick(&ray, 6.0).unwrap().map(|p| p.voxel);
+        println!("pick: {:?} ({picked:?})", t0.elapsed());
+
+        let t0 = Instant::now();
+        let _ = idle
+            .edit(crate::pool::Edit {
+                x,
+                y,
+                z,
+                to: materials::AIR,
+                reason: "idle-baseline dig".into(),
+                actor: voxel_model::world::ActorId::player(),
+                verb: voxel_model::world::PhysicalVerb::Dig,
+            })
+            .unwrap();
+        println!("edit (idle pool): {:?}", t0.elapsed());
+
+        // 4. The same edit against a **busy** pool — the state the game is in
+        //    while the window streams, which is most of the first minute and
+        //    every time the viewer moves.
+        let w = ChunkWindow { radius_chunks: 6, vertical_chunks: 1 };
+        let mut busy = Streamer::new(source(), config(), 8, 512 * 1024 * 1024)
+            .unwrap()
+            .with_window(w)
+            .unwrap();
+        busy.set_centre(centre());
+        busy.pump().unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        for i in 0..6 {
+            // A different column each time, so no two edits share a transition
+            // identity and none is refused as a replay.
+            let (ex, ez) = (x + 1 + i * 3, z + 1);
+            let ey = (c.y * 32..c.y * 32 + 32)
+                .rev()
+                .find(|y| !busy.material_at(ex, *y, ez).unwrap().is_empty())
+                .expect("the measure column is empty");
+            let t0 = Instant::now();
+            let _ = busy
+                .edit(crate::pool::Edit {
+                    x: ex,
+                    y: ey,
+                    z: ez,
+                    to: materials::AIR,
+                    reason: format!("busy-hitch dig {i}"),
+                    actor: voxel_model::world::ActorId::player(),
+                    verb: voxel_model::world::PhysicalVerb::Dig,
+                })
+                .unwrap();
+            println!("edit (busy pool): {:?}", t0.elapsed());
+            std::thread::sleep(Duration::from_millis(250));
+        }
+
+        // 5. How long the **picture** takes to catch up with the record. Collision
+        //    is instant (it reads the record), but the frame shows the chunk's
+        //    mesh, and the mesh is re-built by a worker: this is the latency the
+        //    player sees, and it is a different number from the click's own cost.
+        let (ex, ez) = (x + 1 + 6 * 3, z + 1);
+        let ey = (c.y * 32..c.y * 32 + 32)
+            .rev()
+            .find(|y| !busy.material_at(ex, *y, ez).unwrap().is_empty())
+            .expect("the measure column is empty");
+        let target = chunks_touching([ex, ey, ez])[0];
+        busy
+            .edit(crate::pool::Edit {
+                x: ex,
+                y: ey,
+                z: ez,
+                to: materials::AIR,
+                reason: "the latency edit".into(),
+                actor: voxel_model::world::ActorId::player(),
+                verb: voxel_model::world::PhysicalVerb::Dig,
+            })
+            .unwrap();
+        let t0 = Instant::now();
+        let mut pumps = 0u32;
+        while busy.mesh(target).is_none() && pumps < 2_000 {
+            busy.pump().unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+            pumps += 1;
+        }
+        println!(
+            "edit → fresh mesh (busy pool): {:?} after {pumps} pump round(s); drawn from the stale mesh throughout: {}",
+            t0.elapsed(),
+            busy.is_stale(target)
+        );
+        busy.shutdown();
+        idle.shutdown();
     }
 
     #[test]

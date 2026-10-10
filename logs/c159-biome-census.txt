@@ -1,0 +1,72 @@
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.26
+   Compiling cfg-if v1.0.5
+   Compiling cpufeatures v0.2.17
+   Compiling voxel-noise v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-noise)
+   Compiling syn v3.0.6
+   Compiling generic-array v0.14.7
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling sha2 v0.10.9
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+   Compiling musli-macros v0.1.7
+   Compiling musli-core v0.1.7
+   Compiling musli v0.1.8
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+    Finished `release` profile [optimized] target(s) in 56.19s
+     Running `F:/shploingus-target\release\examples\biome-census.exe`
+the coverage test's diagonal, x in [-6000, 6000) step 300, z = 0.7x, tick 0:
+    tundra                     19
+    boreal_forest              21
+    biotemperature 0.000 .. 1.952 °C   MAP 36.3 .. 1322.6 mm
+    warmest columns:
+        (  -4800,   -3360)  biotemperature  1.952 °C  MAP    298.2 mm  boreal_forest
+        (   4500,    3150)  biotemperature  1.802 °C  MAP    687.3 mm  boreal_forest
+        (    300,     210)  biotemperature  1.553 °C  MAP     45.0 mm  tundra
+        (  -4500,   -3150)  biotemperature  1.390 °C  MAP   1322.6 mm  boreal_forest
+        (   5100,    3570)  biotemperature  1.116 °C  MAP    865.6 mm  boreal_forest
+        (  -1200,    -840)  biotemperature  1.069 °C  MAP     54.7 mm  tundra
+        (   4200,    2940)  biotemperature  0.732 °C  MAP   1122.5 mm  boreal_forest
+        (   2400,    1680)  biotemperature  0.634 °C  MAP    377.6 mm  boreal_forest
+
+the grid, x and z in [-6000, 6000] step 300 (41 x 41), tick 0:
+    tundra                    970
+    boreal_forest             701
+    alpine                     10
+    biotemperature 0.000 .. 2.536 °C   MAP 17.4 .. 29510.2 mm
+    warmest columns:
+        (  -4800,   -1200)  biotemperature  2.536 °C  MAP    495.5 mm  boreal_forest
+        (  -1200,    3000)  biotemperature  2.534 °C  MAP     62.2 mm  tundra
+        (   4200,    4800)  biotemperature  2.229 °C  MAP    418.1 mm  boreal_forest
+        (   3600,   -3900)  biotemperature  2.105 °C  MAP     51.3 mm  tundra
+        (   -900,    4800)  biotemperature  2.040 °C  MAP    452.9 mm  boreal_forest
+        (   6000,     900)  biotemperature  1.937 °C  MAP    846.0 mm  boreal_forest
+        (  -6000,    3300)  biotemperature  1.864 °C  MAP    447.7 mm  boreal_forest
+        (   1500,   -6000)  biotemperature  1.802 °C  MAP    648.2 mm  boreal_forest
+
+the fine grid, x and z in [-6000, 6000] step 100 (121 x 121), tick 0:
+    tundra                   8360
+    boreal_forest            6158
+    alpine                    123
+    biotemperature 0.000 .. 2.810 °C   MAP 11.6 .. 29510.2 mm
+    warmest columns:
+        (   3200,   -4000)  biotemperature  2.810 °C  MAP     54.6 mm  tundra
+        (   2400,   -5200)  biotemperature  2.716 °C  MAP     52.4 mm  tundra
+        (   4400,    3200)  biotemperature  2.654 °C  MAP    712.2 mm  boreal_forest
+        (   6000,     800)  biotemperature  2.621 °C  MAP    304.6 mm  boreal_forest
+        (   6000,    4000)  biotemperature  2.562 °C  MAP    663.0 mm  boreal_forest
+        (  -4800,   -1200)  biotemperature  2.536 °C  MAP    495.5 mm  boreal_forest
+        (  -1200,    3000)  biotemperature  2.534 °C  MAP     62.2 mm  tundra
+        (   2300,   -5200)  biotemperature  2.486 °C  MAP    498.6 mm  boreal_forest
+
+the warmest grid columns re-derived across a year, and a later year:
+    (  -4800,   -1200)  biotemperature  2.536 °C  MAP    495.5 mm  biomes: boreal_forest, boreal_forest, boreal_forest, boreal_forest, boreal_forest
+    (  -1200,    3000)  biotemperature  2.534 °C  MAP     62.2 mm  biomes: tundra, tundra, tundra, tundra, tundra
+    (   4200,    4800)  biotemperature  2.229 °C  MAP    418.1 mm  biomes: boreal_forest, boreal_forest, boreal_forest, boreal_forest, boreal_forest
+    (   3600,   -3900)  biotemperature  2.105 °C  MAP     51.3 mm  biomes: tundra, tundra, tundra, tundra, tundra
+    (   -900,    4800)  biotemperature  2.040 °C  MAP    452.9 mm  biomes: boreal_forest, boreal_forest, boreal_forest, boreal_forest, boreal_forest
+CENSUS_EXIT:0

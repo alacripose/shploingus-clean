@@ -104,7 +104,8 @@ impl ShaperKind {
 pub enum Level {
     /// The 4×4×4 grid, stored: 64 cells of material per voxel.
     Subvoxel,
-    /// The 256× lattice, addressed: 16,777,216 addresses per subvoxel axis.
+    /// The 256 lattice, addressed: 16 samples per subvoxel axis — the 16×16 face
+    /// the base is named for.
     Detail,
 }
 
@@ -1788,7 +1789,7 @@ mod tests {
         assert_eq!(LevelMask::SUBVOXEL.union(LevelMask::DETAIL), LevelMask::BOTH);
         // The levels' own sides are the settled scale contract, not new numbers.
         assert_eq!(Level::Subvoxel.side(), 4);
-        assert_eq!(Level::Detail.side(), 256);
+        assert_eq!(Level::Detail.side(), 16);
         assert_eq!(Level::Subvoxel.name(), "4x4x4");
         assert_eq!(Level::Detail.name(), "256");
     }

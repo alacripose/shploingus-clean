@@ -1,0 +1,13 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.46s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-e81c39c525811ec8.exe)
+
+running 1 test
+coarse rungs: probe at 2 m, footprint 5.47e-3 m at the centre, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 1.9982598251089279e-7, 249175 distinct reds
+fine rungs: probe at 0.15 m, footprint 4.10e-4 m at the centre, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 8.373882987022796e-8, 94739 distinct reds
+mid rungs: probe at 2 m, footprint 4.31e-2 m at the centre, compared 4096 of 4225 pixels (129 skipped on a cell edge), worst disagreement 1.9426673189548715e-6, 3745 distinct reds
+eye moved: probe at 0.15 m, footprint 4.10e-4 m at the centre, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 9.322882510431896e-8, 89391 distinct reds
+bark shaper: probe at 0.15 m, footprint 4.10e-4 m at the centre, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 9.312372017955539e-8, 124616 distinct reds
+test renderer::tests::the_pattern_is_drawn_where_the_greedy_mesh_has_no_geometry ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 386 filtered out; finished in 9.37s
+

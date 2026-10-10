@@ -1,0 +1,341 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.24s
+     Running tests\board_report.rs (F:/shploingus-target\debug\deps\board_report-95e2cc3be25eb6aa.exe)
+
+running 3 tests
+board-tickets	409
+board-duplicate-filings	43
+board	the board holds 409 tickets, of which 86 are repeat filings of 43 distinct objectives. An append-only record cannot retract a filing, so these are reported rather than removed, and the ticket count above is NOT a count of distinct pieces of work
+board-duplicate	86 and 130, 172	add RecordState::Contested for the case where the ACTION is settled and a CONSEQUENCE is owed — because Unresolved says no answer was given and Superseded says a newer one replaced it, and neither is what happened
+board-duplicate	97 and 141, 183	add a behavioural census axis whose cell is a NAMED TEST PATH the coverage matrix forces every crate to fill — derived from this record format, not from the old tree's per-part claim gate
+board-duplicate	92 and 136, 178	admit the baseline atmosphere as TICK-ZERO DATA with a source per number, instead of four f64 constants in a shaper — because that admission is the exact thing the other tree is blocked without
+board-duplicate	69 and 113, 155	build the fixed 20 Hz clock with an accumulator that bounds how many missed ticks one slow frame may catch up on, and count what it dropped
+board-duplicate	58 and 102, 144	build the shell-owned notification queue: one writer, one rendering per record, one at a time
+board-duplicate	66 and 110, 152	carry every sky constant in a provenance inventory that names its source, and count the project extensions in a test so an unsourced number cannot be added silently
+board-duplicate	85 and 129, 171	carry pressure, temperature and flow as fixed-point integers at a DECLARED scale, so a threshold test is an exact integer comparison, and bind the scale into identity so changing it refuses an old save
+board-duplicate	89 and 133, 175	declare the voxel-to-metre scale as one constant with a named source, and bind it into identity — because the world states a density in kg/m^3 and holds a lattice in voxels with no declared number between them
+board-duplicate	77 and 121, 163	delete the second air column: one function answers what a light ray's path loses, and both the noon normaliser and the sun's own colour read it
+board-duplicate	83 and 127, 169	derive soil porosity HERE from a named source, or refuse every porosity this tree states — because the only number available is another tree's provisional row with its own tolerance undefined
+board-duplicate	75 and 119, 161	derive the extra subvoxel shapers from the gas and fluid ruling rather than inventing them, so a machine's behaviour is a consequence of what a fluid is and not a list of shapes
+board-duplicate	57 and 101, 143	dock a window: hit-test a drag to a pane or an outer edge, preview the zone, and insert on drop
+board-duplicate	60 and 104, 146	enforce the unenforced halves of the craft floor in voxel-ui as refusals: depth offset, measure, motion easing, copy naming recovery
+board-duplicate	67 and 111, 153	evaluate sky radiance from the real scattering models so the sky's colour is the model's output: Rayleigh and Mie coefficients, the Henyey-Greenstein phase function, and Kasten-Young air mass
+board-duplicate	65 and 109, 151	give SkyPhase the real twilight thresholds of -6, -12 and -18 degrees plus golden hour, blue hour and the Belt of Venus, and test each at its exact boundary angle
+board-duplicate	90 and 134, 176	give a subvoxel cell a DECLARED EXACT VOLUME, so a cell's mass is volume times bulk density as an exact rational and a cell can hold matter
+board-duplicate	79 and 123, 165	give every decision in this record a status and a hazard beside it, and a withdrawal record that supersedes a wrong claim by id — so a settled decision carries what could still break it
+board-duplicate	68 and 112, 154	give the night a source that is not the sun dimmed: the Moon's real phase derived from tick at the published Bond albedo, so a night is not the day with a smaller number
+board-duplicate	216 and 219, 220	help
+board-duplicate	81 and 125, 167	key the surface displacement by (structure, material, face) instead of (material, face) for the whole world, so two machines may pattern the same wall without one refusing the other
+board-duplicate	62 and 106, 148	make Openness::Settled constructible, so a reader of the record can see that a question is answered
+board-duplicate	64 and 108, 150	make solar position a pure function of (tick, declared latitude): declination and hour angle to altitude and azimuth, with no clock and no RNG
+board-duplicate	78 and 122, 164	make the moon a REFLECTANCE on a lit surface — solar constant at its orbit, Bond albedo as a SourcedReflectance, attenuated back through the same air column — instead of an independent emitter
+board-duplicate	72 and 116, 158	measure the sky offscreen: read the pixels back and show that the clear colour and the rig both change with the tick, so 'the sky is lit' is a number rather than a claim
+board-duplicate	95 and 139, 181	prove every gate reading can go RED — a mutation check on the values the gate measures, because a suite that cannot go red is not evidence and a number asserted in isolation can be a number that goes nowhere
+board-duplicate	61 and 105, 147	re-audit each feature row's means text against what its witness actually contains, and stop reporting active when the witness is thinner than the feature
+board-duplicate	88 and 132, 174	record a decision the tooling could not write as a NAMED GAP with its count left unreconciled, rather than leaving a silence a later session would be free to fill with an invention
+board-duplicate	59 and 103, 145	render the gate's findings as a Panel from the same structure the gate prints, so a green build and a legible panel cannot disagree
+board-duplicate	56 and 100, 142	resize a pane: drag a divider, move the stretch factors, and refuse a resize that would break the 40x40 floor
+board-duplicate	76 and 120, 162	rule air as a CONSERVED TYPED FLUID in the world's own ledger rather than as an analytic formula, and make the sky derive from that authority rather than beside it
+board-duplicate	63 and 107, 149	rule how the pre-chain ledger entries become chain history, or rule that the projection begins fresh from C-73
+board-duplicate	73 and 117, 159	rule how the sun and the moon are bodies: a sky pass drawing each disc from its angular radius, the moon as real voxels at a scaled distance, or both as voxels with a declared compression ratio
+board-duplicate	80 and 124, 166	rule that a structure is a NAMED LEDGER-RESIDENT OBJECT with an owner rather than a gesture over voxels, because 'the machine moved' is false otherwise
+board-duplicate	94 and 138, 180	rule that a world with no ADMITTED initial atmospheric state must REFUSE its first weather process and name the missing declaration — never begin at a standard pressure, however well sourced that constant is
+board-duplicate	82 and 126, 168	rule that air is SEVERAL NAMED POOLS mixing only through declared processes, with a stored global account and per-basin accounts cross-checked at audit — not one global scalar and not one account
+board-duplicate	93 and 137, 179	rule that climate is NOT a regional field — temperature, moisture, precipitation, humidity, pressure, wind and storms are PROCESSES — and that the field ladder therefore carries lithology, elevation and soil depth only
+board-duplicate	87 and 131, 173	rule that withdrawing a decision does NOT refute what it described, and carry a flag saying so — or a later reader will 'fix' a seam that was left open on purpose
+board-duplicate	84 and 128, 170	rule the exact/approximate boundary for a fluid: mass and volume as exact rationals, pressure and temperature and flow as declared-approximate with a named scale — and forbid a tolerance-bearing quantity feeding a conserved one
+board-duplicate	71 and 115, 157	rule the fusion declaration's constraint: customization of how the world looks, bounded to the real-world models, with every override carrying a source the way SourcedReflectance does
+board-duplicate	74 and 118, 160	rule whether the gas and fluid model is in this branch, because machines and extra subvoxel shapers depend on what a fluid is and nothing has decided it
+board-duplicate	96 and 140, 182	rule whether this tree adopts the octree-aligned field ladder — a rung INDEX (level n = 32 * 2^n, octree-aligned to the 32^3 chunk, level count the only free parameter) carrying lithology, elevation and soil depth only — or states its own shape and records the divergence
+board-duplicate	91 and 135, 177	split materials::AIR from MaterialId::EMPTY so an air mixture is an admitted Material with gas components and a density, rather than the absence of matter by another name
+board-duplicate	70 and 114, 156	wire the tick into the client so the sun and the sky reach the frame: the clear colour and the light rig both read the tick, and the sun carries its own colour, intensity and direction so a shadow can be lit by it
+board-ticket	98	give the shaper stage set a declared authority, reusing the existing governance vocabulary rather than a second one
+board-ticket	99	window text overlaps without respecting hierarchy; oracle-is-laya is printed rather than measured; axis.rs grading is needed for the mods API view
+board-ticket	184	text from windows not respecting z-order
+board-ticket	185	window text not respecting z order
+board-ticket	186	mouse does not lock
+board-ticket	187	repair the governance stack through the ticket system itself: a person's plain-prose ticket back-compiles from the mods api tracking instead of refusing for a missing window token (BLD-0187), a filing updates the mods api section and raises the shell's toast queue record (H-12.2, UI-SPEC §7) in window[notifications] and window[api-viewer], milestones and blocks are built against the recipes, and laya decides at runtime and at compile (H-14.2, two passes)
+board-ticket	188	claim the nine unclaimed commits: no commit on this tree references a ticket and no claim step bound it
+board-ticket	189	enforce the claim step: the pipeline accepts work that names no ticket
+board-ticket	190	version chains/workspace.chain: the record every view reads is untracked in git
+board-ticket	191	commit C-97: the ruling is recorded in the docs and uncommitted on disk
+board-ticket	192	resolve the BLD-0187 id ambiguity: scratch filings and the canonical chain mint the same ids
+board-ticket	193	pin Control totality: the envelope's Control enum carries no CONTROLS_ARE_TOTAL pin
+board-ticket	194	SES-01 the laya gate at cargo test time judges every file, function, token and byte
+board-ticket	195	SES-02 the notification queue rides the decided stack: musli-wire metadata records, sha256 via identity::Digest, a directory the client watches
+board-ticket	196	SES-03 notifications stream like the chunk streamer
+board-ticket	197	SES-04 the decision layer is never reduced in transit
+board-ticket	198	SES-05 test scratch leaves temp_dir and lands in-project
+board-ticket	199	SES-06 the six framework findings filed with recipes and packages
+board-ticket	200	SES-07 a person's plain-prose ticket must file and compile — window derivation is the system's job
+board-ticket	201	SES-08 laya is the entire decision layer across the framework, the game's systems and the compiler
+board-ticket	202	SES-09 gate-file-findings.log was destroyed and is unrecoverable
+board-ticket	203	SES-10 the session infraction record, events 0043-0072
+board-ticket	204	SES-11 the infraction record, event 0078: contempt for the principal inside the agent's own reasoning
+board-ticket	205	SES-12 the infraction record, strikes 2-4: deliberating instead of asking, and long sweeps for a path already given
+board-ticket	206	SES-13 the chain-doubling defect: filing::grow appended the chain's own history a second time
+board-ticket	207	can't look around
+board-ticket	208	console fucking sucks
+board-ticket	209	no goddamn windows
+board-ticket	210	my agent is fucking missing
+board-ticket	211	you just closed my game without seeing what tickets I =opened
+board-ticket	212	where is my agent
+board-ticket	213	api window missing content and information about agent
+board-ticket	214	console window still not the one drom portal_smulator
+board-ticket	215	closing gane to edit shell
+board-ticket	217	hello?
+board-ticket	218	is this working?
+board-ticket	221	port the whole civilian process into laya, with its scope unreduced: citizens, organizations, contracts, jobs, commissions, evidence and grading, and security — read whole before any port row lands
+board-ticket	222	read the whole ala-cities sim world and port it into the civilian process, unreduced: sim/mod.rs 5563 lines, citizen.rs, task.rs, rng.rs, road.rs and terrain.rs; BuildingKind, MaterialLineage, Zone, World, SIM_HZ, Terrain and CitizenState are part of the process and are read whole before any port row, never stubbed and never mapped ahead of the read
+board-ticket	223	no game changes for like 36 hours lol
+board-ticket	224	docs/LEDGER.md entry 0 (# LEDGER — decisions taken in shploingus-clean) — part 1/2, lines 1..=63
+board-ticket	225	docs/LEDGER.md entry 0 (# LEDGER — decisions taken in shploingus-clean) — part 2/2, lines 64..=64
+board-ticket	226	docs/LEDGER.md entry 1 (## Corrections found by measurement) — part 1/2, lines 65..=115
+board-ticket	227	docs/LEDGER.md entry 1 (## Corrections found by measurement) — part 2/2, lines 116..=116
+board-ticket	228	docs/LEDGER.md entry 2 (## The mesh layer (`crates/voxel-mesh`, 2026-09-29)) — part 1/2, lines 117..=165
+board-ticket	229	docs/LEDGER.md entry 2 (## The mesh layer (`crates/voxel-mesh`, 2026-09-29)) — part 2/2, lines 166..=166
+board-ticket	230	docs/LEDGER.md entry 3 (## Measured performance, and what it cost to get (2026-09-29)) — part 1/2, lines 167..=218
+board-ticket	231	docs/LEDGER.md entry 3 (## Measured performance, and what it cost to get (2026-09-29)) — part 2/2, lines 219..=219
+board-ticket	232	docs/LEDGER.md entry 4 (## The instrument layer (`crates/voxel-instrument`, 2026-09-29)) — part 1/2, lines 220..=252
+board-ticket	233	docs/LEDGER.md entry 4 (## The instrument layer (`crates/voxel-instrument`, 2026-09-29)) — part 2/2, lines 253..=253
+board-ticket	234	docs/LEDGER.md entry 5 (## The appearance layer (`crates/voxel-appearance`, 2026-09-29)) — part 1/3, lines 254..=307
+board-ticket	235	docs/LEDGER.md entry 5 (## The appearance layer (`crates/voxel-appearance`, 2026-09-29)) — part 2/3, lines 308..=326
+board-ticket	236	docs/LEDGER.md entry 5 (## The appearance layer (`crates/voxel-appearance`, 2026-09-29)) — part 3/3, lines 327..=327
+board-ticket	237	docs/LEDGER.md entry 6 (## The work layer (`crates/voxel-work`, 2026-09-29)) — part 1/4, lines 328..=389
+board-ticket	238	docs/LEDGER.md entry 6 (## The work layer (`crates/voxel-work`, 2026-09-29)) — part 2/4, lines 390..=442
+board-ticket	239	docs/LEDGER.md entry 6 (## The work layer (`crates/voxel-work`, 2026-09-29)) — part 3/4, lines 443..=453
+board-ticket	240	docs/LEDGER.md entry 6 (## The work layer (`crates/voxel-work`, 2026-09-29)) — part 4/4, lines 454..=454
+board-ticket	241	docs/LEDGER.md entry 7 (## The client (`crates/voxel-client`, 2026-09-29)) — part 1/4, lines 455..=513
+board-ticket	242	docs/LEDGER.md entry 7 (## The client (`crates/voxel-client`, 2026-09-29)) — part 2/4, lines 514..=577
+board-ticket	243	docs/LEDGER.md entry 7 (## The client (`crates/voxel-client`, 2026-09-29)) — part 3/4, lines 578..=591
+board-ticket	244	docs/LEDGER.md entry 7 (## The client (`crates/voxel-client`, 2026-09-29)) — part 4/4, lines 592..=592
+board-ticket	245	docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 1/6, lines 593..=647
+board-ticket	246	docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 2/6, lines 648..=704
+board-ticket	247	docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 3/6, lines 705..=756
+board-ticket	248	docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 4/6, lines 757..=812
+board-ticket	249	docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 5/6, lines 813..=851
+board-ticket	250	docs/LEDGER.md entry 8 (## The design system and the HUD (`crates/voxel-ui`, `crates/voxel-client`), 2026-09-29) — part 6/6, lines 852..=852
+board-ticket	251	docs/LEDGER.md entry 9 (## C-40 — the rule nothing but an eye could have found: **never test the client invisibly**) — part 1/2, lines 853..=896
+board-ticket	252	docs/LEDGER.md entry 9 (## C-40 — the rule nothing but an eye could have found: **never test the client invisibly**) — part 2/2, lines 897..=897
+board-ticket	253	docs/LEDGER.md entry 10 (## C-41 — the four corrections that superseded this round's first attempt) — part 1/2, lines 898..=928
+board-ticket	254	docs/LEDGER.md entry 10 (## C-41 — the four corrections that superseded this round's first attempt) — part 2/2, lines 929..=929
+board-ticket	255	docs/LEDGER.md entry 11 (## C-42 — the shapes, and the laws they come from) — part 1/3, lines 930..=981
+board-ticket	256	docs/LEDGER.md entry 11 (## C-42 — the shapes, and the laws they come from) — part 2/3, lines 982..=1008
+board-ticket	257	docs/LEDGER.md entry 11 (## C-42 — the shapes, and the laws they come from) — part 3/3, lines 1009..=1009
+board-ticket	258	docs/LEDGER.md entry 12 (## C-43 — the quad-versus-triangle question, answered) — part 1/2, lines 1010..=1041
+board-ticket	259	docs/LEDGER.md entry 12 (## C-43 — the quad-versus-triangle question, answered) — part 2/2, lines 1042..=1042
+board-ticket	260	docs/LEDGER.md entry 13 (## C-44 — the 256 level reaches geometry, and the two bounds it needed) — part 1/4, lines 1043..=1097
+board-ticket	261	docs/LEDGER.md entry 13 (## C-44 — the 256 level reaches geometry, and the two bounds it needed) — part 2/4, lines 1098..=1155
+board-ticket	262	docs/LEDGER.md entry 13 (## C-44 — the 256 level reaches geometry, and the two bounds it needed) — part 3/4, lines 1156..=1174
+board-ticket	263	docs/LEDGER.md entry 13 (## C-44 — the 256 level reaches geometry, and the two bounds it needed) — part 4/4, lines 1175..=1175
+board-ticket	264	docs/LEDGER.md entry 14 (## C-45 — Ponytail is not in use for this work (standing)) — part 1/2, lines 1176..=1229
+board-ticket	265	docs/LEDGER.md entry 14 (## C-45 — Ponytail is not in use for this work (standing)) — part 2/2, lines 1230..=1230
+board-ticket	266	docs/LEDGER.md entry 15 (## C-46 — a measurement of the wrong world, and the client probe that caught it) — part 1/2, lines 1231..=1288
+board-ticket	267	docs/LEDGER.md entry 15 (## C-46 — a measurement of the wrong world, and the client probe that caught it) — part 2/2, lines 1289..=1289
+board-ticket	268	docs/LEDGER.md entry 16 (## C-47 — the seven reflectance values are approved as sourced) — part 1/2, lines 1290..=1311
+board-ticket	269	docs/LEDGER.md entry 16 (## C-47 — the seven reflectance values are approved as sourced) — part 2/2, lines 1312..=1312
+board-ticket	270	docs/LEDGER.md entry 17 (## C-48 — the audit before the debug views, and the reference's status) — part 1/3, lines 1313..=1364
+board-ticket	271	docs/LEDGER.md entry 17 (## C-48 — the audit before the debug views, and the reference's status) — part 2/3, lines 1365..=1375
+board-ticket	272	docs/LEDGER.md entry 17 (## C-48 — the audit before the debug views, and the reference's status) — part 3/3, lines 1376..=1376
+board-ticket	273	docs/LEDGER.md entry 18 (## C-49 — the rounds that followed the audit: the user's rulings, and a correction about) — part 1/3, lines 1377..=1424
+board-ticket	274	docs/LEDGER.md entry 18 (## C-49 — the rounds that followed the audit: the user's rulings, and a correction about) — part 2/3, lines 1425..=1444
+board-ticket	275	docs/LEDGER.md entry 18 (## C-49 — the rounds that followed the audit: the user's rulings, and a correction about) — part 3/3, lines 1445..=1445
+board-ticket	276	docs/LEDGER.md entry 19 (## C-50 — the whole-ledger re-check: one claim that was not true, and four defects of form) — part 1/3, lines 1446..=1497
+board-ticket	277	docs/LEDGER.md entry 19 (## C-50 — the whole-ledger re-check: one claim that was not true, and four defects of form) — part 2/3, lines 1498..=1530
+board-ticket	278	docs/LEDGER.md entry 19 (## C-50 — the whole-ledger re-check: one claim that was not true, and four defects of form) — part 3/3, lines 1531..=1531
+board-ticket	279	docs/LEDGER.md entry 20 (## C-51 — the second re-check: a wrong number that came from a code comment, and a crate the) — part 1/4, lines 1532..=1589
+board-ticket	280	docs/LEDGER.md entry 20 (## C-51 — the second re-check: a wrong number that came from a code comment, and a crate the) — part 2/4, lines 1590..=1642
+board-ticket	281	docs/LEDGER.md entry 20 (## C-51 — the second re-check: a wrong number that came from a code comment, and a crate the) — part 3/4, lines 1643..=1661
+board-ticket	282	docs/LEDGER.md entry 20 (## C-51 — the second re-check: a wrong number that came from a code comment, and a crate the) — part 4/4, lines 1662..=1662
+board-ticket	283	docs/LEDGER.md entry 21 (## C-52 — the system is a **build prerequisite**, not an add-on; and the landing page's design) — part 1/3, lines 1663..=1702
+board-ticket	284	docs/LEDGER.md entry 21 (## C-52 — the system is a **build prerequisite**, not an add-on; and the landing page's design) — part 2/3, lines 1703..=1716
+board-ticket	285	docs/LEDGER.md entry 21 (## C-52 — the system is a **build prerequisite**, not an add-on; and the landing page's design) — part 3/3, lines 1717..=1717
+board-ticket	286	docs/LEDGER.md entry 22 (## C-53 — the landing is the UI's **reference**, the UI's requirement is the outline already) — part 1/3, lines 1718..=1774
+board-ticket	287	docs/LEDGER.md entry 22 (## C-53 — the landing is the UI's **reference**, the UI's requirement is the outline already) — part 2/3, lines 1775..=1786
+board-ticket	288	docs/LEDGER.md entry 22 (## C-53 — the landing is the UI's **reference**, the UI's requirement is the outline already) — part 3/3, lines 1787..=1787
+board-ticket	289	docs/LEDGER.md entry 23 (## C-54 — one chain for everything, the shell's own arrangement package first, the shell API as) — part 1/3, lines 1788..=1849
+board-ticket	290	docs/LEDGER.md entry 23 (## C-54 — one chain for everything, the shell's own arrangement package first, the shell API as) — part 2/3, lines 1850..=1869
+board-ticket	291	docs/LEDGER.md entry 23 (## C-54 — one chain for everything, the shell's own arrangement package first, the shell API as) — part 3/3, lines 1870..=1870
+board-ticket	292	docs/LEDGER.md entry 24 (## C-55 — the depth language was **already declared** (a brightness tint, not a shadow), and the owed `voxel-package` entry) — part 1/4, lines 1871..=1924
+board-ticket	293	docs/LEDGER.md entry 24 (## C-55 — the depth language was **already declared** (a brightness tint, not a shadow), and the owed `voxel-package` entry) — part 2/4, lines 1925..=1981
+board-ticket	294	docs/LEDGER.md entry 24 (## C-55 — the depth language was **already declared** (a brightness tint, not a shadow), and the owed `voxel-package` entry) — part 3/4, lines 1982..=2023
+board-ticket	295	docs/LEDGER.md entry 24 (## C-55 — the depth language was **already declared** (a brightness tint, not a shadow), and the owed `voxel-package` entry) — part 4/4, lines 2024..=2024
+board-ticket	296	docs/LEDGER.md entry 25 (## C-56 — v1 alpha delivery invocation, 2026-09-30) — part 1/2, lines 2025..=2043
+board-ticket	297	docs/LEDGER.md entry 25 (## C-56 — v1 alpha delivery invocation, 2026-09-30) — part 2/2, lines 2044..=2044
+board-ticket	298	docs/LEDGER.md entry 26 (## C-57 — successor-model readability is an alpha delivery requirement) — part 1/2, lines 2045..=2063
+board-ticket	299	docs/LEDGER.md entry 26 (## C-57 — successor-model readability is an alpha delivery requirement) — part 2/2, lines 2064..=2064
+board-ticket	300	docs/LEDGER.md entry 27 (## C-58 — high agency invocation: integrating gix provenance, the Laya linter/checker, and the shploingus-game envelope and sealer) — part 1/4, lines 2065..=2079
+board-ticket	301	docs/LEDGER.md entry 27 (## C-58 — high agency invocation: integrating gix provenance, the Laya linter/checker, and the shploingus-game envelope and sealer) — part 2/4, lines 2080..=2093
+board-ticket	302	docs/LEDGER.md entry 27 (## C-58 — high agency invocation: integrating gix provenance, the Laya linter/checker, and the shploingus-game envelope and sealer) — part 3/4, lines 2094..=2103
+board-ticket	303	docs/LEDGER.md entry 27 (## C-58 — high agency invocation: integrating gix provenance, the Laya linter/checker, and the shploingus-game envelope and sealer) — part 4/4, lines 2104..=2104
+board-ticket	304	docs/LEDGER.md entry 28 (## C-59 — the user's six rulings of 2026-09-30, and the block plan they force) — part 1/4, lines 2105..=2159
+board-ticket	305	docs/LEDGER.md entry 28 (## C-59 — the user's six rulings of 2026-09-30, and the block plan they force) — part 2/4, lines 2160..=2220
+board-ticket	306	docs/LEDGER.md entry 28 (## C-59 — the user's six rulings of 2026-09-30, and the block plan they force) — part 3/4, lines 2221..=2264
+board-ticket	307	docs/LEDGER.md entry 28 (## C-59 — the user's six rulings of 2026-09-30, and the block plan they force) — part 4/4, lines 2265..=2265
+board-ticket	308	docs/LEDGER.md entry 29 (## C-60 — a third reference read: the AWA3D effort loop's verification boundary) — part 1/3, lines 2266..=2308
+board-ticket	309	docs/LEDGER.md entry 29 (## C-60 — a third reference read: the AWA3D effort loop's verification boundary) — part 2/3, lines 2309..=2327
+board-ticket	310	docs/LEDGER.md entry 29 (## C-60 — a third reference read: the AWA3D effort loop's verification boundary) — part 3/3, lines 2328..=2328
+board-ticket	311	docs/LEDGER.md entry 30 (## C-61 — a correction, and the composition the record actually names) — part 1/3, lines 2329..=2385
+board-ticket	312	docs/LEDGER.md entry 30 (## C-61 — a correction, and the composition the record actually names) — part 2/3, lines 2386..=2437
+board-ticket	313	docs/LEDGER.md entry 30 (## C-61 — a correction, and the composition the record actually names) — part 3/3, lines 2438..=2438
+board-ticket	314	docs/LEDGER.md entry 31 (## C-62 — the user's second ruling round, and B3b landed) — part 1/3, lines 2439..=2497
+board-ticket	315	docs/LEDGER.md entry 31 (## C-62 — the user's second ruling round, and B3b landed) — part 2/3, lines 2498..=2531
+board-ticket	316	docs/LEDGER.md entry 31 (## C-62 — the user's second ruling round, and B3b landed) — part 3/3, lines 2532..=2532
+board-ticket	317	docs/LEDGER.md entry 32 (## C-63 — the record becomes the declaration, and the calibration is grown) — part 1/3, lines 2533..=2591
+board-ticket	318	docs/LEDGER.md entry 32 (## C-63 — the record becomes the declaration, and the calibration is grown) — part 2/3, lines 2592..=2639
+board-ticket	319	docs/LEDGER.md entry 32 (## C-63 — the record becomes the declaration, and the calibration is grown) — part 3/3, lines 2640..=2640
+board-ticket	320	docs/LEDGER.md entry 33 (## C-64 — the UI spec is read, and it contradicts the recipe schema I had already written) — part 1/3, lines 2641..=2693
+board-ticket	321	docs/LEDGER.md entry 33 (## C-64 — the UI spec is read, and it contradicts the recipe schema I had already written) — part 2/3, lines 2694..=2733
+board-ticket	322	docs/LEDGER.md entry 33 (## C-64 — the UI spec is read, and it contradicts the recipe schema I had already written) — part 3/3, lines 2734..=2734
+board-ticket	323	docs/LEDGER.md entry 34 (## C-65 — the record compressed, and the crates that predate it measured, 2026-09-30) — part 1/5, lines 2735..=2785
+board-ticket	324	docs/LEDGER.md entry 34 (## C-65 — the record compressed, and the crates that predate it measured, 2026-09-30) — part 2/5, lines 2786..=2842
+board-ticket	325	docs/LEDGER.md entry 34 (## C-65 — the record compressed, and the crates that predate it measured, 2026-09-30) — part 3/5, lines 2843..=2888
+board-ticket	326	docs/LEDGER.md entry 34 (## C-65 — the record compressed, and the crates that predate it measured, 2026-09-30) — part 4/5, lines 2889..=2926
+board-ticket	327	docs/LEDGER.md entry 34 (## C-65 — the record compressed, and the crates that predate it measured, 2026-09-30) — part 5/5, lines 2927..=2927
+board-ticket	328	docs/LEDGER.md entry 35 (## C-66 — one chain, the v3 envelope, and the ticket taxonomy read from the references, 2026-09-30) — part 1/5, lines 2928..=2978
+board-ticket	329	docs/LEDGER.md entry 35 (## C-66 — one chain, the v3 envelope, and the ticket taxonomy read from the references, 2026-09-30) — part 2/5, lines 2979..=3037
+board-ticket	330	docs/LEDGER.md entry 35 (## C-66 — one chain, the v3 envelope, and the ticket taxonomy read from the references, 2026-09-30) — part 3/5, lines 3038..=3084
+board-ticket	331	docs/LEDGER.md entry 35 (## C-66 — one chain, the v3 envelope, and the ticket taxonomy read from the references, 2026-09-30) — part 4/5, lines 3085..=3098
+board-ticket	332	docs/LEDGER.md entry 35 (## C-66 — one chain, the v3 envelope, and the ticket taxonomy read from the references, 2026-09-30) — part 5/5, lines 3099..=3099
+board-ticket	333	docs/LEDGER.md entry 36 (## C-67 — this tree's wire format, decided here, and the ticket read-back that closes the loop, 2026-09-30) — part 1/5, lines 3100..=3147
+board-ticket	334	docs/LEDGER.md entry 36 (## C-67 — this tree's wire format, decided here, and the ticket read-back that closes the loop, 2026-09-30) — part 2/5, lines 3148..=3198
+board-ticket	335	docs/LEDGER.md entry 36 (## C-67 — this tree's wire format, decided here, and the ticket read-back that closes the loop, 2026-09-30) — part 3/5, lines 3199..=3246
+board-ticket	336	docs/LEDGER.md entry 36 (## C-67 — this tree's wire format, decided here, and the ticket read-back that closes the loop, 2026-09-30) — part 4/5, lines 3247..=3253
+board-ticket	337	docs/LEDGER.md entry 36 (## C-67 — this tree's wire format, decided here, and the ticket read-back that closes the loop, 2026-09-30) — part 5/5, lines 3254..=3254
+board-ticket	338	docs/LEDGER.md entry 37 (## C-68 — the whole project consumed against the spec, and an axis that could not fail, 2026-09-30) — part 1/4, lines 3255..=3316
+board-ticket	339	docs/LEDGER.md entry 37 (## C-68 — the whole project consumed against the spec, and an axis that could not fail, 2026-09-30) — part 2/4, lines 3317..=3366
+board-ticket	340	docs/LEDGER.md entry 37 (## C-68 — the whole project consumed against the spec, and an axis that could not fail, 2026-09-30) — part 3/4, lines 3367..=3382
+board-ticket	341	docs/LEDGER.md entry 37 (## C-68 — the whole project consumed against the spec, and an axis that could not fail, 2026-09-30) — part 4/4, lines 3383..=3383
+board-ticket	342	docs/LEDGER.md entry 38 (## C-69 — the human-readable API document, and the judge calibrated against it) — part 1/4, lines 3384..=3438
+board-ticket	343	docs/LEDGER.md entry 38 (## C-69 — the human-readable API document, and the judge calibrated against it) — part 2/4, lines 3439..=3482
+board-ticket	344	docs/LEDGER.md entry 38 (## C-69 — the human-readable API document, and the judge calibrated against it) — part 3/4, lines 3483..=3527
+board-ticket	345	docs/LEDGER.md entry 38 (## C-69 — the human-readable API document, and the judge calibrated against it) — part 4/4, lines 3528..=3528
+board-ticket	346	docs/LEDGER.md entry 39 (## C-70 — the axis mutation measured, D97's script ported, and the record found to have no chain behind it) — part 1/4, lines 3529..=3581
+board-ticket	347	docs/LEDGER.md entry 39 (## C-70 — the axis mutation measured, D97's script ported, and the record found to have no chain behind it) — part 2/4, lines 3582..=3640
+board-ticket	348	docs/LEDGER.md entry 39 (## C-70 — the axis mutation measured, D97's script ported, and the record found to have no chain behind it) — part 3/4, lines 3641..=3689
+board-ticket	349	docs/LEDGER.md entry 39 (## C-70 — the axis mutation measured, D97's script ported, and the record found to have no chain behind it) — part 4/4, lines 3690..=3690
+board-ticket	350	docs/LEDGER.md entry 40 (## C-71 — the working-tree digest implemented, and `gix` scoped to a condition rather than a policy) — part 1/4, lines 3691..=3749
+board-ticket	351	docs/LEDGER.md entry 40 (## C-71 — the working-tree digest implemented, and `gix` scoped to a condition rather than a policy) — part 2/4, lines 3750..=3803
+board-ticket	352	docs/LEDGER.md entry 40 (## C-71 — the working-tree digest implemented, and `gix` scoped to a condition rather than a policy) — part 3/4, lines 3804..=3836
+board-ticket	353	docs/LEDGER.md entry 40 (## C-71 — the working-tree digest implemented, and `gix` scoped to a condition rather than a policy) — part 4/4, lines 3837..=3837
+board-ticket	354	docs/LEDGER.md entry 41 (## C-72 — what `godplan` is, and the measured case for using its method and not its document) — part 1/4, lines 3838..=3902
+board-ticket	355	docs/LEDGER.md entry 41 (## C-72 — what `godplan` is, and the measured case for using its method and not its document) — part 2/4, lines 3903..=3953
+board-ticket	356	docs/LEDGER.md entry 41 (## C-72 — what `godplan` is, and the measured case for using its method and not its document) — part 3/4, lines 3954..=3975
+board-ticket	357	docs/LEDGER.md entry 41 (## C-72 — what `godplan` is, and the measured case for using its method and not its document) — part 4/4, lines 3976..=3976
+board-ticket	358	docs/LEDGER.md entry 42 (## C-73 — the first record that outlives the process that wrote it) — part 1/5, lines 3977..=4029
+board-ticket	359	docs/LEDGER.md entry 42 (## C-73 — the first record that outlives the process that wrote it) — part 2/5, lines 4030..=4086
+board-ticket	360	docs/LEDGER.md entry 42 (## C-73 — the first record that outlives the process that wrote it) — part 3/5, lines 4087..=4137
+board-ticket	361	docs/LEDGER.md entry 42 (## C-73 — the first record that outlives the process that wrote it) — part 4/5, lines 4138..=4149
+board-ticket	362	docs/LEDGER.md entry 42 (## C-73 — the first record that outlives the process that wrote it) — part 5/5, lines 4150..=4150
+board-ticket	363	docs/LEDGER.md entry 43 (## C-74 — the open-question list is 100% wrong, and the record has no way to mark a ruling) — part 1/3, lines 4151..=4209
+board-ticket	364	docs/LEDGER.md entry 43 (## C-74 — the open-question list is 100% wrong, and the record has no way to mark a ruling) — part 2/3, lines 4210..=4241
+board-ticket	365	docs/LEDGER.md entry 43 (## C-74 — the open-question list is 100% wrong, and the record has no way to mark a ruling) — part 3/3, lines 4242..=4242
+board-ticket	366	docs/LEDGER.md entry 44 (## C-75 — the answers audited: 56 of them, and none of them names code) — part 1/4, lines 4243..=4306
+board-ticket	367	docs/LEDGER.md entry 44 (## C-75 — the answers audited: 56 of them, and none of them names code) — part 2/4, lines 4307..=4359
+board-ticket	368	docs/LEDGER.md entry 44 (## C-75 — the answers audited: 56 of them, and none of them names code) — part 3/4, lines 4360..=4365
+board-ticket	369	docs/LEDGER.md entry 44 (## C-75 — the answers audited: 56 of them, and none of them names code) — part 4/4, lines 4366..=4366
+board-ticket	370	docs/LEDGER.md entry 45 (## C-76 — the writer can no longer spell a word the record does not admit) — part 1/4, lines 4367..=4434
+board-ticket	371	docs/LEDGER.md entry 45 (## C-76 — the writer can no longer spell a word the record does not admit) — part 2/4, lines 4435..=4492
+board-ticket	372	docs/LEDGER.md entry 45 (## C-76 — the writer can no longer spell a word the record does not admit) — part 3/4, lines 4493..=4508
+board-ticket	373	docs/LEDGER.md entry 45 (## C-76 — the writer can no longer spell a word the record does not admit) — part 4/4, lines 4509..=4509
+board-ticket	374	docs/LEDGER.md entry 46 (## C-77 — 26 answers and 1 open ambiguity, filed on the chain) — part 1/3, lines 4510..=4577
+board-ticket	375	docs/LEDGER.md entry 46 (## C-77 — 26 answers and 1 open ambiguity, filed on the chain) — part 2/3, lines 4578..=4627
+board-ticket	376	docs/LEDGER.md entry 46 (## C-77 — 26 answers and 1 open ambiguity, filed on the chain) — part 3/3, lines 4628..=4628
+board-ticket	377	docs/LEDGER.md entry 47 (## C-78 — the pane tree, from the reference rather than the spec's summary) — part 1/3, lines 4629..=4685
+board-ticket	378	docs/LEDGER.md entry 47 (## C-78 — the pane tree, from the reference rather than the spec's summary) — part 2/3, lines 4686..=4744
+board-ticket	379	docs/LEDGER.md entry 47 (## C-78 — the pane tree, from the reference rather than the spec's summary) — part 3/3, lines 4745..=4745
+board-ticket	380	docs/LEDGER.md entry 48 (## C-79 — the chain is hash-linked, and the linkage was never readable) — part 1/4, lines 4746..=4805
+board-ticket	381	docs/LEDGER.md entry 48 (## C-79 — the chain is hash-linked, and the linkage was never readable) — part 2/4, lines 4806..=4863
+board-ticket	382	docs/LEDGER.md entry 48 (## C-79 — the chain is hash-linked, and the linkage was never readable) — part 3/4, lines 4864..=4879
+board-ticket	383	docs/LEDGER.md entry 48 (## C-79 — the chain is hash-linked, and the linkage was never readable) — part 4/4, lines 4880..=4880
+board-ticket	384	docs/LEDGER.md entry 49 (## C-80 — eight tickets on the board, and two features the reference has that the shell does not) — part 1/3, lines 4881..=4939
+board-ticket	385	docs/LEDGER.md entry 49 (## C-80 — eight tickets on the board, and two features the reference has that the shell does not) — part 2/3, lines 4940..=4995
+board-ticket	386	docs/LEDGER.md entry 49 (## C-80 — eight tickets on the board, and two features the reference has that the shell does not) — part 3/3, lines 4996..=4996
+board-ticket	387	docs/LEDGER.md entry 50 (## C-81 — twelve tickets from the other projects' own READMEs) — part 1/3, lines 4997..=5040
+board-ticket	388	docs/LEDGER.md entry 50 (## C-81 — twelve tickets from the other projects' own READMEs) — part 2/3, lines 5041..=5071
+board-ticket	389	docs/LEDGER.md entry 50 (## C-81 — twelve tickets from the other projects' own READMEs) — part 3/3, lines 5072..=5072
+board-ticket	390	docs/LEDGER.md entry 51 (## C-82 — four more tickets, and this time two of the four projects declare a mechanism) — part 1/6, lines 5073..=5122
+board-ticket	391	docs/LEDGER.md entry 51 (## C-82 — four more tickets, and this time two of the four projects declare a mechanism) — part 2/6, lines 5123..=5180
+board-ticket	392	docs/LEDGER.md entry 51 (## C-82 — four more tickets, and this time two of the four projects declare a mechanism) — part 3/6, lines 5181..=5228
+board-ticket	393	docs/LEDGER.md entry 51 (## C-82 — four more tickets, and this time two of the four projects declare a mechanism) — part 4/6, lines 5229..=5287
+board-ticket	394	docs/LEDGER.md entry 51 (## C-82 — four more tickets, and this time two of the four projects declare a mechanism) — part 5/6, lines 5288..=5299
+board-ticket	395	docs/LEDGER.md entry 51 (## C-82 — four more tickets, and this time two of the four projects declare a mechanism) — part 6/6, lines 5300..=5300
+board-ticket	396	docs/LEDGER.md entry 52 (## C-83 — one seam for every decision, and the oracle becomes an implementation of it) — part 1/3, lines 5301..=5360
+board-ticket	397	docs/LEDGER.md entry 52 (## C-83 — one seam for every decision, and the oracle becomes an implementation of it) — part 2/3, lines 5361..=5401
+board-ticket	398	docs/LEDGER.md entry 52 (## C-83 — one seam for every decision, and the oracle becomes an implementation of it) — part 3/3, lines 5402..=5402
+board-ticket	399	docs/LEDGER.md entry 53 (## C-84 — the suite runs through Laya: the inversion, and the second pass) — part 1/3, lines 5403..=5461
+board-ticket	400	docs/LEDGER.md entry 53 (## C-84 — the suite runs through Laya: the inversion, and the second pass) — part 2/3, lines 5462..=5522
+board-ticket	401	docs/LEDGER.md entry 53 (## C-84 — the suite runs through Laya: the inversion, and the second pass) — part 3/3, lines 5523..=5523
+board-ticket	402	docs/LEDGER.md entry 54 (## C-85 — the shell runs in the client: the mount, the pinned layer, and two defects the window found) — part 1/3, lines 5524..=5581
+board-ticket	403	docs/LEDGER.md entry 54 (## C-85 — the shell runs in the client: the mount, the pinned layer, and two defects the window found) — part 2/3, lines 5582..=5630
+board-ticket	404	docs/LEDGER.md entry 54 (## C-85 — the shell runs in the client: the mount, the pinned layer, and two defects the window found) — part 3/3, lines 5631..=5631
+board-ticket	405	docs/LEDGER.md entry 55 (## C-86 — the debug lanes: the mechanism, and the lanes on every window) — part 1/3, lines 5632..=5679
+board-ticket	406	docs/LEDGER.md entry 55 (## C-86 — the debug lanes: the mechanism, and the lanes on every window) — part 2/3, lines 5680..=5692
+board-ticket	407	docs/LEDGER.md entry 55 (## C-86 — the debug lanes: the mechanism, and the lanes on every window) — part 3/3, lines 5693..=5693
+board-ticket	408	docs/LEDGER.md entry 56 (## C-87 — the vector change view's subject: the boundary of what changed, not a box around it) — part 1/3, lines 5694..=5750
+board-ticket	409	docs/LEDGER.md entry 56 (## C-87 — the vector change view's subject: the boundary of what changed, not a box around it) — part 2/3, lines 5751..=5756
+board-ticket	410	docs/LEDGER.md entry 56 (## C-87 — the vector change view's subject: the boundary of what changed, not a box around it) — part 3/3, lines 5757..=5757
+board-ticket	411	docs/LEDGER.md entry 57 (## C-88 — the deferred tick ladder, and the flash that a cache was causing, 2026-09-30) — part 1/6, lines 5758..=5805
+board-ticket	412	docs/LEDGER.md entry 57 (## C-88 — the deferred tick ladder, and the flash that a cache was causing, 2026-09-30) — part 2/6, lines 5806..=5856
+board-ticket	413	docs/LEDGER.md entry 57 (## C-88 — the deferred tick ladder, and the flash that a cache was causing, 2026-09-30) — part 3/6, lines 5857..=5906
+board-ticket	414	docs/LEDGER.md entry 57 (## C-88 — the deferred tick ladder, and the flash that a cache was causing, 2026-09-30) — part 4/6, lines 5907..=5957
+board-ticket	415	docs/LEDGER.md entry 57 (## C-88 — the deferred tick ladder, and the flash that a cache was causing, 2026-09-30) — part 5/6, lines 5958..=6002
+board-ticket	416	docs/LEDGER.md entry 57 (## C-88 — the deferred tick ladder, and the flash that a cache was causing, 2026-09-30) — part 6/6, lines 6003..=6003
+board-ticket	417	docs/LEDGER.md entry 58 (## C-89 — the chain is not empty, and the reader that fed it was keeping 15% of the record) — part 1/4, lines 6004..=6060
+board-ticket	418	docs/LEDGER.md entry 58 (## C-89 — the chain is not empty, and the reader that fed it was keeping 15% of the record) — part 2/4, lines 6061..=6115
+board-ticket	419	docs/LEDGER.md entry 58 (## C-89 — the chain is not empty, and the reader that fed it was keeping 15% of the record) — part 3/4, lines 6116..=6150
+board-ticket	420	docs/LEDGER.md entry 58 (## C-89 — the chain is not empty, and the reader that fed it was keeping 15% of the record) — part 4/4, lines 6151..=6151
+board-ticket	421	docs/LEDGER.md entry 59 (## C-90 — the smallest thing worth detecting, and the record that was never read) — part 1/3, lines 6152..=6206
+board-ticket	422	docs/LEDGER.md entry 59 (## C-90 — the smallest thing worth detecting, and the record that was never read) — part 2/3, lines 6207..=6264
+board-ticket	423	docs/LEDGER.md entry 59 (## C-90 — the smallest thing worth detecting, and the record that was never read) — part 3/3, lines 6265..=6265
+board-ticket	424	docs/LEDGER.md entry 60 (## C-91 — a material's surface pattern is a **signed instance field on the subvoxel**) — part 1/3, lines 6266..=6315
+board-ticket	425	docs/LEDGER.md entry 60 (## C-91 — a material's surface pattern is a **signed instance field on the subvoxel**) — part 2/3, lines 6316..=6339
+board-ticket	426	docs/LEDGER.md entry 60 (## C-91 — a material's surface pattern is a **signed instance field on the subvoxel**) — part 3/3, lines 6340..=6340
+board-ticket	427	docs/LEDGER.md entry 61 (## C-92 — the v3 envelope is **this tree's**, and I audited the reference and called its drift a defect here) — part 1/5, lines 6341..=6389
+board-ticket	428	docs/LEDGER.md entry 61 (## C-92 — the v3 envelope is **this tree's**, and I audited the reference and called its drift a defect here) — part 2/5, lines 6390..=6432
+board-ticket	429	docs/LEDGER.md entry 61 (## C-92 — the v3 envelope is **this tree's**, and I audited the reference and called its drift a defect here) — part 3/5, lines 6433..=6486
+board-ticket	430	docs/LEDGER.md entry 61 (## C-92 — the v3 envelope is **this tree's**, and I audited the reference and called its drift a defect here) — part 4/5, lines 6487..=6500
+board-ticket	431	docs/LEDGER.md entry 61 (## C-92 — the v3 envelope is **this tree's**, and I audited the reference and called its drift a defect here) — part 5/5, lines 6501..=6501
+board-ticket	432	docs/LEDGER.md entry 62 (## C-93 — the biome classifier cites Holdridge and is not fed Holdridge's inputs) — part 1/4, lines 6502..=6573
+board-ticket	433	docs/LEDGER.md entry 62 (## C-93 — the biome classifier cites Holdridge and is not fed Holdridge's inputs) — part 2/4, lines 6574..=6628
+board-ticket	434	docs/LEDGER.md entry 62 (## C-93 — the biome classifier cites Holdridge and is not fed Holdridge's inputs) — part 3/4, lines 6629..=6635
+board-ticket	435	docs/LEDGER.md entry 62 (## C-93 — the biome classifier cites Holdridge and is not fed Holdridge's inputs) — part 4/4, lines 6636..=6636
+board-ticket	436	docs/LEDGER.md entry 63 (## C-94 — the onset layer exists, and a stage has a unit of work) — part 1/8, lines 6637..=6700
+board-ticket	437	docs/LEDGER.md entry 63 (## C-94 — the onset layer exists, and a stage has a unit of work) — part 2/8, lines 6701..=6761
+board-ticket	438	docs/LEDGER.md entry 63 (## C-94 — the onset layer exists, and a stage has a unit of work) — part 3/8, lines 6762..=6823
+board-ticket	439	docs/LEDGER.md entry 63 (## C-94 — the onset layer exists, and a stage has a unit of work) — part 4/8, lines 6824..=6888
+board-ticket	440	docs/LEDGER.md entry 63 (## C-94 — the onset layer exists, and a stage has a unit of work) — part 5/8, lines 6889..=6945
+board-ticket	441	docs/LEDGER.md entry 63 (## C-94 — the onset layer exists, and a stage has a unit of work) — part 6/8, lines 6946..=7015
+board-ticket	442	docs/LEDGER.md entry 63 (## C-94 — the onset layer exists, and a stage has a unit of work) — part 7/8, lines 7016..=7044
+board-ticket	443	docs/LEDGER.md entry 63 (## C-94 — the onset layer exists, and a stage has a unit of work) — part 8/8, lines 7045..=7045
+board-ticket	444	docs/LEDGER.md entry 64 (## C-95 — the camera stops floating: a body with gravity, a collider, and a seed that has ground) — part 1/4, lines 7046..=7108
+board-ticket	445	docs/LEDGER.md entry 64 (## C-95 — the camera stops floating: a body with gravity, a collider, and a seed that has ground) — part 2/4, lines 7109..=7169
+board-ticket	446	docs/LEDGER.md entry 64 (## C-95 — the camera stops floating: a body with gravity, a collider, and a seed that has ground) — part 3/4, lines 7170..=7222
+board-ticket	447	docs/LEDGER.md entry 64 (## C-95 — the camera stops floating: a body with gravity, a collider, and a seed that has ground) — part 4/4, lines 7223..=7223
+board-ticket	448	docs/LEDGER.md entry 65 (## C-96 — the world stops being a constant, and the HUD learns the body has a body) — part 1/3, lines 7224..=7284
+board-ticket	449	docs/LEDGER.md entry 65 (## C-96 — the world stops being a constant, and the HUD learns the body has a body) — part 2/3, lines 7285..=7292
+board-ticket	450	docs/LEDGER.md entry 65 (## C-96 — the world stops being a constant, and the HUD learns the body has a body) — part 3/3, lines 7293..=7293
+board-ticket	451	docs/LEDGER.md entry 66 (## C-97 — "simpler" is caught every time: the word is the mechanism by which old decisions re-enter the clean room) — part 1/3, lines 7294..=7343
+board-ticket	452	docs/LEDGER.md entry 66 (## C-97 — "simpler" is caught every time: the word is the mechanism by which old decisions re-enter the clean room) — part 2/3, lines 7344..=7347
+board-ticket	453	docs/LEDGER.md entry 66 (## C-97 — "simpler" is caught every time: the word is the mechanism by which old decisions re-enter the clean room) — part 3/3, lines 7348..=7348
+board-ticket	454	docs/LEDGER.md entry 67 (## C-98 — the architecture contract exists, and it is `README.new.md`'s section rather than a new ruling) — part 1/5, lines 7349..=7400
+board-ticket	455	docs/LEDGER.md entry 67 (## C-98 — the architecture contract exists, and it is `README.new.md`'s section rather than a new ruling) — part 2/5, lines 7401..=7453
+board-ticket	456	docs/LEDGER.md entry 67 (## C-98 — the architecture contract exists, and it is `README.new.md`'s section rather than a new ruling) — part 3/5, lines 7454..=7500
+board-ticket	457	docs/LEDGER.md entry 67 (## C-98 — the architecture contract exists, and it is `README.new.md`'s section rather than a new ruling) — part 4/5, lines 7501..=7518
+board-ticket	458	docs/LEDGER.md entry 67 (## C-98 — the architecture contract exists, and it is `README.new.md`'s section rather than a new ruling) — part 5/5, lines 7519..=7519
+board-ticket	459	docs/LEDGER.md entry 68 (## C-99 — laya is wired into the game, and the agent never read the player's filings) — part 1/3, lines 7520..=7574
+board-ticket	460	docs/LEDGER.md entry 68 (## C-99 — laya is wired into the game, and the agent never read the player's filings) — part 2/3, lines 7575..=7592
+board-ticket	461	docs/LEDGER.md entry 68 (## C-99 — laya is wired into the game, and the agent never read the player's filings) — part 3/3, lines 7593..=7593
+board-ticket	462	docs/LEDGER.md entry 69 (## C-100 — the agent's inbox: the recipes the game gives, written by laya, 2026-10-02) — part 1/3, lines 7594..=7637
+board-ticket	463	docs/LEDGER.md entry 69 (## C-100 — the agent's inbox: the recipes the game gives, written by laya, 2026-10-02) — part 2/3, lines 7638..=7689
+board-ticket	464	docs/LEDGER.md entry 69 (## C-100 — the agent's inbox: the recipes the game gives, written by laya, 2026-10-02) — part 3/3, lines 7690..=7690
+plan-milestones	0
+plan-blockers	0
+plan-malformed	0
+
+board: 409 tickets = 43 distinct duplicated objectives x their filings + 280 filed exactly once
+test every_ticket_on_the_board_is_named_in_full_and_none_is_deferred ... ok
+test the_board_names_every_duplicate_filing_and_says_the_count_is_not_a_count_of_work ... ok
+test the_record_is_filed_and_the_board_reads_it ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+

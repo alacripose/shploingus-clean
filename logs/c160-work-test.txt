@@ -1,0 +1,73 @@
+   Compiling voxel-work v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-work)
+    Finished `test` profile [optimized + debuginfo] target(s) in 24.24s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_work-0fa85130450b5280.exe)
+
+running 59 tests
+test budget::tests::a_charge_that_crosses_the_ceiling_is_refused_and_names_both_numbers ... ok
+test budget::tests::a_release_gives_room_back_and_a_double_release_cannot_inflate_it ... ok
+test budget::tests::a_zero_ceiling_is_refused_rather_than_called_a_budget ... ok
+test pool::tests::a_chunk_already_being_built_is_not_queued_a_second_time ... ok
+test budget::tests::fill_is_the_number_a_hud_shows ... ok
+test budget::tests::the_worker_count_comes_from_the_mesher_s_own_scratch_size ... ok
+test pool::tests::a_pool_with_no_workers_is_refused_rather_than_started ... ok
+test pool::tests::a_better_priority_re_keys_a_queued_chunk_and_a_worse_one_does_not ... ok
+test pool::tests::a_full_queue_refuses_further_requests_instead_of_growing ... ok
+test pool::tests::a_placement_into_a_lake_is_refused_because_the_lake_has_no_material ... ok
+test pool::tests::an_edit_is_recorded_and_takes_effect_at_once ... ok
+test pool::tests::a_shut_down_pool_joins_its_threads ... ok
+test pool::tests::an_edit_that_targets_a_fluid_is_refused_and_changes_nothing ... ok
+test pool::tests::asking_twice_for_a_chunk_is_reported_rather_than_duplicated ... ok
+test pool::tests::a_pool_holds_one_raster_of_scratch_per_worker ... ok
+test stream::tests::a_negative_window_is_refused_rather_than_read_as_empty ... ok
+test pool::tests::a_world_with_no_ground_still_meshes_every_chunk_it_was_asked_for ... ok
+test stream::tests::a_picking_ray_finds_the_first_non_empty_voxel_and_names_the_face ... ok
+test stream::tests::a_long_run_of_moving_centres_never_crosses_the_ceiling ... ok
+test pool::tests::a_cancelled_request_is_not_built_and_an_in_flight_one_still_arrives ... ok
+test stream::tests::a_voxel_touches_its_own_chunk_and_the_neighbours_whose_pad_reads_it ... ok
+test stream::tests::measure_the_edit_hitch_and_where_it_comes_from ... ignored, measurement, not an assertion: run with `cargo test <filter> -- --ignored --nocapture`
+test stream::tests::measure_the_throughput_of_the_pool ... ignored, measurement, not an assertion: run with `cargo test <filter> -- --ignored --nocapture`
+test pool::tests::a_mesh_built_after_an_edit_carries_the_new_generation ... ok
+test stream::tests::everything_inside_the_render_horizon_is_asked_for_before_anything_outside_it ... ok
+test stream::tests::ranking_is_total_so_two_runs_ask_in_the_same_order ... ok
+test stream::tests::the_engine_reports_the_scratch_it_costs_as_well_as_the_meshes ... ok
+test stream::tests::the_nearer_chunk_is_asked_for_first ... ok
+test pool::tests::the_same_requests_give_the_same_meshes_twice_at_the_same_worker_count ... ok
+test stream::tests::the_window_radius_is_the_simulation_horizon_and_cannot_drift_from_it ... ok
+test stream::tests::the_window_is_a_box_and_the_count_says_so ... ok
+test stream::tests::the_viewers_own_chunk_is_asked_for_first_and_the_farthest_chunk_last ... ok
+test tick::tests::a_halo_is_sound_only_inside_the_simulation_horizon ... ok
+test tick::tests::a_halo_only_crosses_a_chunk_boundary_where_the_region_touches_one ... ok
+test tick::tests::a_level_the_octree_does_not_have_is_refused_by_name ... ok
+test tick::tests::a_partial_pipeline_plans_only_what_it_declared ... ok
+test tick::tests::a_plan_is_in_dependency_order_and_stage_major ... ok
+test tick::tests::a_scheduler_refuses_a_horizon_set_that_is_not_nested ... ok
+test tick::tests::a_stage_is_planned_only_on_a_tick_its_own_rung_reaches ... ok
+test tick::tests::a_world_unit_of_work_addresses_the_chunk_it_names ... ok
+test tick::tests::hydrologys_rung_is_no_longer_decorative ... ok
+test tick::tests::the_halo_is_one_cell_and_the_geometry_says_so ... ok
+test tick::tests::the_process_clock_and_the_work_clock_are_one_ladder ... ok
+test tick::tests::the_halo_is_exactly_what_d8_reaches_and_not_one_cell_more ... ok
+test tick::tests::the_units_of_a_chunk_do_not_depend_on_how_well_it_compresses ... ok
+test stream::tests::a_moving_viewer_evicts_what_it_has_left_behind ... ok
+test stream::tests::a_budget_that_cannot_hold_the_window_refuses_meshes_rather_than_crossing_its_ceiling ... ok
+test pool::tests::collect_returns_one_order_however_the_workers_finished ... ok
+test stream::tests::a_changed_world_drops_every_mesh_because_the_generator_is_the_only_source ... ok
+test stream::tests::settle_builds_the_whole_window_and_reports_full_progress ... ok
+test stream::tests::a_stale_chunk_asks_ahead_of_every_routine_one ... ok
+test stream::tests::a_stale_mesh_is_still_charged_and_its_charge_comes_back_when_it_is_replaced ... ok
+test stream::tests::an_edit_leaves_the_chunk_drawn_from_its_old_mesh_instead_of_a_hole ... ok
+test stream::tests::a_stale_mesh_cannot_outlive_the_residency_it_was_asked_for ... ok
+test stream::tests::an_edit_drops_only_the_chunks_it_reaches_and_the_world_rebuilds ... ok
+test stream::tests::the_digest_never_spans_two_worlds ... ok
+test stream::tests::the_frame_reports_what_is_drawn_and_what_is_current_as_two_numbers ... ok
+test pool::tests::the_same_requests_give_the_same_world_at_one_and_at_eight_workers ... ok
+test stream::tests::the_world_that_arrives_does_not_depend_on_how_many_workers_built_it ... ok
+
+test result: ok. 57 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 5.35s
+
+   Doc-tests voxel_work
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

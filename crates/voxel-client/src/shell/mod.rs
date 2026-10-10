@@ -13,9 +13,9 @@
 //! |---|---|---|
 //! | `shell_arrangement` | `arrangement.rs` | **active** — the pane tree of §3 |
 //! | `pinned_hud` | `hud.rs` | **active** — the pinned layer, and the layer choice |
-//! | `notification_queue` | `notifications.rs` | unchecked — the file does not exist yet |
+//! | `notification_queue` | `notifications.rs` | **active** — the api-layer queue the laya gate feeds |
 //! | `ticket_window` | `tickets.rs` | unchecked — the file does not exist yet |
-//! | `change_view` | `changes.rs` | unchecked — the file does not exist yet |
+//! | `change_view` | `changes.rs` | **active** — the vector change view, its projection, and the outlines it draws |
 //!
 //! **A witness file existing is not a feature implemented**, and `features.rs` says so itself:
 //! a row's `means` text is *"checked against nothing"*. So the rows read `active` when this
@@ -23,9 +23,20 @@
 //! module below states what it does and does not yet do.
 
 pub mod arrangement;
+pub mod changes;
 pub mod console;
 pub mod debug;
+pub mod desktop;
+pub mod drop;
 pub mod hud;
 pub mod mount;
+pub mod notifications;
+pub mod pane;
+pub mod placeholder;
+pub mod splitter;
+pub mod taskbar;
+pub mod theme;
+pub mod titlebar;
+pub mod window;
 
-pub use mount::{BarEntry, Button, ContentViews, Mount, Status};
+pub use mount::{BarEntry, Button, ContentViews, Mount, Status, WheelDelta};

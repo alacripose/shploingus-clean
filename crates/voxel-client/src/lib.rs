@@ -43,30 +43,49 @@
 #![forbid(unsafe_code)]
 
 pub mod camera;
-pub mod change;
+pub mod camera_overhaul;
 pub mod clock;
+pub mod cloud_cubes;
+pub mod cloud_field;
+pub mod quad;
 pub mod debug;
 pub mod frame;
 pub mod game;
 pub mod hud;
+pub mod motion;
 pub mod renderer;
 pub mod scene;
+pub mod pattern;
 pub mod shell;
 pub mod shading;
 pub mod skylight;
+pub mod sun;
 pub mod world;
 
 pub use camera::Camera;
+pub use camera_overhaul::CameraOverhaul;
 pub use clock::{Clock, MAX_CATCH_UP, TICK_HZ};
+pub use quad::QuadRecord;
+pub use cloud_cubes::{rung_cell_m, rung_for, CloudCubes, MAX_CELL_M, MIN_CELL_M, RUNGS};
+pub use cloud_field::{
+    cloud_transmittance, density_of, extinction_per_m, optical_depth, CloudField, CloudMedium,
+    CloudSun, CLOUD_BLOCK_SIDE, CLOUD_COLUMNS, CLOUD_SAMPLE_M, CLOUD_SPAN_M,
+};
 pub use frame::{luminance, Frame};
 pub use game::{
     spawn_eye, GAME_CEILING_BYTES, GAME_PITCH_RAD, GAME_SEED, GAME_TICK, GAME_WINDOW,
 };
 pub use hud::{HudRenderer, HudState, BRIGHTEST_BACKDROP, DIGEST_CHARS};
+pub use pattern::{
+    address_at, eye_footprint_m, eye_phase, eye_voxel, octave_cell_m, octave_weight,
+    pixel_angle_rad, quantise, quantise_cell, Pattern, DETAIL_CELL_M, FACE_COS_FLOOR,
+    MAX_FEATURE_M, MIN_FEATURE_M, OCTAVE_GAIN, OCTAVE_TOP, SUBVOXEL_CELL_M, SUBVOXEL_OCTAVE,
+};
 pub use renderer::{offscreen_device, Renderer, DEPTH_FORMAT, TARGET_FORMAT};
 pub use scene::{Scene, Vertex};
 pub use shading::{
-    shade_cpu, table, GpuRig, MaterialParams, ShadingReport, MESH_DOES_NOT_CARRY_OPEN,
+    shade_cpu, table, world_lattice_uniform, GpuRig, MaterialParams, ShadingReport,
+    MESH_DOES_NOT_CARRY_OPEN,
 };
 pub use world::WorldPipeline;
 

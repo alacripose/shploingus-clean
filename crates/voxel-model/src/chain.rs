@@ -287,20 +287,26 @@ pub enum EventKind {
     /// Something was refused. **A refusal is an event**, because a refusal nobody can read is
     /// a refusal that did not happen.
     RefusalRecorded,
+    /// A milestone was filed on the plan.
+    MilestoneFiled,
+    /// A blocker was filed on the plan.
+    BlockerFiled,
 }
 
 impl EventKind {
-    pub const ALL: [EventKind; 5] = [
+    pub const ALL: [EventKind; 7] = [
         EventKind::WorldAction,
         EventKind::DevelopmentFact,
         EventKind::TicketTransition,
         EventKind::Retirement,
         EventKind::RefusalRecorded,
+        EventKind::MilestoneFiled,
+        EventKind::BlockerFiled,
     ];
 
     /// A literal, for the same reason `FEATURE_COUNT` is: the pin's value is
     /// meaningless and its **type** is the assertion.
-    pub const KIND_COUNT: usize = 5;
+    pub const KIND_COUNT: usize = 7;
 
     pub const fn name(self) -> &'static str {
         match self {
@@ -309,6 +315,8 @@ impl EventKind {
             EventKind::TicketTransition => "ticket_transition",
             EventKind::Retirement => "retirement",
             EventKind::RefusalRecorded => "refusal_recorded",
+            EventKind::MilestoneFiled => "milestone_filed",
+            EventKind::BlockerFiled => "blocker_filed",
         }
     }
 

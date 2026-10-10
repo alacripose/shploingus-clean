@@ -95,7 +95,10 @@ impl PlateSample {
 
 /// The jittered-grid cell a point falls in, and the feature point inside it.
 fn feature_point(spec: &WorldSpec, i: i64, j: i64) -> Vec3 {
-    let seed = spec.stage_seed("tectonics");
+    // **Stationary**: plate geometry is the world's foundation. If the plate seeds moved
+    // with the tick, every plate boundary — and so every mountain range — would move with
+    // it. The world's own history is what the tick is for; the plates are not history.
+    let seed = spec.stationary_stage_seed("tectonics");
     let cell = spec.config.plate_cell_size_m;
     // Jitter is confined to [0.15, 0.85] of the cell so that plates keep a
     // positive size: jitter over the full cell lets two feature points collide
@@ -107,7 +110,7 @@ fn feature_point(spec: &WorldSpec, i: i64, j: i64) -> Vec3 {
 
 fn plate_id_of(spec: &WorldSpec, i: i64, j: i64) -> u32 {
     let n = spec.config.plate_count.max(1) as u64;
-    (mix(spec.stage_seed("tectonics") ^ ((i as u64) << 32) ^ (j as u64)) % n) as u32
+    (mix(spec.stationary_stage_seed("tectonics") ^ ((i as u64) << 32) ^ (j as u64)) % n) as u32
 }
 
 /// Sample tectonics at a horizontal position. `y` is ignored: plates are a
@@ -168,7 +171,8 @@ pub fn sample(spec: &WorldSpec, x: f64, z: f64) -> PlateSample {
     // two plates meeting are convergent along their whole shared edge. Hashing
     // the pair (order-independent) is what makes that true.
     let (a, b) = if plate_id <= other { (plate_id, other) } else { (other, plate_id) };
-    let kind = match mix(spec.stage_seed("tectonics") ^ 0xB0_1234 ^ ((a as u64) << 20) ^ (b as u64)) % 3 {
+    let pair = spec.stationary_stage_seed("tectonics") ^ 0xB0_1234 ^ ((a as u64) << 20) ^ (b as u64);
+    let kind = match mix(pair) % 3 {
         0 => BoundaryKind::Convergent,
         1 => BoundaryKind::Divergent,
         _ => BoundaryKind::Transform,

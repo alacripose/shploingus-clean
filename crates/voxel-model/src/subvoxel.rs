@@ -6,11 +6,12 @@
 //! grid and blends its visible face; nothing anywhere reads "the block id",
 //! because there is no such thing.
 //!
-//! The second resolution is the **detail lattice**, 256 samples per subvoxel axis.
+//! The second resolution is the **detail lattice** — the base the record calls
+//! **256**, because a subvoxel face carries 16×16 samples: **16** per subvoxel axis.
 //! It is **addressed, never stored** (C-2): [`DetailIndex`] is the address, and the
 //! value at that address is computed on demand by the appearance layer. The dense
-//! alternative is 16,777,216 samples per **subvoxel**, **2⁴⁵** of them for one
-//! chunk — about 35 TB at a byte a sample — which is not a renderer.
+//! alternative is 4,096 samples per **subvoxel**, **2³³** of them for one chunk —
+//! about 8.6 GB at a byte a sample — which is not a renderer either.
 //!
 //! (That figure was written here as "per voxel" for one revision, which is low by
 //! the subvoxel count, 64×. The corrected arithmetic and the test that pins it are
@@ -305,7 +306,7 @@ impl DetailIndex {
         } else {
             Err(Refusal::new(
                 RefusalKind::IndexOutOfRange,
-                "detail address outside 0..256",
+                "detail address outside 0..16",
             ))
         }
     }
@@ -506,18 +507,20 @@ mod tests {
 
     #[test]
     fn a_detail_address_outside_the_lattice_is_refused() {
-        assert!(DetailIndex::new(255, 255, 255).is_ok());
-        assert_eq!(
-            DetailIndex::new(256, 0, 0).unwrap_err().kind(),
-            RefusalKind::IndexOutOfRange
-        );
+        assert!(DetailIndex::new(15, 15, 15).is_ok());
+        let e = DetailIndex::new(16, 0, 0).unwrap_err();
+        assert_eq!(e.kind(), RefusalKind::IndexOutOfRange);
+        // The message names the side, so a change of base cannot leave a refusal
+        // naming the old one.
+        assert!(e.detail().contains("0..16"), "{}", e.detail());
     }
 
     #[test]
     fn detail_fractions_map_within_range_and_refuse_outside_it() {
         let d = DetailIndex::from_unit(0.0, 0.5, 1.0).unwrap();
         assert_eq!(d.x, 0);
-        assert_eq!(d.z, 255);
+        // The top edge is the last sample of the side: 15 of 16, not of 256.
+        assert_eq!(d.z, 15);
         assert_eq!(DetailIndex::from_unit(1.5, 0.0, 0.0).unwrap_err().kind(), RefusalKind::OutOfDeclaredRange);
         assert_eq!(DetailIndex::from_unit(f64::NAN, 0.0, 0.0).unwrap_err().kind(), RefusalKind::OutOfDeclaredRange);
     }

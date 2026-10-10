@@ -1,0 +1,15 @@
+derived skylight rig at noon: mean 0.75683 max 1.43345 above1% 53.5% colours 9429
+
+thread 'renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe' (18132) panicked at crates\voxel-client\src\renderer.rs:567:9:
+the world's brightest pixel was 1.4334486354470253 — the rig is not one unit
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe ... FAILED
+
+failures:
+
+failures:
+    renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 374 filtered out; finished in 12.86s
+
+error: test failed, to rerun pass `-p voxel-client --lib`

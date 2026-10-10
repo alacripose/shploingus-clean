@@ -1,0 +1,70 @@
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `test` profile [optimized + debuginfo] target(s) in 16.45s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-c4ab11d6b795be08.exe)
+
+running 1 test
+spawn eye: [0.5, 19.62, -95.5]
+eye chunk: ChunkPos { x: 0, y: 0, z: -3 }
+streamed 605 of 605 chunks, 605 meshes held, 0.4 MB
+meshed extents: x -160..192, y 9..22, z -256..96
+  material  1 water        Transmissive density 1000 kg/m3 | base colour present | roughness None
+  material  2 ice          Transmissive density 917 kg/m3 | base colour present | roughness None
+  material  3 regolith     Opaque density 1400 kg/m3 | base colour present | roughness Some(1.0)
+  material  4 sedimentary rock Opaque density 2400 kg/m3 | base colour present | roughness Some(0.375)
+  material  5 metamorphic rock Opaque density 2750 kg/m3 | base colour present | roughness Some(0.15625)
+  material  6 igneous rock Opaque density 2900 kg/m3 | base colour present | roughness Some(0.0625)
+  material  7 bedrock      Opaque density 3000 kg/m3 | base colour present | roughness Some(0.0)
+  quads by material: {1: 423, 3: 16838, 4: 2699}
+  column x 0, z -96: topmost solid y = Some(17) material Some(MaterialId(3))
+  column x 0, z -64: topmost solid y = Some(16) material Some(MaterialId(3))
+  column x 0, z 0: topmost solid y = Some(15) material Some(MaterialId(3))
+  column x 0, z 40: topmost solid y = Some(15) material Some(MaterialId(1))
+material table rows: 8
+  scene: 19960 chunks, 19960 quads, 79840 vertices, 119760 indices
+  distinct raw pixels: 9
+    [0.0, 0.0, 0.0, 0.0]
+    [0.004117227, 0.005256044, 0.008844907, 1.0]
+    [0.27379987, 0.20674574, 0.1316274, 1.0]
+    [0.27379987, 0.20674576, 0.13162741, 1.0]
+    pixel(640,719) = Some([0.5761322, 0.4300286, 0.2677556, 1.0])
+    pixel(640,600) = Some([0.5761322, 0.4300286, 0.2677556, 1.0])
+    pixel(640,480) = Some([0.5761322, 0.4300286, 0.2677556, 1.0])
+    pixel(640,360) = Some([0.5761322, 0.4300286, 0.2677556, 1.0])
+    pixel(2,2) = Some([0.0, 0.0, 0.0, 0.0])
+shipped eye: min 0.0000 max 0.4494 mean 0.23850 | 53.5% of pixels above 0.01 | 9 distinct colours
+  scene: 19960 chunks, 19960 quads, 79840 vertices, 119760 indices
+  distinct raw pixels: 12
+    [0.0, 0.0, 0.0, 0.0]
+    [0.004117227, 0.005256044, 0.008844907, 1.0]
+    [0.11636497, 0.08752122, 0.055305365, 1.0]
+    [0.27379987, 0.20674574, 0.1316274, 1.0]
+    pixel(640,719) = Some([0.5761322, 0.4300286, 0.2677556, 1.0])
+    pixel(640,600) = Some([0.5761322, 0.4300286, 0.2677556, 1.0])
+    pixel(640,480) = Some([0.5761322, 0.4300286, 0.2677556, 1.0])
+    pixel(640,360) = Some([0.5761322, 0.4300286, 0.2677556, 1.0])
+    pixel(2,2) = Some([0.0, 0.0, 0.0, 0.0])
+previous eye [0,45,-160] pitch -0.25: min 0.0000 max 0.4494 mean 0.24355 | 55.3% of pixels above 0.01 | 12 distinct colours
+sea probe from [0.0, 60.0, 40.0]: sky(alpha 0) 3, dark-blue 445527, other 476070 of 921600
+  ######################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ########################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ##########################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ############################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ###############################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #################################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #################################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ##################################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ######################################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ########################################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #########################################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ###########################################~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  #######################################################~~~~~~~~~~~~~~~~~~~~~~~~~
+  #######################################################~~~~~~~~~~~~~~~~~~~~~~~~~
+  #########################################################~~~~~~~~~~~~~~~~~~~~~~~
+  ##########################################################~~~~~~~~~~~~~~~~~~~~~~
+  ##########################################################~~~~~~~~~~~~~~~~~~~~~~
+  #########################################################~~~~~~~~~~~~~~~~~~~~~~~
+mean luminance 0.23850 — the world is visible and dim
+test renderer::tests::the_shipped_view_is_not_a_black_screen ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 371 filtered out; finished in 11.94s
+

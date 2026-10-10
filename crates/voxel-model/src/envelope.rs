@@ -499,6 +499,17 @@ pub const KINDS_ARE_TOTAL: [(); Kind::COUNT] = [(); Kind::ALL.len()];
 /// **Check 3**: every `state` has a row.
 pub const STATES_ARE_TOTAL: [(); RecordState::COUNT] = [(); RecordState::ALL.len()];
 
+/// **Check 4**: every `control` has a row.
+///
+/// **C-92.3 measured this one missing**, and the gap it left was narrow but real:
+/// `Control::ALL`'s type already forces a new *variant* into the array, so what nothing
+/// caught was **`Control::COUNT` edited to 5 with `ALL` untouched** — a compile error for
+/// `EventType`, `Kind` and `RecordState`, and silence here. The whole value of these pins
+/// is that a count that drifts from its list cannot compile, so the one enum in this file
+/// without a pin was the one place that guarantee had a hole. See `envelope.rs`'s
+/// `the_control_vocabulary_is_pinned_like_the_other_three`.
+pub const CONTROLS_ARE_TOTAL: [(); Control::COUNT] = [(); Control::ALL.len()];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -526,9 +537,11 @@ mod tests {
         let _ = EVENT_TYPES_ARE_TOTAL;
         let _ = KINDS_ARE_TOTAL;
         let _ = STATES_ARE_TOTAL;
+        let _ = CONTROLS_ARE_TOTAL;
         assert_eq!(EventType::ALL.len(), EventType::COUNT);
         assert_eq!(Kind::ALL.len(), Kind::COUNT);
         assert_eq!(RecordState::ALL.len(), RecordState::COUNT);
+        assert_eq!(Control::ALL.len(), Control::COUNT);
         for value in EventType::ALL {
             assert_eq!(EventType::parse(value.name()), Ok(value));
         }
@@ -541,6 +554,22 @@ mod tests {
         assert!(EventType::parse("nope").is_err());
         assert!(Kind::parse("nope").is_err());
         assert!(RecordState::parse("nope").is_err());
+    }
+
+    #[test]
+    fn the_control_vocabulary_is_pinned_like_the_other_three() {
+        // C-92.3: `Control` was the one enum in this file with a `COUNT` and no pin, so
+        // `COUNT` could be edited to 5 with `ALL` untouched and the build stayed green.
+        // The const above closes that: `[(); Control::COUNT] = [(); Control::ALL.len()]`
+        // is a compile error the moment the two disagree, which is the same guarantee
+        // the other three axes already had.
+        assert_eq!(Control::ALL.len(), Control::COUNT);
+        // And every variant still names itself, so a value cannot be added without a word.
+        let mut names: Vec<&str> = Control::ALL.iter().map(|control| control.name()).collect();
+        let total = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), total, "two controls share a name");
     }
 
     #[test]

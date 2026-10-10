@@ -1,0 +1,18 @@
+   Compiling voxel-ui v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-ui)
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `test` profile [optimized + debuginfo] target(s) in 16.28s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-e81c39c525811ec8.exe)
+
+running 9 tests
+test shell::notifications::tests::a_toast_lasts_the_duration_the_design_system_declares_in_the_world_s_ticks ... ok
+test shell::notifications::tests::a_committed_act_is_minted_into_one_proof_of_work_on_the_artifact_that_committed_it ... ok
+test shell::notifications::tests::a_queued_toast_gets_its_whole_life_from_the_tick_it_is_promoted_not_from_its_enqueue_tick ... ok
+test shell::notifications::tests::a_toast_queue_renders_one_record_at_a_time_and_each_record_once ... ok
+test shell::notifications::tests::a_tampered_artifact_is_refused_before_it_is_shown ... ok
+test shell::notifications::tests::the_agent_inbox_streams_the_recipe_laya_wrote_for_the_package ... ok
+test shell::notifications::tests::a_minted_proof_reaches_the_gate_on_its_artifact_with_axis_rs_grading ... ok
+test shell::notifications::tests::the_games_own_pass_writes_one_notification_per_decision ... ok
+test shell::notifications::tests::the_queue_streams_every_decision_the_gate_made ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.50s
+

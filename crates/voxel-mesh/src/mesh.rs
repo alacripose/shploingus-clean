@@ -38,7 +38,7 @@
 //! by test: the cross product of the quad's own edges must equal the face's
 //! declared normal, for all six faces.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use voxel_model::{
     ChunkPos, Digest, Face, MaterialId, MaterialRegistry, OpticalClass, Refusal, RefusalKind,
@@ -296,6 +296,66 @@ impl Quad {
     }
 }
 
+/// One closed rectilinear boundary loop, in a face's own `(u, v)` basis.
+///
+/// A loop is the maximal shape a greedy rectangle cannot be: a staircase, an
+/// `L`, or a region with a bite out of it is one of these and two or more quads.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Loop {
+    /// The face this loop lies on.
+    pub face: Face,
+    /// The plane, in the same units as [`Quad::slice`].
+    pub slice: u16,
+    /// The material enclosed, or — for a hole — the material around it.
+    pub material: MaterialId,
+    /// Corners in the face's own `(u, v)` basis, wound so the material is on the left.
+    pub corners: Vec<[i16; 2]>,
+}
+
+impl Loop {
+    /// The corners in chunk-local subvoxel coordinates, wound so the loop's
+    /// normal is the face's outward normal.
+    ///
+    /// A traced loop runs so the material is on its left, which puts its normal on
+    /// `u × v`; `winding_flips` is then the same correction [`Quad::corners`] applies,
+    /// because the traced order is the rectangle's own.
+    pub fn corners(&self) -> Vec<[i32; 3]> {
+        let axis = self.face.axis() as usize;
+        let s = self.slice as i32;
+        let out: Vec<[i32; 3]> = self
+            .corners
+            .iter()
+            .map(|c| cell(axis, s, c[0] as i32, c[1] as i32))
+            .collect();
+        if winding_flips(self.face) {
+            out.into_iter().rev().collect()
+        } else {
+            out
+        }
+    }
+
+    /// The loop's signed area in subvoxel faces, positive when it encloses
+    /// material. A hole encloses air and is therefore negative.
+    pub fn signed_area(&self) -> i64 {
+        let n = self.corners.len();
+        if n < 3 {
+            return 0;
+        }
+        let mut total = 0i64;
+        for i in 0..n {
+            let a = self.corners[i];
+            let b = self.corners[(i + 1) % n];
+            total += a[0] as i64 * b[1] as i64 - b[0] as i64 * a[1] as i64;
+        }
+        total / 2
+    }
+
+    /// The loop's area in subvoxel faces, holes included as positive.
+    pub fn area(&self) -> u32 {
+        self.signed_area().unsigned_abs() as u32
+    }
+}
+
 /// What the mesher did, so that "it merged" is a measurement and not a claim.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct MeshStats {
@@ -305,6 +365,8 @@ pub struct MeshStats {
     pub visible_faces: u64,
     /// Quads actually emitted.
     pub quads: u64,
+    /// Boundary loops emitted by the polygon pass.
+    pub loops: u64,
 }
 
 impl MeshStats {
@@ -330,6 +392,8 @@ impl MeshStats {
 pub struct Mesh {
     pub chunk: ChunkPos,
     pub quads: Vec<Quad>,
+    /// Boundary loops for the same surface `quads` covers, in the same plane order.
+    pub loops: Vec<Loop>,
     pub stats: MeshStats,
 }
 
@@ -360,7 +424,11 @@ impl Mesh {
     /// asked for and not what is currently used — a `Vec` that grew to 4,096 and
     /// now holds 10 is holding 4,096 quads' worth of the machine.
     pub fn bytes(&self) -> usize {
-        std::mem::size_of::<Self>() + self.quads.capacity() * std::mem::size_of::<Quad>()
+        std::mem::size_of::<Self>()
+            + self.quads.capacity() * std::mem::size_of::<Quad>()
+            + self.loops.capacity() * (std::mem::size_of::<Loop>()
+                + std::mem::size_of::<Vec<[i16; 2]>>())
+            + self.loops.iter().map(|l| l.corners.capacity() * 4).sum::<usize>()
     }
 
     /// A content digest over the emitted quads, in emission order.
@@ -441,10 +509,12 @@ impl Mesher {
 
         let side = SUBVOXEL_CHUNK_SIDE as usize;
         let mut quads: Vec<Quad> = Vec::new();
+        let mut loops: Vec<Loop> = Vec::new();
         let mut stats = MeshStats {
             solid_voxels: chunk.tree().solid_count(),
             visible_faces: 0,
             quads: 0,
+            loops: 0,
         };
 
         // **The uniform fast path.** If every cell of the padded raster holds
@@ -492,12 +562,19 @@ impl Mesher {
                     // plane, a positive face on its high one.
                     let plane = (if positive { slice + 1 } else { slice }) as u16;
                     self.merge(face, plane, &mut quads, &mut stats);
+                    self.polygonise(face, plane, config, &mut loops);
                 }
             }
         }
 
+        // **The backwalk.** The greedy scan grows only right and down, so a rectangle that could
+        // have reached back into an earlier one is emitted apart from it. Joining quads that share
+        // a whole edge changes no covered face, only how many quads say so.
+        coalesce(&mut quads);
+
         stats.quads = quads.len() as u64;
-        Ok(Mesh { chunk: chunk.pos, quads, stats })
+        stats.loops = loops.len() as u64;
+        Ok(Mesh { chunk: chunk.pos, quads, loops, stats })
     }
 
     /// Build the same mesh **without merging**: one quad per visible face.
@@ -527,8 +604,14 @@ impl Mesher {
         let visible_faces = quads.len() as u64;
         Ok(Mesh {
             chunk: chunk.pos,
-            stats: MeshStats { solid_voxels: chunk.tree().solid_count(), visible_faces, quads: visible_faces },
+            stats: MeshStats {
+                solid_voxels: chunk.tree().solid_count(),
+                visible_faces,
+                quads: visible_faces,
+                loops: 0,
+            },
             quads,
+            loops: Vec::new(),
         })
     }
 
@@ -727,6 +810,242 @@ impl Mesher {
             }
         }
     }
+
+    /// **The polygonal pass.** [`Mesher::merge`] consumes the mask, so this
+    /// re-reads the same cells from the field and traces their boundary into loops.
+    ///
+    /// One loop per closed boundary, whatever its shape: a staircase that took a
+    /// quad each is one loop here.
+    fn polygonise(&self, face: Face, plane: u16, config: &MeshConfig, out: &mut Vec<Loop>) {
+        let side = SUBVOXEL_CHUNK_SIDE as i32;
+        let step: i32 = if face.is_positive() { 1 } else { -1 };
+        let axis = face.axis() as usize;
+        let (su, sv) = field_strides(axis);
+        // The cell this face belongs to, and the one across it: the **same** two
+        // planes and the **same** rule `build` filled the mask from. Reading the
+        // field without them would draw every interior wall there is. A positive
+        // face is on its cell's high plane and a negative one on its low plane,
+        // so the cell is `plane - 1` and `plane` respectively — getting that
+        // backwards silently drops every negative face in the mesh.
+        let own = if face.is_positive() { plane as i32 - 1 } else { plane as i32 };
+        let base_a = index_of(cell(axis, own, 0, 0));
+        let base_b = index_of(cell(axis, own + step, 0, 0));
+
+        let mut covered: BTreeMap<(i32, i32), MaterialId> = BTreeMap::new();
+        for v in 0..side {
+            let (row_a, row_b) = (base_a + v as usize * sv, base_b + v as usize * sv);
+            for u in 0..side {
+                let a = self.field[row_a + u as usize * su];
+                let b = self.field[row_b + u as usize * su];
+                let m = if config.face_is_visible(a, b) { a } else { MaterialId::EMPTY };
+                if !m.is_empty() {
+                    covered.insert((u, v), m);
+                }
+            }
+        }
+        out.extend(
+            traces(&covered)
+                .into_iter()
+                .map(|(material, corners)| Loop { face, slice: plane, material, corners }),
+        );
+    }
+}
+
+/// The four unit steps in `(u, v)`, so `+1` is a left turn.
+const DIRS: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
+/// A loop's signed area in `(u, v)`: positive when it runs the rectangle's way.
+fn signed_area(corners: &[[i16; 2]]) -> i64 {
+    let n = corners.len();
+    if n < 3 {
+        return 0;
+    }
+    let mut total = 0i64;
+    for i in 0..n {
+        let a = corners[i];
+        let b = corners[(i + 1) % n];
+        total += a[0] as i64 * b[1] as i64 - b[0] as i64 * a[1] as i64;
+    }
+    total / 2
+}
+
+/// Every closed boundary of `covered`, as `(material, corners)`.
+///
+/// An edge between two different materials bounds both, so it is entered twice in
+/// opposite directions and tagged with the material it encloses; a trace only
+/// follows edges of its own material, which winds a hole against the region
+/// around it.
+fn traces(covered: &BTreeMap<(i32, i32), MaterialId>) -> Vec<(MaterialId, Vec<[i16; 2]>)> {
+    // Each edge carries its own direction's index in `DIRS`, because the turn
+    // taken on arrival is what keeps two lobes apart at a pinch vertex.
+    let mut edges: BTreeMap<(i32, i32), Vec<(usize, (i32, i32), MaterialId)>> = BTreeMap::new();
+    for (&(u, v), &material) in covered {
+        for (index, (du, dv)) in DIRS.iter().enumerate() {
+            if covered.get(&(u + du, v + dv)) == Some(&material) {
+                continue;
+            }
+            // Directed so the material is on the left, which is the rectangle's
+            // own corner order and so the one `winding_flips` already knows. The
+            // stored index is the **edge's** direction in `DIRS`, which is the
+            // neighbour's turned by one — getting that wrong makes the turn
+            // preference below steer the wrong way.
+            let (start, end, dir) = match index {
+                0 => ((u + 1, v), (u + 1, v + 1), 1),
+                1 => ((u + 1, v + 1), (u, v + 1), 2),
+                2 => ((u, v + 1), (u, v), 3),
+                _ => ((u, v), (u + 1, v), 0),
+            };
+            edges.entry(start).or_default().push((dir, end, material));
+        }
+    }
+
+    let mut seeds: Vec<((i32, i32), MaterialId)> = edges
+        .iter()
+        .flat_map(|(at, list)| list.iter().map(|(_, _, m)| (*at, *m)))
+        .collect();
+    seeds.sort_unstable();
+    seeds.dedup();
+
+    let mut taken: BTreeSet<((i32, i32), usize, MaterialId)> = BTreeSet::new();
+    let mut out = Vec::new();
+    for (start, material) in seeds {
+        let mut corners = vec![[start.0 as i16, start.1 as i16]];
+        let mut at = start;
+        let mut arrived = usize::MAX;
+        // Every edge is consumed at most once, so a trace cannot outrun the
+        // boundary it is following or close a loop it never entered.
+        while let Some((dir, end, m)) = next_edge(&edges, at, arrived, material, &taken) {
+            taken.insert((at, dir, m));
+            at = end;
+            arrived = dir;
+            if at == start {
+                break;
+            }
+            corners.push([at.0 as i16, at.1 as i16]);
+        }
+        // A trace that ran out of edges is an open path, and simplifying one would
+        // close it across a gap — so only a loop that came home is simplified.
+        if corners.len() >= 4 && at == start {
+            out.push((material, simplify(corners)));
+        }
+    }
+    out
+}
+
+/// Drop the vertices a rectilinear path does not turn at.
+///
+/// The trace follows the boundary one unit step at a time, so an `L` arrives as
+/// twelve points and leaves as the six that are actually corners.
+fn simplify(corners: Vec<[i16; 2]>) -> Vec<[i16; 2]> {
+    let mut corners = corners;
+    while corners.len() > 4 {
+        let n = corners.len();
+        let kept: Vec<[i16; 2]> = (0..n)
+            .filter(|i| {
+                let prev = corners[(i + n - 1) % n];
+                let here = corners[*i];
+                let next = corners[(i + 1) % n];
+                let a = (here[0] as i32 - prev[0] as i32, here[1] as i32 - prev[1] as i32);
+                let b = (next[0] as i32 - here[0] as i32, next[1] as i32 - here[1] as i32);
+                a.0 * b.1 - a.1 * b.0 != 0
+            })
+            .map(|i| corners[i])
+            .collect();
+        if kept.len() == n {
+            break;
+        }
+        corners = kept;
+    }
+    corners
+}
+
+/// The untaken edge of `material` leaving `at`, preferring a left turn.
+///
+/// The turn is scored against each candidate's **own** direction rather than used
+/// as an index into the list: a vertex can carry several edges, and the list's
+/// order has nothing to do with the directions.
+fn next_edge(
+    edges: &BTreeMap<(i32, i32), Vec<(usize, (i32, i32), MaterialId)>>,
+    at: (i32, i32),
+    arrived: usize,
+    material: MaterialId,
+    taken: &BTreeSet<((i32, i32), usize, MaterialId)>,
+) -> Option<(usize, (i32, i32), MaterialId)> {
+    let list = edges.get(&at)?;
+    let mut best: Option<(u8, usize)> = None;
+    for (i, (dir, _, m)) in list.iter().enumerate() {
+        if *m != material || taken.contains(&(at, *dir, material)) {
+            continue;
+        }
+        // Left, then straight, then right: the tightest turn hugs the material it
+        // is on, which is what keeps two lobes of a diagonal pinch apart.
+        let rank = if arrived == usize::MAX {
+            0
+        } else if *dir == (arrived + 1) % 4 {
+            0
+        } else if *dir == arrived {
+            1
+        } else {
+            2
+        };
+        if best.is_none_or(|(r, _)| rank < r) {
+            best = Some((rank, i));
+        }
+    }
+    let (_, i) = best?;
+    let (dir, end, m) = list[i];
+    Some((dir, end, m))
+}
+
+/// Join quads that share a whole edge, along `u` and then along `v`, until neither changes.
+///
+/// A join is exact: two rectangles with the same material, face and slice, whose shared edge
+/// spans both fully, union to one rectangle covering the same cells. The loop ends because every
+/// join removes a quad, so the count strictly falls and there are finitely many quads to fall from.
+fn coalesce(quads: &mut Vec<Quad>) {
+    loop {
+        let before = quads.len();
+        join_pass(quads, true);
+        join_pass(quads, false);
+        if quads.len() == before {
+            break;
+        }
+    }
+}
+
+/// One direction of [`coalesce`]. `along_u` joins quads that are neighbours in `u` and share their
+/// `v` span; otherwise the roles of `u` and `v` swap.
+fn join_pass(quads: &mut Vec<Quad>, along_u: bool) {
+    // The axis being joined is `a`; the axis whose span must match is `b`.
+    let (a, b) = if along_u { (0usize, 1usize) } else { (1, 0) };
+    // Sorting by (everything but `a`, then `a`) puts every joinable run next to each other, in
+    // `a` order. Every field participates, so the order is total and reproducible.
+    quads.sort_unstable_by_key(|q| {
+        (
+            face_index(q.face),
+            q.slice,
+            q.material.0,
+            q.uv[b],
+            q.extent[b],
+            q.uv[a],
+        )
+    });
+    let mut out: Vec<Quad> = Vec::with_capacity(quads.len());
+    for quad in quads.drain(..) {
+        if let Some(last) = out.last_mut() {
+            let same_run = last.face == quad.face
+                && last.slice == quad.slice
+                && last.material == quad.material
+                && last.uv[b] == quad.uv[b]
+                && last.extent[b] == quad.extent[b];
+            if same_run && last.uv[a] + last.extent[a] == quad.uv[a] {
+                last.extent[a] += quad.extent[a];
+                continue;
+            }
+        }
+        out.push(quad);
+    }
+    *quads = out;
 }
 
 #[cfg(test)]
@@ -954,6 +1273,206 @@ mod tests {
                 sample("invented", &extra)
             );
         }
+    }
+
+    /// Whether a cell's centre falls inside a traced loop, by ray crossing.
+    fn loop_contains(loop_: &Loop, u: f64, v: f64) -> bool {
+        let n = loop_.corners.len();
+        let mut crossings = 0i32;
+        for i in 0..n {
+            let a = loop_.corners[i];
+            let b = loop_.corners[(i + 1) % n];
+            let (au, av) = (a[0] as f64, a[1] as f64);
+            let (bu, bv) = (b[0] as f64, b[1] as f64);
+            // Half-open in `v`, so a vertex sitting on the ray counts once.
+            if (av > v) != (bv > v) {
+                let t = (v - av) / (bv - av);
+                if au + t * (bu - au) > u {
+                    crossings += 1;
+                }
+            }
+        }
+        crossings % 2 == 1
+    }
+
+    /// Every cell the loops enclose, keyed exactly as [`covered_faces`] keys a quad's.
+    fn covered_by_loops(mesh: &Mesh) -> BTreeMap<([i32; 3], Face), usize> {
+        let mut covered: BTreeMap<([i32; 3], Face), usize> = BTreeMap::new();
+        for loop_ in &mesh.loops {
+            let axis = loop_.face.axis() as usize;
+            let (au, av) = axes(axis);
+            let solid = if loop_.face.is_positive() {
+                loop_.slice as i32 - 1
+            } else {
+                loop_.slice as i32
+            };
+            for v in 0..SUBVOXEL_CHUNK_SIDE {
+                for u in 0..SUBVOXEL_CHUNK_SIDE {
+                    if !loop_contains(loop_, u as f64 + 0.5, v as f64 + 0.5) {
+                        continue;
+                    }
+                    let mut c = [0i32; 3];
+                    c[axis] = solid;
+                    c[au] = u;
+                    c[av] = v;
+                    *covered.entry((c, loop_.face)).or_insert(0) += 1;
+                }
+            }
+        }
+        covered
+    }
+
+    #[test]
+    fn the_loops_cover_exactly_the_faces_the_quads_cover() {
+        // **The load-bearing assertion for the polygonal pass.** It is checked
+        // against the *quads* rather than the naive mesher, so a failure says the
+        // two representations of one surface disagree — which is the only claim
+        // the pass makes.
+        for (name, chunk, config) in coverage_worlds() {
+            let mut mesher = Mesher::new();
+            let built = mesher.build(&chunk, &config, Some(&AllAir)).unwrap();
+            let by_quads = covered_faces(&built);
+            let by_loops = covered_by_loops(&built);
+            assert!(
+                !built.loops.is_empty() || by_quads.is_empty(),
+                "{name}: {} quads cover {} faces but the polygonal pass emitted no loops at all",
+                built.quads.len(),
+                by_quads.len()
+            );
+
+            let duplicated: Vec<_> =
+                by_loops.iter().filter(|(_, t)| **t != 1).map(|(f, t)| (*f, *t)).collect();
+            assert!(
+                duplicated.is_empty(),
+                "{name}: {duplicated:?} is covered by more than one loop"
+            );
+
+            let quad_set: BTreeSet<([i32; 3], Face)> = by_quads.keys().copied().collect();
+            let loop_set: BTreeSet<([i32; 3], Face)> = by_loops.keys().copied().collect();
+            let missing: Vec<_> = quad_set.difference(&loop_set).copied().collect();
+            let extra: Vec<_> = loop_set.difference(&quad_set).copied().collect();
+            assert!(
+                missing.is_empty() && extra.is_empty(),
+                "{name}: the loops are not the quads — {}, {}",
+                sample("missing", &missing),
+                sample("invented", &extra)
+            );
+            assert_eq!(built.stats.loops, built.loops.len() as u64, "{name}: the count is a claim");
+        }
+    }
+
+    #[test]
+    fn the_loops_cover_the_quads_on_a_jagged_mask() {
+        // The one shape built to break rectangle extraction, run through the
+        // polygonal pass as well.
+        let (chunk, config) = jagged();
+        let mut mesher = Mesher::new();
+        let built = mesher.build(&chunk, &config, Some(&AllAir)).unwrap();
+        let quad_set: BTreeSet<([i32; 3], Face)> =
+            covered_faces(&built).keys().copied().collect();
+        let loop_set: BTreeSet<([i32; 3], Face)> = covered_by_loops(&built).keys().copied().collect();
+        assert_eq!(quad_set, loop_set, "the jagged surface is not the same surface twice");
+    }
+
+    #[test]
+    fn a_shape_a_rectangle_cannot_be_is_one_loop_and_fewer_primitives() {
+        // **The payoff, stated as a number.** An `L` of five cells is three greedy
+        // rectangles and one loop of six corners.
+        let stone = STONE;
+        let covered: BTreeMap<(i32, i32), MaterialId> = [(0, 0), (1, 0), (2, 0), (0, 1), (0, 2)]
+            .into_iter()
+            .map(|c| (c, stone))
+            .collect();
+        let loops = traces(&covered);
+        assert_eq!(loops.len(), 1, "an L is one boundary, not several: {loops:?}");
+        assert_eq!(
+            loops[0].1,
+            vec![[0, 0], [3, 0], [3, 1], [1, 1], [1, 3], [0, 3]],
+            "the L's six corners"
+        );
+        assert_eq!(loops[0].1.len(), 6, "collinear points were not simplified away");
+    }
+
+    #[test]
+    fn every_loop_winds_so_its_normal_is_the_faces_own() {
+        // The traced order is the rectangle's own, so `winding_flips` has to finish it.
+        for face in Face::ALL {
+            let covered: BTreeMap<(i32, i32), MaterialId> =
+                [(0, 0), (1, 0), (2, 0), (0, 1), (0, 2)].into_iter().map(|c| (c, STONE)).collect();
+            let (material, corners) = traces(&covered).into_iter().next().expect("a loop");
+            let loop_ = Loop { face, slice: 3, material, corners };
+            let points = loop_.corners();
+            assert!(points.len() >= 4, "a loop of {face:?} lost its corners");
+            // Newell's method, so the test does not assume a planar projection.
+            let mut normal = [0f64; 3];
+            for i in 0..points.len() {
+                let a = points[i];
+                let b = points[(i + 1) % points.len()];
+                normal[0] += (a[1] - b[1]) as f64 * (a[2] + b[2]) as f64;
+                normal[1] += (a[2] - b[2]) as f64 * (a[0] + b[0]) as f64;
+                normal[2] += (a[0] - b[0]) as f64 * (a[1] + b[1]) as f64;
+            }
+            let (wx, wy, wz) = face.normal();
+            let want = [wx, wy, wz];
+            let across = face.axis() as usize;
+            for axis in 0..3 {
+                if axis == across {
+                    assert!(
+                        normal[axis] * want[axis] as f64 > 0.0,
+                        "{face:?} loop faces {normal:?}, which is not its own outward normal \
+                         {want:?}"
+                    );
+                } else {
+                    // A rectilinear loop on one plane has no component across it.
+                    assert!(
+                        normal[axis].abs() < 1.0e-9,
+                        "{face:?} loop faces {normal:?}, which is not in its own plane"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_hole_is_its_own_loop_wound_against_the_region_around_it() {
+        // A ring: the outer boundary and the inner one, in opposite senses, so
+        // that filling both — the obvious later use — does not double the middle.
+        let covered: BTreeMap<(i32, i32), MaterialId> = (0..5i32)
+            .flat_map(|v| (0..5i32).map(move |u| (u, v)))
+            .filter(|(u, v)| !(1..4).contains(u) || !(1..4).contains(v))
+            .map(|c| (c, STONE))
+            .collect();
+        let loops = traces(&covered);
+        assert_eq!(loops.len(), 2, "a ring has two boundaries: {loops:?}");
+        let areas: Vec<i64> = loops.iter().map(|(_, c)| signed_area(c)).collect();
+        assert!(
+            areas.iter().any(|a| *a > 0) && areas.iter().any(|a| *a < 0),
+            "the two boundaries must wind opposite ways, got {areas:?}"
+        );
+    }
+
+    #[test]
+    fn a_diagonal_pinch_is_two_loops_and_not_one_braid() {
+        // Two cells touching only at a corner. The wrong answer is a single loop
+        // visiting both, which a rasteriser fills as a bow tie.
+        let covered: BTreeMap<(i32, i32), MaterialId> =
+            [(0, 0), (1, 1)].into_iter().map(|c| (c, STONE)).collect();
+        let loops = traces(&covered);
+        assert_eq!(loops.len(), 2, "a pinch must not braid: {loops:?}");
+        for (_, corners) in &loops {
+            assert_eq!(corners.len(), 4, "one cell is four corners, got {corners:?}");
+        }
+    }
+
+    #[test]
+    fn the_loops_are_reproducible_from_the_same_chunk() {
+        // The H-22.8 bar, which the rectangles already answer for quads.
+        let (chunk, config) = jagged();
+        let mut mesher = Mesher::new();
+        let first = mesher.build(&chunk, &config, Some(&AllAir)).unwrap();
+        let mut second_mesher = Mesher::new();
+        let second = second_mesher.build(&chunk, &config, Some(&AllAir)).unwrap();
+        assert_eq!(first.loops, second.loops, "same chunk, different loops");
     }
 
     #[test]
@@ -1214,15 +1733,45 @@ mod tests {
                 id: ComponentId(2),
                 ratio: Ratio::ONE,
                 density_kg_m3: Ratio::from_u64(1000),
+                reflectance: None,
             }],
             optical_class: OpticalClass::Transmissive,
             reflectance: None,
+            emission: None,
         })
         .unwrap();
         let config = MeshConfig::from_registry(&r).unwrap();
         assert!(config.is_transparent(WATER));
         assert!(config.is_transparent(MaterialId::EMPTY));
         assert!(config.is_opaque(STONE));
+    }
+
+    #[test]
+    fn coalesce_joins_aligned_neighbours_and_nothing_else() {
+        let q = |uv: [u16; 2], extent: [u16; 2], material| Quad {
+            face: Face::PosY,
+            slice: 3,
+            uv,
+            extent,
+            material,
+        };
+        // Two rectangles sharing a full edge union into one that covers the same cells.
+        let mut joined = vec![q([0, 0], [2, 4], STONE), q([2, 0], [3, 4], STONE)];
+        coalesce(&mut joined);
+        assert_eq!(joined, vec![q([0, 0], [5, 4], STONE)]);
+        // The same along v.
+        let mut stacked = vec![q([0, 0], [4, 2], STONE), q([0, 2], [4, 3], STONE)];
+        coalesce(&mut stacked);
+        assert_eq!(stacked, vec![q([0, 0], [4, 5], STONE)]);
+        // A shared edge that does not span fully leaves them apart: a union would cover cells
+        // the pair does not.
+        let mut apart = vec![q([0, 0], [2, 4], STONE), q([2, 0], [3, 2], STONE)];
+        coalesce(&mut apart);
+        assert_eq!(apart.len(), 2);
+        // A different material never joins.
+        let mut mixed = vec![q([0, 0], [2, 4], STONE), q([2, 0], [3, 4], SOIL)];
+        coalesce(&mut mixed);
+        assert_eq!(mixed.len(), 2);
     }
 
     #[test]

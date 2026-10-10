@@ -1,0 +1,17 @@
+[package]
+name = "voxel-light"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The band table and the real sun: full-spectrum radiometry over declared bands."
+
+[dependencies]
+# Dependency discipline (the workspace's own rule):
+#   1. does it do something we need?      (answered beside the line)
+#   2. is it actually USED?               (a resolve is not a use)
+#
+# Nothing here yet. The band table is arithmetic on `f64` and constants, and
+# that is the whole of the first checkpoint. The table's content identity and
+# the solver's `Digest` arrive with the solver, and when they do they will
+# arrive as `sha2`, which the headless crates here already use.

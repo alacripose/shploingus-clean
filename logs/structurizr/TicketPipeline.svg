@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2850 1010" width="2850" height="1010">
+  <defs>
+    <marker id="arrow-707070" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#707070"/>
+    </marker>
+  </defs>
+  <rect width="2850" height="1010" fill="transparent"/>
+  <g class="element-group" data-element-id="9bf2edef-84e7-493f-8543-50cf7270547e">
+    <circle cx="200" cy="90" r="30" fill="#08427b" stroke="#000000" stroke-width="2"/><rect x="130" y="130" width="140" height="0" rx="10" fill="#08427b" stroke="#000000" stroke-width="2"/>
+    <text x="200" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">The player</text>
+    <line x1="200" y1="150" x2="200" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <g class="element-group" data-element-id="e6ba1b40-5725-48fc-b836-7bdb765ec130">
+    <rect x="350" y="50" width="200" height="100" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="450" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">The chain</text>
+    <line x1="450" y1="150" x2="450" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <g class="element-group" data-element-id="f9099be7-cb68-4c83-ac22-cea5502b666b">
+    <rect x="600" y="50" width="200" height="100" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="700" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">The board</text>
+    <line x1="700" y1="150" x2="700" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <g class="element-group" data-element-id="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a">
+    <rect x="850" y="50" width="200" height="100" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="950" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">Back-compiler</text>
+    <line x1="950" y1="150" x2="950" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <g class="element-group" data-element-id="8e8a8d07-549b-42c1-9e4b-67141b9ea471">
+    <rect x="1100" y="50" width="200" height="100" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="1200" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">The decision layer</text>
+    <line x1="1200" y1="150" x2="1200" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <g class="element-group" data-element-id="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4">
+    <rect x="1350" y="50" width="200" height="100" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="1450" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">The civilian layer</text>
+    <line x1="1450" y1="150" x2="1450" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <g class="element-group" data-element-id="7eeda57f-7351-4390-a491-8ad635f08f48">
+    <rect x="1615" y="50" width="185" height="100" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="1600" y="70" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="1600" y="100" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="1700" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">The world</text>
+    <line x1="1700" y1="150" x2="1700" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <g class="element-group" data-element-id="3dfe898d-7be3-4488-9122-9cec337d4028">
+    <rect x="1850" y="50" width="200" height="100" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="1950" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">Packages</text>
+    <line x1="1950" y1="150" x2="1950" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <g class="element-group" data-element-id="9b84209e-d5ad-4a0a-82de-6a9db7ad74df">
+    <rect x="2100" y="50" width="200" height="100" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="2200" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">Notification queue</text>
+    <line x1="2200" y1="150" x2="2200" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <g class="element-group" data-element-id="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c">
+    <rect x="2350" y="50" width="200" height="100" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="2450" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">The game</text>
+    <line x1="2450" y1="150" x2="2450" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <g class="element-group" data-element-id="569ba49e-7827-429a-b59e-89724e8ee7c5">
+    <circle cx="2700" cy="90" r="30" fill="#08427b" stroke="#000000" stroke-width="2"/><rect x="2630" y="130" width="140" height="0" rx="10" fill="#08427b" stroke="#000000" stroke-width="2"/>
+    <text x="2700" y="105" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#ffffff">The agent</text>
+    <line x1="2700" y1="150" x2="2700" y2="960" stroke="#999999" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+  <line data-step-index="0" data-source-id="9bf2edef-84e7-493f-8543-50cf7270547e" data-dest-id="e6ba1b40-5725-48fc-b836-7bdb765ec130" x1="200" y1="190" x2="450" y2="190" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="0" x="325" y="182" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">1. files a plain prose ticket</text>
+  <line data-step-index="1" data-source-id="e6ba1b40-5725-48fc-b836-7bdb765ec130" data-dest-id="f9099be7-cb68-4c83-ac22-cea5502b666b" x1="450" y1="250" x2="700" y2="250" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="1" x="575" y="242" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">2. tickets read back</text>
+  <line data-step-index="2" data-source-id="f9099be7-cb68-4c83-ac22-cea5502b666b" data-dest-id="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" x1="700" y1="310" x2="950" y2="310" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="2" x="825" y="302" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">3. the rows the compiler back-compiles from</text>
+  <line data-step-index="3" data-source-id="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" data-dest-id="8e8a8d07-549b-42c1-9e4b-67141b9ea471" x1="950" y1="370" x2="1200" y2="370" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="3" x="1075" y="362" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">4. every stage: Auditor::step consults policy::decide</text>
+  <line data-step-index="4" data-source-id="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" data-dest-id="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" x1="950" y1="430" x2="1450" y2="430" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="4" x="1200" y="422" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">5. the solutions the jobs prove</text>
+  <line data-step-index="5" data-source-id="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" data-dest-id="7eeda57f-7351-4390-a491-8ad635f08f48" x1="1450" y1="490" x2="1700" y2="490" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="5" x="1575" y="482" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">6. the governed change lands in the record</text>
+  <line data-step-index="6" data-source-id="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" data-dest-id="8e8a8d07-549b-42c1-9e4b-67141b9ea471" x1="1450" y1="550" x2="1200" y2="550" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="6" x="1325" y="542" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">7. the proof of work for them, graded against axis.rs</text>
+  <line data-step-index="7" data-source-id="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-dest-id="3dfe898d-7be3-4488-9122-9cec337d4028" x1="1200" y1="610" x2="1950" y2="610" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="7" x="1575" y="602" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">8. the compile stage, permitted</text>
+  <line data-step-index="8" data-source-id="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-dest-id="9b84209e-d5ad-4a0a-82de-6a9db7ad74df" x1="1200" y1="670" x2="2200" y2="670" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="8" x="1700" y="662" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">9. one notification per decision</text>
+  <line data-step-index="9" data-source-id="3dfe898d-7be3-4488-9122-9cec337d4028" data-dest-id="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" x1="1950" y1="730" x2="2450" y2="730" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="9" x="2200" y="722" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">10. loaded and verified before use</text>
+  <line data-step-index="10" data-source-id="9b84209e-d5ad-4a0a-82de-6a9db7ad74df" data-dest-id="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" x1="2200" y1="790" x2="2450" y2="790" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="10" x="2325" y="782" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">11. the notifications window streams it</text>
+  <line data-step-index="11" data-source-id="9b84209e-d5ad-4a0a-82de-6a9db7ad74df" data-dest-id="569ba49e-7827-429a-b59e-89724e8ee7c5" x1="2200" y1="850" x2="2700" y2="850" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="11" x="2450" y="842" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">12. the recipe, on the inbox the same stream carries</text>
+  <line data-step-index="12" data-source-id="569ba49e-7827-429a-b59e-89724e8ee7c5" data-dest-id="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" x1="2700" y1="910" x2="950" y2="910" stroke="#707070" stroke-width="2" marker-end="url(#arrow-707070)"/>
+  <text data-step-index="12" x="1825" y="902" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#707070">13. the implemented recipe, judged by every stage</text>
+</svg>

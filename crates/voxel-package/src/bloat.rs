@@ -292,6 +292,214 @@ pub fn measure_dir(dir: &Path) -> Vec<(String, Bloat)> {
     found
 }
 
+// ---------------------------------------------------------------------------
+// The doc stage: prose that lives in a code artifact, and records that live
+// beside the chain
+// ---------------------------------------------------------------------------
+
+/// Where a crate's rationale is allowed to live, as a measurement.
+///
+/// **The same two-number shape as [`Bloat`]** — what carries meaning against what carries the
+/// frame — applied to source instead of to a record: a crate whose comment bytes outweigh its
+/// code is documentation wearing a `.rs` extension. `measured`/`why_unmeasured` are here for
+/// [`Bloat`]'s reason (D107: absence renders as absence, never as a zero).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Prose {
+    /// False means the counts below are not measurements. [`Self::why_unmeasured`] says why.
+    pub measured: bool,
+    /// Why there is no measurement. Present exactly when `measured` is false.
+    pub why_unmeasured: Option<String>,
+    /// Source files read.
+    pub files: usize,
+    /// Bytes of source, newlines included.
+    pub total_bytes: usize,
+    /// Bytes on lines whose first non-space characters are `//`.
+    pub comment_bytes: usize,
+    /// Everything else.
+    pub code_bytes: usize,
+}
+
+impl Prose {
+    /// A measurement that did not happen, and why.
+    pub fn unmeasured(why: impl Into<String>) -> Self {
+        Prose {
+            measured: false,
+            why_unmeasured: Some(why.into()),
+            ..Prose::default()
+        }
+    }
+
+    /// Comment bytes as whole percent of the source. `None` when unmeasured or empty, so a
+    /// caller cannot print a share of nothing.
+    pub const fn comment_percent(&self) -> Option<usize> {
+        if !self.measured || self.total_bytes == 0 {
+            return None;
+        }
+        Some((self.comment_bytes * 100) / self.total_bytes)
+    }
+
+    /// The gate's line for this measurement. The unmeasured branch prints no counts at all —
+    /// a zero reads as a real zero, which is the defect this type exists to prevent.
+    pub fn describe(&self) -> String {
+        if !self.measured {
+            return format!(
+                "code-prose\tnot-measured\ncode-prose-why\t{}",
+                self.why_unmeasured.as_deref().unwrap_or("no reason recorded")
+            );
+        }
+        let mut out = String::new();
+        out.push_str(&format!("code-prose-files\t{}\n", self.files));
+        out.push_str(&format!("code-prose-total-bytes\t{}\n", self.total_bytes));
+        out.push_str(&format!("code-prose-comment-bytes\t{}\n", self.comment_bytes));
+        if let Some(percent) = self.comment_percent() {
+            out.push_str(&format!("code-prose-comment-percent\t{percent}\n"));
+        }
+        out
+    }
+}
+
+/// Whether a line is comment prose: its first non-space characters are `//`.
+///
+/// **One predicate, two readers.** [`measure_prose`] counts these bytes and [`comment_lines`]
+/// hands the text to the model instrument's judge, so *what a comment is* has one definition —
+/// a second definition would let the doc stage's measurement and its reading disagree about
+/// the same file.
+fn is_comment(line: &str) -> bool {
+    line.trim_start().starts_with("//")
+}
+
+/// **The text of every comment line, markers stripped — the prose the doc stage reads.**
+///
+/// The markers go because a line still opening `//` is shape, and the judge reads terms:
+/// `//! The pinned layer.` and `The pinned layer.` are one declaration written for two
+/// readers, and the instrument is owed the prose rather than the punctuation. Separator
+/// lines (`////`) carry no sentences and are not handed over.
+///
+/// This is the second reader of [`is_comment`], and it exists so the model instrument reads
+/// the same lines [`measure_prose`] counts — *"no heading there begins with its name"* is a
+/// fact about these lines, and a reading of them should not re-decide which ones are comments.
+pub fn comment_lines(files: &[(std::path::PathBuf, String)]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (_, text) in files {
+        for line in text.lines() {
+            if !is_comment(line) {
+                continue;
+            }
+            let prose = line
+                .trim_start()
+                .strip_prefix("//")
+                .unwrap_or(line.trim_start())
+                .trim_start_matches(['!', '/', '*'])
+                .trim();
+            if !prose.is_empty() {
+                out.push(prose.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Measure the prose share of source files that have already been read.
+///
+/// "Already read" is load-bearing: a crate's sources are read once by the census, and a second
+/// read here would be a second answer to what the crate contains.
+pub fn measure_prose(files: &[(std::path::PathBuf, String)]) -> Prose {
+    if files.is_empty() {
+        return Prose::unmeasured(
+            "no source files were read, so no prose share was measured",
+        );
+    }
+    let mut total_bytes = 0usize;
+    let mut comment_bytes = 0usize;
+    for (_, text) in files {
+        for line in text.lines() {
+            // +1 for the newline the line consumed; counted in both totals so the share is a
+            // share of the file rather than of some normalised form of it.
+            let bytes = line.len() + 1;
+            total_bytes += bytes;
+            if is_comment(line) {
+                comment_bytes += bytes;
+            }
+        }
+    }
+    Prose {
+        measured: true,
+        why_unmeasured: None,
+        files: files.len(),
+        total_bytes,
+        comment_bytes,
+        code_bytes: total_bytes.saturating_sub(comment_bytes),
+    }
+}
+
+/// Extensions that are a **second record** rather than a declared store.
+///
+/// `forbidden.second-record` (`architecture/workspace.dsl`): the chain is the one append-only
+/// record, and a scratch ledger beside it drifts. `.jsonl` is the form that keeps being reached
+/// for — the record holds it as an infraction that jsonl *"was never decided upon for anything
+/// in the project"* — so it is enumerated here as a refusal rather than a style preference.
+/// The declared shape for a queue record is `laya::queue_dir`'s `musli` records, which are
+/// decided.
+pub const INVENTED_RECORD_EXTENSIONS: [&str; 2] = ["jsonl", "ndjson"];
+
+/// One file that is a second record beside the chain.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct InventedStore {
+    /// Path relative to the workspace root, forward slashes.
+    pub path: String,
+    pub bytes: u64,
+}
+
+/// Every invented-record file under `root`, in path order.
+///
+/// **An empty result is a measurement here, not an absence** — the walk ran and found none —
+/// which is why this returns a `Vec` and not a `Bloat`-style flag. The caller prints the count
+/// and the list, so a future agent that adds one is caught by the same gate that found none.
+/// Directories are walked without reading any file's contents; only the extension and the size
+/// are read.
+pub fn invented_stores(root: &Path) -> Vec<InventedStore> {
+    let mut found: Vec<InventedStore> = Vec::new();
+    collect_invented(root, root, &mut found);
+    found.sort();
+    found
+}
+
+fn collect_invented(root: &Path, dir: &Path, into: &mut Vec<InventedStore>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut names: Vec<std::path::PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+    names.sort();
+    for path in names {
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            // Recorded, never followed: following a directory symlink is an unbounded walk.
+            continue;
+        }
+        if metadata.is_dir() {
+            collect_invented(root, &path, into);
+            continue;
+        }
+        let invented = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .map(|extension| INVENTED_RECORD_EXTENSIONS.contains(&extension))
+            .unwrap_or(false);
+        if invented {
+            into.push(InventedStore {
+                path: path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/"),
+                bytes: metadata.len(),
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,5 +575,61 @@ mod tests {
             "and the reason is carried, so the gate can print something a reader can act on"
         );
         assert!(!missing.describe().contains("ledger-bloat-total-bytes"));
+    }
+
+    // ---- the doc stage ----------------------------------------------------
+
+    #[test]
+    fn prose_is_counted_by_line_and_the_share_is_a_percentage_of_the_whole() {
+        let files = vec![(
+            std::path::PathBuf::from("crates/x/src/lib.rs"),
+            "// a comment\npub fn f() {}\n// another\n".to_string(),
+        )];
+        let prose = measure_prose(&files);
+        assert!(prose.measured);
+        assert_eq!(prose.files, 1);
+        assert_eq!(prose.comment_bytes, 13 + 11, "both comment lines, newline included");
+        assert_eq!(prose.comment_bytes + prose.code_bytes, prose.total_bytes);
+        // 13 + 14 + 11 bytes: two comment lines and one code line, each with its newline.
+        assert_eq!(prose.total_bytes, 38);
+        assert_eq!(prose.comment_percent(), Some((24 * 100) / 38));
+    }
+
+    #[test]
+    fn a_crate_with_no_sources_has_no_prose_share_rather_than_a_share_of_zero() {
+        let prose = measure_prose(&[]);
+        assert!(!prose.measured, "nothing was read");
+        assert_eq!(prose.comment_percent(), None, "no percentage of nothing");
+        let report = prose.describe();
+        assert!(report.contains("code-prose\tnot-measured"), "{report}");
+        assert!(
+            !report.contains("code-prose-comment-percent"),
+            "an unmeasured share must not print as 0 %: {report}"
+        );
+    }
+
+    #[test]
+    fn an_invented_record_is_found_by_extension_and_an_empty_result_is_a_measurement() {
+        // **The catch is prospective, and that is why it is tested by making one.** This tree
+        // holds no invented record today; a check that has never fired is a check nobody has
+        // seen work, so the test constructs the file it refuses.
+        let mut workspace = std::env::temp_dir();
+        workspace.push(format!("shploingus-bloat-doc-stage-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&workspace);
+        std::fs::create_dir_all(workspace.join("crates/deep/src")).expect("the scratch tree");
+
+        assert!(
+            invented_stores(&workspace).is_empty(),
+            "an empty tree has no invented record, and that is a measurement"
+        );
+
+        std::fs::write(workspace.join("crates/deep/src/notes.jsonl"), b"{\n}\n")
+            .expect("the invented record");
+        let found = invented_stores(&workspace);
+        assert_eq!(found.len(), 1, "the walk reaches into nested directories: {found:?}");
+        assert_eq!(found[0].path, "crates/deep/src/notes.jsonl", "and reports a project-relative path");
+        assert_eq!(found[0].bytes, 4);
+
+        let _ = std::fs::remove_dir_all(&workspace);
     }
 }

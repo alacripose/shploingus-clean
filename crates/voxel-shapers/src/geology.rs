@@ -168,7 +168,9 @@ pub fn stratum_at(spec: &WorldSpec, x: f64, z: f64, surface_m: f64, y_m: f64) ->
     // warp is *vertical only*: warping x and z as well would shear the stack and
     // destroy the correlation the whole model is for.
     let warp_f = Fractal::new(3, 2.0, 0.5, Kind::Value);
-    let warp = warp_f.fbm(spec.stage_seed("geology"), Vec3::new(x * 0.02, 0.0, z * 0.02))
+    // A **field** over position: stationary, or the whole stratigraphy reshuffles when
+    // the tick moves (see `terrain::elevation_m`).
+    let warp = warp_f.fbm(spec.stationary_stage_seed("geology"), Vec3::new(x * 0.02, 0.0, z * 0.02))
         * mean
         * 0.6;
 
@@ -214,7 +216,8 @@ fn lithology_of_bed(spec: &WorldSpec, x: f64, z: f64, bed: u32, depth: f64, mean
         return Lithology::Bedrock;
     }
 
-    let s = spec.stage_seed("geology");
+    // Stationary: this seed selects the *regional* rock, which is a field over `(x, z)`.
+    let s = spec.stationary_stage_seed("geology");
     // The bed's rock varies **per region**, so beds correlate laterally and
     // differ between regions rather than being one rock for the whole planet.
     let region_x = (x / CORRELATION_LENGTH_M).floor() as i64;
@@ -269,7 +272,9 @@ pub fn ore_at(
     // the dial says it is. A dial whose units are ambiguous is a dial nobody can
     // set correctly.
     let scale = 1.0 / dials.vein_size_m.max(0.5);
-    let d = worley3(spec.stage_seed("deposits"), Vec3::new(x, y, z) * scale);
+    // Stationary: a vein is a **field over position** — the tick must not move where a
+    // deposit is, or a mined-out seam would refill itself.
+    let d = worley3(spec.stationary_stage_seed("deposits"), Vec3::new(x, y, z) * scale);
 
     // d is in [0, 1] over a cell; a vein is the inner part of the cell.
     const VEIN_FRACTION: f64 = 0.45;
@@ -296,9 +301,10 @@ pub fn ore_grade(spec: &WorldSpec, dials: &OreDials, x: f64, y: f64, z: f64, dep
             // Grade varies inside the vein, deterministically, so a vein is not
             // uniform. Richer toward its centre.
             let scale = 1.0 / dials.vein_size_m.max(0.5);
-            let d = worley3(spec.stage_seed("deposits"), Vec3::new(x, y, z) * scale);
+            let d = worley3(spec.stationary_stage_seed("deposits"), Vec3::new(x, y, z) * scale);
             let core = (1.0 - d / 0.45).clamp(0.0, 1.0);
-            let variation = 0.7 + 0.6 * unit3(spec.stage_seed("grade"), x as i64, y as i64, z as i64);
+            let variation = 0.7
+                + 0.6 * unit3(spec.stationary_stage_seed("grade"), x as i64, y as i64, z as i64);
             core * variation * dials.yield_multiplier
         }
     }

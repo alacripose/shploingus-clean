@@ -1,0 +1,4 @@
+    Checking voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+   Compiling shploingus v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\shploingus)
+    Checking voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1m 58s

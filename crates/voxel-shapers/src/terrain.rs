@@ -63,8 +63,15 @@ pub fn elevation_m(spec: &WorldSpec, x: f64, z: f64) -> f64 {
     let cfg = &spec.config;
     let f = cfg.continent_frequency;
 
+    // **`stationary_stage_seed`, and this is what makes the world tick.** Terrain is a
+    // *field*: its argument is a position, and the tick has no place in that argument —
+    // a terrain that moved with the tick would be a terrain that reshuffles, which is
+    // the failure `WorldSpec::stationary_stage_seed` exists to prevent (and which
+    // `tick-over-world` measured as 270 of 270 surface voxels changing when the spec
+    // tick moved). The world's own history — erosion, deposition, the earthworks
+    // record — is what is *supposed* to move with the tick, and it lives elsewhere.
     let cont = continental(spec).fbm(
-        spec.stage_seed("terrain"),
+        spec.stationary_stage_seed("terrain"),
         Vec3::new(x * f, 0.0, z * f),
     );
 
@@ -82,8 +89,9 @@ pub fn elevation_m(spec: &WorldSpec, x: f64, z: f64) -> f64 {
     let mountains = if convergent > 0.0 {
         let ridged = Fractal::new(5, 2.0, 0.5, Kind::Perlin);
         // Higher frequency than the continents: ranges are narrow and tall.
+        // A **field**, so the same stationary seed as the continents above.
         let r = ridged.ridged(
-            spec.stage_seed("mountains"),
+            spec.stationary_stage_seed("mountains"),
             Vec3::new(x * f * 6.0, 0.0, z * f * 6.0),
         );
         r * cfg.relief_m * 0.55 * convergent
@@ -116,8 +124,10 @@ pub fn sample(spec: &WorldSpec, x: f64, z: f64) -> TerrainSample {
     };
     let mountain_m = if convergent > 0.0 {
         let ridged = Fractal::new(5, 2.0, 0.5, Kind::Perlin);
-        ridged.ridged(spec.stage_seed("mountains"), Vec3::new(x * cfg.continent_frequency * 6.0, 0.0, z * cfg.continent_frequency * 6.0))
-            * cfg.relief_m
+        ridged.ridged(
+            spec.stationary_stage_seed("mountains"),
+            Vec3::new(x * cfg.continent_frequency * 6.0, 0.0, z * cfg.continent_frequency * 6.0),
+        ) * cfg.relief_m
             * 0.55
             * convergent
     } else {

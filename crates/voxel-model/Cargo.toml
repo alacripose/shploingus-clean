@@ -6,7 +6,22 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# The regeneration door for the digest gate in build.rs. The gate blocks the
+# build of any crate that compiles a stale table — including the generator,
+# which lives in this package. With this feature on, build.rs warns and
+# verifies nothing, so the generator can rebuild the record. Every normal
+# build (and every tamper test) runs without it, so the gate still bites.
+materials-regeneration = []
+
 [dependencies]
+musli = { version = "0.1.8", features = ["wire"] }
 # Content identity. The world is content-addressed, and this is the one hash the
 # project accepts. Nothing else is needed: the model crate has no I/O and no GPU.
+sha2 = { workspace = true }
+
+# The build gate that checks the committed table against the declaration it was
+# generated from (H-18.1: digest-gated, no runtime parse). `sha2` only — the
+# script hashes files; it does not read the crate.
+[build-dependencies]
 sha2 = { workspace = true }

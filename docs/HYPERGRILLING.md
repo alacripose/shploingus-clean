@@ -2165,3 +2165,471 @@ pixels, and it has no reproduction in this tree. Writing the guard first means t
 **fails and names the exact faces being dropped**, or **passes and leaves the T-junctions as the
 documented limitation they already are**. Guessing at a merge-loop fix first would produce a change
 with nothing to say whether it helped.
+
+---
+
+## Round 18 — the materials system, scoped end to end (2026-10-03)
+
+**Why this round exists.** The user's ruling **C-122** refounded the material target: the starter
+materials are a fabrication; the real library is *derived from the real world*, with **base patterns
+at the subvoxel (64 stored slots) and the 256 level**, a derivation of the city builder's
+icon-builder system. **`docs/MATERIALS.md` (C-124)** inventories every material artifact in this
+tree and in the references, leaves nothing unscoped, and its §8 holds this frontier. **No
+downstream implementation runs before these answers land**; the shaper-roster wiring stays held
+(C-123 §123.3, and the vertical-axis ruling).
+
+**Protocol state.** This invocation loaded `grilling`, `hyperskill`, `diffusion-ledger-v3-audit`
+and `contracts`. **Hypergrilling governs the round: at most eight questions** (the user's
+correction, 2026-10-03); the `grilling` skill's format is subordinate to it. **`high agency mode`
+is explicit, logged, scoped to this invocation and non-inheriting** — it decides no material
+question on the user's behalf and removes no hard safety, privacy, evidence, retirement,
+destructive-action or current-authority boundary. Answers are recorded in the user's own words
+under each question; the round ends with the user's explicit **continue / one more round / pause /
+stop** choice.
+
+### H-18.1 — Library home and generator
+
+**The question.** Do the declaration table, the generator and the generated table live **in this
+tree**, produced by a **Rust** generator (D97: the host is in-project — a run in a foreign runtime
+cannot have a representation in the client), checked in, digest-verified, with **no runtime
+parse** — the three old trees staying reference, never authority?
+
+**Recommendation.** Yes. The library's home is this tree; the generator is Rust; the generated
+table is committed and digest-gated; nothing parses at runtime; the references inform only the
+shape.
+
+### H-18.2 — Identity
+
+**The question.** Is `family × hue × level` the material's **identity**, or an **appearance view**
+over a substance-first row — with conservation keeping the substance identity (the mass ledger,
+the deposits, the processes)?
+
+**Recommendation.** Two views of one row: the substance-first row is the identity;
+`family × hue × level` is how it is *read* for appearance.
+
+### H-18.3 — Levels and roles
+
+**The question.** Adopt `body / edge / deep` (0.0 / +0.10 / −0.18) as the **only** level
+vocabulary, and resolve shaper roles through it — pillar inset → `edge`, seam → `deep`, coral
+calyx → `edge` — **refusing** any role that needs a *different substance* rather than inventing
+one?
+
+**Recommendation.** Yes.
+
+### H-18.4 — Patterns
+
+**The question.** A material row carries a **pattern identity**; the **64-slot** level stores per
+voxel; the **256** level evaluates the pattern **on demand** (addressed, never stored); and there
+is no dense per-material pattern storage?
+
+**Recommendation.** Yes — both base patterns belong to the row; the slot mechanism is built
+(`SlotWriter`); the 256 lattice becomes an evaluator of the same pattern identity.
+
+### H-18.5 — The fabricated eight
+
+**The question.** Keep the eight fabricated starter materials **temporarily** as the lithology
+mapping (the world stays runnable), with the **C-122 warning visible** and **no new material role**
+taken from them — the library replacing their content **in place**, including the cross-crate cut
+through `voxel-appearance`'s tests?
+
+**Recommendation.** Keep temporarily, replace in place; the mapping interface
+(`for_lithology` / `lithology_of`) stays.
+
+### H-18.6 — First rung and the property roster
+
+**The question.** Is the first work the **schema first** (units / balance / gate), then the **stone
+rung's content** (16 substances, 7 processes, 2 tiers), with row schema v1 carrying **density,
+reflectance, optical class, unit mass** and declaring **acoustics / thermal / rot** as *empty
+columns under Availability discipline* (never zero) — per-channel hue staying **refused** until
+sample spectra land?
+
+**Recommendation.** Yes.
+
+### H-18.7 — Sourcing discipline
+
+**The question.** Adopt **`[V]` read · `[D]` declared · `[NS]` not yet sourced**, **"no float in
+the table"** (exact rationals or a refusal), and **"a `no_consumer` row must state why"** —
+verbatim from the reference?
+
+**Recommendation.** Yes — the three already match this tree's discipline in spirit (C-39, C-45);
+they become the table's written rules.
+
+### H-18.8 — Order of work
+
+**The question.** Is this the order — **(1)** schema + gate + generated table → **(2)** appearance
+levels → **(3)** base patterns at both levels → **(4)** shaper roster wiring → **(5)** the mods'
+feature materials — with (4) unblocked only after (2)+(3), and the vertical-axis ruling still owed
+before (4)?
+
+**Recommendation.** This order.
+
+**Round end.** The user's choice: **continue** · **one more round** · **pause** · **stop**. Answers
+are appended in the user's own words when they land.
+
+### Round 18 answers, recorded 2026-10-03
+
+| # | question | answer (user's words) |
+|---|---|---|
+| H-18.1 | library home + generator | **This tree, Rust generator, digest-gated** |
+| H-18.2 | identity | *not answered* — *"the questions I'm not giving answers are because you actually reduced the scope of the questions you're asking me"*; re-put at full scope as **H-19.1** |
+| H-18.3 | levels and roles | **Yes, plus per-role extra levels** — the extra half is put as **H-19.7** |
+| H-18.4 | patterns | **Yes** |
+| H-18.5 | the fabricated eight | **Adopt them as the library's seeds** — put as **H-19.8**, not assumed |
+| H-18.6 | first rung + roster | *not answered* — same reason; split and re-put as **H-19.5** / **H-19.6** |
+| H-18.7 | sourcing discipline | *"whatever we choose, floats are not the options: materials in ala-cities has reference for us"* — no floats, ever; the ala-cities materials system is the reference the discipline derives from (C-48: reference, not authority) |
+| H-18.8 | order of work | **This order** |
+
+**Round end, recorded:** *"we're going to keep runnning rounds until I'm done"* — **continue**; rounds run until the user says done.
+
+### Round 19 — put 2026-10-03
+
+Full scope for the two blanked (H-19.1, H-19.5/H-19.6) plus the derivation spine, which Round 18 never asked.
+
+1. **H-19.1** — Identity, full scope (H-18.2 re-put).
+2. **H-19.2** — The derivation spine: SUBSTANCES → PROCESSES → TIERS + gate.
+3. **H-19.3** — The mass ledger: double-entry, exactly zero.
+4. **H-19.4** — Geology and surface: deposits/sites; sim-day regrowth.
+5. **H-19.5** — Property roster v1, full scope (H-18.6 half).
+6. **H-19.6** — First rung content, full scope (H-18.6 half).
+7. **H-19.7** — Per-role extra levels, full scope (from H-18.3).
+8. **H-19.8** — The eight as seeds, full scope (from H-18.5).
+
+### Round 19 answers, recorded 2026-10-03
+
+| # | question | answer (user's words) |
+|---|---|---|
+| H-19.1 | identity | **more rounds** — identity stays open; it is walked in pieces across further rounds |
+| H-19.2 | the derivation spine | **Adopt the full spine + gate** |
+| H-19.3 | the mass ledger | *"yes, adopt, we can't have materials just vanishing, this is why the world shapers dependency exists, because if we don't have the atmosphere set up for precipitation condesnation, no gorundwater, the materials themselves don't change appearance on the subvoxel level, then this cellular automata will basically just be off gassing entropy until it finds a mean to regress on, when the past projects specified that the game does not stop, it should continue, the world should be emergent from the shapers"* — adoption + the coupling demand (Round 20) |
+| H-19.4 | geology and surface | **Adopt both halves** |
+| H-19.5 | roster | *"Uhm, should be the whole thing since we have it all modelled out, should be easy, right? We have the laya sound system prepared for handling parts of it through the feeling wheel, procedural reverberance should be a basic feature, not including the whole set would be dumb especially if we want to revisit the city builder mechanics in the game engine as its own seperate updated fork later"* — the whole modelled set, acoustics/reverberance included |
+| H-19.6 | first rung | *"is this because of the founding world thing? Having only a stone rung here would be INCREDIBLY dumb. The more we do now the less we need later"* — more than the stone rung; the content scope continues in Round 20 |
+| H-19.7 | per-role levels | *not answered* — stays open |
+| H-19.8 | the eight as seeds | **Mapping seeds only — they never become library rows** |
+
+**Round end:** continue (rounds run until done).
+
+### Round 20 — put 2026-10-03
+
+Grounded in the reference this time: `tools/materials/SCHEMA.md` read this round — `family` + `hue` are **columns on the substance row**, the row carries unit/density/unit_mass/rot/tags/source/sink, and the content is explicitly unbounded (Q66/Q69).
+
+1. **H-20.1** — Identity, grounded in the reference.
+2. **H-20.2** — Multi-view substances (water/ice/snow; ore/metal).
+3. **H-20.3** — The roster, concretely (every modelled property as columns).
+4. **H-20.4** — Acoustics: what the row owns vs the sound system computes.
+5. **H-20.5** — Subvoxel state changes: the mechanism.
+6. **H-20.6** — Which processes may write material state (the atmosphere→groundwater→appearance chain).
+7. **H-20.7** — Content target: the whole set, not the stone rung.
+8. **H-20.8** — Per-role extra levels (re-put; still open).
+
+### Round 20 answers, recorded 2026-10-03
+
+| # | question | answer (user's words) |
+|---|---|---|
+| H-20.1 | identity | *"will require more rounds… the way you're asking is highly presumtious, so there's no way for me to actually answer it"* — identity continues as **case rulings** (Round 21), not schema picks |
+| H-20.2 | multi-view substances | **Views are states on the row, switched by processes** |
+| H-20.3 | the roster | *"all but might need more"* — the full set adopted; the column list stays open |
+| H-20.4 | acoustics | *"b, those extra parts: transmissions, scattering are also RENDERING features, part of NPR"* — full acoustic set on the row; transmission/scattering double as render inputs |
+| H-20.5 | subvoxel state | *"it's not just the 64 base that changes, but yes it's rederived and streamed, so it actually works with hyper greedy remeshing"* — unpacked in Round 21 Q7 |
+| H-20.6 | who writes | **The full shaper ladder: any stage writes through one declared channel, gated by its dependencies** |
+| H-20.7 | content target | **The full set: reference content + grown from real-world sources; [NS] stays empty** |
+| H-20.8 | role levels | *"probably A I don't know the ledgers are confusing and hard to remember"* — **declared per-role rows, reason required** |
+
+**Round end:** continue.
+
+### Round 21 — put 2026-10-03
+
+Identity by concrete case (the H-20.1 correction) + the re-derivation and NPR follow-ups.
+
+1. **H-21.1** — wet stone vs dry stone.
+2. **H-21.2** — water / ice / snow as states on one row.
+3. **H-21.3** — ore vs metal.
+4. **H-21.4** — the boundary: irreversible process output = new row; reversible state = state view.
+5. **H-21.5** — composites present as one identifying component.
+6. **H-21.6** — stone in the ground vs stone in a wall.
+7. **H-21.7** — what re-derives vs what is stored (the H-20.5 unpack).
+8. **H-21.8** — transmission/scattering: one column, two consumers (sound + NPR).
+
+### Round 21 answers, recorded 2026-10-03
+
+| # | question | answer (user's words) |
+|---|---|---|
+| H-21.1 | wet vs dry | *"likely whatever keeps the water system accurate, especially since the idea is that geodes can exist- which notably would have water inside them- water itself is a huge part of the system and why I've been deliberate about the identity questions"* — identity is judged by water accuracy; water can exist inside solids (geodes); Round 22 digs |
+| H-21.2 | water / ice / snow | *not answered* — re-put as **H-22.2** |
+| H-21.3 | ore vs metal | *"So in the mods references there is tinkers construct and I think create metalworks? Smelted iron ore would become another fluid- like gaseous content and the atmospheric system- very very important"* — smelting's output is a **fluid**; fluids + atmosphere are first-class |
+| H-21.4 | row vs state boundary | *"depends really because what if you smelt a pick in some kind of kiln, and it produces the materials from the pick and the charcoal from it's handle?"* — decomposition of composites must be expressible; the process declares it |
+| H-21.5 | composites | *"more rounds (this is not just specific to this question)"* — stays open; rounds continue |
+| H-21.6 | stone in a wall | *"\"walls\" is an incorrect framing because walls were city builder prototype stuff, we're dealing with blocks which may be in a wall shape"* — **blocks**, not walls; arrangement does not change the block |
+| H-21.7 | derived vs stored | *"whatever makes it so when the terrain changes it doesn't make the whole remesher process rebuild every single material at the same time and make the damn blocks shuffle around"* — acceptance bar: local invalidation, stable deterministic output |
+| H-21.8 | transmission / scattering | *"Most likely A; which is where openpbr comes in"* — one column set, two consumers; **OpenPBR** is the render reader |
+
+**Round end:** continue — rounds run until the user says done.
+
+### Round 22 — put 2026-10-03
+
+Water, fluids, decomposition — the threads Round 21 opened.
+
+1. **H-22.1** — how water exists (bulk / saturation content / both; geodes).
+2. **H-22.2** — water / ice / snow phase states (re-put).
+3. **H-22.3** — one fluid framework for water, molten metal and gases.
+4. **H-22.4** — the smelting chain: ore → molten metal → cast solid.
+5. **H-22.5** — decomposition declared by processes (the pick in the kiln).
+6. **H-22.6** — water accounting (never vanishes; phase changes conserve).
+7. **H-22.7** — groundwater saturation → wetness → appearance.
+8. **H-22.8** — remesh locality and stability (the H-21.7 bar).
+
+### Round 22 answers, recorded 2026-10-03
+
+| # | question | answer (user's words) |
+|---|---|---|
+| H-22.1 | water in the world | *"This was actually answered a while ago, it's supposed to mimick the real world model- water being just one fluid made of the components that build it- will require more questions, which is why you're seeing stuff like pressure in the repos- this is also to help prepare for the piping system, which was also asked in the past-"* — fluids are component-bound and pressure-driven; piping is a committed consumer; Round 23 is **grounded in the past records** |
+| H-22.2 | phase states | **Phases wait for the thermal system** |
+| H-22.3 | fluid framework | *"Most certainly A + B; ask more"* — one substance framework + per-kind fluid sims; Round 23 |
+| H-22.4 | smelting chain | **Wait for sources before designing the chain** |
+| H-22.5 | decomposition | *"Probably A, this round has been pretty terrible considering a lot of this stuff was asked in the city builder prototype"* — A; **correction recorded: mine the city builder's own record before asking** |
+| H-22.6 | water accounting | *"probably A"* |
+| H-22.7 | groundwater | *"maybe A"* |
+| H-22.8 | remesh bar | **Yes — deterministic projection, local invalidation, stable merge** |
+
+**Round 22 correction (recorded):** much of Round 22 was already answered in the city builder prototype; Round 23 opens by reading those records (fluids, pressure, piping) instead of asking again.
+
+### Round 23 — put 2026-10-03
+
+Grounded in the past records this time (the correction applied). Already settled and read:
+`GRILLING-C11` **Q671** (conserved generalized fluid system; fluids interact with pressure, pipes, and other declared carriers — *"the shared fluid abstraction and fluid roster remain open"*); **Q679** (*"fluid-specific material rows and processes, not water special cases"* — exact properties/fidelity open); **Q685** (fluids carry quantity/volume, pressure, phase, flow, sources/sinks, ledger; phase transitions explicit); **Q740** (deterministic typed pressure/cellular flow; conservation across pipes, groundwater, weather, phases). And in this tree: `FluidSpecies`/`Phase`/`ReservoirAccount` ported (`matter/mod.rs`), `FluidAddress`, F1's exact/approx boundary (`conservation.rs`), F6's dual water accounts.
+
+1. **H-23.1** — the shared abstraction: what a fluid IS.
+2. **H-23.2** — how new fluids enter (rows vs table vs closed enum).
+3. **H-23.3** — molten metals: species and reservoir account.
+4. **H-23.4** — component composition of fluids (fresh/saline water).
+5. **H-23.5** — what the piping system needs from the library now.
+6. **H-23.6** — the exact/approximate boundary applied to fluids and appearance.
+7. **H-23.7** — the appearance path for fluids.
+8. **H-23.8** — which fluids enter the roster next.
+
+### Round 23 answers, recorded 2026-10-03
+
+| # | question | answer (user's words) |
+|---|---|---|
+| H-23.1 | fluid abstraction | *"most likely a but c has some real implications we must consider"* — A leaning (species × phase × reservoir × components); C's implications get their own question |
+| H-23.2 | new fluids | **As a substance row (unit, species, phase rules, reservoir) — rows, generated like materials** |
+| H-23.3 | molten metals | **Its own species named by the metal, in a new Metal reservoir account** |
+| H-23.4 | fluid components | *"almost certainly A? I was never asked about acidity/basicness in the original docs"* — A leaning; **acidity/basicness is new ground** |
+| H-23.5 | piping | *"A+B, probably? Pipes would be both real ass pipes but we must consider how water flows through blocks themselves, considering porosity- which was asked about before"* — real pipes **and** porous flow through block materials; porosity is a past question to find |
+| H-23.6 | exact/approx | *"need maybe 1-2 more rounds before we have this ready to code"* — stays open |
+| H-23.7 | fluid appearance | *"One appearance path, the current water is still just a solid block because the materials renderer isn't right, there was a set of four optional goals I gave which included information about subvoxels (both the 64x base and 256x base) animations"* — one path; the four optional goals must be found |
+| H-23.8 | roster next | *"There are going to be many many more because of mod references like create diesel generators etc"* — the roster grows from the mods |
+
+**Round end:** continue — the user asked for 1–2 more rounds on fluids before code.
+
+### Round 24 — put 2026-10-03
+
+Leads resolved before asking. **Porosity** (H-23.5's past question) is found: the reference's layer schema carries `porosity` + `fluid_capacity` and refuses `FluidCapacityExceedsPorosity` (`docs/superpowers/plans/2026-09-24-world-generator-core.md:520,581,791`); `EARTH-GEO-04/05` hold provisional porosity/density rows (5–15% by lithology) under human review; this tree's `voxel-package/tests/file_work.rs:351` already carries the [MAT] objective *"derive soil porosity HERE from a named source, or refuse every porosity"*. **The four bonus goals** (H-23.7's lead) are in `docs/TODO.md` §3.5 — gauges; the **Lego-water subvoxel animation** (pure function of `(tick, address)`, never stored); progression from the mods; the modding/package UI; contraptions. **Acidity/basicity** confirmed never asked (no hits in C9/C11).
+
+1. **H-24.1** — porosity + fluid_capacity on material rows.
+2. **H-24.2** — one flow model: porous blocks + real pipes as carriers.
+3. **H-24.3** — porosity sourcing (provisional rows; no invented porosity).
+4. **H-24.4** — acidity/basicity: the new dimension.
+5. **H-24.5** — subvoxel water animation as an appearance requirement (64 + 256).
+6. **H-24.6** — A vs C: storage shape + per-fluid behavior blocks.
+7. **H-24.7** — what the next 1–2 rounds must settle before fluids are code-ready.
+8. **H-24.8** — progression from the mods reads the material rows.
+
+### Round 24 answers, recorded 2026-10-03
+
+| # | question | answer (user's words) |
+|---|---|---|
+| H-24.1 | porosity + fluid_capacity | **Adopt both columns with the refusal** |
+| H-24.2 | flow model | **One model; pipes are carriers** |
+| H-24.3 | porosity sourcing | *"probably a, but consider b, the rounds have gone quite long now so I am getting fatigued"* — A leaning; B (class-average defaults) to weigh; **fatigue recorded** |
+| H-24.4 | acidity/basicity | *"yeah probably, there are extra materials sciences in the city builder crates/modules/references you can scour"* — yes; research lead |
+| H-24.5 | water animation | *"yes it's both, there were more asks about the animations system and I swear some of it may have been worked on already? but idk"* — both base levels; check existing work |
+| H-24.6 | A vs C | *"probably a but b is interesting because the fluidics system also handles gas"* — A leaning; gas is in scope |
+| H-24.7 | before code | *"super tired take your best guess and consider them all as todo list items"* — **delegated; filed in `docs/TODO.md` §8** |
+| H-24.8 | progression | *"progression requires the materials, the tech tree was hugely scoped out but never implemented, the mods references were never asked per mods feature because the previous branches had ruling to not copy code, which past agents interpreted as \"we'll just never actually look at the source code ever and just assume how things work\" which is where the fake ass column interpretation over real cubic chunks came from"* — per-feature source reading is the remedy |
+
+**Round end: pause.** The user is fatigued by the round length; the remaining open fluid decisions are delegated as best-guess TODO items (H-24.7); rounds resume on the user's call.
+
+### Working ruling — the refusal list no longer bars reading (2026-10-03)
+
+*"the refusal list shouldn't stand, they might have extra information we can use, that was why I
+mentioned if it was a bad idea- some of those mods straight up don't even give a license, so it's
+difficult, we're not using those mods source codes at all, just the ideas that they have"*
+
+Recorded as: **every reference is readable for ideas**, including the licence-less ones (`BigGlobe`,
+`lithostitched`) and the source-less ones through their jars; **no code is used, copied or derived
+into this tree**, and the per-reference licence verdict (`MODS-MAP.md` §1) governs derivation, never
+reading. This supersedes the "do not open them" reading of the refusal rows; the two refusal
+verdicts stand for derivation. `MODS-MAP.md` §1 and `docs/MODS-MATERIALS.md` §4 carry the same note.
+
+### Working ruling — Create's power model is not adopted (2026-10-03)
+
+*"keep in mind we don't want create's model for everything- I was asked about this previously,
+things should not be powered by rotational energy, shafts should actually just be shafts, which is
+something that a machine or belt would use"*
+
+Recorded as: the mods are harvested for **materials and processes**; Create's rotational/kinetic
+power model (stress, rotation) is **not** adopted — a shaft is a physical part a machine or belt
+uses. *"I was asked about this previously"* is a lead to find and cross-reference.
+
+**The lead is found (2026-10-03).** The earlier asking is the original tree's modding-ledger-tech
+grilling — `references/original_reference/.superpowers/hypergrilling/2026-09-25-modding-ledger-tech/ledger.jsonl`,
+entries **0223 Q36** (energy creation: *"NAMED SOURCE ACCOUNTS PER MEDIUM. Wind, water and sun are
+three sources with three different rates rather than one undifferentiated ambient number … a player
+who builds a wind farm and a water wheel can compare them."*) and **0231 Q74** (slot **S-01 kinetic
+power**: *"ALL THREE KINDS SHIP. (a) CONVERSION — steam engine, matter to rotation. (b) CAPTURED
+NAMED ACCOUNT — water wheel, windmill, sail, drawing on the Q36 accounts. (c) PLAYER MUSCLE — hand
+crank."*). Its manifest is `references/original_reference/docs/shploingus/slot-manifest.md` (S-01,
+with candidates 1.1–1.21 in `feature-candidates.md`, mostly Create). **This ruling revises S-01's
+model**: rotational energy is not adopted as a power model; shafts are physical parts. Best guess
+(falsifiable, filed in `TODO.md` §8): the captured sources and muscle survive as **physical machine
+parts/drives**, and the power-network reading of S-01 is retired.
+
+### Working ruling — Rust may automate the process (2026-10-03)
+
+*"also if you want to use rust to automate any parts of the process that wouldn't be so bad"*
+
+Recorded as: process tooling written in this repository's own language is authorised — the materials
+generator and gate (H-18.1), harvest extractors, derivation checks. The standing rules still hold
+(no Python, D97; the tree's own tests are the verification), and the rust skills are loaded before
+any Rust is written (`docs/TODO.md` §0).
+
+### Working ruling — the Tekkit Classic pull (2026-10-03)
+
+*"as well, tekkit classic (specifically what yogscast played in their original jaffa factory series)
+that would be an insane feature pull if you could get it"*
+
+Recorded as: Tekkit Classic — the MC 1.2.5 pack (IndustrialCraft², BuildCraft, RedPower 2,
+Railcraft, Equivalent Exchange 2, ComputerCraft, Forestry, MineFactory Reloaded, Logistics Pipes,
+Iron Chests) — joins the mods pull. It is read under the standing filters: **materials and processes
+only, earth model only, no power model** (IC2's EU, BuildCraft's MJ and RedPower's blutricity are
+machine ideas, never adopted as power systems — the same ruling as Create's rotation). The reachable
+sources are cloned and pinned in `MODS-MATERIALS.md` §6; RedPower 2 and EE 2 have no open source, so
+their successors (Project Red, BluePower, EE 3) are read and the originals go to the jar avenue if a
+feature needs them. **Jaffa Factory specifics** (what the series actually built) are an open pass.
+
+### Working ruling — the far-off ideas (2026-10-03)
+
+*"yogscast sjin's farm series was super nice, really enjoyed that, but that's far off and you might
+not find anything about it"* — recorded as a **long-term agriculture lead** (Forestry-style farming:
+bees, trees, crops, orchard/brewing chains), not for now; nothing is claimed findable.
+
+*"if there's any magic stuff we should defer it to a model of the world that integrate's Valve's
+Deadlock — but again, long term idea, not for right now"* — recorded as: **magic content is deferred
+to a future Deadlock-integrated world model.** Nothing magical is harvested into this earth model;
+EE 2/EE 3's transmutation is read as an idea at most, and the alchemical materials (minium, dark
+matter) do not enter the roster.
+
+### Working ruling — The Factory Must Grow is the most careful reference (2026-10-03)
+
+*"create the factory must grow has an electricity model but it explicitly has a non ai clause in
+it's license, so that's the one we have to be most careful about learning from"*
+
+Recorded as: `Create-The_Factory_Must_Grow` carries an **explicit no-AI clause** — the highest-caution
+reference. It is **not cloned into the harvest and not read**; its electricity model is out of scope
+under the no-power-model ruling anyway. Any future reading needs the user's explicit sign-off first;
+`docs/MODS-MAP.md` §2 carries the row.
+
+### Working ruling — no minecraft progression; diamond does real diamond things (2026-10-03)
+
+*"another thing is that we don't necessarily follow minecraft's progression, leaving diamond to do
+real diamond things, so that diamond gear you mentioned would be weird"*
+
+Recorded as: a material's **roles come from its real properties**, never from vanilla Minecraft's
+tier chain. Diamond is for real diamond things (cutting, abrasion, optics, gemstone use), not gears;
+BuildCraft's gold and diamond gears — and any other vanilla-tier artifact — are **refused as
+mechanics** (gold is soft; a gear is a mechanical part). The disposition applies to roles and
+recipes; it does not remove a substance from the list. The gear row keeps the wood/stone/iron-class
+candidates pending a real gear-material source.
+
+### Working ruling — the references double-cover (2026-10-03)
+
+*"also the full mods references list will double cover a lot of the older mods because they
+eventually got turned into create addons"*
+
+Recorded as: the roster union **dedupes**: when the same material arrives through an old mod and
+through its Create-addon descendant (Tekkit-era mods turned Create addons), that is **one row per
+material**, with both citations kept. The union is by material identity, not by source mod.
+
+### Working ruling — the mods sweep comes before the Rust invention (2026-10-03)
+
+*"wait, did you go over all the mods? you might want to do that before rust invention"*
+
+Recorded as: **no Rust is written for the materials library until the mods sweep is complete** —
+every reference is gone over for materials and processes first, with each mod's verdict recorded
+(materials found / nothing / jar needed). The sweep's status table is `MODS-MATERIALS.md` §7; the
+Rust schema + gate + table (H-18.8 step 1) waits behind it. The sequencing changes; nothing about
+the schema's substance does.
+
+### Working ruling — technologies are swept too, and progression is a cellular automata (2026-10-03)
+
+*"also keep in mind the technologies themselves s they're proposed by the mods themselves, we'll
+need the actual progressions system so we're not just throwing en masse a huge bunch of materials
+like \"blast furnace\" as the system without considering their real world counterparts and
+tools/machines progression as a cellular automata."*
+
+Recorded as: the sweep records **each mod's technology set** — machines, tools and processes as the
+mod proposes them — and for every technology its **real-world counterpart** (a blast furnace is the
+real blast furnace's history, not a block name); the materials list is not the deliverable on its
+own. The progression system itself is to be **a cellular automata over tools and machines** (states
+and rules that transform matter), not a flat tier list. Best guess, falsifiable: `MODS-MATERIALS.md`
+gains a **technology roster** beside the substance roster (machine → real counterpart → inputs →
+outputs → mod source), and `TODO.md` §8 carries the progression-system item; nothing about the
+library schema is decided by this beyond the requirement that rows can carry process/machine links.
+
+### Working ruling — the technology sweep runs last, after the whole mods sweep (2026-10-03)
+
+*"wait hold on you're doing the tech sweep before the rest of the mods? like I said a lot of the
+create addons will also reference those tech trees so if you do the tech sweep before that then
+you'll have to go back over the tech sweep"*
+
+Recorded as: the technology roster is a **single final pass over the complete sweep** (Stages A/B/C
+done). The double-cover rule extends to technologies — Create addons re-reference the older tech
+trees, so a technology swept before its descendant is in the evidence would be swept twice.
+Machines/processes met mid-sweep are still recorded as **sweep evidence** (e.g. Railcraft's crafter
+values in `_harvest/railcraft-values.tsv`); what waits is the roster itself — its one row per
+technology, its real-world counterpart, and the progression/CA mapping. Best guess, falsifiable:
+`MODS-MATERIALS.md` §8's existing TFC/Create tables stay as **provisional first unions** and are
+re-derived (not patched) by the final pass.
+
+### Working ruling — the vertical axis: **z is up** (2026-10-04)
+
+*"vertical axis- z is up let's just get that out of the way here and now because that was already
+ruled in the past project"* — with, as the framing for how it is read: *"keep in mind you're
+looking at a version of the world generator that isn't complete and doesn't respect the cubic
+chunks"*
+
+Recorded as: **z is up, by the user's ruling** — the ruler is the user's word, not an old tree
+(references are never authority, C-48). What it changes:
+
+* C-123 §123.3's hold is lifted: the `VoxelContext` seam's sky face is `PosZ`, which is already
+  what `Neighbourhood::has_ceiling`/`has_floor` read.
+* The **current generator is not the target**: it is incomplete and does not respect the cubic
+  chunks, so its y-vertical parts are work on the return path (C-136), not conventions to read the
+  ruling against.
+* The shaper-roster wiring (H-18.8 step 4) is now held on the material-library seam alone
+  (steps 2–3).
+
+### Working ruling — the answer set: composition drives appearance, whole spectrum kept (2026-10-04)
+
+The `ask_user` set sent on *"ask me"*, answered:
+
+* **Regolith / composition:** *"wouldn't this depend on the materials compositions
+  themselves?"* — Recorded as: yes; appearance derives from **composition** (a sample spectrum
+  is a measurement of a specific composition; a library row's reflectance is the exact weighted
+  blend of its constituents' spectra via `Component { id, ratio }`). The seven role placeholders
+  keep one measured sample as a flagged role representative; regolith splits per parent
+  composition when the library lands.
+* **Whole spectrum:** *"is there a way we can do whole spectrum? it would be really useful for
+  radioactivity, and if we need extra spectrum features later for material processes, it might be
+  actually useful. I know that's super annoying of me"* — Recorded as: the row keeps the **whole
+  measured spectrum**, exact; r/g/b is a derived view. (Radioactivity is nuclear, not
+  reflectance — its own account; the spectrum serves absorption features and processes.)
+* **Bedrock:** *"A probably"* — Recorded as: magnetite skarn (`splib07a_Magnetite_skarn_BR93-5B`),
+  tentative; revisable under the composition rule.
+* **S-01:** *"yeah remember we'll use our own cellular model, so a shaft would be much more like
+  an actual shaft in a machine, like a contraption but we aren't nearly there yet on the
+  progression. Machines and tools in the ala cities city builder was discussed we we can apply to
+  actual machine blocks and tools"* — Recorded as: no rotational power network; shafts are
+  physical parts inside machines under the cellular model; ala-cities machines/tools apply to
+  machine blocks/tools; progression later.

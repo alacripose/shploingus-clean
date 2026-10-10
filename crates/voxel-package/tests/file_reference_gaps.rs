@@ -287,7 +287,12 @@ const WORK: [Work; 27] = [
                   views, and that was false.** The gate prints `feature change_view unchecked no \
                   witness at crates/voxel-client/src/shell/changes.rs` and the oracle repeats it \
                   as a refusal (alpha-shell.gate lines 28 and 47), so the row exists, is named, and \
-                  already reports itself unchecked. **The gap is the machinery behind it**, which \
+                  already reports itself unchecked; **second correction, 2026-10-03: the witness \
+                  file now exists — the vector change view landed in it — and the gate reads \
+                  `feature change_view active witness present at crates/voxel-client/src/shell/changes.rs`, \
+                  but the witness is hand-written Rust, which is exactly what H-7.5 forbids a view \
+                  to be, so this ticket's machinery gap is not closed by it.** **The gap is the \
+                  machinery behind it**, which \
                   HYPERGRILLING.md Round 7 rules: H-7.5 answers 'declared data or hand-written \
                   code' with **All declared** — 'a view is a data record — what it selects, which \
                   stages/shasers it reads, its labels and its lane class — and one generic renderer \
@@ -347,8 +352,10 @@ const WORK: [Work; 27] = [
                   'every test ran in game using the debug lane, every cargo test actually visible, \
                   so missing features are known by the client itself' — so the client is 'where the \
                   suite's own state is readable'; a grep for console in features.rs finds no row \
-                  at all, the gate's change_view row names a witness at \
-                  crates/voxel-client/src/shell/changes.rs and nothing is there, and the console is \
+                  at all — the gate checks witness rows in earnest (change_view read \
+                  `unchecked no witness` at crates/voxel-client/src/shell/changes.rs until the \
+                  vector change view landed on 2026-10-03, when the row flipped to `active witness \
+                  present`) — and the console is \
                   also the eleven-verb surface task_viewer_and_console.md declares (help launch \
                   list focus close min max split theme clear echo stats)",
     },
@@ -476,8 +483,9 @@ const WORK: [Work; 27] = [
                   a visible grading according to axis in the ui' — and H-7.13's rule that the \
                   client is where the suite's own state is readable; the two passes now exist and \
                   are written into alpha-shell.gate, which main.rs:143 embeds as PACKAGE_GATE **and \
-                  nothing reads into a window**: features.rs has no console row, \
-                  `change_view`'s witness at crates/voxel-client/src/shell/changes.rs is absent, and \
+                  nothing reads into a window**: features.rs has no console row, the gate's \
+                  witness rows — change_view reads `active witness present` since 2026-10-03 — \
+                  reach only the gate file, and \
                   H-7.17's console plus log window (`BLD-0018`) is the surface that would show it",
     },
 ];

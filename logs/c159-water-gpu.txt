@@ -1,0 +1,21 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.48s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-c4ab11d6b795be08.exe)
+
+running 1 test
+water probe: gpu [0.0035923547, 0.007621711, 0.022346534, 1.0], model (0.00359, 0.00762, 0.02235), body (0.00346, 0.00716, 0.02088), worst disagreement 2.5001142822667077e-10
+  reflection adds 0.00046 of 0.00783 (5.9 %)
+  water toward the Sun's azimuth (138.5°): 0.00784; away: 0.00820
+
+thread 'renderer::tests::the_water_surface_reflects_the_sky_the_model_says_it_does' (15564) panicked at crates\voxel-client\src\renderer.rs:1156:9:
+the water does not follow the Sun: 0.00784 toward, 0.00820 away
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test renderer::tests::the_water_surface_reflects_the_sky_the_model_says_it_does ... FAILED
+
+failures:
+
+failures:
+    renderer::tests::the_water_surface_reflects_the_sky_the_model_says_it_does
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 374 filtered out; finished in 1.09s
+
+error: test failed, to rerun pass `-p voxel-client --lib`

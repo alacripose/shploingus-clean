@@ -1,0 +1,17 @@
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 4.46s
+     Running `F:/shploingus-target\debug\examples\surface-colours.exe`
+ id name                  kg/m3  base colour (linear rgb)
+  1 water                  1000  (0.0206, 0.0263, 0.0442)
+  2 ice                     917  (0.5000, 0.5000, 0.5000)
+  3 regolith               1400  (0.4903, 0.3632, 0.2228)
+  4 sedimentary rock       2400  (0.2179, 0.1900, 0.1515)
+  5 metamorphic rock       2750  (0.1077, 0.1148, 0.0774)
+  6 igneous rock           2900  (0.1086, 0.0919, 0.0754)
+  7 bedrock                3000  (0.1218, 0.1143, 0.0857)
+  8 grass                  1250  (0.2086, 0.1393, 0.0654)
+  9 dry grass              1250  (0.2392, 0.1620, 0.0783)
+ 10 leaf                    900  (0.1574, 0.0980, 0.0561)
+ 11 conifer needles         900  (0.1230, 0.0988, 0.0833)
+ 12 sand                   1600  (0.2596, 0.2162, 0.1491)
+ 13 wood                    650  (0.1128, 0.0646, 0.0358)

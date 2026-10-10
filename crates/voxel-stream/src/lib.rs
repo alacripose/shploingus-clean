@@ -20,6 +20,9 @@
 //! * [`resident`] — *what is loaded, and what does it draw?* The set of live
 //!   chunks, the meshes built from them, and the invalidation that a neighbouring
 //!   chunk's arrival forces.
+//! * [`light`] — *how much of the Sun reached this cell?* A shadow ray through the
+//!   world's own octree, at the world's own subvoxel addresses, because a cell's light
+//!   is a property of what stands between it and the Sun.
 //!
 //! # What is deliberately *not* here
 //!
@@ -42,6 +45,7 @@
 #![forbid(unsafe_code)]
 
 pub mod horizons;
+pub mod light;
 pub mod resident;
 pub mod world_source;
 

@@ -376,6 +376,7 @@ pub const REASONS_ARE_TOTAL: [(); RetirementReason::COUNT] = [(); RetirementReas
 /// **The origin is on the record, which is the point:** evidence filed without one is filed as an
 /// assertion, and the reader has no way to tell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(musli::Encode, musli::Decode)]
 pub enum EvidenceOrigin {
     /// **A** — an external oracle. Something outside this project decided it.
     Oracle,
@@ -398,6 +399,11 @@ impl EvidenceOrigin {
     ];
 
     pub const COUNT: usize = 3;
+
+    /// The recorded tokens — the letters, in ladder order. **On the type, not at
+    /// the call site**: a ladder's tokens are the ladder's own declaration, and
+    /// a copy elsewhere is a second thing that can drift (D-07).
+    pub const TOKENS: &'static [&'static str] = &["A", "B", "C"];
 
     /// The single letter, as the reference writes it. **A letter, not a rank** — the letters
     /// happen to be alphabetical and nothing more, which is why the type carries no `Ord`.
@@ -891,7 +897,13 @@ fn find_duplicates_of(tickets: &[Ticket]) -> Vec<Duplicate> {
     found.into_values().collect()
 }
 
-fn split_kind(detail: &str) -> (TicketKind, String) {
+/// **The `[KIND]` marker grammar, stripped — the board's own rule, public because there is one.**
+///
+/// The board mints ids with it (`{prefix}-{position:04}`), and any reader that wants to name the
+/// same ticket by the same name must strip the same marker the same way. `pub` for that reason:
+/// a second implementation of this split is how two readers come to disagree about which ticket
+/// a row is about.
+pub fn split_kind(detail: &str) -> (TicketKind, String) {
     if let Some(rest) = detail.strip_prefix('[') {
         if let Some(close) = rest.find(']') {
             if let Some(kind) = TicketKind::from_prefix(&rest[..close]) {
@@ -930,6 +942,13 @@ pub struct Board {
     /// silently dropped.** Both tickets stay on the board, because hiding one would be a
     /// second record rather than a clean one.
     duplicates: Vec<Duplicate>,
+    /// Milestones folded from `MilestoneFiled` events.
+    milestones: Vec<crate::plan::Milestone>,
+    /// Blockers folded from `BlockerFiled` events.
+    blockers: Vec<crate::plan::Blocker>,
+    /// Plan filings whose bodies do not parse into their own declared shape — reported,
+    /// never silently dropped.
+    malformed: Vec<String>,
 }
 
 /// One objective filed more than once, with the positions that prove it.
@@ -960,11 +979,17 @@ impl Board {
             world: String,
             detail: String,
             digest: Digest,
-            kind_is_retirement: bool,
+            kind: EventKind,
         }
 
         let filed = chain.fold(Vec::new(), |mut acc, event| {
-            if event.kind != EventKind::TicketTransition && event.kind != EventKind::Retirement {
+            if !matches!(
+                event.kind,
+                EventKind::TicketTransition
+                    | EventKind::Retirement
+                    | EventKind::MilestoneFiled
+                    | EventKind::BlockerFiled
+            ) {
                 return acc;
             }
             acc.push(Filed {
@@ -972,15 +997,72 @@ impl Board {
                 world: event.namespace.world.clone(),
                 detail: event.detail.clone(),
                 digest: event.digest,
-                kind_is_retirement: event.kind == EventKind::Retirement,
+                kind: event.kind,
             });
             acc
         });
 
         let mut tickets: Vec<Ticket> = Vec::new();
+        let mut milestones: Vec<crate::plan::Milestone> = Vec::new();
+        let mut blockers: Vec<crate::plan::Blocker> = Vec::new();
+        let mut malformed: Vec<String> = Vec::new();
         for event in filed {
-            // Only retirement events carry a retirement; a filed ticket is derived from the
-            // event that filed it, and the chain event is the authority for both.
+            // The three kinds are three things: a ticket is work, a milestone is ordered work
+            // with a finish condition, a blocker is a rule that stops work. They are filed on
+            // one chain and folded apart.
+            match event.kind {
+                EventKind::MilestoneFiled => {
+                    match crate::plan::parse_milestone_section(&event.detail) {
+                        Ok(milestone) => milestones.push(milestone),
+                        Err(found) => malformed.extend(
+                            found.all().iter().map(|refusal| refusal.detail().to_string()),
+                        ),
+                    }
+                    continue;
+                }
+                EventKind::BlockerFiled => {
+                    match crate::plan::parse_blocker_section(&event.detail) {
+                        Ok(blocker) => blockers.push(blocker),
+                        Err(found) => malformed.extend(
+                            found.all().iter().map(|refusal| refusal.detail().to_string()),
+                        ),
+                    }
+                    continue;
+                }
+                EventKind::Retirement => {
+                    // **The retirement's own record comes off the chain — not a status flip.**
+                    // Before this arm, a retirement event closed a ticket and carried nothing,
+                    // which is the exact shape `retire` exists to refuse; a chain that cannot
+                    // supply the contents leaves the ticket *closed-but-unretired*.
+                    match parse_retirement_section(&event.detail) {
+                        Ok(retirement) => {
+                            let id = retirement.ticket.clone();
+                            match tickets.iter_mut().find(|ticket| ticket.id == id) {
+                                Some(ticket) => {
+                                    if let Err(found) = retire(ticket, retirement) {
+                                        malformed.push(format!(
+                                            "a retirement filed against {} was refused: {found}",
+                                            id.as_str()
+                                        ));
+                                    }
+                                }
+                                None => malformed.push(format!(
+                                    "a retirement names {}, which no ticket on this chain \
+                                     holds",
+                                    id.as_str()
+                                )),
+                            }
+                        }
+                        Err(found) => malformed.push(format!(
+                            "a retirement event did not parse: {found}"
+                        )),
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+            // A filed ticket is derived from the event that filed it, and the chain event is
+            // the authority for both.
             //
             // **The id is in the ticket vocabulary, not a chain-shaped string.** It used to be
             // `{index}-{campaign}`, which is a position and a campaign glued together — so a
@@ -994,15 +1076,10 @@ impl Board {
                 Err(_) => continue,
             };
             match tickets.iter_mut().find(|ticket| ticket.id == id) {
-                Some(existing) => {
-                    if event.kind_is_retirement {
-                        // The chain records that a retirement happened; the retirement's own
-                        // contents come from the event's detail, and a chain that cannot
-                        // supply them leaves the ticket closed-but-unretired — which
-                        // `Board::retire` will then refuse to call validated.
-                        existing.status = TicketStatus::Complete;
-                    }
-                }
+                // **A ticket already on the board is left alone.** A second `ticket_transition`
+                // at a new position is a second ticket — its id is its position — and a
+                // retirement is handled by the arm above and never reaches this match.
+                Some(_) => {}
                 None => tickets.push(Ticket {
                     id,
                     kind,
@@ -1024,7 +1101,22 @@ impl Board {
         }
         // **Duplicates derived before the move**, so the borrow ends before the board is built.
         let duplicates = find_duplicates_of(&tickets);
-        Board { tickets, duplicates }
+        Board { tickets, duplicates, milestones, blockers, malformed }
+    }
+
+    /// The milestones, folded from the chain.
+    pub fn milestones(&self) -> &[crate::plan::Milestone] {
+        &self.milestones
+    }
+
+    /// The blockers, folded from the chain.
+    pub fn blockers(&self) -> &[crate::plan::Blocker] {
+        &self.blockers
+    }
+
+    /// Plan filings whose bodies did not parse. Reported, never hidden.
+    pub fn malformed(&self) -> &[String] {
+        &self.malformed
     }
 
     /// Filings of one objective at more than one position. **Counted, not hidden.**
@@ -1096,6 +1188,32 @@ impl Board {
                     ticket.event_index, ticket.objective
                 ));
             }
+        }
+        // **The plan artifacts, counted and named** — a zero is printed as a zero, because
+        // "no milestones are filed" and "the milestone count was not measured" are different
+        // facts and only one of them is the gap the gate exists to show.
+        out.push_str(&format!("plan-milestones\t{}\n", self.milestones.len()));
+        for milestone in &self.milestones {
+            out.push_str(&format!(
+                "plan-milestone\t{}\t{}\tdeliverable\t{}\n",
+                milestone.id,
+                milestone.title,
+                milestone.deliverable().unwrap_or("ABSENT")
+            ));
+        }
+        out.push_str(&format!("plan-blockers\t{}\n", self.blockers.len()));
+        for blocker in &self.blockers {
+            out.push_str(&format!(
+                "plan-blocker\t{}\t{}\tstops\t{}\towner\t{}\n",
+                blocker.id,
+                blocker.rule,
+                blocker.stops.as_deref().unwrap_or("not stated"),
+                blocker.owner.as_deref().unwrap_or("not stated"),
+            ));
+        }
+        out.push_str(&format!("plan-malformed\t{}\n", self.malformed.len()));
+        for line in &self.malformed {
+            out.push_str(&format!("plan-malformed-detail\t{line}\n"));
         }
         out
     }
@@ -1210,6 +1328,349 @@ pub fn file(
         set.absorb(found);
         set
     })
+}
+
+/// **The retirement record as the chain carries it** — one tagged line per field.
+///
+/// # Why a section, and not the envelope's fields
+///
+/// The board folds a retirement from the chain's own text (`event.detail`), and the envelope's
+/// descriptive fields do not cross that fold — the same fact `civilians.rs` records when it
+/// keeps the `answer` the board drops. So the retirement is carried in the event's own words,
+/// and [`parse_retirement_section`] is its only reader. The round trip is a test, not an
+/// assumption.
+///
+/// # The grammar
+///
+/// ```text
+/// [RET] <ticket id>
+/// [RET-REASON] <one of the fourteen slugs>
+/// [RET-CLAIM] <what the ticket claimed to deliver>
+/// [RET-GROUNDING] verified|unverified: <note>
+/// [RET-VERIFICATION] passed|failed, regressions|no-regressions
+/// [RET-ACCEPTANCE] <one line per criterion>   (zero or more)
+/// [RET-CHECK] <one line per check>            (zero or more)
+/// [RET-READ-BACK] held|not_held|not_checked
+/// ```
+pub fn retirement_section(retirement: &Retirement) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("[RET] {}\n", retirement.ticket.as_str()));
+    out.push_str(&format!("[RET-REASON] {}\n", retirement.reason.name()));
+    out.push_str(&format!("[RET-CLAIM] {}\n", retirement.completion_claim));
+    out.push_str(&format!(
+        "[RET-GROUNDING] {}: {}\n",
+        if retirement.grounding.inputs_verified { "verified" } else { "unverified" },
+        retirement.grounding.note
+    ));
+    out.push_str(&format!(
+        "[RET-VERIFICATION] {}, {}\n",
+        if retirement.verification.passed { "passed" } else { "failed" },
+        if retirement.verification.regressions_detected {
+            "regressions"
+        } else {
+            "no-regressions"
+        }
+    ));
+    for criterion in &retirement.verification.acceptance_criteria {
+        out.push_str(&format!("[RET-ACCEPTANCE] {criterion}\n"));
+    }
+    for check in &retirement.verification.checks_run {
+        out.push_str(&format!("[RET-CHECK] {check}\n"));
+    }
+    out.push_str(&format!("[RET-READ-BACK] {}\n", retirement.read_back.slug()));
+    out
+}
+
+/// **Read a retirement back off the chain.** The only reader of [`retirement_section`].
+///
+/// Strict on purpose, in the direction the record cares about: a line whose tag the parser
+/// does not know is **refused**, not skipped — a record that says something nobody understands
+/// must not read as a record that said nothing. Every scalar appears exactly once, and the
+/// coherence checks run through [`Retirement::new`], so the one token that means "done and
+/// checked" still cannot be manufactured here.
+pub fn parse_retirement_section(text: &str) -> Result<Retirement, RefusalSet> {
+    let mut refusals = RefusalSet::new();
+    let mut ticket: Option<TicketId> = None;
+    let mut reason: Option<RetirementReason> = None;
+    let mut claim: Option<String> = None;
+    let mut grounding: Option<Grounding> = None;
+    let mut verification: Option<Verification> = None;
+    let mut acceptance: Vec<String> = Vec::new();
+    let mut checks: Vec<String> = Vec::new();
+    let mut read_back: Option<ReadBack> = None;
+
+    for line in text.lines() {
+        let Some(rest) = line.trim_start().strip_prefix('[') else {
+            continue;
+        };
+        let Some((tag, value)) = rest.split_once(']') else {
+            refusals.refuse(
+                RefusalKind::MalformedIdentity,
+                format!("a retirement line opens a tag it never closes: {line:?}"),
+            );
+            continue;
+        };
+        let value = value.trim();
+        let once = |slot_empty: bool, what: &str, refusals: &mut RefusalSet| {
+            if !slot_empty {
+                refusals.refuse(
+                    RefusalKind::MalformedIdentity,
+                    format!("[{tag}] appears twice; a retirement has one {what}"),
+                );
+            }
+        };
+        match tag {
+            "RET" => {
+                once(ticket.is_none(), "ticket", &mut refusals);
+                if ticket.is_none() {
+                    match TicketId::new(value) {
+                        Ok(id) => ticket = Some(id),
+                        Err(found) => {
+                            refusals.absorb(found);
+                        }
+                    }
+                }
+            }
+            "RET-REASON" => {
+                once(reason.is_none(), "reason", &mut refusals);
+                if reason.is_none() {
+                    match RetirementReason::ALL.iter().copied().find(|r| r.name() == value) {
+                        Some(found) => reason = Some(found),
+                        None => {
+                            refusals.refuse(
+                                RefusalKind::MalformedIdentity,
+                                format!(
+                                    "{value:?} is not one of the fourteen retirement \
+                                     reasons; the taxonomy is closed"
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+            "RET-CLAIM" => {
+                once(claim.is_none(), "claim", &mut refusals);
+                if claim.is_none() {
+                    claim = Some(value.to_string());
+                }
+            }
+            "RET-GROUNDING" => {
+                once(grounding.is_none(), "grounding", &mut refusals);
+                if grounding.is_none() {
+                    match value.split_once(':') {
+                        Some((state, note)) => match state.trim() {
+                            "verified" | "unverified" => {
+                                grounding = Some(Grounding {
+                                    inputs_verified: state.trim() == "verified",
+                                    note: note.trim().to_string(),
+                                });
+                            }
+                            other => {
+                                refusals.refuse(
+                                    RefusalKind::MalformedIdentity,
+                                    format!(
+                                        "grounding says {other:?}; it is either verified or \
+                                         unverified"
+                                    ),
+                                );
+                            }
+                        },
+                        None => {
+                            refusals.refuse(
+                                RefusalKind::MalformedIdentity,
+                                "grounding is written `verified: <note>` or `unverified: \
+                                 <note>`; this line carries no `:`",
+                            );
+                        }
+                    }
+                }
+            }
+            "RET-VERIFICATION" => {
+                once(verification.is_none(), "verification", &mut refusals);
+                if verification.is_none() {
+                    match value.split_once(',') {
+                        Some((passed, regressions)) => {
+                            let (passed, regressions) =
+                                (passed.trim(), regressions.trim());
+                            let passed = match passed {
+                                "passed" => true,
+                                "failed" => false,
+                                other => {
+                                    refusals.refuse(
+                                        RefusalKind::MalformedIdentity,
+                                        format!(
+                                            "verification says {other:?}; an acceptance \
+                                             criterion either passed or failed"
+                                        ),
+                                    );
+                                    return Err(refusals);
+                                }
+                            };
+                            let regressions_detected = match regressions {
+                                "regressions" => true,
+                                "no-regressions" => false,
+                                other => {
+                                    refusals.refuse(
+                                        RefusalKind::MalformedIdentity,
+                                        format!(
+                                            "verification says {other:?}; either regressions \
+                                             were detected or none were"
+                                        ),
+                                    );
+                                    return Err(refusals);
+                                }
+                            };
+                            verification = Some(Verification {
+                                acceptance_criteria: Vec::new(),
+                                checks_run: Vec::new(),
+                                passed,
+                                regressions_detected,
+                            });
+                        }
+                        None => {
+                            refusals.refuse(
+                                RefusalKind::MalformedIdentity,
+                                "verification is written `passed, no-regressions`; this line \
+                                 carries no comma",
+                            );
+                        }
+                    }
+                }
+            }
+            "RET-ACCEPTANCE" => acceptance.push(value.to_string()),
+            "RET-CHECK" => checks.push(value.to_string()),
+            "RET-READ-BACK" => {
+                once(read_back.is_none(), "read-back", &mut refusals);
+                if read_back.is_none() {
+                    match value {
+                        "held" => read_back = Some(ReadBack::Held),
+                        "not_held" => read_back = Some(ReadBack::NotHeld),
+                        "not_checked" => read_back = Some(ReadBack::NotChecked),
+                        other => {
+                            refusals.refuse(
+                                RefusalKind::MalformedIdentity,
+                                format!(
+                                    "{other:?} is not a read-back; the vocabulary is \
+                                     held/not_held/not_checked"
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+            other => {
+                refusals.refuse(
+                    RefusalKind::MalformedIdentity,
+                    format!("a retirement carries no `[{other}]`; refusing rather than \
+                             skipping a field this parser does not know"),
+                );
+            }
+        }
+    }
+
+    let mut missing: Vec<&str> = Vec::new();
+    if ticket.is_none() { missing.push("[RET]"); }
+    if reason.is_none() { missing.push("[RET-REASON]"); }
+    if claim.is_none() { missing.push("[RET-CLAIM]"); }
+    if grounding.is_none() { missing.push("[RET-GROUNDING]"); }
+    if verification.is_none() { missing.push("[RET-VERIFICATION]"); }
+    if read_back.is_none() { missing.push("[RET-READ-BACK]"); }
+    if !missing.is_empty() {
+        refusals.refuse(
+            RefusalKind::NoReading,
+            format!("the retirement section is missing {}", missing.join(", ")),
+        );
+    }
+    if !refusals.is_empty() {
+        return Err(refusals);
+    }
+
+    let mut verification = verification.expect("checked above");
+    verification.acceptance_criteria = acceptance;
+    verification.checks_run = checks;
+    Retirement::new(
+        ticket.expect("checked above"),
+        reason.expect("checked above"),
+        claim.expect("checked above"),
+        grounding.expect("checked above"),
+        verification,
+        read_back.expect("checked above"),
+    )
+}
+
+#[cfg(test)]
+mod retirement_section_tests {
+    use super::*;
+
+    fn ticket_id() -> TicketId {
+        TicketId::new("CSE-0123").expect("a ticket id")
+    }
+
+    fn section_with(read_back: &str) -> String {
+        format!(
+            "[RET] CSE-0123\n\
+             [RET-REASON] superseded\n\
+             [RET-CLAIM] the fragment is superseded by a later filing\n\
+             [RET-GROUNDING] unverified: the fragment carries no digest\n\
+             [RET-VERIFICATION] passed, no-regressions\n\
+             [RET-READ-BACK] {read_back}\n"
+        )
+    }
+
+    #[test]
+    fn a_retirement_round_trips_through_the_section_the_chain_carries() {
+        let retirement = Retirement::new(
+            ticket_id(),
+            RetirementReason::Superseded,
+            "the fragment is superseded by CSE-0200, which cites the same entry with a digest",
+            Grounding {
+                inputs_verified: true,
+                note: "the successor's digest verified against the ledger".into(),
+            },
+            Verification {
+                acceptance_criteria: vec!["the successor covers the same ledger entry".into()],
+                checks_run: vec!["re-verified the successor's citation".into()],
+                passed: true,
+                regressions_detected: false,
+            },
+            ReadBack::NotChecked,
+        )
+        .expect("a coherent retirement");
+
+        let back = parse_retirement_section(&retirement_section(&retirement))
+            .expect("the section round-trips");
+        assert_eq!(back, retirement);
+    }
+
+    #[test]
+    fn the_one_validated_token_cannot_be_manufactured_on_an_unchecked_read_back() {
+        // The parser runs the same coherence check the constructor runs, so a section
+        // hand-written to claim `completed_and_validated` is refused rather than trusted.
+        let text = section_with("not_checked").replace("superseded", "completed_and_validated");
+        let refused = parse_retirement_section(&text).expect_err("validated on an unread world");
+        assert!(
+            refused.all().iter().any(|refusal| refusal.kind() == RefusalKind::ExpectationUnread),
+            "the refusal must be the read-back one, not something incidental: {refused}"
+        );
+    }
+
+    #[test]
+    fn a_field_the_parser_does_not_know_is_refused_rather_than_skipped() {
+        let text = format!("{}[RET-SURPRISE] extra\n", section_with("not_checked"));
+        assert!(
+            parse_retirement_section(&text).is_err(),
+            "a field nobody understands must not read as a field that was absent"
+        );
+    }
+
+    #[test]
+    fn a_duplicated_scalar_is_refused() {
+        let text = format!("[RET] CSE-0456\n{}", section_with("not_checked"));
+        assert!(
+            parse_retirement_section(&text).is_err(),
+            "a second [RET] would silently re-target the retirement"
+        );
+    }
 }
 
 /// Retire a ticket: **the status flip and the retirement record are the same act.**

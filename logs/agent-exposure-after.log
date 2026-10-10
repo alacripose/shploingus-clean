@@ -1,0 +1,38 @@
+warning: unused variable: `wireframe`
+   --> crates\voxel-client\src\world.rs:606:9
+    |
+606 |         wireframe: bool,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_wireframe`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-client` (lib) generated 1 warning (run `cargo fix --lib -p voxel-client` to apply 1 suggestion)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.54s
+     Running `F:/shploingus-target\debug\examples\exposure-steps.exe`
+the world: seed 2468, a day is 24000 ticks = 1200 s of real time at 20 Hz
+the rig is uploaded on Cadence::Water = every 4 ticks = 0.2 s
+
+== standing still at the origin, one update per 4 ticks, over a day ==
+  worst step in turbidity:         9.9598  ( 398.1% of the day's mean)
+  worst step in sun intensity:   0.328661  ( 119.3% of the day's mean)
+  worst step in ambient:         0.176711  (1774.1% of the day's mean)
+  296 of 5999 updates moved turbidity by more than 0.01; the largest was at tick 14428 (271 s in)
+  the ambient's worst step is 0.176711 at tick 15132 (307 s in), sun 9.660 deg -> 9.631 deg
+    that is 0.7068 after EXPOSURE=4 — before the ambient was +0.7068
+
+== walking east at a fixed tick, one update per step of ground covered ==
+   (the step the player gets is walk speed x 0.2 s of real time)
+
+  step m    max dturb     % of mean   max dintens  max dambient
+    0.25       0.1715          8.5%      0.009365      0.001657
+    0.50       0.3241         16.1%      0.017556      0.003180
+    0.86       0.3921         19.5%      0.021163      0.003873
+    1.50       0.5750         28.6%      0.030745      0.005783
+    3.00       0.6026         30.0%      0.032171      0.006076
+    6.00       0.5550         27.6%      0.029704      0.005571
+   12.00       0.5550         27.6%      0.029704      0.005571
+
+== walking east as the tick advances, 0.86 m per update ==
+  worst step in turbidity:         0.2609  (  13.0%)
+  worst step in sun intensity:   0.012982  (   2.1%)
+  worst step in ambient:         0.001645  (  15.9%)

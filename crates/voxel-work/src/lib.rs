@@ -44,4 +44,4 @@ pub mod tick;
 pub use budget::Budget;
 pub use pool::{Built, Collected, Pool, Request, Submitted, DEFAULT_QUEUE_CAPACITY};
 pub use stream::{chunks_touching, ChunkWindow, Frame, Pick, Streamer, DEFAULT_WINDOW};
-pub use tick::{CellBox, HALO_VOXELS, Planned, Scheduler, UnitOfWork};
+pub use tick::{CellBox, Planned, Scheduler, TickDriver, TickReceipt, UnitOfWork, HALO_VOXELS};

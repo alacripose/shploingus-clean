@@ -1,0 +1,11 @@
+warning: unused variable: `wireframe`
+   --> crates\voxel-client\src\world.rs:852:9
+    |
+852 |         wireframe: bool,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_wireframe`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-client` (lib) generated 1 warning (run `cargo fix --lib -p voxel-client` to apply 1 suggestion)
+   Compiling shploingus v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\shploingus)
+    Finished `release` profile [optimized] target(s) in 37.34s

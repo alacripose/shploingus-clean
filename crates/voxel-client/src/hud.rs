@@ -25,6 +25,15 @@
 //! disappears when it is empty teaches a player that empty and broken look the
 //! same.
 //!
+//! # The vector overlay is a second input, not an [`Element`]
+//!
+//! An element is axis-aligned by construction — a panel, a rule, a text box — and that is
+//! everything the shell draws. **Not everything a view draws**: the change view's outline
+//! (H-7.1/H-7.9, `crate::shell::changes`) is a set of projected world edges, and an edge runs at
+//! whatever angle the camera put it at. So [`Stroke`]s arrive beside the elements and are drawn by
+//! the same solid pipeline, and the shell's hierarchy reading (`crate::debug::drawing`) stays a
+//! reading about the shell rather than about marks that land on no surface of it.
+//!
 //! # The cost this version accepts
 //!
 //! Every text run is reshaped every frame. A HUD is twenty-odd short lines, and
@@ -55,6 +64,21 @@ use voxel_ui::{radius_dp, Align, Element, Paint, Panel, Readout, Rect, Role, WHI
 /// the thing to change has a name.
 pub const BRIGHTEST_BACKDROP: voxel_ui::Rgb = WHITE;
 
+/// **One stroke of the vector overlay**: a screen-space segment in dp, with its resolved paint.
+///
+/// A stroke's width is its own and its ends are points, not a rect, because the overlay draws
+/// world geometry projected through the camera (`crate::shell::changes::Projection`) and a
+/// projected edge has no axis to be aligned to. The width comes from the view that emits the
+/// stroke (the change view declares one dp, the lane overlay's own pen), never from here — this
+/// type carries resolved values and computes none.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Stroke {
+    pub from_dp: [f64; 2],
+    pub to_dp: [f64; 2],
+    pub width_dp: f64,
+    pub paint: Paint,
+}
+
 /// Everything the HUD is told. Every field is a value that was **measured**; the
 /// HUD computes no statistic and estimates none.
 pub struct HudState<'a> {
@@ -71,6 +95,24 @@ pub struct HudState<'a> {
     /// measurement to report — `0 fps` would be a number the HUD made up.
     pub fps: Option<f64>,
     pub position_m: [f64; 3],
+    /// Whether the body's feet are resting on something this frame.
+    ///
+    /// A readout rather than a detail: before the camera had a body, "where is the
+    /// player" was a position and nothing else, so a player standing on the ground
+    /// and one falling past it printed the *same three numbers*. This is the bit
+    /// that says which.
+    pub grounded: bool,
+    /// The body's vertical speed in metres per second, signed: positive is rising.
+    ///
+    /// Signed, so a jump and a fall are distinguishable from a standing player by
+    /// reading rather than by knowing which is which.
+    pub vertical_m_s: f64,
+    /// Whether the eye is inside a water voxel.
+    ///
+    /// Measured by the caller, which is the only place that can ask the world. The
+    /// HUD renders state and does not go looking for it — the same discipline as
+    /// taking the frame by reference so it cannot drift from the thing it describes.
+    pub in_water: bool,
     pub quads: usize,
     pub seed: u64,
     pub tick: u64,
@@ -118,6 +160,20 @@ pub fn world_panel(state: &HudState<'_>) -> Panel {
                 format!("{} / {} ({:.0}%)", f.resident, f.wanted, f.progress() * 100.0),
             ),
             Readout::measured("quads drawn", format!("{}", state.quads)),
+            // The body's own state, which a position alone cannot express. A player
+            // standing on the ground and one falling past it share a position.
+            Readout::measured(
+                "body",
+                format!(
+                    "{}, {:+.2} m/s",
+                    if state.grounded { "on the ground" } else { "airborne" },
+                    state.vertical_m_s
+                ),
+            ),
+            Readout::measured(
+                "water",
+                if state.in_water { "submerged" } else { "dry" }.to_string(),
+            ),
             match state.fps {
                 Some(fps) => Readout::measured("frame rate", format!("{fps:.0} fps")),
                 None => Readout::absent(
@@ -191,11 +247,12 @@ pub fn determinism_panel(state: &HudState<'_>) -> Panel {
 ///
 /// * the streamer's last refusal, if it has had one;
 /// * the appearance layer's, which is the one that explains a black world. The
-///   layer refuses to invent a reflectance, so materials whose record carries no
-///   colour are shaded by the rim alone — and the least dense opaque material,
-///   which is the regolith on the surface, has a derived roughness of exactly
-///   1.0, and `(1 - roughness)` is exactly zero. So the most common material in
-///   the world is drawn exactly black *by arithmetic*, and the panel says so
+///   layer refuses to invent a reflectance, and **every shading term that reaches
+///   a block now carries that block's own reflectance** — the ambient, the
+///   half-Lambert term and the rim alike (`npr::shade`) — so a material whose
+///   record carries no colour has nothing for any of them to carry, and it is
+///   drawn exactly black *because nothing in the record says what it reflects*.
+///   That is a named absence and not a defect, which is why the panel says so
 ///   instead of leaving a player to guess.
 ///
 /// `SurfaceAlt` rather than `Chrome`: MD1 sets the alternative surface above the
@@ -403,6 +460,7 @@ impl HudRenderer {
         extent_px: (u32, u32),
         scale: f32,
         elements: &[Element],
+        strokes: &[Stroke],
     ) -> Result<(), ClientError> {
         let (width, height) = (extent_px.0.max(1), extent_px.1.max(1));
         self.width = width;
@@ -421,6 +479,12 @@ impl HudRenderer {
                 Element::Text { .. } => continue,
             };
             push_rect(&mut bytes, rect, paint, radius, scale, width, height);
+        }
+        // ---- the vector overlay ------------------------------------------
+        // Strokes are drawn on top of the shell's own rects, in the order the view emitted them
+        // (the change view emits in record order). **Not [`Element`]s**: see the module docs.
+        for stroke in strokes {
+            push_segment(&mut bytes, stroke, scale, width, height);
         }
         self.prepared_vertices = (bytes.len() / BYTES_PER_VERTEX) as u32;
         if bytes.len() > self.vertex_capacity_bytes {
@@ -560,6 +624,53 @@ impl HudRenderer {
 
 /// Append one rectangle as two triangles, in the layout [`SOLID_FLOATS`]
 /// describes.
+/// Append one stroke as two triangles, in the same layout [`push_rect`] writes — and **in the
+/// segment's own frame**: the quad's corners are the segment's two ends swept by half its width,
+/// and each vertex carries its offset from the segment's centre *and* the segment's half extents,
+/// so the shader's rounded-rect coverage becomes a stadium cap. A degenerate segment (no length,
+/// or no width) writes nothing: there is no mark to make.
+fn push_segment(bytes: &mut Vec<u8>, stroke: &Stroke, scale: f32, width: u32, height: u32) {
+    let [ax, ay] = [stroke.from_dp[0] as f32 * scale, stroke.from_dp[1] as f32 * scale];
+    let [bx, by] = [stroke.to_dp[0] as f32 * scale, stroke.to_dp[1] as f32 * scale];
+    let (dx, dy) = (bx - ax, by - ay);
+    let length = (dx * dx + dy * dy).sqrt();
+    let half_width = (stroke.width_dp as f32) * scale / 2.0;
+    // **Finite and positive**, refused rather than drawn: a NaN or a zero-length segment is not a
+    // mark, and a quad built from one would be a stripe with no direction.
+    if !length.is_finite() || length <= 0.0 || !half_width.is_finite() || half_width <= 0.0 {
+        return;
+    }
+    let (ux, uy) = (dx / length, dy / length);
+    let (vx, vy) = (-uy, ux);
+    let (cx, cy) = ((ax + bx) / 2.0, (ay + by) / 2.0);
+    let half = [length / 2.0, half_width];
+    let [r, g, b] = stroke.paint.rgb.linear();
+    let colour = [r as f32, g as f32, b as f32, stroke.paint.alpha as f32];
+    let clip = |px: f32, py: f32| [px / width as f32 * 2.0 - 1.0, 1.0 - py / height as f32 * 2.0];
+    // (offset along the segment, offset across it) → position, in the segment's own frame.
+    let corners = [
+        (-half[0], -half[1]),
+        (half[0], -half[1]),
+        (half[0], half[1]),
+        (-half[0], -half[1]),
+        (half[0], half[1]),
+        (-half[0], half[1]),
+    ];
+    for (along, across) in corners {
+        let px = cx + ux * along + vx * across;
+        let py = cy + uy * along + vy * across;
+        for value in clip(px, py)
+            .into_iter()
+            .chain(colour)
+            .chain([along, across])
+            .chain(half)
+            .chain([half_width])
+        {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+}
+
 fn push_rect(
     bytes: &mut Vec<u8>,
     rect: Rect,
@@ -624,6 +735,9 @@ mod tests {
             workers: 15,
             fps: Some(61.5),
             position_m: [0.0, 45.0, -160.0],
+            grounded: true,
+            vertical_m_s: 0.0,
+            in_water: false,
             quads: 21_526,
             seed: 2468,
             tick: 0,
@@ -631,6 +745,51 @@ mod tests {
             refusal,
             shading: shading::ShadingReport { materials: 7, with_base_colour: 0 },
         }
+    }
+
+    #[test]
+    fn a_stroke_is_a_quad_in_the_segment_s_own_frame() {
+        // Why `Stroke` is not an `Element`: this quad is rotated, and no axis-aligned rect can be
+        // it. Two triangles in the same layout the rects use, and each vertex carries the
+        // segment's own frame, which is what the shader's coverage needs to make a stadium.
+        let stroke = Stroke {
+            from_dp: [0.0, 0.0],
+            to_dp: [10.0, 0.0],
+            width_dp: 2.0,
+            paint: Paint { rgb: WHITE, alpha: 1.0 },
+        };
+        let mut bytes = Vec::new();
+        push_segment(&mut bytes, &stroke, 1.0, 100, 100);
+        assert_eq!(bytes.len(), 6 * BYTES_PER_VERTEX, "two triangles");
+        let floats: Vec<f32> = bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| f32::from_le_bytes(*b))
+            .collect();
+        let at = |vertex: usize, field: usize| floats[vertex * SOLID_FLOATS + field];
+        // Position: the quad's ends are the segment's ends, so x spans 0..10 dp.
+        assert!((at(0, 0) + 1.0).abs() < 1e-5, "the first corner is at x = 0 dp");
+        assert!((at(2, 0) + 0.8).abs() < 1e-5, "and the far side at x = 10 dp");
+        // The local frame: ±5 dp along the segment, ±1 dp across it.
+        assert_eq!(at(0, 6), -5.0);
+        assert_eq!(at(1, 6), 5.0);
+        assert_eq!(at(0, 7), -1.0);
+        assert_eq!(at(2, 7), 1.0);
+        // Half extents and radius are the stadium's, in pixels.
+        assert_eq!(at(0, 8), 5.0);
+        assert_eq!(at(0, 9), 1.0);
+        assert_eq!(at(0, 10), 1.0);
+        // A degenerate segment writes nothing rather than a dot of zero area.
+        let mut none = Vec::new();
+        push_segment(
+            &mut none,
+            &Stroke { from_dp: [3.0, 3.0], to_dp: [3.0, 3.0], ..stroke },
+            1.0,
+            100,
+            100,
+        );
+        assert!(none.is_empty(), "a segment with no length draws nothing");
     }
 
     #[test]
@@ -834,9 +993,21 @@ mod tests {
         let elements = crate::shell::hud::frame(&mut mount, &palette, viewport, &views)
             .expect("the shell layer lays out");
         hud_renderer
-            .prepare(&device, &queue, (width, height), scale, &elements)
+            .prepare(&device, &queue, (width, height), scale, &elements, &[])
             .expect("the shell prepares");
-        assert!(hud_renderer.shaped_runs() > 20, "the shell's chrome is text and glyphs");
+        // **A measured guard, re-measured.** The pinned chrome this fixture lays out
+        // carries **15** text runs (the world window's title, its close glyph, the
+        // pinned/roll glyphs, the panel title, four readouts and their values, the
+        // held-rows note, and the Mods tab). The old `> 20` predates H-9.8's pinned
+        // windows and was never re-measured against them; the guard's job is to catch
+        // a chrome that has lost its text, which is what the count is for — the
+        // assertion's subject is the contrast below, not a number.
+        assert!(
+            hud_renderer.shaped_runs() > 10,
+            "the shell's chrome is text and glyphs: only {} runs were shaped out of {} elements",
+            hud_renderer.shaped_runs(),
+            elements.len()
+        );
         assert!(hud_renderer.prepared_vertices > 0, "the shell's chrome is rects");
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {

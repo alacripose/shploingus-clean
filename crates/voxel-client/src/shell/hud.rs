@@ -8,7 +8,7 @@
 //! move**, not a second rendering path: the same window, hosted by the HUD layer instead of the
 //! shell layer."*
 //!
-//! So this file owns exactly two things, and neither of them is a second window:
+//! So this file owns exactly three things, and none of them is a second window:
 //!
 //! 1. **The layer choice.** [`frame`] draws the shell layer (windows, bar, menu) when the shell
 //!    is shown and the pinned layer (pinned windows only) when it is hidden. The windows are
@@ -16,6 +16,9 @@
 //! 2. **The content views.** A pinned window hosts a panel — the four HUD panels the corner HUD
 //!    used to draw, built from the same [`HudState`] and the same `voxel-ui` rules. The mount
 //!    never builds a panel; the layer that owns the content supplies it.
+//! 3. **The toast's order on screen.** A toast is the shell's transient surface, not a window
+//!    (H-12.2, C-54.3), so it belongs to neither layer and [`frame`] appends it after whichever
+//!    layer was chosen — the shell's message stays on screen with the shell up and down.
 //!
 //! # Why the four pinned windows replaced four corner panels
 //!
@@ -56,24 +59,31 @@ pub fn views(state: &HudState<'_>, console: &Console) -> ContentViews {
 }
 
 /// What is on screen this frame: the shell layer when the shell is shown, the pinned layer when
-/// it is hidden.
+/// it is hidden — **and the toast surface on top of whichever layer was chosen**.
 ///
 /// The mount is borrowed mutably because laying out a layer is what records the refusals —
 /// [`Mount::refusals`] is where a window that could not be drawn says so.
 ///
 /// The viewport is passed through because a maximized window is sized against it; the pinned
 /// layer ignores it for placement, because a pinned window sits where the package declared it.
+///
+/// **The toast is appended after the layer, and that is the third thing this file owns.** A
+/// toast is the shell speaking rather than a window (H-12.2/C-54.3), so it belongs to neither
+/// layer and must be legible over both: the layering here is the whole of "on screen in both
+/// states", and [`Mount::toast_elements`] is the painter.
 pub fn frame(
     mount: &mut Mount,
     palette: &Palette,
     viewport: Rect,
     views: &ContentViews,
 ) -> UiResult<Vec<Element>> {
-    if mount.shell_shown() {
-        mount.shell_elements(palette, viewport, views)
+    let mut out = if mount.shell_shown() {
+        mount.shell_elements(palette, viewport, views)?
     } else {
-        mount.pinned_elements(palette, viewport, views)
-    }
+        mount.pinned_elements(palette, viewport, views)?
+    };
+    mount.toast_elements(palette, viewport, &mut out)?;
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -200,5 +210,46 @@ pin\tworld\n"
             )
         });
         assert!(!strip, "the bar is the shell layer's");
+    }
+
+    #[test]
+    fn a_toast_is_drawn_on_both_layers_and_after_the_one_it_covers() {
+        // The toast is the shell speaking rather than a window (H-12.2/C-54.3): `frame` appends it
+        // after whichever layer was chosen, so it is legible with the shell up and with it down —
+        // and a message the player's own action produced cannot hide behind a window.
+        let mut mount = mount();
+        mount.announce(
+            super::super::console::Level::Event,
+            "world",
+            "placed regolith at (1, 2, 3)",
+            Some(0),
+        );
+        mount.set_tick(0);
+
+        let viewport = mount.viewport();
+        let shown = frame(&mut mount, &Palette::declared(), viewport, &views())
+            .expect("the shell layer lays out");
+        let shown_texts = titles(&shown);
+        let toast_at = shown_texts
+            .iter()
+            .position(|text| *text == "placed regolith at (1, 2, 3)")
+            .expect("the toast is on the shell layer");
+        let window_at = shown_texts
+            .iter()
+            .position(|text| *text == "World")
+            .expect("the pinned window's title is drawn");
+        assert!(
+            toast_at > window_at,
+            "the toast is drawn after the windows it floats over: {shown_texts:?}"
+        );
+
+        mount.toggle_shell();
+        let hidden = frame(&mut mount, &Palette::declared(), viewport, &views())
+            .expect("the pinned layer lays out");
+        assert!(
+            titles(&hidden).contains(&"placed regolith at (1, 2, 3)"),
+            "a toast shows with the shell down too, or the shell could go silent: {:?}",
+            titles(&hidden)
+        );
     }
 }

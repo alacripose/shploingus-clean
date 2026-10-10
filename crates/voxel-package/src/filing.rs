@@ -43,6 +43,7 @@
 use std::path::Path;
 
 use voxel_model::chain::Chain;
+use voxel_model::identity::Digest;
 use voxel_model::{RefusalKind, RefusalSet};
 
 /// Where the project's own chain lives, relative to the workspace root.
@@ -215,7 +216,37 @@ pub fn grow<'a>(
         return Err(refusals);
     }
 
-    let new_bytes = linked_records(workspace, &on_disk, records)?;
+    // **`linked_records` returns the whole chain — `prior` followed by the new records — and
+    // that is its contract**, because rendering a chain in memory is what it is for. Appending
+    // that result to a file that already holds `prior` writes `prior` a second time, and it does
+    // so **on every grow**: the file doubles while the record gains one row.
+    //
+    // That is measured rather than suspected. `chains/workspace.chain` went from **842,609,979
+    // to 1,685,220,970** bytes across a single filing, and `2 × 842,609,979 + 1,012 =
+    // 1,685,220,970` — where the 1,012 bytes are the one record rendered. The arithmetic names
+    // the defect exactly, and the doubled file is a chain whose second half repeats the first's
+    // history with linkage that cannot be right.
+    //
+    // So the prior prefix is **sliced off after being checked for**. The check is what keeps
+    // this a measurement instead of a hope: a `linked_records` that stopped beginning with its
+    // prior would refuse here rather than append bytes that follow nothing.
+    let linked = linked_records(workspace, &on_disk, records)?;
+    if !linked.starts_with(&on_disk) {
+        let mut refusals = RefusalSet::new();
+        refusals.refuse(
+            RefusalKind::ChainBroken,
+            format!(
+                "the chain rendered for {} does not begin with the {} bytes already on disk, so \
+                 what would be appended follows a predecessor that is not there. The renderer \
+                 must contain the chain it extends for the slice below to be a record rather than \
+                 a guess",
+                path.display(),
+                on_disk.len()
+            ),
+        );
+        return Err(refusals);
+    }
+    let new_bytes = &linked[on_disk.len()..];
 
     // **`append(true)`, and the truncate flag is never set anywhere in this module.** That is
     // the whole safety argument: there is no code path through `grow` that can shorten the
@@ -223,7 +254,7 @@ pub fn grow<'a>(
     // than by a check that has to run first.
     let outcome = std::fs::OpenOptions::new().append(true).open(&path).and_then(|mut file| {
         use std::io::Write;
-        file.write_all(&new_bytes)
+        file.write_all(new_bytes)
     });
     if let Err(found) = outcome {
         let mut refusals = RefusalSet::new();
@@ -253,7 +284,250 @@ pub fn grow<'a>(
         );
         return Err(refusals);
     }
+    // **And the file grew by the records and nothing else.** A short write would leave the
+    // prefix intact and lose the tail, which the check above cannot see; a doubled append
+    // would leave the prefix intact and repeat the history, which it also cannot see. One
+    // equality rules out both, and it is the assertion the doubling defect walked through.
+    if after.len() != on_disk.len() + new_bytes.len() {
+        let mut refusals = RefusalSet::new();
+        refusals.refuse(
+            RefusalKind::ChainBroken,
+            format!(
+                "{} grew by {} bytes where the records rendered are {} bytes, so the file does \
+                 not hold what was written. Refused rather than accepted: a file that grew by \
+                 the whole chain again is a record whose second half repeats the first",
+                path.display(),
+                after.len().saturating_sub(on_disk.len()),
+                new_bytes.len()
+            ),
+        );
+        return Err(refusals);
+    }
     Ok(path)
+}
+
+/// What a repair did, in the numbers a manifest needs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Repair {
+    pub before_bytes: usize,
+    pub after_bytes: usize,
+    /// Frames kept, and frames dropped because they did not link to the record before them.
+    pub kept: usize,
+    pub dropped: usize,
+    pub before_digest: String,
+    pub after_digest: String,
+    pub folded_before: usize,
+    pub corrupt_before: usize,
+    pub folded_after: usize,
+    pub corrupt_after: usize,
+    /// Tickets the board read, before and after. **The repair must not move these.**
+    pub tickets_before: usize,
+    pub tickets_after: usize,
+}
+
+impl Repair {
+    /// The manifest, as text. Every number here is read off the two folds rather than assumed.
+    pub fn describe(&self) -> String {
+        format!(
+            "chain-repair\t{}
+chain-repair-bytes\t{} -> {} ({} removed)\nchain-repair-frames\t{} kept, {} dropped\nchain-repair-before-digest\tsha256:{}\nchain-repair-after-digest\tsha256:{}\nchain-repair-before-folded\t{}\nchain-repair-before-corrupt\t{}\nchain-repair-after-folded\t{}\nchain-repair-after-corrupt\t{}\nchain-repair-tickets\t{} -> {}\n",
+            "every frame that did not link to the record before it, and nothing else",
+            self.before_bytes,
+            self.after_bytes,
+            self.before_bytes - self.after_bytes,
+            self.kept,
+            self.dropped,
+            self.before_digest,
+            self.after_digest,
+            self.folded_before,
+            self.corrupt_before,
+            self.folded_after,
+            self.corrupt_after,
+            self.tickets_before,
+            self.tickets_after,
+        )
+    }
+}
+
+/// **Repair a chain that holds records which do not link, or refuse — and keep the original.**
+///
+/// # Why this is a compaction and not a cut, and the evidence for that
+///
+/// The first version of this function found the outermost repeat — the chain's own beginning,
+/// written again — and cut the file there. On the live record it found that boundary exactly:
+/// `842,609,979`, and removing `842,614,525` bytes, 50.0% of the file. **Then it refused**, because
+/// the chain that would have been written held **166,406** records that did not link: the file had
+/// been doubled **more than once**, so cutting off the outermost copy left the inner ones behind.
+///
+/// That refusal is the whole argument for this shape. A cut assumes a file is `P || P || tail`; a
+/// compaction assumes only that some frames linked, and is decided by [`crate::compiler::compact`],
+/// which uses the reader's own acceptance rule. The repair keeps the frames that folded, byte for
+/// byte, and drops the frames that did not.
+///
+/// # The order of the acts, because this is the one irreversible one
+///
+/// A chain is append-only and the writer refuses to overwrite, so a repair is the only operation in
+/// this module that can make a file smaller. It is fenced so that no part of it can run on a guess:
+///
+/// 1. the file is read and **folded**, so what is being repaired is a record rather than a blob;
+/// 2. **something must actually be dropped**, or this refuses — rewriting a sound record would be a
+///    change with no finding behind it, and the manifest would have nothing to record;
+/// 3. the compacted chain must fold with **zero** corrupt records;
+/// 4. it must fold the **same number of records** as the file did, so nothing that linked was lost;
+/// 5. **the tickets must be identical**, id for id and objective for objective;
+/// 6. only then: the repaired bytes are written to `keep/workspace.chain.repaired` through [`file`],
+///    **the original is renamed out of `chains/` to `keep/`** (a rename, not a copy — the evidence
+///    costs no second write), and the repaired file is renamed into the canonical path.
+///
+/// Nothing is deleted. The unrepaired file and a manifest of both digests stay in `keep/`.
+pub fn repair(workspace: &Path, keep: &Path) -> Result<Repair, RefusalSet> {
+    let path = chain_path(workspace);
+    let mut refusals = RefusalSet::new();
+
+    let bytes = std::fs::read(&path).map_err(|found| {
+        let mut set = RefusalSet::new();
+        set.refuse(
+            RefusalKind::MalformedIdentity,
+            format!("{} could not be read ({found}), so nothing was repaired", path.display()),
+        );
+        set
+    })?;
+    let before = crate::compiler::fold_bytes(&bytes).map_err(|found| {
+        let mut set = RefusalSet::new();
+        set.absorb(found);
+        set
+    })?;
+
+    let compaction = crate::compiler::compact(&bytes).map_err(|found| {
+        let mut set = RefusalSet::new();
+        set.absorb(found);
+        set
+    })?;
+    if compaction.dropped == 0 {
+        refusals.refuse(
+            RefusalKind::NoReading,
+            format!(
+                "every record in {} folds ({} frames), so there is nothing to repair. Refused \
+                 rather than rewritten: rewriting a sound record is a change with no finding \
+                 behind it",
+                path.display(),
+                compaction.kept
+            ),
+        );
+        return Err(refusals);
+    }
+
+    let repaired = compaction.bytes;
+    let after = crate::compiler::fold_bytes(&repaired).map_err(|found| {
+        let mut set = RefusalSet::new();
+        set.absorb(found);
+        set
+    })?;
+    if after.corrupt != 0 {
+        refusals.refuse(
+            RefusalKind::ChainBroken,
+            format!(
+                "the repaired chain does not fold clean: {} record(s) refused. {} A repair that \
+                 trades size for a broken record is not a repair",
+                after.corrupt,
+                after.corrupt_detail.join("; ")
+            ),
+        );
+        return Err(refusals);
+    }
+    if after.folded != before.folded {
+        refusals.refuse(
+            RefusalKind::ChainBroken,
+            format!(
+                "the repair would lose records: {} folded before, {} after. Refused — the keep-set \
+                 is the frames that linked, so the count may not fall",
+                before.folded, after.folded
+            ),
+        );
+        return Err(refusals);
+    }
+
+    // **The tickets, id for id.** The dropped frames fold to no records at all, so nothing should
+    // move — and this is checked rather than assumed, because the count above would still hold if a
+    // repair dropped one ticket-carrying repeat and kept a duplicate of another.
+    let tickets_of = |read: &crate::compiler::ChainRead| -> Vec<(String, String)> {
+        read.board
+            .tickets()
+            .iter()
+            .map(|ticket| (ticket.id.as_str().to_string(), ticket.objective.clone()))
+            .collect()
+    };
+    let tickets_before = tickets_of(&before);
+    let tickets_after = tickets_of(&after);
+    if tickets_before != tickets_after {
+        refusals.refuse(
+            RefusalKind::ChainBroken,
+            format!(
+                "the repair would move tickets: {} before, {} after. Refused — a repair removes \
+                 records that do not link and nothing else",
+                tickets_before.len(),
+                tickets_after.len()
+            ),
+        );
+        return Err(refusals);
+    }
+
+    // **The unrepaired bytes are dropped before the repaired chain is folded.** A repair reads
+    // 1.68 GB and writes 0.84 GB, and keeping both images live made a run that needed five
+    // gigabytes to remove one — measured on the live record, and the reason this is dropped here
+    // rather than left to the end of the function.
+    let before_bytes = bytes.len();
+    let before_digest = voxel_model::Digest::of(&bytes).to_hex();
+    let after_bytes = repaired.len();
+    let after_digest = voxel_model::Digest::of(&repaired).to_hex();
+    drop(bytes);
+
+    if let Err(found) = std::fs::create_dir_all(keep) {
+        refusals.refuse(
+            RefusalKind::MalformedIdentity,
+            format!("{} could not be created ({found})", keep.display()),
+        );
+        return Err(refusals);
+    }
+    let staged = keep.join("workspace.chain.repaired");
+    let kept = keep.join("workspace.chain.as-found");
+    file(&staged, &repaired)?;
+    // **A rename, so the original costs no second write and cannot be half-copied.** It leaves
+    // `chains/` rather than being deleted, because it is the evidence of the defect.
+    if let Err(found) = std::fs::rename(&path, &kept) {
+        refusals.refuse(
+            RefusalKind::MalformedIdentity,
+            format!("{} could not be renamed to {} ({found})", path.display(), kept.display()),
+        );
+        return Err(refusals);
+    }
+    if let Err(found) = std::fs::rename(&staged, &path) {
+        refusals.refuse(
+            RefusalKind::MalformedIdentity,
+            format!(
+                "the repaired chain could not be moved into {} ({found}). The unrepaired original \
+                 is at {}",
+                path.display(),
+                kept.display()
+            ),
+        );
+        return Err(refusals);
+    }
+
+    Ok(Repair {
+        before_bytes,
+        after_bytes,
+        kept: compaction.kept,
+        dropped: compaction.dropped,
+        before_digest,
+        after_digest,
+        folded_before: before.folded,
+        corrupt_before: before.corrupt,
+        folded_after: after.folded,
+        corrupt_after: after.corrupt,
+        tickets_before: tickets_before.len(),
+        tickets_after: tickets_after.len(),
+    })
 }
 
 /// The path this module files to, under a workspace root.
@@ -276,13 +550,82 @@ pub const PACKAGE_DIR: &str = "packages";
 /// frame to learn what a file is would be a reader that accepts a renamed chain.
 pub const PACKAGE_EXTENSION: &str = "shpkg";
 
-/// The path a package named `name` occupies in the workspace.
+/// The file name one package occupies, **derived from its content identity**.
 ///
-/// **`name` is the caller's and it must be the record's own name** — a ticket id, never a
-/// prettified or timestamped one. Two packages of one name would be two answers to one question,
-/// and [`file`] refuses the second by refusing the path.
-pub fn package_path(workspace: &Path, name: &str) -> std::path::PathBuf {
-    workspace.join(PACKAGE_DIR).join(format!("{name}.{PACKAGE_EXTENSION}"))
+/// **This is the dirty branch's rule, and the reason it is a rule** (C-58 item 7): *filenames
+/// derived from the content identity, with the path excluded from content*, so that a recompile
+/// cannot silently overwrite a different package and a player's mod cannot be replaced by a build.
+/// Before this the name was the ticket's alone (`packages/BLD-0207.shpkg`), and that made a ticket
+/// whose package declared nothing **permanent**: the writer refuses to overwrite a record, so the
+/// empty package could never be replaced by a compiling one. `BLD-0207`…`BLD-0215` are exactly
+/// that case, recorded as owed by C-100 §100.4.
+///
+/// **The digest is the package's own bytes**, so the name answers *which bytes*, and the record's
+/// name answers *which piece of work*. `name` is the caller's and it must still be the record's own
+/// name — a ticket id, never a prettified or timestamped one.
+pub fn package_file_name(name: &str, digest: &Digest) -> String {
+    format!("{name}-{}.{PACKAGE_EXTENSION}", digest.to_hex())
+}
+
+/// The path a package with this content occupies in the workspace.
+pub fn package_path(workspace: &Path, name: &str, digest: &Digest) -> std::path::PathBuf {
+    workspace.join(PACKAGE_DIR).join(package_file_name(name, digest))
+}
+
+/// **Every package filed for one record name, newest first by `(mtime, name)`.**
+///
+/// The name rule above means one piece of work can have more than one package over its life — the
+/// first compile and every recompile after it — and a reader that wants *the package for this
+/// ticket* must therefore be told which one it is. **`(mtime, name)` and not mtime alone**, for the
+/// reason [`crate::filing`]'s sibling in the client gives: two files landing in the same instant
+/// still resolve to one, deterministically; the name is the digest-derived one, so the tie is
+/// broken by content rather than by chance.
+///
+/// A directory that cannot be listed yields an empty vector: *there is no package for this name* is
+/// a state, and a caller refusing a read is a different failure the caller can make itself.
+pub fn filed_packages(workspace: &Path, name: &str) -> Vec<std::path::PathBuf> {
+    let prefix = format!("{name}-");
+    let Ok(entries) = std::fs::read_dir(workspace.join(PACKAGE_DIR)) else {
+        return Vec::new();
+    };
+    let mut found: Vec<(std::time::SystemTime, String, std::path::PathBuf)> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_package = path.extension().map(|ext| ext == PACKAGE_EXTENSION).unwrap_or(false);
+        if !is_package {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        let Some(content) = stem.strip_prefix(&prefix) else {
+            continue;
+        };
+        // **The remainder must be the digest this module writes**, so `BLD-0207` cannot match a
+        // package named `BLD-02070-…`: a prefix match alone would hand back another ticket's work.
+        if content.len() < 32 || !content.bytes().all(|b| b.is_ascii_hexdigit()) {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .unwrap_or(std::time::UNIX_EPOCH);
+        found.push((modified, stem.to_string(), path));
+    }
+    found.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    found.reverse();
+    found.into_iter().map(|(_, _, path)| path).collect()
+}
+
+/// The newest package filed for one record name, by the rule above — or `None`, which is the state
+/// of a filing that has not been compiled (nothing was emitted for it, or it was emitted before
+/// this naming rule and is not under this name).
+pub fn newest_package(workspace: &Path, name: &str) -> Option<std::path::PathBuf> {
+    filed_packages(workspace, name).into_iter().next()
 }
 
 /// Whether a chain has already been filed at `workspace`.
@@ -542,6 +885,11 @@ mod tests {
         .expect("the first record links");
         let path = append(&workspace, &first).expect("filed");
         let after_first = std::fs::read(&path).expect("reads");
+        // **How many records the file holds, counted by the reader rather than assumed.** The
+        // loop below asserts the count moves by exactly one per grow, so it needs the number it
+        // starts from — and `folded` is the reader's own count, not a tally kept here.
+        let mut before_growth_records =
+            crate::compiler::read_back(&path).expect("reads").folded;
 
         for text in ["the second record", "the third record"] {
             // **Re-read before each grow, because the file has moved since the last one.**
@@ -579,6 +927,34 @@ mod tests {
                  the whole safety argument for `grow`: nothing is truncated, so refusing to \
                  overwrite still holds"
             );
+            // **And nothing in the file was skipped.** This is the assertion the doubling
+            // defect walked straight through. The old test asked whether the file grew, which
+            // a doubled append satisfies perfectly — while the appended half repeats the
+            // chain's own history, and every record in it names a predecessor that is not the
+            // record before it. `fold_bytes` refuses those and **keeps folding** (a corrupt
+            // record loses that record, not the file), so the duplication hides in `corrupt`
+            // as a number nobody was checking.
+            //
+            // Measured on the live record: `chains/workspace.chain` went 842,609,979 ->
+            // 1,685,220,970 across one filing, and `2 x 842,609,979 + 1,012 =
+            // 1,685,220,970` — the 1,012 bytes being the one record asked for.
+            let back = crate::compiler::read_back(&path).expect("the grown file reads");
+            assert_eq!(
+                back.corrupt,
+                0,
+                "a grow appended the chain's own bytes again: {} record(s) in {} fold to a \
+                 predecessor that is not the one before them. {}",
+                back.corrupt,
+                path.display(),
+                back.corrupt_detail.join("; ")
+            );
+            assert_eq!(
+                back.folded,
+                before_growth_records + 1,
+                "and the file holds exactly one more record than it did: {} folded",
+                back.folded
+            );
+            before_growth_records = back.folded;
         }
         let _ = after_first;
 
@@ -591,6 +967,140 @@ mod tests {
             .collect();
         assert_eq!(dir_entries.len(), 1, "still exactly one chain file");
         assert_eq!(read(&workspace).len(), 3, "three records, all linked");
+    }
+
+    /// **The doubling, reproduced on a scratch chain — twice over — and repaired by compaction.**
+    ///
+    /// The defect is reproduced by doing exactly what the broken `grow` did: take the chain that
+    /// exists, render the next record **onto it**, and append that whole value to the file.
+    ///
+    /// **Doing it twice is the point of this test.** The first repair attempt cut the live file at
+    /// its outermost repeat, found that boundary exactly (`842,609,979`), and was then refused by
+    /// the fold: the live chain had been doubled **more than once**, so cutting the outermost copy
+    /// off left the inner ones behind and the result held **166,406** records that did not link. A
+    /// test that doubled a chain once would have passed the broken repair. So this one doubles it
+    /// twice, which is what the record actually did: 105,323,302 → 842,609,979 → 1,685,220,970 is
+    /// ×8 and then ×2 of a chain that kept gaining records.
+    #[test]
+    fn a_chain_doubled_twice_is_compacted_to_the_frames_that_link() {
+        let workspace = scratch("doubling-twice");
+        let namespace = voxel_model::chain::Namespace::new(
+            "world-2468",
+            1,
+            voxel_model::chain::Season::Winter,
+            "doubling",
+        )
+        .expect("a namespace");
+        let record = |text: &'static str, event_kind: voxel_model::chain::EventKind| {
+            crate::compiler::UnlinkedRecord {
+                namespace: &namespace,
+                event_kind,
+                question: text,
+                answer: None,
+                kind: voxel_model::envelope::Kind::Evidence,
+                event_type: voxel_model::envelope::EventType::UserDecision,
+                state: voxel_model::envelope::RecordState::Answered,
+                control: voxel_model::envelope::Control::Continue,
+                actor: "agent-repair",
+                round_id: "doubling",
+                supersedes: None,
+            }
+        };
+
+        // The honest chain: one history record and two tickets, since a ticket is what the board
+        // folds and a repair that moved one would be removing work rather than a repeated copy.
+        let first = linked_records(
+            &workspace,
+            &[],
+            [record("the first record", voxel_model::chain::EventKind::DevelopmentFact)],
+        )
+        .expect("links");
+        let path = append(&workspace, &first).expect("filed");
+        let one = std::fs::read(&path).expect("reads");
+        grow(
+            &workspace,
+            &one,
+            [record("the second record", voxel_model::chain::EventKind::TicketTransition)],
+        )
+        .expect("grows");
+        let honest = std::fs::read(&path).expect("reads");
+
+        // **The first doubling**, in the shape the defect wrote it.
+        let defect = linked_records(
+            &workspace,
+            &honest,
+            [record("the record asked for", voxel_model::chain::EventKind::TicketTransition)],
+        )
+        .expect("renders onto the chain");
+        let mut once = honest.clone();
+        once.extend_from_slice(&defect);
+
+        // **And the second**, on the doubled file: the whole of it again, plus one more record.
+        let again = linked_records(
+            &workspace,
+            &once,
+            [record("and the one after that", voxel_model::chain::EventKind::TicketTransition)],
+        )
+        .expect("renders onto the doubled chain");
+        let mut twice = once.clone();
+        twice.extend_from_slice(&again);
+        std::fs::write(&path, &twice).expect("the doubled-twice file, written as bytes");
+
+        // What the file is, by the reader's own count: the repeats do not link, and they are
+        // counted rather than lost. **This is the state the live record was in.**
+        let before = crate::compiler::fold_bytes(&twice).expect("the doubled file folds");
+        assert!(before.corrupt > 0, "the repeated copies do not link");
+        // Two records grown honestly, then one asked for at each doubling: four records fold, and
+        // the copies of them do not. The copies are what this test is about.
+        assert_eq!(before.folded, 4, "two grown records and two asked for");
+
+        // The compaction keeps exactly the frames that folded — decided by `append_event`, the
+        // reader's own rule, so the repair cannot disagree with the reader about linkage.
+        let compacted = crate::compiler::compact(&twice).expect("the walk completes");
+        assert_eq!(
+            compacted.kept, before.folded,
+            "the keep-set is the frames that folded, and nothing else is kept"
+        );
+        assert!(compacted.dropped > 0, "and something was dropped");
+        let after = crate::compiler::fold_bytes(&compacted.bytes).expect("the compacted chain folds");
+        assert_eq!(after.corrupt, 0, "the compacted chain folds clean");
+        assert_eq!(after.folded, before.folded, "no record that linked was lost");
+        assert_eq!(
+            before.board.tickets().len(),
+            after.board.tickets().len(),
+            "and no ticket moved"
+        );
+
+        // The repair over the real file: it refuses if the result does not fold clean, if a record
+        // or a ticket moves, or if nothing needs dropping at all.
+        let keep = workspace.join("keep");
+        let outcome =
+            repair(&workspace, &keep).expect("a chain that holds unlinked records repairs");
+        assert_eq!(outcome.dropped, compacted.dropped);
+        assert_eq!(outcome.kept, before.folded);
+        assert_eq!(outcome.corrupt_before, before.corrupt);
+        assert_eq!(outcome.corrupt_after, 0, "the repaired record folds clean");
+        assert_eq!(outcome.folded_before, outcome.folded_after);
+        assert_eq!(outcome.tickets_before, outcome.tickets_after);
+        assert!(
+            keep.join("workspace.chain.as-found").exists(),
+            "the record as it was found is kept as evidence rather than deleted"
+        );
+        let reread = crate::compiler::read_back(&path).expect("the repaired chain reads");
+        assert_eq!(reread.corrupt, 0);
+        assert_eq!(reread.folded, 4);
+        // Three of the four are tickets: the first record is history, the rest are work.
+        assert_eq!(reread.board.tickets().len(), 3);
+
+        // **And the repair refuses to run again.** Nothing is left to drop, so a second call is
+        // refused by name rather than quietly rewriting a sound record.
+        std::fs::remove_file(keep.join("workspace.chain.repaired")).ok();
+        let refused = repair(&workspace, &keep).expect_err("nothing to repair");
+        assert!(
+            refused.all()[0].detail().contains("nothing to repair"),
+            "the refusal names what it found: {}",
+            refused.all()[0].detail()
+        );
     }
 
     #[test]

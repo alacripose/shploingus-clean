@@ -1,7 +1,7 @@
 # Alpha handoff — read this first
 
-Updated: 2026-09-30 (session that built the package system, then compressed the record
-and measured every crate in the workspace).
+Updated: 2026-10-02 (the body below is the 2026-09-30 handoff and is owed a compaction; the
+authority list is current).
 Goal: **ship-ready v1 alpha**, not published/deployed.
 This checkout on `main` is correct, confirmed by the user. Preserve existing work.
 
@@ -16,6 +16,11 @@ This checkout on `main` is correct, confirmed by the user. Preserve existing wor
   at the record; it does not extend it. A feature citing an anchor that exists only here is
   **refused by the build gate**.
 - Latest `docs/HYPERGRILLING.md` answers supersede stale TODO/UI open-question lists.
+- **The current record's tail is C-84 … C-100.** **C-100** is the agent's inbox — the recipes the
+  game derives from the solutions, written by laya through the notification stream, read by
+  `NotificationStream::open_at`, and handed over by `mount::hand_the_consoles_filings_to_the_agent`
+  at world-open. **C-99** is the game's own judgement at world-open and the process correction at
+  §99.4. Read C-99.4 and C-100.4 before acting on either.
 - Don't reopen settled decisions; don't replace the requested system with a smaller demo.
 - Never test the client invisibly. Offscreen measurement is not visible-client acceptance.
 - Run tests **exactly as the docs write them**, no output filtering, no `| grep` (C-45).

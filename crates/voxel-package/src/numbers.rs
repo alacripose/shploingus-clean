@@ -17,8 +17,15 @@
 //! That is how one number came to exist in four places and be corrected in two. C-28 fixed
 //! `APPEARANCE.md` §2 and `voxel-model/src/subvoxel.rs`; it never mentioned `docs/LEDGER.md`
 //! **C-2** or **`docs/DESIGN-SPEC.md` §1.1**, and both still carry the pre-C-28 figure —
-//! 16,777,216 read as *per voxel*, which is 64× low, since `DETAIL_SIDE = 256` is per
-//! **subvoxel** edge. This module is what makes the fourth copy impossible to forget.
+//! 16,777,216 read as *per voxel*, which is 64× low. This module is what makes the fourth copy
+//! impossible to forget.
+//!
+//! **And then the base itself moved.** C-163 corrected `DETAIL_SIDE` from 256 per subvoxel edge
+//! to **16** — a subvoxel face carries 16×16 = 256 samples, so the base the record calls 256 is
+//! 16 per axis — and every figure above it moved with it: the corrected dense counts are
+//! **4,096** samples per subvoxel and **262,144** per voxel, which is 4,096× below the 256-era
+//! figures the documents still carry. The rows below report *those* corrections; the documents
+//! remain the user's to correct (C-38).
 //!
 //! # The shape, and C-63.2's rule is why it is this shape
 //!
@@ -118,10 +125,10 @@ impl NumberClaim {
 
 /// Every declared number, and the literal sentence each one is pinned to.
 ///
-/// **Six rows, four documents, two findings already recorded rather than fixed.** `C-2` and
-/// `DESIGN-SPEC` are the rows that fired: both are 64× low, both sit in the record and in the
-/// design authority respectively, and **neither is corrected here** because C-38 reserves
-/// appearance prose and `DETAIL_SIDE`'s arithmetic is the appearance area's.
+/// **Six rows, four documents, four findings already recorded rather than fixed.** All four are
+/// dense-sample counts: `APPEARANCE.md`'s pair is 4,096× high since C-163 moved the base to 16
+/// per axis, and `C-2`/`DESIGN-SPEC` read the pre-C-28 figure on top of that. **None is corrected
+/// here** because C-38 reserves appearance prose and the record's own lines are the user's hand.
 pub const CLAIMS: &[NumberClaim] = &[
     NumberClaim {
         name: "ladder-top-level-blocks",
@@ -148,26 +155,31 @@ pub const CLAIMS: &[NumberClaim] = &[
         name: "dense-samples-per-subvoxel",
         document: "docs/APPEARANCE.md",
         sentence: "**16,777,216**",
-        expects: Some("16,777,216"),
-        correction: None,
-        why: "C-28, corrected. 256³, because `DETAIL_SIDE` is per subvoxel edge.",
+        // **Superseded in turn, by C-163.** 16,777,216 was 256³; with `DETAIL_SIDE = 16` the
+        // count per subvoxel is 16³ = 4,096.
+        expects: None,
+        correction: Some("4,096"),
+        why: "C-28's correction assumed the 256-per-axis base. C-163 corrected the base to 16 per \
+              subvoxel edge, so the figure this document carries is 4,096× high.",
     },
     NumberClaim {
         name: "dense-samples-per-voxel",
         document: "docs/APPEARANCE.md",
         sentence: "**1,073,741,824**",
-        expects: Some("1,073,741,824"),
-        correction: None,
-        why: "C-28, corrected: 64 subvoxels of 256³. This is the figure C-2 and DESIGN-SPEC \
-               still carry as 16,777,216.",
+        // **The same C-163 move, one level up.** 64 subvoxels of 4,096 is 262,144 samples.
+        expects: None,
+        correction: Some("262,144"),
+        why: "C-28's correction assumed the 256-per-axis base. With C-163's base this is 4,096× \
+              high; the corrected count is 64 × 16³ = 262,144.",
     },
     NumberClaim {
         name: "dense-samples-per-voxel-ledger",
         document: "docs/LEDGER.md",
         sentence: "dense storage is 16.7M samples/voxel",
-        // **Stale, and deliberately.** C-2 states the pre-C-28 figure, 64× low.
+        // **Stale, and deliberately.** C-2 states the pre-C-28 figure; C-163 then moved the
+        // base, so the corrected figure is 262,144 rather than C-28's 1,073,741,824.
         expects: None,
-        correction: Some("1,073,741,824"),
+        correction: Some("262,144"),
         why: "C-2, and the finding this module exists for. C-28 corrected APPEARANCE.md and \
                subvoxel.rs and not this line. **The prose is not edited here**: C-2 is stamped \
                OPEN TO CORRECTION, appearance is the user's area (C-27, C-38), and the \
@@ -179,10 +191,11 @@ pub const CLAIMS: &[NumberClaim] = &[
         sentence: "16,777,216 samples per voxel",
         // **Stale, and in the design authority itself.**
         expects: None,
-        correction: Some("1,073,741,824"),
-        why: "The same 64× drift as the row above, in the document whose first line calls it \
-               *the authority for shploingus-clean*. C-28 never mentioned this file. Left \
-               standing so the gate names it on every build rather than once.",
+        correction: Some("262,144"),
+        why: "The same drift as the row above, in the document whose first line calls it *the \
+               authority for shploingus-clean*: C-28 never mentioned this file, and C-163's base \
+               correction (16 per subvoxel axis) moved the figure again. Left standing so the \
+               gate names it on every build rather than once.",
     },
 ];
 
@@ -435,8 +448,12 @@ mod tests {
             "{report}"
         );
         assert!(
-            report.contains("1,073,741,824"),
-            "and the record's own figure travels with the finding: {report}"
+            report.contains("262,144"),
+            "and C-163's corrected figure travels with the finding: {report}"
+        );
+        assert!(
+            report.contains("4,096"),
+            "and so does the per-subvoxel correction: {report}"
         );
     }
 

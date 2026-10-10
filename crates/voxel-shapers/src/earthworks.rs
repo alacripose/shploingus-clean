@@ -23,9 +23,27 @@
 //! than a wish.
 
 use voxel_model::conservation::{Exact, Ledger, Mass, MassPumpDeclaration, Source};
-use voxel_model::{MaterialId, Ratio, RefusalKind, RefusalSet, Refused};
+use voxel_model::world::{ActorId, PhysicalVerb, ReservationId, TaskId};
+use voxel_model::{Digest, MaterialId, Ratio, RefusalKind, RefusalSet, Refused};
 
 /// One recorded change.
+///
+/// # The governed fields, and why they are required rather than carried elsewhere
+///
+/// `SHAPERS.md` §1 row 15 says what this record is: *"**recorded** player/agent modification of
+/// the world."* For a long time it recorded the *what* and the *why* and not the **who** — no
+/// actor, no task, no verb, no claim declared before the change, and no identity — which meant
+/// no reader could ask the question the record exists to answer: *what changed, and what
+/// authorised it?*
+///
+/// The five fields below close that, and they live **here** rather than in a book beside the
+/// record for one reason: `forbidden.second-record`. A parallel ledger of who-did-what drifts
+/// from the record it describes, and the drift is invisible until the two disagree. The record
+/// is the one place a change is stated, so it is the one place the change is attributed.
+///
+/// The user's ruling (2026-10-02) chose this over keeping the governed fields beside it, and
+/// chose that a hand edit is **a governed act by the player as an actor** — hence
+/// [`ActorId::player`] and a [`PhysicalVerb`] on `hand_change`.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Modification {
     pub x: i32,
@@ -40,6 +58,73 @@ pub struct Modification {
     pub reason: String,
     /// The mass ledger for this change.
     pub ledger: Ledger,
+    /// **Who** changed it. Never absent: a change nobody is answerable for is not a record.
+    pub actor: ActorId,
+    /// The task this change serves. Absent for work that is not a job — including a hand edit.
+    pub task: Option<TaskId>,
+    /// **What kind of act** it was. The verb list is `voxel_model::world::PhysicalVerb`'s and
+    /// is closed on purpose, so `break` and `dig` are told apart rather than both being "dug".
+    pub verb: PhysicalVerb,
+    /// The claim on the target, **declared before the change**. Absent for a hand edit, which
+    /// cannot be declared for: a hand is not a plan.
+    pub reservation: Option<ReservationId>,
+    /// This change's identity, so exactly-once is expressible: [`Earthworks::record`] refuses a
+    /// second entry carrying an id the record already holds.
+    pub transition: Digest,
+}
+
+/// The identity of a by-hand change: **over its own content**, not over a transition's fields.
+///
+/// A [`voxel_model::world::WorldTransition`]'s id covers actor, verb, reservation, epoch and
+/// nonce — and a hand edit has no reservation, epoch or nonce to tell a redo from an undo. So
+/// the content is the identity: where, from what, to what, by whom, and how. Two hand edits
+/// that differ in any of those are two entries; the same one twice is the same entry, and the
+/// chain check in [`Earthworks::record`] refuses the repeat anyway, because a second claim to
+/// replace `SOIL` where the record already holds `SOIL` no longer connects.
+///
+/// Public because a caller that builds an [`Modification`] **by hand** — the streaming and
+/// column tests do, and so will any path that needs to control the ledger — must mint the
+/// identity the builder would. Two spellings of one identity is how exactly-once stops meaning
+/// anything.
+pub fn hand_change_id(
+    x: i32,
+    y: i32,
+    z: i32,
+    from: MaterialId,
+    to: MaterialId,
+    actor: &ActorId,
+    verb: PhysicalVerb,
+) -> Digest {
+    Digest::of_fields(
+        "shploingus/earthworks/hand-change/v1",
+        &[
+            &x.to_be_bytes(),
+            &y.to_be_bytes(),
+            &z.to_be_bytes(),
+            &from.0.to_be_bytes(),
+            &to.0.to_be_bytes(),
+            actor.as_str().as_bytes(),
+            verb.as_str().as_bytes(),
+        ],
+    )
+}
+
+/// A hand change, **named rather than positional**.
+///
+/// Eight positional arguments would be four coordinate-shaped values in a row, two of which
+/// share a type: `hand_change(x, y, z, from, to, …)` and `hand_change(x, y, from, z, to, …)`
+/// both compile. Naming the fields is not ceremony — it is the difference between a transposed
+/// coordinate being a type error and being a hole in the world.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct HandChange {
+    pub x: i32,
+    pub y: i32,
+    pub z: i32,
+    pub from: MaterialId,
+    pub to: MaterialId,
+    pub reason: String,
+    pub actor: ActorId,
+    pub verb: PhysicalVerb,
 }
 
 /// One voxel of matter moved **by hand** — a dig, or a block placed.
@@ -55,14 +140,39 @@ pub struct Modification {
 /// difference between a ledger and an excuse. The day an inventory exists, this
 /// is the function that changes, and the mass it recorded is the mass the
 /// inventory starts from.
-pub fn hand_change(
-    x: i32,
-    y: i32,
-    z: i32,
-    from: MaterialId,
-    to: MaterialId,
-    reason: &str,
-) -> Refused<Modification> {
+///
+/// # Who, and what kind of act
+///
+/// A hand change **is** a governed act: the player is an actor (`ActorId::player`, the id the
+/// DSL's `player = person "The player"` declares), and the verb says which act it was rather
+/// than leaving it to the prose in `reason`. Nothing about "the player broke it" needs a
+/// reservation, so there is none; a task is `None` for the same reason. The identity is minted
+/// from the content — see [`hand_change_id`] — because a hand edit has no epoch or nonce to
+/// distinguish a redo from an undo.
+pub fn hand_change(change: HandChange) -> Refused<Modification> {
+    let HandChange {
+        x,
+        y,
+        z,
+        from,
+        to,
+        reason,
+        actor,
+        verb,
+    } = change;
+    // **Water is not a mineable block (C-152.2).** A hand change may neither remove
+    // a fluid voxel nor place one: removing it would delete water the world's ledger
+    // counts (its mass would have to go somewhere, and the excavated store is not
+    // water's home), and placing it would mint a fluid from nothing — the Minecraft
+    // source block the user ruled out. The fluid has nowhere to go and nowhere to
+    // come from while displacement is unmodelled, so the edit **refuses by name**
+    // rather than pretending. `Pool::edit` adds the derived half: a lake is fluid
+    // state with no material voxel (`fluid_state`), and an edit into one refuses too.
+    for material in [from, to] {
+        if crate::column::is_fluid(material) {
+            return Err(crate::fluid_state::refuse_edit(x, y, z));
+        }
+    }
     let registry = crate::column::materials::registry()?;
     let mass_of = |m: MaterialId| -> Option<Ratio> {
         if m.is_empty() {
@@ -94,7 +204,21 @@ pub fn hand_change(
             format!("one cubic metre of {} placed", to.0),
         );
     }
-    Ok(Modification { x, y, z, from, to, reason: reason.into(), ledger })
+    let transition = hand_change_id(x, y, z, from, to, &actor, verb);
+    Ok(Modification {
+        x,
+        y,
+        z,
+        from,
+        to,
+        reason,
+        ledger,
+        actor,
+        task: None,
+        verb,
+        reservation: None,
+        transition,
+    })
 }
 
 /// The ordered record of every change to a world.
@@ -140,6 +264,31 @@ impl Earthworks {
             set.refuse(
                 RefusalKind::MissingStage,
                 format!("modification at ({}, {}, {}) has no reason", m.x, m.y, m.z),
+            );
+        }
+
+        // **Exactly once.** The identity is on the entry, so a change that arrives twice — a
+        // retried governed transition, a hand edit replayed from a queue — is refused rather
+        // than recorded twice. This is the whole reason the id is a field and not a comment.
+        if m.transition == Digest::from_bytes([0; 32]) {
+            set.refuse(
+                RefusalKind::MissingStage,
+                format!(
+                    "modification at ({}, {}, {}) carries no transition identity",
+                    m.x, m.y, m.z
+                ),
+            );
+        }
+        if self.entries.iter().any(|e| e.transition == m.transition) {
+            set.refuse(
+                RefusalKind::RecordExists,
+                format!(
+                    "modification at ({}, {}, {}) carries transition {} that the record already holds",
+                    m.x,
+                    m.y,
+                    m.z,
+                    m.transition.to_hex()
+                ),
             );
         }
 
@@ -256,6 +405,11 @@ mod tests {
             to,
             reason: reason.into(),
             ledger,
+            actor: ActorId::player(),
+            task: None,
+            verb: PhysicalVerb::Place,
+            reservation: None,
+            transition: hand_change_id(1, 2, 3, from, to, &ActorId::player(), PhysicalVerb::Place),
         }
     }
 
@@ -318,6 +472,57 @@ mod tests {
     }
 
     #[test]
+    fn a_hand_change_may_not_remove_or_place_a_fluid() {
+        // C-152.2's filed defect, pinned: *"for some reason I can break water
+        // blocks which is dumb as hell"*. Neither half of a hand change may be
+        // water — a fluid is world state, and the edit refuses instead of deleting
+        // it (or minting one, which is the Minecraft source block the user ruled
+        // out).
+        let water = crate::column::materials::WATER;
+
+        let broken = hand_change(HandChange {
+            x: 4,
+            y: -3,
+            z: 6,
+            from: water,
+            to: MaterialId::EMPTY,
+            reason: "the player broke the sea".into(),
+            actor: ActorId::player(),
+            verb: PhysicalVerb::Break,
+        })
+        .unwrap_err();
+        assert_eq!(broken.kind(), RefusalKind::FluidIsNotABlock);
+        assert!(broken.detail().contains("targets water"), "got {broken}");
+
+        let placed = hand_change(HandChange {
+            x: 4,
+            y: -3,
+            z: 6,
+            from: MaterialId::EMPTY,
+            to: water,
+            reason: "the player poured the sea".into(),
+            actor: ActorId::player(),
+            verb: PhysicalVerb::Place,
+        })
+        .unwrap_err();
+        assert_eq!(placed.kind(), RefusalKind::FluidIsNotABlock);
+        assert!(placed.detail().contains("displacement is not modelled"), "got {placed}");
+
+        // And the refusal is not a general ban: rock still moves by hand.
+        hand_change(HandChange {
+            x: 4,
+            y: -3,
+            z: 6,
+            from: STONE,
+            to: MaterialId::EMPTY,
+            reason: "the player quarried".into(),
+            actor: ActorId::player(),
+            verb: PhysicalVerb::Dig,
+        })
+        .expect("rock is still a block");
+    }
+
+    #[test]
     fn the_record_audits_its_ledgers() {
         let mut e = Earthworks::new();
         e.record(modification(STONE, SOIL, "ok")).unwrap();
@@ -329,7 +534,17 @@ mod tests {
         // One cubic metre of igneous rock, at the registry's own density: the
         // number is the density, and the ledger audits.
         let igneous = crate::column::materials::IGNEOUS;
-        let m = hand_change(4, 5, 6, MaterialId::EMPTY, igneous, "a block placed").unwrap();
+        let m = hand_change(HandChange {
+            x: 4,
+            y: 5,
+            z: 6,
+            from: MaterialId::EMPTY,
+            to: igneous,
+            reason: "a block placed".into(),
+            actor: ActorId::player(),
+            verb: PhysicalVerb::Place,
+        })
+        .unwrap();
         let mut e = Earthworks::new();
         e.record(m.clone()).unwrap();
         assert!(e.audit().is_ok());
@@ -348,7 +563,17 @@ mod tests {
 
         // Air contributes **no** entry, and a change from air to air is refused
         // by `record` itself (`from == to` records nothing).
-        let nothing = hand_change(1, 1, 1, MaterialId::EMPTY, MaterialId::EMPTY, "nothing").unwrap();
+        let nothing = hand_change(HandChange {
+            x: 1,
+            y: 1,
+            z: 1,
+            from: MaterialId::EMPTY,
+            to: MaterialId::EMPTY,
+            reason: "nothing".into(),
+            actor: ActorId::player(),
+            verb: PhysicalVerb::Place,
+        })
+        .unwrap();
         assert!(nothing.ledger.entries().is_empty());
         assert!(e.record(nothing).is_err(), "from == to must not record");
     }
@@ -362,5 +587,68 @@ mod tests {
             e
         };
         assert_eq!(build(), build());
+    }
+
+    #[test]
+    fn every_entry_says_who_did_it_and_what_kind_of_act_it_was() {
+        let mut e = Earthworks::new();
+        let actor = ActorId::new("buffy").unwrap();
+        let m = hand_change(HandChange {
+            x: 4,
+            y: 5,
+            z: 6,
+            from: MaterialId::EMPTY,
+            to: MaterialId(6),
+            reason: "a block placed".into(),
+            actor: actor.clone(),
+            verb: PhysicalVerb::Place,
+        })
+        .unwrap();
+        assert_eq!(m.actor, actor, "the record names the actor, not a placeholder");
+        assert_eq!(m.verb, PhysicalVerb::Place);
+        assert_eq!(m.task, None, "a hand edit is not a job");
+        assert_eq!(m.reservation, None, "a hand edit cannot be declared for");
+        e.record(m.clone()).unwrap();
+        assert_eq!(e.entries()[0].actor, actor);
+    }
+
+    #[test]
+    fn the_same_change_twice_is_refused_by_its_own_identity() {
+        let mut e = Earthworks::new();
+        let m = modification(STONE, SOIL, "built a field");
+        e.record(m.clone()).unwrap();
+        let again = e.record(m).unwrap_err();
+        assert!(
+            again
+                .all()
+                .iter()
+                .any(|r| r.kind() == RefusalKind::RecordExists),
+            "a change that arrives twice must be refused, not recorded twice"
+        );
+        assert_eq!(e.len(), 1);
+    }
+
+    #[test]
+    fn a_change_with_no_identity_is_refused() {
+        let mut e = Earthworks::new();
+        let mut m = modification(STONE, SOIL, "built a field");
+        m.transition = Digest::from_bytes([0; 32]);
+        let refused = e.record(m).unwrap_err();
+        assert!(refused
+            .all()
+            .iter()
+            .any(|r| r.kind() == RefusalKind::MissingStage));
+        assert!(e.is_empty(), "an unidentified change is not a record");
+    }
+
+    #[test]
+    fn a_hand_change_is_identified_by_its_content_so_an_undo_is_not_a_redo() {
+        let actor = ActorId::player();
+        let dig = hand_change_id(1, 2, 3, STONE, MaterialId::EMPTY, &actor, PhysicalVerb::Dig);
+        let undo = hand_change_id(1, 2, 3, MaterialId::EMPTY, STONE, &actor, PhysicalVerb::Place);
+        let elsewhere = hand_change_id(9, 2, 3, STONE, MaterialId::EMPTY, &actor, PhysicalVerb::Dig);
+        assert_ne!(dig, undo, "an undo is not the same act as the dig it undoes");
+        assert_ne!(dig, elsewhere, "the position is part of the act");
+        assert_eq!(dig, hand_change_id(1, 2, 3, STONE, MaterialId::EMPTY, &actor, PhysicalVerb::Dig));
     }
 }

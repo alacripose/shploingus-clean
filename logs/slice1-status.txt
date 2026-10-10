@@ -1,0 +1,8 @@
+===== voxel-shapers clouds =====
+STATUS=0
+===== voxel-client skylight =====
+STATUS=0
+===== aerosol-column instrument =====
+STATUS=0
+===== exposure-steps instrument =====
+STATUS=0

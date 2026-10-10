@@ -1,0 +1,33 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.30s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_package-ae0470561f476050.exe)
+
+running 1 test
+
+---- declared feature report ------------------------------------
++ required package_intake           witness present at crates/voxel-package/src/lib.rs
++ required recipe_compilation       witness present at crates/voxel-package/src/recipe.rs
++ required build_gate               witness present at crates/shploingus/build.rs
++ required world_generation         witness present at crates/voxel-shapers/src/voxel.rs
++ required signing_seam             witness present at crates/voxel-package/src/signing.rs
+- pending  signature_verification   no witness at crates/voxel-envelope/src/lib.rs, so signature_verification is not implemented; it is pending, so it is displayed and the build continues
+- pending  sealed_container         no witness at crates/voxel-package/src/envelope.rs, so sealed_container is not implemented; it is pending, so it is displayed and the build continues
++ pending  conformance_oracle       witness present at crates/voxel-package/src/oracle.rs
++ required feature_evaluation       witness present at crates/voxel-package/src/features.rs
++ pending  provenance_digest        witness present at crates/voxel-package/src/provenance.rs
+- pending  command_line_tool        no witness at crates/voxelctl/src/main.rs, so command_line_tool is not implemented; it is pending, so it is displayed and the build continues
++ pending  shell_arrangement        witness present at crates/voxel-client/src/shell/arrangement.rs
++ pending  pinned_hud               witness present at crates/voxel-client/src/shell/hud.rs
++ pending  notification_queue       witness present at crates/voxel-client/src/shell/notifications.rs
+- pending  ticket_window            no witness at crates/voxel-client/src/shell/tickets.rs, so ticket_window is not implemented; it is pending, so it is displayed and the build continues
++ pending  event_chain              witness present at crates/voxel-model/src/chain.rs
++ pending  stage_cadences           witness present at crates/voxel-shapers/src/stages.rs
++ pending  save_load                witness present at crates/voxel-stream/src/resident.rs
+- pending  change_view              no witness at crates/voxel-client/src/shell/changes.rs, so change_view is not implemented; it is pending, so it is displayed and the build continues
+---- 5 of 19 declared features have no witness ----
+missing: signature_verification, sealed_container, command_line_tool, ticket_window, change_view
+---------------------------------------------------------------
+
+test features::tests::the_missing_feature_report_is_printed_so_it_can_be_read_and_not_merely_asserted ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 233 filtered out; finished in 0.03s
+

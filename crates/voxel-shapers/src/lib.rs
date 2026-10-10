@@ -38,6 +38,7 @@
 //! | [`atmosphere`] | US Standard Atmosphere 1976 |
 //! | [`sky`] | Meeus 1998 (solar position); Kasten & Young 1989 (air mass); USNO twilight definitions |
 //! | [`weather`] | Smith & Barstad 2004 (orographic precipitation) |
+//! | [`clouds`] | `clouds_and_atmospheric_formation.pdf`; Magnus–Tetens (Tetens 1930; Alduchov & Eskridge 1996) |
 //! | [`caves`] | Ford & Williams 2007 (karst) |
 //! | [`substrate`] | Heimsath, Dietrich, Nishiizumi & Finkel 1997 |
 //! | [`ecology`] | Holdridge 1947; Reynolds 1987 (boids) |
@@ -51,15 +52,24 @@
 
 pub mod atmosphere;
 pub mod caves;
+pub mod chunk_fields;
 pub mod climate;
+pub mod clouds;
 pub mod column;
+pub mod corpus;
 pub mod delta;
 pub mod earthworks;
 pub mod ecology;
 pub mod erosion;
+pub mod field_sampler;
 pub mod fields;
+pub mod flora;
+pub mod fluid_state;
+pub mod fluidics;
 pub mod geology;
+pub mod habitat;
 pub mod hydrology;
+pub mod process;
 pub mod spec;
 pub mod stages;
 pub mod sky;
@@ -71,6 +81,12 @@ pub mod voxel;
 pub mod water;
 pub mod weather;
 
+pub use chunk_fields::{material_of, material_at as field_material_at, ChunkFieldSource, FieldQuery, FieldSource};
 pub use column::{derive as derive_column, Column};
+pub use field_sampler::{
+    ChunkFieldSampler, DraftChunkFieldSampler, DraftFieldSample, DraftFieldSampler, DraftFieldSpec,
+    FieldId, FieldResolution, FieldSample, FieldSampler, FieldSamplerIdentity, FieldSpec, FieldValue,
+    FixedValue, ResolutionLevel, SamplingPolicy, SeamPolicy, Unit, VerticalDependence,
+};
 pub use spec::{Config, WorldSpec};
 pub use stages::{Declared, Stage, ALL as ALL_STAGES, STAGE_COUNT};

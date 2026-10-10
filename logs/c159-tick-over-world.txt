@@ -1,0 +1,12 @@
+    Finished `release` profile [optimized] target(s) in 0.48s
+     Running `F:/shploingus-target\release\examples\tick-over-world.exe`
+terrain elevation, same seed, two spec ticks:
+  (     0.5,      0.5)  tick 0 =    16.063 m   tick 24000 =    16.063 m   delta =    0.000 m
+  (    16.5,     16.5)  tick 0 =    17.223 m   tick 24000 =    17.223 m   delta =    0.000 m
+  (   -32.5,     48.5)  tick 0 =    14.877 m   tick 24000 =    14.877 m   delta =    0.000 m
+  (   120.5,    -96.5)  tick 0 =    13.690 m   tick 24000 =    13.690 m   delta =    0.000 m
+
+voxel materials over a 33 x 33 patch, y = surface(0) - 2 .. + 2:
+
+0 of 5445 voxels differ when the spec tick moves.
+If this is more than zero, the shapers are NOT tick-independent — the world would reshuffle if the generator ever saw a moving tick.

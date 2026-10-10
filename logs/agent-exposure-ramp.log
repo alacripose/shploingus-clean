@@ -1,0 +1,44 @@
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+   Compiling voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+   Compiling voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+   Compiling voxel-work v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-work)
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+warning: unused variable: `wireframe`
+   --> crates\voxel-client\src\world.rs:606:9
+    |
+606 |         wireframe: bool,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_wireframe`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-client` (lib) generated 1 warning (run `cargo fix --lib -p voxel-client` to apply 1 suggestion)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 23.43s
+     Running `F:/shploingus-target\debug\examples\exposure-steps.exe`
+the world: seed 2468, a day is 24000 ticks = 1200 s of real time at 20 Hz
+the rig is uploaded on Cadence::Water = every 4 ticks = 0.2 s
+
+== standing still at the origin, one update per 4 ticks, over a day ==
+  worst step in turbidity:         1.3709  (  62.3% of the day's mean)
+  worst step in sun intensity:   0.067954  (  24.1% of the day's mean)
+  worst step in ambient:         0.068220  (1031.7% of the day's mean)
+  430 of 5999 updates moved turbidity by more than 0.01; the largest was at tick 14428 (271 s in)
+  the ambient's worst step is 0.068220 at tick 29452 (1023 s in), sun -0.021 deg -> 0.020 deg
+    that is 0.2729 after EXPOSURE=4 — before the ambient was +0.2729
+
+== walking east at a fixed tick, one update per step of ground covered ==
+   (the step the player gets is walk speed x 0.2 s of real time)
+
+  step m    max dturb     % of mean   max dintens  max dambient
+    0.25       0.9289         46.1%      0.048754      0.009652
+    0.50       0.9272         46.0%      0.048668      0.009633
+    0.86       0.9266         46.0%      0.048641      0.009627
+    1.50       0.9204         45.7%      0.048332      0.009558
+    3.00       0.9204         45.7%      0.048332      0.009558
+    6.00       0.9204         45.6%      0.048332      0.009558
+   12.00       0.7543         37.4%      0.039952      0.007715
+
+== walking east as the tick advances, 0.86 m per update ==
+  worst step in turbidity:         0.2609  (  13.0%)
+  worst step in sun intensity:   0.012982  (   2.1%)
+  worst step in ambient:         0.001645  (  15.9%)

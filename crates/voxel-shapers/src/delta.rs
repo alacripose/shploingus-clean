@@ -105,7 +105,10 @@ impl DeltaState {
     /// seed**, not an RNG, so a replay produces the same avulsion at the same
     /// tick (F1).
     pub fn avulse(&mut self, spec: &WorldSpec) {
-        let h = mix(spec.stage_seed("delta") ^ self.avulsions as u64);
+        // **Stationary**: an avulsion's bearing is a function of how many have happened,
+        // not of when. With the moving seed the same avulsion number would draw a
+        // different bearing every tick, so a delta could not be replayed.
+        let h = mix(spec.stationary_stage_seed("delta") ^ self.avulsions as u64);
         self.bearing_rad = (h >> 11) as f64 / (1u64 << 53) as f64 * std::f64::consts::TAU;
         self.accumulated_m = 0.0;
         self.avulsions = self.avulsions.saturating_add(1);

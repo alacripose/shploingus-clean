@@ -1,0 +1,15 @@
+   Compiling voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `test` profile [optimized + debuginfo] target(s) in 17.04s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-e81c39c525811ec8.exe)
+
+running 1 test
+coarse rungs: probe at 2 m, footprint 5.47e-3 m at the centre, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 9.324339911298551e-8, 235559 distinct reds
+fine rungs: probe at 0.15 m, footprint 4.10e-4 m at the centre, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 7.474505714366586e-8, 78450 distinct reds
+mid rungs: probe at 2 m, footprint 4.31e-2 m at the centre, compared 4096 of 4225 pixels (129 skipped on a cell edge), worst disagreement 4.403826873167205e-7, 3736 distinct reds
+eye moved: probe at 0.15 m, footprint 4.10e-4 m at the centre, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 7.29471942850779e-8, 74025 distinct reds
+bark shaper: probe at 0.15 m, footprint 4.10e-4 m at the centre, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 1.8692069739256745e-8, 68433 distinct reds
+test renderer::tests::the_pattern_is_drawn_where_the_greedy_mesh_has_no_geometry ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 386 filtered out; finished in 4.04s
+

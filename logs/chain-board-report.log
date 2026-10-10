@@ -1,0 +1,87 @@
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+    Finished `test` profile [optimized + debuginfo] target(s) in 9.50s
+     Running tests\board_report.rs (F:/shploingus-target\debug\deps\board_report-95e2cc3be25eb6aa.exe)
+
+running 3 tests
+test every_ticket_on_the_board_is_named_in_full_and_none_is_deferred has been running for over 60 seconds
+test the_board_names_every_duplicate_filing_and_says_the_count_is_not_a_count_of_work has been running for over 60 seconds
+test the_record_is_filed_and_the_board_reads_it has been running for over 60 seconds
+test the_record_is_filed_and_the_board_reads_it ... ok
+test every_ticket_on_the_board_is_named_in_full_and_none_is_deferred ... ok
+board-tickets	149
+board-duplicate-filings	42
+board	the board holds 149 tickets, of which 84 are repeat filings of 42 distinct objectives. An append-only record cannot retract a filing, so these are reported rather than removed, and the ticket count above is NOT a count of distinct pieces of work
+board-duplicate	86 and 130, 172	add RecordState::Contested for the case where the ACTION is settled and a CONSEQUENCE is owed — because Unresolved says no answer was given and Superseded says a newer one replaced it, and neither is what happened
+board-duplicate	97 and 141, 183	add a behavioural census axis whose cell is a NAMED TEST PATH the coverage matrix forces every crate to fill — derived from this record format, not from the old tree's per-part claim gate
+board-duplicate	92 and 136, 178	admit the baseline atmosphere as TICK-ZERO DATA with a source per number, instead of four f64 constants in a shaper — because that admission is the exact thing the other tree is blocked without
+board-duplicate	69 and 113, 155	build the fixed 20 Hz clock with an accumulator that bounds how many missed ticks one slow frame may catch up on, and count what it dropped
+board-duplicate	58 and 102, 144	build the shell-owned notification queue: one writer, one rendering per record, one at a time
+board-duplicate	66 and 110, 152	carry every sky constant in a provenance inventory that names its source, and count the project extensions in a test so an unsourced number cannot be added silently
+board-duplicate	85 and 129, 171	carry pressure, temperature and flow as fixed-point integers at a DECLARED scale, so a threshold test is an exact integer comparison, and bind the scale into identity so changing it refuses an old save
+board-duplicate	89 and 133, 175	declare the voxel-to-metre scale as one constant with a named source, and bind it into identity — because the world states a density in kg/m^3 and holds a lattice in voxels with no declared number between them
+board-duplicate	77 and 121, 163	delete the second air column: one function answers what a light ray's path loses, and both the noon normaliser and the sun's own colour read it
+board-duplicate	83 and 127, 169	derive soil porosity HERE from a named source, or refuse every porosity this tree states — because the only number available is another tree's provisional row with its own tolerance undefined
+board-duplicate	75 and 119, 161	derive the extra subvoxel shapers from the gas and fluid ruling rather than inventing them, so a machine's behaviour is a consequence of what a fluid is and not a list of shapes
+board-duplicate	57 and 101, 143	dock a window: hit-test a drag to a pane or an outer edge, preview the zone, and insert on drop
+board-duplicate	60 and 104, 146	enforce the unenforced halves of the craft floor in voxel-ui as refusals: depth offset, measure, motion easing, copy naming recovery
+board-duplicate	67 and 111, 153	evaluate sky radiance from the real scattering models so the sky's colour is the model's output: Rayleigh and Mie coefficients, the Henyey-Greenstein phase function, and Kasten-Young air mass
+board-duplicate	65 and 109, 151	give SkyPhase the real twilight thresholds of -6, -12 and -18 degrees plus golden hour, blue hour and the Belt of Venus, and test each at its exact boundary angle
+board-duplicate	90 and 134, 176	give a subvoxel cell a DECLARED EXACT VOLUME, so a cell's mass is volume times bulk density as an exact rational and a cell can hold matter
+board-duplicate	79 and 123, 165	give every decision in this record a status and a hazard beside it, and a withdrawal record that supersedes a wrong claim by id — so a settled decision carries what could still break it
+board-duplicate	68 and 112, 154	give the night a source that is not the sun dimmed: the Moon's real phase derived from tick at the published Bond albedo, so a night is not the day with a smaller number
+board-duplicate	81 and 125, 167	key the surface displacement by (structure, material, face) instead of (material, face) for the whole world, so two machines may pattern the same wall without one refusing the other
+board-duplicate	62 and 106, 148	make Openness::Settled constructible, so a reader of the record can see that a question is answered
+board-duplicate	64 and 108, 150	make solar position a pure function of (tick, declared latitude): declination and hour angle to altitude and azimuth, with no clock and no RNG
+board-duplicate	78 and 122, 164	make the moon a REFLECTANCE on a lit surface — solar constant at its orbit, Bond albedo as a SourcedReflectance, attenuated back through the same air column — instead of an independent emitter
+board-duplicate	72 and 116, 158	measure the sky offscreen: read the pixels back and show that the clear colour and the rig both change with the tick, so 'the sky is lit' is a number rather than a claim
+board-duplicate	95 and 139, 181	prove every gate reading can go RED — a mutation check on the values the gate measures, because a suite that cannot go red is not evidence and a number asserted in isolation can be a number that goes nowhere
+board-duplicate	61 and 105, 147	re-audit each feature row's means text against what its witness actually contains, and stop reporting active when the witness is thinner than the feature
+board-duplicate	88 and 132, 174	record a decision the tooling could not write as a NAMED GAP with its count left unreconciled, rather than leaving a silence a later session would be free to fill with an invention
+board-duplicate	59 and 103, 145	render the gate's findings as a Panel from the same structure the gate prints, so a green build and a legible panel cannot disagree
+board-duplicate	56 and 100, 142	resize a pane: drag a divider, move the stretch factors, and refuse a resize that would break the 40x40 floor
+board-duplicate	76 and 120, 162	rule air as a CONSERVED TYPED FLUID in the world's own ledger rather than as an analytic formula, and make the sky derive from that authority rather than beside it
+board-duplicate	63 and 107, 149	rule how the pre-chain ledger entries become chain history, or rule that the projection begins fresh from C-73
+board-duplicate	73 and 117, 159	rule how the sun and the moon are bodies: a sky pass drawing each disc from its angular radius, the moon as real voxels at a scaled distance, or both as voxels with a declared compression ratio
+board-duplicate	80 and 124, 166	rule that a structure is a NAMED LEDGER-RESIDENT OBJECT with an owner rather than a gesture over voxels, because 'the machine moved' is false otherwise
+board-duplicate	94 and 138, 180	rule that a world with no ADMITTED initial atmospheric state must REFUSE its first weather process and name the missing declaration — never begin at a standard pressure, however well sourced that constant is
+board-duplicate	82 and 126, 168	rule that air is SEVERAL NAMED POOLS mixing only through declared processes, with a stored global account and per-basin accounts cross-checked at audit — not one global scalar and not one account
+board-duplicate	93 and 137, 179	rule that climate is NOT a regional field — temperature, moisture, precipitation, humidity, pressure, wind and storms are PROCESSES — and that the field ladder therefore carries lithology, elevation and soil depth only
+board-duplicate	87 and 131, 173	rule that withdrawing a decision does NOT refute what it described, and carry a flag saying so — or a later reader will 'fix' a seam that was left open on purpose
+board-duplicate	84 and 128, 170	rule the exact/approximate boundary for a fluid: mass and volume as exact rationals, pressure and temperature and flow as declared-approximate with a named scale — and forbid a tolerance-bearing quantity feeding a conserved one
+board-duplicate	71 and 115, 157	rule the fusion declaration's constraint: customization of how the world looks, bounded to the real-world models, with every override carrying a source the way SourcedReflectance does
+board-duplicate	74 and 118, 160	rule whether the gas and fluid model is in this branch, because machines and extra subvoxel shapers depend on what a fluid is and nothing has decided it
+board-duplicate	96 and 140, 182	rule whether this tree adopts the octree-aligned field ladder — a rung INDEX (level n = 32 * 2^n, octree-aligned to the 32^3 chunk, level count the only free parameter) carrying lithology, elevation and soil depth only — or states its own shape and records the divergence
+board-duplicate	91 and 135, 177	split materials::AIR from MaterialId::EMPTY so an air mixture is an admitted Material with gas components and a density, rather than the absence of matter by another name
+board-duplicate	70 and 114, 156	wire the tick into the client so the sun and the sky reach the frame: the clear colour and the light rig both read the tick, and the sun carries its own colour, intensity and direction so a shadow can be lit by it
+board-ticket	98	give the shaper stage set a declared authority, reusing the existing governance vocabulary rather than a second one
+board-ticket	99	window text overlaps without respecting hierarchy; oracle-is-laya is printed rather than measured; axis.rs grading is needed for the mods API view
+board-ticket	184	text from windows not respecting z-order
+board-ticket	185	window text not respecting z order
+board-ticket	186	mouse does not lock
+board-ticket	187	repair the governance stack through the ticket system itself: a person's plain-prose ticket back-compiles from the mods api tracking instead of refusing for a missing window token (BLD-0187), a filing updates the mods api section and raises the shell's toast queue record (H-12.2, UI-SPEC §7) in window[notifications] and window[api-viewer], milestones and blocks are built against the recipes, and laya decides at runtime and at compile (H-14.2, two passes)
+board-ticket	188	claim the nine unclaimed commits: no commit on this tree references a ticket and no claim step bound it
+board-ticket	189	enforce the claim step: the pipeline accepts work that names no ticket
+board-ticket	190	version chains/workspace.chain: the record every view reads is untracked in git
+board-ticket	191	commit C-97: the ruling is recorded in the docs and uncommitted on disk
+board-ticket	192	resolve the BLD-0187 id ambiguity: scratch filings and the canonical chain mint the same ids
+board-ticket	193	pin Control totality: the envelope's Control enum carries no CONTROLS_ARE_TOTAL pin
+board-ticket	194	SES-01 the laya gate at cargo test time judges every file, function, token and byte
+board-ticket	195	SES-02 the notification queue rides the decided stack: musli-wire metadata records, sha256 via identity::Digest, a directory the client watches
+board-ticket	196	SES-03 notifications stream like the chunk streamer
+board-ticket	197	SES-04 the decision layer is never reduced in transit
+board-ticket	198	SES-05 test scratch leaves temp_dir and lands in-project
+board-ticket	199	SES-06 the six framework findings filed with recipes and packages
+board-ticket	200	SES-07 a person's plain-prose ticket must file and compile — window derivation is the system's job
+board-ticket	201	SES-08 laya is the entire decision layer across the framework, the game's systems and the compiler
+board-ticket	202	SES-09 gate-file-findings.log was destroyed and is unrecoverable
+board-ticket	203	SES-10 the session infraction record, events 0043-0072
+board-ticket	204	SES-11 the infraction record, event 0078: contempt for the principal inside the agent's own reasoning
+plan-milestones	0
+plan-blockers	0
+plan-malformed	0
+
+board: 149 tickets = 42 distinct duplicated objectives x their filings + 23 filed exactly once
+test the_board_names_every_duplicate_filing_and_says_the_count_is_not_a_count_of_work ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 307.84s
+

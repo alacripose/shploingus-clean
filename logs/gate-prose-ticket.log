@@ -1,0 +1,25 @@
+kache: this volume (F:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: F:/shploingus-target\debug\deps\libautocfg-5e403e1b97928eea.rmeta
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `test` profile [optimized + debuginfo] target(s) in 6.80s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-e73fdc2a27c87135.exe)
+
+running 1 test
+test shell::mount::tests::a_persons_plain_prose_ticket_files_and_compiles_like_any_other has been running for over 60 seconds
+test shell::mount::tests::a_persons_plain_prose_ticket_files_and_compiles_like_any_other ... FAILED
+
+failures:
+
+---- shell::mount::tests::a_persons_plain_prose_ticket_files_and_compiles_like_any_other stdout ----
+
+thread 'shell::mount::tests::a_persons_plain_prose_ticket_files_and_compiles_like_any_other' (11532) panicked at crates\voxel-client\src\shell\mount.rs:3067:9:
+a person's ticket compiles to a package the agent can read: ["[ACTION] t- CMD: > file the lighting in the valley is wrong at noon", "[EVENT] t- file: BLD-0187 filed", "[EVENT] t- file: the lighting in the valley is wrong at noon", "[WARN] t- file: ticket BLD-0187 names no window, so back-compiling a solution from it would mean inventing one. Refused: an arrangement window is declared by id, and this ticket declares none\n  ticket text: the lighting in the valley is wrong at noon"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    shell::mount::tests::a_persons_plain_prose_ticket_files_and_compiles_like_any_other
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 192 filtered out; finished in 102.19s
+
+error: test failed, to rerun pass `-p voxel-client --lib`

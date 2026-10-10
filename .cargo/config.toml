@@ -1,13 +1,32 @@
-# The build tree lives on F:, and the reason is measured rather than stylistic.
+# There is deliberately **no `target-dir` override here**: this repository builds into its
+# own `target/`, the cargo default, on `C:`.
 #
-# `C:` is at 100% (about 300 MB free of 465 GB) and the client needs a `wgpu` +
-# `naga` + `winit` debug tree, which is on the order of 1-2 GB. `F:` has 57 GB.
-# Nothing in this repository was deleted to make room.
+# That is a reversal, and the measurements are why. The tree used to be at `F:/shploingus-target`
+# and then briefly at `C:/shploingus-target`, moved out of the repository for reasons that were
+# about *space*: `C:` was once down to about 300 MB free of 465 GB, and the tree was guessed at
+# "1-2 GB". Measured 2026-10-08 it is **20.36 GB in 37,653 files**, with the kache store at
+# 11.72 GB. `C:` has room for it now, so the space argument is gone.
 #
-# The kache store is on F: too (`~/.config/kache/config.toml`). That is not
-# tidiness: kache restores a cache hit as a HARDLINK when the store and the
-# target directory are on the same volume, and as a COPY when they are not.
-# Same volume means a cache hit costs zero extra bytes; split volumes means it
-# costs the artifact twice.
-[build]
-target-dir = "F:/shploingus-target"
+# What is left is speed, and it points at the same place the repository already sits on:
+#
+# * `C:` is disk 0, a `WDC WDS500G2B0A` **SSD**.
+# * `F:` is disk 2, an `ST9250315AS` **HDD** — the machine's only mechanical disk. A cargo
+#   build is tens of thousands of small random file operations, creating, renaming and
+#   re-reading `.o`, `.rmeta`, `.rlib`, `.d` and `.pdb` files, which is the one workload where
+#   a 5400 rpm drive is one to two orders of magnitude behind an SSD on IOPS.
+# * `D:` and `H:` are also SSDs but had 4.9 GB and 1.2 GB free the same day.
+#
+# The source lives on `C:`, and `target/` is on `C:` with it — one volume, the fast one, no
+# override to remember. `target/` is the first line of `.gitignore`, so a build in the
+# repository leaves `git status` clean.
+#
+# The kache store moved with it (`~/.config/kache/config.toml`, now `C:/kache`), and that is
+# not tidiness: kache restores a cache hit as a **hardlink** when the store and the target
+# directory are on the same volume, and as a **copy** when they are not. Same volume means a
+# cache hit costs zero extra bytes and no copy at all.
+#
+# Not done here, and named: `C:` is NTFS rather than a ReFS **Dev Drive**, so the store gets no
+# block cloning — kache reports the missing copy-on-write itself — and Defender scans the
+# volume normally. A Dev Drive exempts its own volume from real-time scanning, which is the
+# other half of what makes a build directory fast on Windows. That is a volume-level change,
+# not a config one, and it was not made.

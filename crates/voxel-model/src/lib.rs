@@ -48,7 +48,9 @@
 // `forbid` rather than `deny`, so no `#[allow]` anywhere can buy an exception.
 #![forbid(unsafe_code)]
 
+pub mod axis;
 pub mod chain;
+pub mod laya;
 pub mod conservation;
 pub mod envelope;
 pub mod grant;
@@ -56,20 +58,33 @@ pub mod ticket;
 pub mod coord;
 pub mod identity;
 pub mod material;
+pub mod materials;
+pub mod matter;
+pub mod plan;
 pub mod profile;
 pub mod refusal;
 pub mod shaper;
 pub mod subvoxel;
 pub mod wire;
+// **The evidence producer at the commit point**: what a committed action was, in memory,
+// until the game side drains it to mint the gate's proofs of work (the user's plan,
+// 2026-10-02). It sits at the root like `world` does: the record it serves is not a
+// civilian file.
+pub mod observer;
+// The governed change of the world: who changed it, under what, and what kind of act.
+// The **record** has to name these (`voxel-shapers::earthworks::Modification`), so they sit
+// at the root rather than behind the civilians' switch — see the module's own documentation.
+pub mod world;
+pub mod civilian;
 
 pub use coord::{
     ChunkPos, LocalPos, VoxelPos, BAND_MAX_Z, BAND_MIN_Z, CHUNK_SIDE, CHUNK_VOLUME, DETAIL_SIDE,
-    SUBVOXEL_COUNT, SUBVOXEL_SIDE,
+    FILL_SIDE, SUBVOXEL_COUNT, SUBVOXEL_SIDE,
 };
 pub use identity::{Digest, Identity};
 pub use material::{
-    Component, ComponentId, Material, MaterialId, MaterialRegistry, OpticalClass, Ratio,
-    Reflectance, SourcedReflectance,
+    blend_reflectance, Component, ComponentId, Material, MaterialId, MaterialRegistry, OpticalClass,
+    Ratio, Reflectance, SourcedEmission, SourcedReflectance,
 };
 pub use profile::{
     column_cross_axis, face_vector, in_plane_axes, Profile, Regime, MAX_RADIUS,

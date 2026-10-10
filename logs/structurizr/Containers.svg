@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4350 1491" width="4350" height="1491" role="img" aria-label="Architecture diagram showing software elements and their relationships. Bold lines indicate outbound relationships from the primary element.">
+  <defs>
+    <marker id="arrow-707070" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#707070"/>
+    </marker>
+    <marker id="arrow-bold-707070" markerWidth="15" markerHeight="15" refX="13" refY="7.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 15 7.5 L 0 15 z" fill="#707070"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="4350" height="1491" fill="transparent"/>
+  <path d="M 250.0 300.0 L 250.0 340.0 L 560.0 340.0 L 560.0 140.0 L 800.0 140.0 L 800.0 187.4" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="9bf2edef-84e7-493f-8543-50cf7270547e" data-target="e6ba1b40-5725-48fc-b836-7bdb765ec130" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: files tickets through the handler, never by hand" marker-end="url(#arrow-707070)"/>
+  <path d="M 800.0 437.4 L 800.0 480.0 L 1100.0 480.0 L 1100.0 360.0 L 1360.0 360.0 L 1360.0 380.0 L 1350.0 380.0 L 1350.0 407.3" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="e6ba1b40-5725-48fc-b836-7bdb765ec130" data-target="f9099be7-cb68-4c83-ac22-cea5502b666b" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: tickets read back" marker-end="url(#arrow-707070)"/>
+  <path d="M 1230.0 657.3 L 1230.0 575.3 L 1780.0 575.3 L 1780.0 493.4" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="f9099be7-cb68-4c83-ac22-cea5502b666b" data-target="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: the rows the compiler back-compiles from" marker-end="url(#arrow-707070)"/>
+  <path d="M 1780.0 743.4 L 1780.0 780.0 L 2200.0 780.0 L 2200.0 720.0 L 2340.0 720.0 L 2340.0 740.0 L 2330.0 740.5 L 2330.0 760.5" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" data-target="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: every stage: Auditor::step consults policy::decide" marker-end="url(#arrow-707070)"/>
+  <path d="M 2330.0 1010.5 L 2330.0 1060.0 L 2340.0 1060.0 L 2340.0 1080.0 L 3000.0 1080.0 L 3000.0 1124.5" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-target="3dfe898d-7be3-4488-9122-9cec337d4028" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: the compile stage, permitted — a denied stage stops the compile" marker-end="url(#arrow-707070)"/>
+  <path d="M 2450.0 1010.5 L 2450.0 1060.0 L 2760.0 1060.0 L 2760.0 680.0 L 3000.0 680.0 L 3000.0 724.5" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-target="9b84209e-d5ad-4a0a-82de-6a9db7ad74df" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: one notification per decision" marker-end="url(#arrow-707070)"/>
+  <path d="M 3000.0 1374.5 L 3000.0 1420.0 L 3300.0 1420.0 L 3300.0 900.0 L 3440.0 900.0 L 3440.0 920.0 L 3430.0 920.0 L 3430.0 944.8" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="3dfe898d-7be3-4488-9122-9cec337d4028" data-target="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: loaded and verified before use" marker-end="url(#arrow-707070)"/>
+  <path d="M 2880.0 974.5 L 2880.0 1020.0 L 3300.0 1020.0 L 3300.0 900.0 L 3680.0 900.0 L 3680.0 920.0 L 3670.0 920.0 L 3670.0 944.8" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="9b84209e-d5ad-4a0a-82de-6a9db7ad74df" data-target="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: the notifications window streams it" marker-end="url(#arrow-707070)"/>
+  <path d="M 3120.0 974.5 L 3120.0 1020.0 L 3300.0 1020.0 L 3300.0 240.0 L 3560.0 240.0 L 3560.0 260.0 L 3550.0 260.0 L 3550.0 282.7" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="9b84209e-d5ad-4a0a-82de-6a9db7ad74df" data-target="569ba49e-7827-429a-b59e-89724e8ee7c5" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: the recipes the game derived from the solutions, one record per package, sha256-verified" marker-end="url(#arrow-707070)"/>
+  <path d="M 3550.0 282.7 L 3550.0 240.0 L 2140.0 240.0 L 2140.0 780.0 L 2020.0 780.0 L 2020.0 743.4" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="569ba49e-7827-429a-b59e-89724e8ee7c5" data-target="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: implements the recipe it was given; every stage judges the change" marker-end="url(#arrow-707070)"/>
+  <path d="M 3430.0 944.8 L 3430.0 900.0 L 3240.0 900.0 L 3240.0 1060.0 L 2460.0 1060.0 L 2460.0 1040.0 L 2450.0 1040.0 L 2450.0 1010.5" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" data-target="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: asks for this run&apos;s judgement at world-open; the judge writes the queue" marker-end="url(#arrow-707070)"/>
+  <path d="M 2020.0 743.4 L 2020.0 967.4 L 3980.0 967.4 L 3980.0 1191.4" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" data-target="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: the solutions the jobs prove; a compile is when the jobs run" marker-end="url(#arrow-707070)"/>
+  <path d="M 3550.0 1194.8 L 3550.0 1193.1 L 4100.0 1193.1 L 4100.0 1191.4" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" data-target="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: the jobs tick, on the world&apos;s clock — voxel-work::tick and voxel-client::clock" marker-end="url(#arrow-707070)"/>
+  <path d="M 4100.0 1191.4 L 4100.0 1101.0 L 2570.0 1101.0 L 2570.0 1010.5" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" data-target="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: the evidence: proof of work for the solutions, graded against axis.rs" marker-end="url(#arrow-707070)"/>
+  <path d="M 1470.0 657.3 L 1470.0 924.3 L 4220.0 924.3 L 4220.0 1191.4" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="f9099be7-cb68-4c83-ac22-cea5502b666b" data-target="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: the cases whose citations the ticket-evidence ladder grades" marker-end="url(#arrow-707070)"/>
+  <path d="M 3670.0 1194.8 L 3670.0 1240.0 L 3860.0 1240.0 L 3860.0 640.0 L 3980.0 640.0 L 3980.0 687.3" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" data-target="ac77bcb8-3792-4895-9361-b74005e8dc5f" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: asks for this tick&apos;s sound; the game opens the device" marker-end="url(#arrow-707070)"/>
+  <path d="M 2570.0 1010.5 L 2570.0 1060.0 L 3300.0 1060.0 L 3300.0 640.0 L 4220.0 640.0 L 4220.0 687.3" fill="none" stroke="#707070" stroke-width="2" opacity="0.60" class="relationship" data-source="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-target="ac77bcb8-3792-4895-9361-b74005e8dc5f" data-routing="orthogonal" role="graphics-symbol" aria-label="Relationship: the emotion state laya decides, which the music is made from" marker-end="url(#arrow-707070)"/>
+  <text x="522" y="229" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 522, 229)" class="relationship-label" data-source="9bf2edef-84e7-493f-8543-50cf7270547e" data-target="e6ba1b40-5725-48fc-b836-7bdb765ec130" data-label-type="description">files tickets through the handler, never by hand</text>
+  <text x="1074" y="407" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 1074, 407)" class="relationship-label" data-source="e6ba1b40-5725-48fc-b836-7bdb765ec130" data-target="f9099be7-cb68-4c83-ac22-cea5502b666b" data-label-type="description">tickets read back</text>
+  <text x="1501" y="561" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 1501, 561)" class="relationship-label" data-source="f9099be7-cb68-4c83-ac22-cea5502b666b" data-target="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" data-label-type="description">the rows the compiler back-compiles from</text>
+  <text x="2055" y="737" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 2055, 737)" class="relationship-label" data-source="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" data-target="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-label-type="description">every stage: Auditor::step consults policy::decide</text>
+  <text x="2668" y="1053" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 2668, 1053)" class="relationship-label" data-source="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-target="3dfe898d-7be3-4488-9122-9cec337d4028" data-label-type="description">the compile stage, permitted — a denied stage stops the compile</text>
+  <text x="2718" y="854" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 2718, 854)" class="relationship-label" data-source="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-target="9b84209e-d5ad-4a0a-82de-6a9db7ad74df" data-label-type="description">one notification per decision</text>
+  <text x="3204" y="1149" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 3204, 1149)" class="relationship-label" data-source="3dfe898d-7be3-4488-9122-9cec337d4028" data-target="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" data-label-type="description">loaded and verified before use</text>
+  <text x="3274" y="945" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 3274, 945)" class="relationship-label" data-source="9b84209e-d5ad-4a0a-82de-6a9db7ad74df" data-target="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" data-label-type="description">the notifications window streams it</text>
+  <text x="3322" y="621" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 3322, 621)" class="relationship-label" data-source="9b84209e-d5ad-4a0a-82de-6a9db7ad74df" data-target="569ba49e-7827-429a-b59e-89724e8ee7c5" data-label-type="description">the recipes the game derived from the solutions, one record per package, sha256-verified</text>
+  <text x="2789" y="527" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 2789, 527)" class="relationship-label" data-source="569ba49e-7827-429a-b59e-89724e8ee7c5" data-target="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" data-label-type="description">implements the recipe it was given; every stage judges the change</text>
+  <text x="2941" y="993" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 2941, 993)" class="relationship-label" data-source="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" data-target="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-label-type="description">asks for this run&apos;s judgement at world-open; the judge writes the queue</text>
+  <text x="2709" y="886" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 2709, 886)" class="relationship-label" data-source="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" data-target="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" data-label-type="description">the solutions the jobs prove; a compile is when the jobs run</text>
+  <text x="3825" y="1178" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 3825, 1178)" class="relationship-label" data-source="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" data-target="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" data-label-type="description">the jobs tick, on the world&apos;s clock — voxel-work::tick and voxel-client::clock</text>
+  <text x="3333" y="1116" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 3333, 1116)" class="relationship-label" data-source="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" data-target="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-label-type="description">the evidence: proof of work for the solutions, graded against axis.rs</text>
+  <text x="2848" y="910" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 2848, 910)" class="relationship-label" data-source="f9099be7-cb68-4c83-ac22-cea5502b666b" data-target="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" data-label-type="description">the cases whose citations the ticket-evidence ladder grades</text>
+  <text x="3812" y="933" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 3812, 933)" class="relationship-label" data-source="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" data-target="ac77bcb8-3792-4895-9361-b74005e8dc5f" data-label-type="description">asks for this tick&apos;s sound; the game opens the device</text>
+  <text x="3392" y="834" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="normal" fill="#707070" transform="rotate(0.0, 3392, 834)" class="relationship-label" data-source="8e8a8d07-549b-42c1-9e4b-67141b9ea471" data-target="ac77bcb8-3792-4895-9361-b74005e8dc5f" data-label-type="description">the emotion state laya decides, which the music is made from</text>
+  <g class="draggable-element" data-element-id="9bf2edef-84e7-493f-8543-50cf7270547e" transform="translate(0, 0)">
+    <circle cx="250" cy="120" r="60" fill="#08427b" stroke="#000000" stroke-width="2"/><rect x="110" y="190" width="280" height="90" rx="10" fill="#08427b" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="220" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The player</text>
+    <text x="250" y="238" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Person]</text>
+    <text x="250" y="258" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">files plain prose tickets at the console</text>
+  </g>
+  <g class="draggable-element" data-element-id="569ba49e-7827-429a-b59e-89724e8ee7c5" transform="translate(0, 0)">
+    <circle cx="3550" cy="353" r="60" fill="#08427b" stroke="#000000" stroke-width="2"/><rect x="3410" y="423" width="280" height="90" rx="10" fill="#08427b" stroke="#000000" stroke-width="2"/>
+    <text x="3550" y="453" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The agent</text>
+    <text x="3550" y="471" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Person]</text>
+    <text x="3550" y="491" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">runs the console&apos;s verbs through the</text>
+    <text x="3550" y="507" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">api, player-equivalent</text>
+  </g>
+  <g class="draggable-element" data-element-id="e6ba1b40-5725-48fc-b836-7bdb765ec130" transform="translate(0, 0)">
+    <rect x="600" y="187" width="400" height="250" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="800" y="227" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The chain</text>
+    <text x="800" y="245" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Container]</text>
+    <text x="800" y="261" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[chain]</text>
+    <text x="800" y="279" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">chains/workspace.chain — the one</text>
+    <text x="800" y="295" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">append-only record</text>
+  </g>
+  <g class="draggable-element" data-element-id="f9099be7-cb68-4c83-ac22-cea5502b666b" transform="translate(0, 0)">
+    <rect x="1150" y="407" width="400" height="250" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="1350" y="447" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The board</text>
+    <text x="1350" y="465" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Container]</text>
+    <text x="1350" y="481" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust / voxel-model]</text>
+    <text x="1350" y="499" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">voxel-model::ticket —</text>
+    <text x="1350" y="515" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">Board::from_chain, the</text>
+    <text x="1350" y="531" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">tickets/governance view</text>
+  </g>
+  <g class="draggable-element" data-element-id="8e8a8d07-549b-42c1-9e4b-67141b9ea471" transform="translate(0, 0)">
+    <rect x="2250" y="761" width="400" height="250" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="2450" y="801" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The decision layer</text>
+    <text x="2450" y="819" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Container]</text>
+    <text x="2450" y="835" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust / voxel-model]</text>
+    <text x="2450" y="853" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">laya + decision::Decider — decides</text>
+    <text x="2450" y="869" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">every stage, full axis suite</text>
+  </g>
+  <g class="draggable-element" data-element-id="bb7c7f9c-77e5-4b24-8bb7-d788ba8b92d4" transform="translate(0, 0)">
+    <rect x="3900" y="1191" width="400" height="250" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="4100" y="1231" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The civilian layer</text>
+    <text x="4100" y="1249" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Container]</text>
+    <text x="4100" y="1265" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust / voxel-model]</text>
+    <text x="4100" y="1283" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">the ala-cities process — citizens,</text>
+    <text x="4100" y="1299" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">jobs, organizations, contracts,</text>
+    <text x="4100" y="1315" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">commissions and security; its evidence</text>
+  </g>
+  <g class="draggable-element" data-element-id="7f6ce776-78c6-4ca9-a659-c3390e7ebf6a" transform="translate(0, 0)">
+    <rect x="1700" y="493" width="400" height="250" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="1900" y="533" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Back-compiler</text>
+    <text x="1900" y="551" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Container]</text>
+    <text x="1900" y="567" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="1900" y="585" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">voxel-package::compiler —</text>
+    <text x="1900" y="601" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">Solution::for_ticket -&gt; render -&gt;</text>
+    <text x="1900" y="617" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">compile</text>
+  </g>
+  <g class="draggable-element" data-element-id="3dfe898d-7be3-4488-9122-9cec337d4028" transform="translate(0, 0)">
+    <rect x="2800" y="1125" width="400" height="250" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="3000" y="1165" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Packages</text>
+    <text x="3000" y="1183" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Container]</text>
+    <text x="3000" y="1199" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[shpkg]</text>
+    <text x="3000" y="1217" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">packages/ — the loader&apos;s search path</text>
+    <text x="3000" y="1233" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">IS the compiler&apos;s output root; a package</text>
+    <text x="3000" y="1249" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">carries the recipe it was compiled from,</text>
+  </g>
+  <g class="draggable-element" data-element-id="9b84209e-d5ad-4a0a-82de-6a9db7ad74df" transform="translate(0, 0)">
+    <rect x="2800" y="725" width="400" height="250" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="3000" y="765" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Notification queue</text>
+    <text x="3000" y="783" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Container]</text>
+    <text x="3000" y="799" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[api layer]</text>
+    <text x="3000" y="817" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">logs/laya-decisions/ (the run&apos;s</text>
+    <text x="3000" y="833" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">judgement) and logs/agent-inbox/ (the</text>
+    <text x="3000" y="849" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">recipes) — musli-wire records,</text>
+  </g>
+  <g class="draggable-element" data-element-id="cd9a287d-9ec1-47a0-ba4c-a0f877fcde6c" transform="translate(0, 0)">
+    <rect x="3350" y="945" width="400" height="250" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="3550" y="985" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The game</text>
+    <text x="3550" y="1003" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Container]</text>
+    <text x="3550" y="1019" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust / wgpu]</text>
+    <text x="3550" y="1037" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">shploingus + voxel-client — the window</text>
+    <text x="3550" y="1053" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">and the shell</text>
+  </g>
+  <g class="draggable-element" data-element-id="ac77bcb8-3792-4895-9361-b74005e8dc5f" transform="translate(0, 0)">
+    <rect x="3900" y="687" width="400" height="250" rx="5" fill="#438dd5" stroke="#000000" stroke-width="2"/>
+    <text x="4100" y="727" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">voxel-audio</text>
+    <text x="4100" y="745" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Container]</text>
+    <text x="4100" y="761" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust / voxel-audio]</text>
+    <text x="4100" y="779" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">crates/voxel-audio — the onset and the</text>
+    <text x="4100" y="795" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">bed, as f(seed, tick)</text>
+  </g>
+</svg>

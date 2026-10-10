@@ -46,7 +46,7 @@ use crate::detail::DetailSample;
 use crate::provenance::{LUMINANCE_BLUE, LUMINANCE_GREEN, LUMINANCE_RED};
 use core::ops::{Add, Div, Mul};
 use voxel_model::{
-    Material, MaterialId, MaterialRegistry, OpticalClass, Refusal, RefusalKind, RefusalSet, Refused,
+    Material, MaterialRegistry, OpticalClass, Ratio, Refusal, RefusalKind, RefusalSet, Refused,
 };
 
 /// A linear RGB triple.
@@ -391,9 +391,11 @@ impl OpenPbrInputs {
     /// The same material, **at one address of the detail lattice**
     /// (`APPEARANCE.md` §4: block truth *plus deterministic variation*).
     ///
-    /// The variation is one-sided by construction: it moves the value toward the
-    /// domain edge it has room for and never past it, so no clamp and no refusal
-    /// is needed and the result is still a legal OpenPBR value. A parameter the
+    /// Roughness moves one-sided — toward the domain edge it has room for, never past
+    /// it — so the scalar stays legal without a clamp. **Albedo is tinted instead of
+    /// washed** (C-165): the reflectance channel *multiplies* the material's own colour
+    /// ([`PATTERN_TINT`]), so a wood cell stays wood-dark and a regolith cell stays
+    /// sand-pale, and the product is clamped into the unit cube. A parameter the
     /// material does not have stays absent — detail cannot invent an albedo.
     pub fn with_detail(&self, sample: DetailSample) -> Refused<Self> {
         if !sample.is_finite() {
@@ -408,8 +410,12 @@ impl OpenPbrInputs {
             .map(|r| vary(r, sample.roughness_delta));
         out.base_color = match self.base_color {
             Colour::Admitted(c) => {
-                let d = sample.reflectance_delta;
-                Colour::Admitted(LinearRgb::new(vary(c.r, d), vary(c.g, d), vary(c.b, d)))
+                let t = pattern_tint(sample.reflectance_delta);
+                Colour::Admitted(LinearRgb::new(
+                    (c.r * t).clamp(0.0, 1.0),
+                    (c.g * t).clamp(0.0, 1.0),
+                    (c.b * t).clamp(0.0, 1.0),
+                ))
             }
             Colour::Unadmitted => Colour::Unadmitted,
         };
@@ -417,8 +423,28 @@ impl OpenPbrInputs {
     }
 }
 
+/// How much of its own value a fragment's **albedo** may swing with the detail
+/// lattice: a multiplicative tint of `1 ± PATTERN_TINT`, so a material keeps its hue
+/// and its identity while the block grid shows through.
+///
+/// **This replaced a one-sided wash toward white (C-165), and the eye-check is the
+/// reason.** `with_detail` used to move each base-colour channel toward the edge it had
+/// room for — so half of every material's cells drifted toward white and the screen read
+/// as one pale speckle over sand, wood, foliage and rock alike. The user's report is the
+/// measurement: *"trees are same color as regolith"*. A tint multiplies the material's
+/// own colour instead: a wood cell stays wood-dark, a regolith cell stays sand-pale.
+pub const PATTERN_TINT: f64 = 0.35;
+
+/// The factor a fragment's albedo is tinted by: `1 + PATTERN_TINT · delta`, floored at
+/// zero so no delta can negate a colour and capped so the multiply cannot leave the
+/// unit cube before [`with_detail`]'s own clamp.
+fn pattern_tint(delta: f64) -> f64 {
+    (1.0 + PATTERN_TINT * delta).clamp(0.0, 1.0 + PATTERN_TINT)
+}
+
 /// Move a value in `[0, 1]` toward the edge it has room for. One-sided by
-/// construction, so the result cannot leave OpenPBR's declared domain.
+/// construction, so the result cannot leave OpenPBR's declared domain. Used for the
+/// scalar roughness; the albedo is tinted by [`pattern_tint`] instead (C-165).
 fn vary(value: f64, delta: f64) -> f64 {
     if delta >= 0.0 {
         value + delta * (1.0 - value)
@@ -468,7 +494,7 @@ fn check_colour(set: &mut RefusalSet, name: &'static str, c: LinearRgb) {
 pub fn derive(
     material: &Material,
     registry: &MaterialRegistry,
-    neighbour: Option<MaterialId>,
+    saturation: Option<Ratio>,
 ) -> Refused<OpenPbrInputs> {
     let admitted = registry.material(material.id)?;
 
@@ -512,10 +538,13 @@ pub fn derive(
     // Porous is rough. Denser than the admitted set is smoother than all of it.
     let porosity = ((max - density) / (max - min)).clamp(0.0, 1.0);
 
-    let wet = match neighbour {
-        None => false,
-        Some(id) => registry.material(id)?.optical_class == OpticalClass::Transmissive,
-    };
+    // **How wet this cell is, as the fluidics' own saturation** — not a guess from
+    // what happens to be adjacent. This used to be a one-bit "is a transmissive
+    // material next door", which made wetness a fact about the neighbourhood rather
+    // than about the water actually in this cell's pores, and meant `coat_weight`
+    // could only ever be 0 or 1. A fully saturated cell is fully coated; an absent
+    // saturation is a cell the lattice says nothing about, not a dry one.
+    let wet = saturation.map(|s| s.to_f64()).unwrap_or(0.0);
     let transmits = admitted.optical_class == OpticalClass::Transmissive;
 
     // **The one parameter this derivation used to refuse outright.** A material
@@ -551,13 +580,144 @@ pub fn derive(
         specular_roughness: if transmits { None } else { Some(porosity) },
         specular_ior: None,
         specular_weight: None,
-        coat_weight: if wet { 1.0 } else { 0.0 },
+        coat_weight: wet,
         coat_roughness: None,
         transmission_weight: if transmits { 1.0 } else { 0.0 },
         transmission_depth: None,
         subsurface_weight: None,
-        emission: Emission::None,
+        emission: emission_of(material),
     })
+}
+
+/// The material's own emission, or `Emission::None`.
+///
+/// **A record, not a calculation.** OpenPBR FC-8.6 gives a dynamic block emitter an
+/// emission input, and `npr.rs` has always shaded one — what there was nowhere to
+/// *declare* was the claim itself, so this could only ever answer `None` and every
+/// body in the world was forced to reflect a sun it should have been.
+///
+/// The radiance here is what the material emits, and for a body above an atmosphere it
+/// is what reaches the eye only after transmission; that second step belongs to the
+/// atmosphere's own model, not to this field.
+#[cfg(test)]
+mod emission_tests {
+    use super::*;
+    use voxel_model::{
+        Component, ComponentId, MaterialId, Ratio, Reflectance, SourcedEmission,
+    };
+
+    /// A registry holding one plain rock, and the material itself.
+    ///
+    /// `derive` reads the registry for the material's components, so the two have to be
+    /// built together — passing an empty registry refuses before emission is ever reached,
+    /// which would make every test below pass or fail for the wrong reason.
+    fn dark() -> (MaterialRegistry, Material) {
+        let mut r = MaterialRegistry::new();
+        r.admit_component(ComponentId(1), "rock");
+        let m = Material {
+            id: MaterialId(800),
+            name: "plain".into(),
+            components: vec![Component {
+                id: ComponentId(1),
+                ratio: Ratio::ONE,
+                density_kg_m3: Ratio::from_u64(2900),
+                reflectance: None,
+            }],
+            optical_class: OpticalClass::Opaque,
+            reflectance: None,
+            emission: None,
+        };
+        r.admit_material(m.clone()).expect("a plain material is admitted");
+        // **A second, lighter material, because `derive` builds a weathering scale from
+        // the admitted set's opaque density range** and a single density is degenerate,
+        // so one material alone refuses before emission is ever reached.
+        let lighter = Material {
+            id: MaterialId(801),
+            name: "lighter".into(),
+            components: vec![Component {
+                id: ComponentId(1),
+                ratio: Ratio::ONE,
+                density_kg_m3: Ratio::from_u64(1400),
+                reflectance: None,
+            }],
+            optical_class: OpticalClass::Opaque,
+            reflectance: None,
+            emission: None,
+        };
+        r.admit_material(lighter).expect("a lighter material is admitted");
+        (r, m)
+    }
+
+    fn with_emission(radiance: Ratio) -> (MaterialRegistry, Material) {
+        let (r, mut m) = dark();
+        m.emission = Some(SourcedEmission {
+            colour: Reflectance::broadband(Ratio::new(100, 100).expect("a ratio"))
+                .expect("a broadband colour"),
+            radiance,
+            source: "test",
+        });
+        (r, m)
+    }
+
+    #[test]
+    fn a_material_that_declares_no_emission_still_emits_nothing() {
+        // **The regression this field could have caused.** Adding a field to a record is
+        // the easiest way to make every existing record mean something new, and emission
+        // is exactly the field where that would be invisible until the world glowed.
+        let (r, m) = dark();
+        let inputs = derive(&m, &r, None).expect("derives");
+        assert!(
+            matches!(inputs.emission, Emission::None),
+            "a material with no emission record must emit nothing, got {:?}",
+            inputs.emission
+        );
+    }
+
+    #[test]
+    fn a_declared_emission_reaches_the_shading_inputs() {
+        // The gate the sun needs: FC-8.6 has to survive from the record to the shader.
+        let (r, body) = with_emission(Ratio::new(1361, 1).expect("a radiance"));
+        let inputs = derive(&body, &r, None).expect("derives");
+        match inputs.emission {
+            Emission::Emitted { color, luminance } => {
+                assert!((luminance - 1361.0).abs() < 1e-9, "luminance {luminance}");
+                assert!(
+                    (color.r - 1.0).abs() < 1e-9 && (color.g - 1.0).abs() < 1e-9,
+                    "a broadband emission is white, got {color:?}"
+                );
+            }
+            Emission::None => panic!("a declared emission reached derive as None"),
+        }
+    }
+
+    #[test]
+    fn an_emission_of_zero_is_an_empty_record_and_not_a_live_emitter() {
+        // "Emits nothing" and "given the field with nothing in it" must not shade the same,
+        // or a table difference would read as a physics difference.
+        let (r, body) = with_emission(Ratio::ZERO);
+        let inputs = derive(&body, &r, None).expect("derives");
+        assert!(matches!(inputs.emission, Emission::None));
+    }
+}
+
+fn emission_of(material: &Material) -> Emission {
+    match &material.emission {
+        None => Emission::None,
+        Some(e) => {
+            let radiance = e.radiance.to_f64();
+            // A declared emission of zero is not an emission: it is a material that was
+            // given the field and has nothing in it, and shading it as a live emitter
+            // would make a table difference look like a physics difference.
+            if !(radiance > 0.0) {
+                return Emission::None;
+            }
+            let rgb = e.colour.linear();
+            Emission::Emitted {
+                color: LinearRgb::new(rgb[0], rgb[1], rgb[2]),
+                luminance: radiance,
+            }
+        }
+    }
 }
 
 /// The shading inputs of a whole visible face: each covering material derived,
@@ -568,12 +728,12 @@ pub fn derive(
 pub fn from_composition(
     composition: &VoxelComposition,
     registry: &MaterialRegistry,
-    neighbour: Option<MaterialId>,
+    saturation: Option<Ratio>,
 ) -> Refused<OpenPbrInputs> {
     let mut parts: Vec<(f64, OpenPbrInputs)> = Vec::with_capacity(composition.materials().len());
     for (id, share) in composition.materials() {
         let material = registry.material(*id)?;
-        parts.push((share.to_f64(), derive(material, registry, neighbour)?));
+        parts.push((share.to_f64(), derive(material, registry, saturation)?));
     }
     if parts.is_empty() {
         return Err(Refusal::new(
@@ -679,11 +839,24 @@ fn blend_emission(parts: &[(f64, OpenPbrInputs)]) -> Emission {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use voxel_model::{Component, ComponentId, Material, Ratio};
-    use voxel_shapers::column::materials::{self, BEDROCK, IGNEOUS, REGOLITH, SEDIMENTARY, WATER};
+    use voxel_model::{Component, ComponentId, Material, MaterialId, Ratio};
+    use voxel_shapers::column::materials::{self, IGNEOUS, REGOLITH, SEDIMENTARY, WATER};
 
     fn registry() -> MaterialRegistry {
         materials::registry().unwrap()
+    }
+
+    /// The colour the record carries for a material, through the same conversion
+    /// `derive` uses.
+    ///
+    /// The expectation for the tests below is **the record's own value**, not a
+    /// second copy of it: C-143 replaced the placeholder greys with sampled
+    /// spectra, and a test holding a literal grey then measures the literal, not
+    /// the rule. This helper pins *which* value is used — the material's sourced
+    /// reflectance — without hardcoding what it currently is.
+    fn sourced_colour(reg: &MaterialRegistry, id: MaterialId) -> LinearRgb {
+        let [r, g, b] = reg.material(id).unwrap().reflectance.as_ref().unwrap().value.linear();
+        LinearRgb::new(r, g, b)
     }
 
     /// A registry whose `IGNEOUS` material carries **no** reflectance and whose
@@ -704,9 +877,13 @@ mod tests {
                 id: ComponentId(1),
                 ratio: Ratio::ONE,
                 density_kg_m3: Ratio::from_u64(density),
+                // The row is one substance at ratio 1, so its component carries the
+                // same value the row does — the blend of one part **is** the part.
+                reflectance,
             }],
             optical_class: OpticalClass::Opaque,
             reflectance,
+            emission: None,
         };
         r.admit_material(one(IGNEOUS, "bare rock", 2900, None)).unwrap();
         r.admit_material(one(
@@ -745,37 +922,91 @@ mod tests {
         }
     }
 
+    /// **The weathering scale is the admitted opaque set's own density range.**
+    ///
+    /// The rule lives in `derive`: porosity is `(max − d)/(max − min)` over the
+    /// **opaque** materials, so the lightest admitted opaque material reads exactly
+    /// `1.0` and the densest exactly `0.0`, and density orders roughness. Whether an
+    /// organic *should* stretch a rock's weathering scale is the derived library's
+    /// question (C-122, `MATERIALS.md` §4) and not this test's; what is this test's is
+    /// that the mechanism holds over the roster as it stands.
+    ///
+    /// **It used to name its materials, and that is why it broke.** `WOOD` was the
+    /// floor (admitted with the trees, C-159.11) and the corpus then admitted the
+    /// 300 kg/m³ plant fibres and an 8100 kg/m³ ore (C-172/C-173), so the floor and
+    /// the ceiling both moved while the mechanism did not — and a test that pins a
+    /// *name* fails when a material is admitted, which is the roster's business. So
+    /// the extremes are read **from the registry here**, every opaque material is
+    /// measured against the same arithmetic `derive` uses, and the two extremes are
+    /// asserted to be the scale's own ends. Nothing here needs editing when a
+    /// material is admitted.
     #[test]
     fn roughness_comes_from_the_material_s_own_density_and_is_monotone() {
-        // The weathering signal: within the admitted set, denser is smoother.
         let reg = registry();
-        let mut ordered: Vec<(f64, f64)> = [REGOLITH, IGNEOUS, BEDROCK]
-            .into_iter()
-            .map(|id| {
-                let m = reg.material(id).unwrap();
-                (
-                    m.bulk_density_kg_m3().to_f64(),
-                    derive(m, &reg, None).unwrap().specular_roughness.unwrap(),
-                )
-            })
+        let opaque: Vec<&Material> = reg
+            .materials()
+            .filter(|m| m.optical_class == OpticalClass::Opaque)
             .collect();
-        ordered.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        // Ascending density, strictly descending roughness.
-        for pair in ordered.windows(2) {
-            assert!(
-                pair[0].1 > pair[1].1,
-                "roughness did not fall as density rose: {pair:?}"
+        let density = |m: &Material| m.bulk_density_kg_m3().to_f64();
+        let min = opaque.iter().map(|m| density(m)).fold(f64::INFINITY, f64::min);
+        let max = opaque.iter().map(|m| density(m)).fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            max > min,
+            "the opaque admitted set has no density range to derive a scale from: {min}..{max} kg/m3"
+        );
+
+        // **Every** opaque material, not three named ones: a mechanism test that
+        // ranges over a roster has to range over it.
+        let mut ordered: Vec<(f64, f64, &str)> = Vec::with_capacity(opaque.len());
+        for m in &opaque {
+            let d = density(m);
+            let expected = ((max - d) / (max - min)).clamp(0.0, 1.0);
+            let derived = derive(m, &reg, None)
+                .unwrap_or_else(|r| panic!("{} does not derive: {r}", m.name))
+                .specular_roughness;
+            assert_eq!(
+                derived,
+                Some(expected),
+                "{} at {d} kg/m3 reads a roughness the scale does not give it",
+                m.name
             );
+            ordered.push((d, expected, m.name.as_str()));
         }
-        // The extremes of the **opaque** admitted set are the extremes of the
-        // scale: regolith at 1400 kg/m3 is the roughest and bedrock at 3000 the
-        // smoothest, so 1400 -> 1.0 and 3000 -> 0.0. Ice (917) is admitted and
-        // lighter than either, and it does **not** stretch the scale, because a
-        // liquid is not what the weathering claim is about.
-        let regolith = derive(reg.material(REGOLITH).unwrap(), &reg, None).unwrap();
-        assert_eq!(regolith.specular_roughness, Some(1.0));
-        let bedrock = derive(reg.material(BEDROCK).unwrap(), &reg, None).unwrap();
-        assert_eq!(bedrock.specular_roughness, Some(0.0));
+
+        // Ascending density, descending roughness — and equal density is equal
+        // roughness, which is the claim the word "monotone" makes on a roster where
+        // several rows share a density (`MATERIALS.md`'s timber rows are one such).
+        ordered.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        for pair in ordered.windows(2) {
+            if pair[0].0 == pair[1].0 {
+                assert_eq!(
+                    pair[0].1, pair[1].1,
+                    "{} and {} share a density and not a roughness",
+                    pair[0].2, pair[1].2
+                );
+            } else {
+                assert!(
+                    pair[0].1 > pair[1].1,
+                    "roughness did not fall as density rose: {pair:?}"
+                );
+            }
+        }
+
+        // The extremes of the set **are** the extremes of the scale. The names travel
+        // in the failure message and not in the assertion, because which material holds
+        // the floor is a fact about the roster and this is the roster as it stands —
+        // today the lightest opaque material is a plant fibre at 300 kg/m³ and the
+        // densest is an ore.
+        let (d_light, r_light, lightest) = ordered.first().unwrap();
+        let (d_dense, r_dense, densest) = ordered.last().unwrap();
+        assert_eq!(
+            *r_light, 1.0,
+            "{lightest} at {d_light} kg/m3 is the lightest opaque material and does not read 1.0"
+        );
+        assert_eq!(
+            *r_dense, 0.0,
+            "{densest} at {d_dense} kg/m3 is the densest opaque material and does not read 0.0"
+        );
     }
 
     #[test]
@@ -799,12 +1030,20 @@ mod tests {
     }
 
     #[test]
-    fn a_wet_neighbour_raises_the_coat_and_a_dry_one_does_not() {
+    fn a_cells_saturation_becomes_its_coat_and_an_absent_one_does_not() {
+        // **Saturation, not a neighbour.** This used to pass a `MaterialId` and ask whether
+        // it was transmissive, which made wetness a fact about what was adjacent and could
+        // only ever answer 0 or 1. It now passes the fluidics' own saturation, so a
+        // part-drenched cell is part-coated.
         let reg = registry();
-        let dry = derive(reg.material(IGNEOUS).unwrap(), &reg, Some(IGNEOUS)).unwrap();
+        let dry = derive(reg.material(IGNEOUS).unwrap(), &reg, Some(Ratio::ZERO)).unwrap();
         assert_eq!(dry.coat_weight, 0.0);
-        let wet = derive(reg.material(IGNEOUS).unwrap(), &reg, Some(WATER)).unwrap();
-        assert_eq!(wet.coat_weight, 1.0);
+        let damp = derive(reg.material(IGNEOUS).unwrap(), &reg, Some(Ratio::new(1, 2).unwrap())).unwrap();
+        assert!((damp.coat_weight - 0.5).abs() < 1e-12, "half saturated is half coated, got {}", damp.coat_weight);
+        let soaked = derive(reg.material(IGNEOUS).unwrap(), &reg, Some(Ratio::ONE)).unwrap();
+        assert_eq!(soaked.coat_weight, 1.0);
+        // **Absent is not dry.** `None` is a cell the lattice says nothing about, which is a
+        // different claim from a measured zero.
         let edge = derive(reg.material(IGNEOUS).unwrap(), &reg, None).unwrap();
         assert_eq!(edge.coat_weight, 0.0);
     }
@@ -813,8 +1052,10 @@ mod tests {
     fn an_unadmitted_neighbour_or_material_is_refused() {
         let reg = registry();
         let m = one(IGNEOUS);
-        let r = derive(&m, &reg, Some(MaterialId(900))).unwrap_err();
-        assert_eq!(r.kind(), RefusalKind::UnadmittedMaterial);
+        // The neighbour is gone: `derive` no longer resolves one, so an unadmitted material
+        // id can no longer be a failure mode here. What is still refused is the material.
+        let r = derive(&m, &reg, None);
+        assert!(r.is_ok() || r.unwrap_err().kind() != RefusalKind::UnadmittedMaterial);
 
         // A hand-built material with an id the registry never admitted must not
         // shade as that id.
@@ -825,9 +1066,11 @@ mod tests {
                 id: ComponentId(1),
                 ratio: Ratio::ONE,
                 density_kg_m3: Ratio::from_u64(1),
+                reflectance: None,
             }],
             optical_class: OpticalClass::Opaque,
             reflectance: None,
+            emission: None,
         };
         assert_eq!(
             derive(&forged, &reg, None).unwrap_err().kind(),
@@ -850,9 +1093,11 @@ mod tests {
                     id: ComponentId(1),
                     ratio: Ratio::ONE,
                     density_kg_m3: Ratio::from_u64(2900),
+                    reflectance: None,
                 }],
                 optical_class: OpticalClass::Opaque,
             reflectance: None,
+            emission: None,
             })
             .unwrap();
         let r = derive(&m, &single, None).unwrap_err();
@@ -869,7 +1114,7 @@ mod tests {
         let inputs = derive(reg.material(IGNEOUS).unwrap(), &reg, None).unwrap();
         assert_eq!(
             inputs.base_color,
-            Colour::Admitted(LinearRgb::grey(0.12)),
+            Colour::Admitted(sourced_colour(&reg, IGNEOUS)),
             "an igneous rock's sourced reflectance is admitted, and it is the value the record carries"
         );
         let absent = inputs.unavailable();
@@ -989,6 +1234,46 @@ mod tests {
         // Delta zero is the identity — the lattice's own mean.
         let none = base.with_detail(DetailSample::NONE).unwrap();
         assert_eq!(none, base);
+
+        // **The albedo is tinted, not washed** (C-165): the material's own hue
+        // survives, the move is both ways around its own value, and the delta's sign
+        // decides which. A wash toward white is what made every material read as the
+        // same pale speckle the eye-check reported.
+        let base_colour = match base.base_color {
+            Colour::Admitted(c) => c,
+            Colour::Unadmitted => panic!("the stated fixture has an albedo"),
+        };
+        let tint = |delta: f64| match base
+            .with_detail(DetailSample { roughness_delta: 0.0, reflectance_delta: delta })
+            .unwrap()
+            .base_color
+        {
+            Colour::Admitted(c) => c,
+            Colour::Unadmitted => panic!("a stated colour survives detail"),
+        };
+        let darker = tint(-1.0);
+        let brighter = tint(1.0);
+        for (d, b) in [
+            (darker.r, base_colour.r),
+            (darker.g, base_colour.g),
+            (darker.b, base_colour.b),
+        ] {
+            assert!(
+                (d - b * (1.0 - PATTERN_TINT)).abs() < 1e-12,
+                "the dark tint is not the material's own value times the factor: {d} vs {b}"
+            );
+        }
+        for (b, v) in [
+            (brighter.r, base_colour.r),
+            (brighter.g, base_colour.g),
+            (brighter.b, base_colour.b),
+        ] {
+            assert!(b >= v && b <= 1.0, "the bright tint left the value's own room: {b} vs {v}");
+        }
+        // Hue is untouched: the channel cross-product is the material's own.
+        let cross = |a: LinearRgb, b: LinearRgb| (a.r * b.g - a.g * b.r).abs();
+        assert!(cross(brighter, base_colour) < 1e-12, "the tint moved the hue");
+        assert!(cross(darker, base_colour) < 1e-12, "the tint moved the hue");
     }
 
     #[test]
@@ -1046,9 +1331,10 @@ mod tests {
         // With both parts sourced, the blend averages instead of vanishing.
         let reg = registry();
         let rock = derive(reg.material(IGNEOUS).unwrap(), &reg, None).unwrap();
+        let rock_colour = sourced_colour(&reg, IGNEOUS);
         match blend(&[(0.5, stated()), (0.5, rock)]).base_color {
             Colour::Admitted(c) => {
-                let want = (0.4 + 0.12) / 2.0;
+                let want = (0.4 + rock_colour.r) / 2.0;
                 assert!((c.r - want).abs() < 1e-12, "colour was {c:?}, wanted {want}");
             }
             Colour::Unadmitted => panic!("both parts carried a colour"),
@@ -1092,17 +1378,26 @@ mod tests {
             shape.set(idx, if idx.z == 3 { REGOLITH } else { IGNEOUS });
         }
         let c = VoxelComposition::of_face(&shape, Face::PosX, &reg).unwrap();
-        let blended = from_composition(&c, &reg, Some(WATER)).unwrap();
-        // Both are opaque, so both derived roughness; the wet neighbour wets both.
+        let blended = from_composition(&c, &reg, Some(Ratio::ONE)).unwrap();
+        // Both are opaque, so both derived roughness; the cell's saturation wets both.
         assert!(blended.specular_roughness.is_some());
         assert_eq!(blended.coat_weight, 1.0);
         // Both carry a sourced reflectance, so the face has a colour that is the
-        // coverage-weighted blend of the two — 17 % soil and 12 % igneous rock
-        // come out between them, and the face is *not* the darker or the lighter
-        // of the pair.
+        // coverage-weighted blend of the two — it comes out **between** the two
+        // records' own values, and the face is *not* the darker or the lighter of
+        // the pair.
+        let soil_colour = sourced_colour(&reg, REGOLITH);
+        let rock_colour = sourced_colour(&reg, IGNEOUS);
+        let (lo, hi) = (
+            soil_colour.r.min(rock_colour.r),
+            soil_colour.r.max(rock_colour.r),
+        );
         match blended.base_color {
             Colour::Admitted(c) => {
-                assert!(c.r > 0.12 && c.r < 0.17, "the blend is between the two: {c:?}");
+                assert!(
+                    c.r >= lo - 1e-12 && c.r <= hi + 1e-12,
+                    "the blend {c:?} is not between the parts ({soil_colour:?}, {rock_colour:?})"
+                );
             }
             Colour::Unadmitted => panic!("both materials carry a reflectance"),
         }

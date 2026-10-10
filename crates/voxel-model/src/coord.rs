@@ -30,7 +30,30 @@ pub const SUBVOXEL_COUNT: usize = (SUBVOXEL_SIDE as usize).pow(3);
 
 /// Material detail samples per subvoxel edge — the **detailing** resolution
 /// (APPEARANCE §2). **Addressed, never stored.**
-pub const DETAIL_SIDE: u32 = 256;
+///
+/// The base the record calls **256**, because one subvoxel *face* carries
+/// 16×16 = **256** samples: **16×16×16** within the subvoxel, exactly as the
+/// composition base is 4×4×4 within the voxel. The user corrected this from the
+/// earlier reading of 256-per-axis on 2026-10-05 (*"256 was supposed to be 16x16x16
+/// like the 64 base was 4x4x4"*); the lattice's own cell is therefore 15.6 mm and
+/// not 1 mm.
+pub const DETAIL_SIDE: u32 = 16;
+
+/// The levels a cell's fill is resolved to — the **fluid** interface's own scale, in
+/// 1/`FILL_SIDE`ths of a cell's pore volume (`voxel-shapers::fluidics::FILL_LEVELS`).
+///
+/// This is **not** the detail lattice, and the two shared one constant (`DETAIL_SIDE`)
+/// until 2026-10-05, when the user corrected the detail base to 16 per subvoxel edge
+/// and ruled where fluids belong: *"it's the level that the water and fluids should
+/// run at, so it can animate down to as small as individual 32x pixels (not 256x
+/// because it'd waste performance ESPECIALLY because of the transparency issues)."*
+///
+/// **And the scale is 32 per block axis, not 64 (C-164).** The same eye-check that
+/// floored the drawn pattern ruled the whole visible scale: *"I like the 32x per side
+/// of block, so if there's stuff happening below that, then I don't want it."* So a
+/// block's fill is resolved at four subvoxels of **eight** — **32** levels, one per
+/// 31.25 mm — which is exactly the drawn pattern's finest cell.
+pub const FILL_SIDE: u32 = 32;
 
 /// The lowest voxel z in the first playable band (C-6).
 pub const BAND_MIN_Z: i32 = -16;
@@ -164,7 +187,15 @@ mod tests {
         assert_eq!(CHUNK_VOLUME, 32_768);
         assert_eq!(SUBVOXEL_SIDE, 4);
         assert_eq!(SUBVOXEL_COUNT, 64);
-        assert_eq!(DETAIL_SIDE, 256);
+        // The two bases, by the names the record uses: the composition base is
+        // 4×4×4 (64) per voxel, the detail base is 16×16×16 (256 per face) per
+        // subvoxel. A fluid's fill levels are neither (`FILL_SIDE`).
+        assert_eq!(DETAIL_SIDE, 16);
+        assert_eq!(DETAIL_SIDE * DETAIL_SIDE, 256);
+        // A fluid's fill is resolved at the drawn scale — 32 samples per block axis,
+        // four subvoxels of eight — and not at the addressed detail base (C-164).
+        assert_eq!(FILL_SIDE, SUBVOXEL_SIDE * 8);
+        assert_ne!(DETAIL_SIDE, FILL_SIDE);
     }
 
     #[test]

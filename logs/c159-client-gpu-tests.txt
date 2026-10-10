@@ -1,0 +1,50 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.48s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-c4ab11d6b795be08.exe)
+
+running 11 tests
+test shell::mount::tests::hand_the_boards_tickets_to_the_agent_on_the_real_record ... FAILED
+test renderer::tests::the_water_surface_reflects_the_sky_the_model_says_it_does ... ok
+test renderer::tests::the_sky_is_drawn_where_there_is_no_geometry_and_never_claims_to_be_geometry ... ok
+test renderer::tests::the_derived_rig_reaches_the_pixels_and_moves_with_the_tick ... ok
+test renderer::tests::a_frame_with_no_sky_written_is_the_black_it_was_before ... ok
+test renderer::tests::the_gpu_shades_a_surface_exactly_as_the_crate_does ... ok
+test hud::tests::the_shell_chrome_is_legible_over_the_worst_backdrop ... FAILED
+test renderer::tests::a_frame_of_the_world_passes_the_bars_band_count ... ok
+test renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe ... FAILED
+test renderer::tests::the_player_starts_on_the_ground_and_the_frame_proves_it ... ok
+test renderer::tests::the_shipped_view_is_not_a_black_screen ... ok
+
+failures:
+
+---- shell::mount::tests::hand_the_boards_tickets_to_the_agent_on_the_real_record stdout ----
+the real record: 301 open ticket(s), 0 handed over, 301 already owed, 0 refused
+
+thread 'shell::mount::tests::hand_the_boards_tickets_to_the_agent_on_the_real_record' (25912) panicked at crates\voxel-client\src\shell\mount.rs:5760:9:
+assertion `left == right` failed: one recipe per open ticket — 515 record(s) for 301 open ticket(s)
+  left: 515
+ right: 301
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- hud::tests::the_shell_chrome_is_legible_over_the_worst_backdrop stdout ----
+adapter: NVIDIA GeForce RTX 2070 SUPER (Vulkan)
+
+thread 'hud::tests::the_shell_chrome_is_legible_over_the_worst_backdrop' (24028) panicked at crates\voxel-client\src\hud.rs:997:9:
+the shell's chrome is text and glyphs
+
+---- renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe stdout ----
+fixture LightRig::standard(): mean 0.23845 max 0.44937 above1% 53.5% colours 9432
+derived noon: sun 22.0 deg intensity 0.780 lights 1 ambient 0.00439
+derived skylight rig at noon: mean 0.75683 max 1.43345 above1% 53.5% colours 9429
+
+thread 'renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe' (21892) panicked at crates\voxel-client\src\renderer.rs:567:9:
+the world's brightest pixel was 1.4334486354470253 — the rig is not one unit
+
+
+failures:
+    hud::tests::the_shell_chrome_is_legible_over_the_worst_backdrop
+    renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe
+    shell::mount::tests::hand_the_boards_tickets_to_the_agent_on_the_real_record
+
+test result: FAILED. 8 passed; 3 failed; 0 ignored; 0 measured; 364 filtered out; finished in 32.45s
+
+error: test failed, to rerun pass `-p voxel-client --lib`

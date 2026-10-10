@@ -1,0 +1,10 @@
+chain-repair	every frame that did not link to the record before it, and nothing else
+chain-repair-bytes	1685224504 -> 555350 (1684669154 removed)
+chain-repair-frames	207 kept, 333016 dropped
+chain-repair-before-digest	sha256:196d190a94e798c97621ae5e133cf937e12f84b77725ad4413f3920f05522b7a
+chain-repair-after-digest	sha256:a6085d1fa5088a0a3a4da75499950c3a5afbf2736c4087d1604a7237bdd26889
+chain-repair-before-folded	207
+chain-repair-before-corrupt	333016
+chain-repair-after-folded	207
+chain-repair-after-corrupt	0
+chain-repair-tickets	151 -> 151

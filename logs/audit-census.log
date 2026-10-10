@@ -1,0 +1,50 @@
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+    Finished `test` profile [optimized + debuginfo] target(s) in 42.00s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_package-ae0470561f476050.exe)
+
+running 1 test
+--- crate census ---
+crate                named    moduled  tested   refusing claimed  documented
+voxel-model         active   active   active   active   active   refused  
+voxel-noise         active   active   active   inactive inactive refused  
+voxel-mesh          active   active   active   active   active   refused  
+voxel-shapers       active   active   active   active   active   refused  
+voxel-stream        active   active   active   active   active   refused  
+voxel-instrument    active   active   active   active   inactive refused  
+voxel-appearance    active   active   active   active   active   refused  
+voxel-work          active   active   active   active   inactive refused  
+voxel-ui            active   inactive active   inactive inactive refused  
+voxel-client        active   active   active   active   active   refused  
+voxel-package       active   active   active   active   inactive refused  
+shploingus          active   inactive inactive inactive inactive refused  
+  gap voxel-model/documented: refused — 33% of voxel-model's source over 41 of 41 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-noise/refusing: inactive — voxel-noise names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+  gap voxel-noise/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-noise. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap voxel-noise/documented: refused — 33% of voxel-noise's source over 6 of 6 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-mesh/documented: refused — 37% of voxel-mesh's source over 8 of 8 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-shapers/documented: refused — 41% of voxel-shapers's source over 28 of 28 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-stream/documented: refused — 35% of voxel-stream's source over 5 of 5 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-instrument/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-instrument. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap voxel-instrument/documented: refused — 38% of voxel-instrument's source over 5 of 5 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-appearance/documented: refused — 42% of voxel-appearance's source over 10 of 10 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-work/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-work. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap voxel-work/documented: refused — 40% of voxel-work's source over 6 of 6 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-ui/moduled: inactive — voxel-ui declares no `pub mod`. That is legal — a leaf crate can be one file — so this is reported as `inactive`, not refused: a state, and a fact a reader can check
+  gap voxel-ui/refusing: inactive — voxel-ui names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+  gap voxel-ui/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-ui. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap voxel-ui/documented: refused — 35% of voxel-ui's source over 2 of 2 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-client/documented: refused — 42% of voxel-client's source over 25 of 25 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-package/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-package. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap voxel-package/documented: refused — 40% of voxel-package's source over 35 of 35 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap shploingus/moduled: inactive — shploingus declares no `pub mod`. That is legal — a leaf crate can be one file — so this is reported as `inactive`, not refused: a state, and a fact a reader can check
+  gap shploingus/tested: inactive — shploingus contains no `#[test]`. C-17 holds the whole client to 'every cargo test actually visible', and a crate with no test cannot show that it was looked at
+  gap shploingus/refusing: inactive — shploingus names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+  gap shploingus/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name shploingus. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap shploingus/documented: refused — 46% of shploingus's source over 3 of 3 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+cells active 48 of 72
+test census::tests::the_census_prints_its_own_measurements ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 233 filtered out; finished in 0.54s
+

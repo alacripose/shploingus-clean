@@ -1,0 +1,6 @@
+fixture LightRig::standard(): mean 0.23845 max 0.44937 above1% 53.5% colours 9432
+derived noon: sun 22.0 deg intensity 0.780 lights 1 ambient 0.00439
+derived skylight rig at noon: mean 0.47302 max 0.89591 above1% 53.5% colours 9430
+**Measured, not asserted**: the exposed rig keeps the world's brightest noon pixel at 0.895905409425497 (under full scale) with mean 0.47302 and 53.5% of pixels above 0.01. The fixture's 0.2384542890299419 was not correct either — it was an arbitrary ambient and no sun.
+test renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 374 filtered out; finished in 12.49s

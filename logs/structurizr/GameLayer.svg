@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 350" width="500" height="350" role="img" aria-label="Architecture diagram showing software elements and their relationships. Bold lines indicate outbound relationships from the primary element.">
+  <defs>
+    <marker id="arrow-707070" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#707070"/>
+    </marker>
+    <marker id="arrow-bold-707070" markerWidth="15" markerHeight="15" refX="13" refY="7.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 15 7.5 L 0 15 z" fill="#707070"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="500" height="350" fill="transparent"/>
+  <g class="draggable-element" data-element-id="7eeda57f-7351-4390-a491-8ad635f08f48" transform="translate(0, 0)">
+    <rect x="65" y="50" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="70" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="100" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="90" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">The world</text>
+    <text x="250" y="108" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="124" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust / voxel-client + voxel-shapers]</text>
+    <text x="250" y="142" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">voxel-client::game::World — seed, tick</text>
+    <text x="250" y="158" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">and configuration held together (C-96.1)</text>
+    <text x="250" y="174" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">— composed with the earthworks record</text>
+  </g>
+</svg>

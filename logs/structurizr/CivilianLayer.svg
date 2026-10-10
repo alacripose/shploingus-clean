@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 3650" width="500" height="3650" role="img" aria-label="Architecture diagram showing software elements and their relationships. Bold lines indicate outbound relationships from the primary element.">
+  <defs>
+    <marker id="arrow-707070" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#707070"/>
+    </marker>
+    <marker id="arrow-bold-707070" markerWidth="15" markerHeight="15" refX="13" refY="7.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 15 7.5 L 0 15 z" fill="#707070"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="500" height="3650" fill="transparent"/>
+  <g class="draggable-element" data-element-id="36ea53d6-cf28-4c24-95f7-675b0fc59623" transform="translate(0, 0)">
+    <rect x="65" y="50" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="70" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="100" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="90" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Citizens</text>
+    <text x="250" y="108" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="124" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="250" y="142" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">persistent entities: lifecycle, skills,</text>
+    <text x="250" y="158" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">needs, jobs, claims, promotions,</text>
+    <text x="250" y="174" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">retirement — the store&apos;s own record</text>
+  </g>
+  <g class="draggable-element" data-element-id="7c44ac45-c8a4-4605-bb8b-9417fe06adce" transform="translate(0, 0)">
+    <rect x="65" y="600" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="620" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="650" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="640" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Organizations</text>
+    <text x="250" y="658" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="674" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="250" y="692" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">premises + roster + scope; an office is</text>
+    <text x="250" y="708" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">held and answerable up the chain; the</text>
+    <text x="250" y="724" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">government is an organization</text>
+  </g>
+  <g class="draggable-element" data-element-id="06c3ee08-56e4-424a-874e-cc5fae6af858" transform="translate(0, 0)">
+    <rect x="65" y="1150" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="1170" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="1200" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="1190" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Contracts</text>
+    <text x="250" y="1208" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="1224" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="250" y="1242" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">the §16 envelope — scope, authority,</text>
+    <text x="250" y="1258" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">rate, term, evidence, completion, change</text>
+    <text x="250" y="1274" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">control (legacyledger/gov.rs)</text>
+  </g>
+  <g class="draggable-element" data-element-id="7237e0c3-5fde-4224-88c1-fba5e98ff8eb" transform="translate(0, 0)">
+    <rect x="65" y="1700" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="1720" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="1750" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="1740" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Jobs</text>
+    <text x="250" y="1758" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="1774" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="250" y="1792" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">a citizen&apos;s scoped work: rate, term, the</text>
+    <text x="250" y="1808" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">evidence required per ticket; a job</text>
+    <text x="250" y="1824" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">closes tickets with evidence</text>
+  </g>
+  <g class="draggable-element" data-element-id="331573eb-9449-4789-aa4e-c640980e115a" transform="translate(0, 0)">
+    <rect x="65" y="2250" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="2270" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="2300" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="2290" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Commissions</text>
+    <text x="250" y="2308" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="2324" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="250" y="2342" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">the ticket kinds and their obligations</text>
+    <text x="250" y="2358" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">— chat, question, commission; a</text>
+    <text x="250" y="2374" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">commission is the one kind whose reply</text>
+  </g>
+  <g class="draggable-element" data-element-id="e746e367-7d18-4ba4-8bc9-f6ea6475b7c8" transform="translate(0, 0)">
+    <rect x="65" y="2800" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="2820" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="2850" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="2840" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Evidence and grading</text>
+    <text x="250" y="2858" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="2874" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="250" y="2892" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">the evidence ladder graded on axis.rs&apos;s</text>
+    <text x="250" y="2908" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">ladders — the proof of work for</text>
+    <text x="250" y="2924" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">solutions (gov.rs §30; unit grades,</text>
+  </g>
+  <g class="draggable-element" data-element-id="167f5194-0b6e-47d1-8ee3-90ce0098408d" transform="translate(0, 0)">
+    <rect x="65" y="3350" width="385" height="250" rx="3" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="3370" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/><rect x="50" y="3400" width="30" height="15" rx="2" fill="#85bbf0" stroke="#000000" stroke-width="2"/>
+    <text x="250" y="3390" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#ffffff">Security</text>
+    <text x="250" y="3408" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Component]</text>
+    <text x="250" y="3424" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#ffffff">[Rust]</text>
+    <text x="250" y="3442" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">the findings lane, cited by line</text>
+    <text x="250" y="3458" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">(laya::security_findings), and the</text>
+    <text x="250" y="3474" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#ffffff">high-security organization&apos;s phases as</text>
+  </g>
+</svg>

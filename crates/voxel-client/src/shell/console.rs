@@ -127,19 +127,25 @@ pub struct Record {
 }
 
 impl Record {
-    pub fn describe(&self) -> String {
+    /// **The badge and the rest, as two runs.** A level badge is a *badge* — the reference
+    /// draws each run in its own span — so the two halves are produced together here rather
+    /// than re-split by whoever draws them.
+    pub fn line_parts(&self) -> (String, String) {
         let at = match self.tick {
             Some(tick) => format!("t{tick}"),
             // **Absence rendered as absence** (D107): a record with no tick says so rather than
             // reading as tick zero.
             None => "t-".to_string(),
         };
-        format!(
-            "[{}] {at} {}: {}",
-            self.level.slug(),
-            self.category,
-            self.message
+        (
+            format!("[{}]", self.level.slug()),
+            format!("{at} ({}) {}", self.category, self.message),
         )
+    }
+
+    pub fn describe(&self) -> String {
+        let (badge, rest) = self.line_parts();
+        format!("{badge} {rest}")
     }
 }
 
@@ -180,6 +186,36 @@ pub struct Console {
     /// no record to file into, and inventing a path would be a write somewhere the operator
     /// never named.
     workspace: Option<std::path::PathBuf>,
+    /// Which line the keyboard is editing. See [`Field`].
+    field: Field,
+    /// **The search box's own text** — the reference's `search_input`, which filters the view.
+    /// A separate string from the draft: a query is not a command, and merging them would make
+    /// searching for a word and running it the same act.
+    search: String,
+    /// **Whether the view follows the tail.** The reference's Auto-Scroll checkbox, checked by
+    /// default. When it is off, new records still arrive but the *view* stops following them —
+    /// the frozen window is a reading of the log at a moment, which is the whole reason to have
+    /// the control.
+    autoscroll: bool,
+    /// **How many of the newest visible records the frozen view is holding back.** Zero while
+    /// autoscroll is on, and counted from the moment it is switched off — so the rows on screen
+    /// are the rows that were on screen when the operator looked away.
+    held_back: usize,
+}
+
+/// **Which line the keyboard is editing.** The reference's console has two editable fields —
+/// the search box that filters the log (`search_input`) and the command line that executes
+/// (`cmd_input`) — and every key goes to exactly one of them, which is what a focused field *is*.
+///
+/// **The command line is the default**, because the console's job is the command surface
+/// (H-8.2) and a console that opened editing its filter would swallow the first word typed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Field {
+    /// The command line — the reference's `cmd_input`, and the only field `submit` reads.
+    Command,
+    /// The search box — the reference's `search_input`, which filters the view and never
+    /// executes anything.
+    Search,
 }
 
 /// A key the console understands. **The shell's own enum, not `winit`'s**, for the same reason
@@ -225,6 +261,10 @@ impl Console {
             cursor: 0,
             draft: String::new(),
             workspace: None,
+            field: Field::Command,
+            search: String::new(),
+            autoscroll: true,
+            held_back: 0,
         }
     }
 
@@ -245,6 +285,12 @@ impl Console {
             self.dropped += 1;
         }
         self.records.push_back(record);
+        // **The frozen view counts what it is not showing.** With autoscroll off, every arrival
+        // is held back from the view rather than moving it — and the count is what lets the
+        // pane say how many newer records exist.
+        if !self.autoscroll {
+            self.held_back += 1;
+        }
     }
 
     /// Set the filter. **`None` is every level**, and saying so is better than a sentinel string
@@ -257,15 +303,135 @@ impl Console {
         self.filter
     }
 
+    /// **The reference's filter dropdown, as a cycle.** `All Logs` then the five level entries —
+    /// the same order the reference's combo lists them, minus the double-count the record
+    /// already named (its `System [SYS]` entry beside the five). `None` is `All Logs`.
+    pub fn cycle_filter(&mut self) -> Option<Level> {
+        self.filter = match self.filter {
+            None => Some(Level::Sys),
+            Some(Level::Sys) => Some(Level::Event),
+            Some(Level::Event) => Some(Level::Action),
+            Some(Level::Action) => Some(Level::Warn),
+            Some(Level::Warn) => Some(Level::Info),
+            Some(Level::Info) => None,
+        };
+        self.filter
+    }
+
+    /// Which name the filter control shows. **The reference's own words** (`All Logs`,
+    /// `System [SYS]`, …) rather than a new vocabulary this tree invented.
+    pub fn filter_name(&self) -> String {
+        match self.filter {
+            None => "All Logs".to_string(),
+            Some(level) => {
+                // The reference's combo labels: `System [SYS]`, `Events [EVENT]`,
+                // `Actions [ACTION]`, `Warnings [WARN]`. The record's five levels are closed,
+                // so the fifth entry follows the same pattern rather than being absent from a
+                // filter an operator can reach.
+                let word = match level {
+                    Level::Sys => "System",
+                    Level::Event => "Events",
+                    Level::Action => "Actions",
+                    Level::Warn => "Warnings",
+                    Level::Info => "Info",
+                };
+                format!("{word} [{}]", level.slug())
+            }
+        }
+    }
+
+    /// The search box's text. **A query filters the view and never executes.**
+    pub fn search(&self) -> &str {
+        &self.search
+    }
+
+    pub fn clear_search(&mut self) {
+        self.search.clear();
+    }
+
+    /// Which line the keyboard is editing.
+    pub fn field(&self) -> Field {
+        self.field
+    }
+
+    /// **Focus the search box.** The reference has two line edits and Qt moves focus between
+    /// them; this is that move, and it is explicit so a caller cannot half-move it.
+    pub fn focus_search(&mut self) {
+        self.field = Field::Search;
+    }
+
+    /// **Return to the command line.** Where a search ends, because the console's job is the
+    /// command surface.
+    pub fn focus_command(&mut self) {
+        self.field = Field::Command;
+    }
+
+    /// Whether the view follows the tail. See [`Console::held_back`].
+    pub fn autoscroll(&self) -> bool {
+        self.autoscroll
+    }
+
+    /// The reference's Auto-Scroll checkbox, as a toggle. **Switching it off starts the freeze
+    /// now**; switching it on releases everything held, because the operator asking to follow
+    /// the tail means the tail, not the moment they stopped following it.
+    pub fn toggle_autoscroll(&mut self) -> bool {
+        self.autoscroll = !self.autoscroll;
+        if self.autoscroll {
+            self.held_back = 0;
+        }
+        self.autoscroll
+    }
+
+    /// How many of the newest visible records the frozen view is holding back.
+    pub fn held_back(&self) -> usize {
+        self.held_back
+    }
+
+    /// **The records the view shows: the level filter and the search query, both applied.** The
+    /// reference's `render_logs` does exactly this pair — `filter_combo` first, then the
+    /// lowercased query over `"level category message"` — and this is that reading, not a
+    /// second one.
+    pub fn visible(&self) -> Vec<&Record> {
+        let query = self.search.trim().to_ascii_lowercase();
+        self.records
+            .iter()
+            .filter(|record| self.filter.is_none_or(|level| record.level == level))
+            .filter(|record| {
+                if query.is_empty() {
+                    return true;
+                }
+                let haystack = format!(
+                    "{} {} {}",
+                    record.level.slug(),
+                    record.category,
+                    record.message
+                )
+                .to_ascii_lowercase();
+                haystack.contains(&query)
+            })
+            .collect()
+    }
+
+    /// **The whole event record, filter and query ignored** — what the log window shows. The
+    /// console's view is a *reading* of this; the log is the record itself.
+    pub fn all(&self) -> Vec<&Record> {
+        self.records.iter().collect()
+    }
+
+    /// The records the view is actually showing: [`Console::visible`] cut at the end by the
+    /// frozen view's held-back count, because autoscroll off is a statement about what is on
+    /// screen.
+    pub fn shown(&self) -> Vec<&Record> {
+        let visible = self.visible();
+        let shown = visible.len().saturating_sub(self.held_back);
+        visible.into_iter().take(shown).collect()
+    }
+
     /// The lines the console would show, oldest first. **Filtered, never truncated** — a
     /// truncated console is the deferral this repository removed from `Board::describe` earlier
     /// today, and it is the same defect wearing different clothes.
     pub fn lines(&self) -> Vec<String> {
-        self.records
-            .iter()
-            .filter(|record| self.filter.is_none_or(|level| record.level == level))
-            .map(Record::describe)
-            .collect()
+        self.shown().into_iter().map(Record::describe).collect()
     }
 
     pub fn len(&self) -> usize {
@@ -286,8 +452,14 @@ impl Console {
     /// Clear the output. **The filter and the history survive**, because clearing a screen is not
     /// clearing what you typed, and a console that forgot your last command is worse than one
     /// that forgot its output.
+    ///
+    /// **The frozen view's anchor does not survive it either.** `held_back` counts the arrivals
+    /// the view is not showing, and a clear removes the records those arrivals were newer
+    /// *than* — an anchor that outlived its subject would hold back every future record against
+    /// nothing, and a frozen console read blank from then on.
     pub fn clear(&mut self) {
         self.records.clear();
+        self.held_back = 0;
     }
 
     /// Record a typed line for history, and return it parsed.
@@ -301,18 +473,34 @@ impl Console {
     /// the window belongs to the shell. A key that changes nothing says so rather than
     /// reporting a change, so a caller can skip a redraw.
     pub fn key(&mut self, key: Key) -> KeyOutcome {
-        match key {
-            Key::Char(character) => {
+        // **Every key goes to the focused field, and only one field edits at a time.** The
+        // history belongs to the command line — a search box that recalled commands would put a
+        // command in it and then filter on it, which is neither act done on purpose.
+        match (self.field, key) {
+            (Field::Search, Key::Char(character)) => {
+                self.search.push(character);
+                KeyOutcome::Changed
+            }
+            (Field::Search, Key::Backspace) => {
+                if self.search.pop().is_none() {
+                    return KeyOutcome::Ignored;
+                }
+                KeyOutcome::Changed
+            }
+            (Field::Search, Key::HistoryUp | Key::HistoryDown | Key::Enter) => {
+                KeyOutcome::Ignored
+            }
+            (Field::Command, Key::Char(character)) => {
                 self.draft.push(character);
                 KeyOutcome::Changed
             }
-            Key::Backspace => {
+            (Field::Command, Key::Backspace) => {
                 if self.draft.pop().is_none() {
                     return KeyOutcome::Ignored;
                 }
                 KeyOutcome::Changed
             }
-            Key::HistoryUp => {
+            (Field::Command, Key::HistoryUp) => {
                 if self.cursor == 0 {
                     return KeyOutcome::Ignored;
                 }
@@ -320,7 +508,7 @@ impl Console {
                 self.draft = self.history[self.cursor].clone();
                 KeyOutcome::Changed
             }
-            Key::HistoryDown => {
+            (Field::Command, Key::HistoryDown) => {
                 if self.cursor + 1 >= self.history.len() {
                     // **Past the end the draft empties rather than refusing.** The history is a
                     // convenience and refusing to type after recalling is a worse answer than an
@@ -338,13 +526,20 @@ impl Console {
             }
             // `Enter` is [`Console::submit`], which is a separate call because a submit is not a
             // keystroke — it is the moment the line stops being a draft.
-            Key::Enter => KeyOutcome::Ignored,
+            (Field::Command, Key::Enter) => KeyOutcome::Ignored,
         }
     }
 
     /// The line being typed, for a caller that draws it.
     pub fn draft(&self) -> &str {
         &self.draft
+    }
+
+    /// The whole console as text — the reference's `copy_logs`, which is the visible view and
+    /// not the record. **Text and not a side effect:** the shell has no clipboard, and a `copy`
+    /// that silently did nothing would be the exact failure the console exists to refuse.
+    pub fn copy_text(&self) -> String {
+        self.lines().join("\n")
     }
 
     /// Where a `file` from this console is filed. **Set once, by the caller that knows the root**
@@ -668,6 +863,76 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_search_box_filters_the_view_and_never_executes() {
+        let mut console = Console::new();
+        console.log(Level::Event, "LAUNCH", "launched files", Some(0));
+        console.log(Level::Warn, "PANEL", "too tall for the pane", Some(1));
+        console.log(Level::Event, "DOCK", "docked inventory", Some(2));
+
+        console.focus_search();
+        assert_eq!(console.field(), Field::Search);
+        // The reference's `search_input` is a query over `"level category message"`.
+        for character in "launched".chars() {
+            assert_eq!(console.key(Key::Char(character)), KeyOutcome::Changed);
+        }
+        assert_eq!(console.search(), "launched");
+        let visible = console.visible();
+        assert_eq!(visible.len(), 1, "one record matches the query");
+        assert!(visible[0].message.contains("launched files"), "{visible:?}");
+        // **The query is not a command.** Nothing was logged, nothing was submitted, and the
+        // draft is untouched — a search that executed would be the defect the two fields exist
+        // to prevent.
+        assert_eq!(console.draft(), "");
+        assert_eq!(console.len(), 3);
+        assert!(console.submit(Some(9)).is_none(), "an empty draft submits nothing");
+
+        // History is the command line's, so the search box ignores it.
+        assert_eq!(console.key(Key::HistoryUp), KeyOutcome::Ignored);
+        // And Enter leaves the search rather than submitting it.
+        assert_eq!(console.key(Key::Enter), KeyOutcome::Ignored);
+        console.focus_command();
+        assert_eq!(console.field(), Field::Command);
+    }
+
+    #[test]
+    fn the_filter_cycles_through_the_reference_s_entries_and_back_to_all() {
+        let mut console = Console::new();
+        assert_eq!(console.filter_name(), "All Logs");
+        for wanted in [
+            (Level::Sys, "System [SYS]"),
+            (Level::Event, "Events [EVENT]"),
+            (Level::Action, "Actions [ACTION]"),
+            (Level::Warn, "Warnings [WARN]"),
+            (Level::Info, "Info [INFO]"),
+        ] {
+            assert_eq!(console.cycle_filter(), Some(wanted.0));
+            assert_eq!(console.filter_name(), wanted.1);
+        }
+        assert_eq!(console.cycle_filter(), None, "and the cycle returns to All Logs");
+        assert_eq!(console.filter_name(), "All Logs");
+    }
+
+    #[test]
+    fn autoscroll_off_freezes_the_view_and_counts_what_it_is_not_showing() {
+        let mut console = Console::new();
+        console.log(Level::Info, "TEST", "first", Some(0));
+        assert!(console.autoscroll(), "the reference checks Auto-Scroll by default");
+        assert_eq!(console.lines().len(), 1);
+
+        assert!(!console.toggle_autoscroll(), "the toggle reports the new state");
+        console.log(Level::Info, "TEST", "second", Some(1));
+        console.log(Level::Info, "TEST", "third", Some(2));
+        assert_eq!(console.held_back(), 2);
+        let frozen = console.lines();
+        assert_eq!(frozen.len(), 1, "the view still shows the row it was showing");
+        assert!(frozen[0].contains("first"), "{frozen:?}");
+
+        assert!(console.toggle_autoscroll(), "switched back on");
+        assert_eq!(console.held_back(), 0, "and the tail is released");
+        assert_eq!(console.lines().len(), 3);
+    }
+
+    #[test]
     fn the_level_vocabulary_is_five_and_closed() {
         // The reference has five. A sixth would be a colour nobody chose, so the count is
         // asserted rather than `ALL.len()`.
@@ -855,6 +1120,30 @@ mod tests {
             "and the command history survives, because a console that forgot your last command \
              is worse than one that forgot its output"
         );
+    }
+
+    #[test]
+    fn clearing_the_output_re_anchors_the_frozen_view() {
+        let mut console = Console::new();
+        console.log(Level::Info, "TEST", "first", Some(0));
+        console.toggle_autoscroll();
+        console.log(Level::Info, "TEST", "second", Some(1));
+        assert_eq!(console.held_back(), 1, "the freeze is holding the second record");
+
+        console.clear();
+        assert_eq!(
+            console.held_back(),
+            0,
+            "the freeze's subject is gone, so the anchor cannot outlive it"
+        );
+        // The notice the clear lane logs is an arrival like any other, and the freeze holds it
+        // too — the note says so, and Auto-Scroll releases it.
+        console.log(Level::Sys, "CONSOLE", "log cleared", None);
+        assert_eq!(console.held_back(), 1);
+        assert!(console.lines().is_empty());
+        assert!(console.toggle_autoscroll());
+        assert_eq!(console.lines().len(), 1);
+        assert!(console.lines()[0].contains("log cleared"));
     }
 
     #[test]

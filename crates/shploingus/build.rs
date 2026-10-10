@@ -40,6 +40,17 @@ fn main() {
             record::document_path(&workspace, document).display()
         );
     }
+    // **The chain is read by the gate too, so it must rebuild the gate as well** (C-107). The
+    // board section is `voxel_package::board::describe` over `bloat::read_chain`, and the bloat
+    // section is `measure_dir` over the same directory — so a chain that changed while this
+    // script did not re-run left both printing numbers from **before** the filing. That is the
+    // same defect as a reader that greps one heading level: a stale reading that reads as a
+    // measurement. `filing::CHAIN_DIR` rather than a second hand-typed `"chains"`, the same
+    // reason the line below uses it.
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace.join(filing::CHAIN_DIR).display()
+    );
 
     let source = fs::read(&source_path).expect("required alpha shell recipe must be readable");
 
@@ -102,6 +113,40 @@ fn main() {
         panic!("the census did not measure everything, so it is not a census: {errors}")
     });
 
+    // ---- the decision layer: two passes over one subject vocabulary ----
+    //
+    // **H-14.1**: Laya is the *decision layer*, not one oracle behind a trait, so every decision
+    // this framework makes — the axes of every crate, all nineteen feature rows, the record's
+    // numbers, the civilians' ladders, and the recipe — is asked of one seam. `deterministic`
+    // answers by delegating to the same census, feature table and codec the sections above used,
+    // which is what makes the agreement check below meaningful rather than circular: it compares
+    // one implementation read twice.
+    //
+    // **Two passes, one vocabulary** (H-14.2): the model pass runs through `oracle::Model` — the
+    // calibrated structural judge reached through the seam (BLD-0025). It reads the record's
+    // declaration of each subject against the tree's evidence, refuses every subject before
+    // reading anything when the calibration is not quotable, and never convicts without a
+    // human's reason recorded in the same act; where a subject carries no prose to read, the
+    // absence is named rather than defaulted. The pass is computed here — before the report is
+    // built — so the oracle section below can *measure* `oracle-is-laya` from the decider that
+    // actually ran instead of printing a literal.
+    let system = voxel_package::decision::Deterministic::new(&workspace).with_recipe(&source);
+    let model = voxel_package::oracle::Model::calibrated(&workspace);
+    let two = voxel_package::decision::run(&system, &model);
+    assert_eq!(
+        two.system
+            .of(voxel_package::decision::Subject::Recipe)
+            .map(|assessment| assessment.state),
+        Some(voxel_package::features::Establishment::Active),
+        "the decision layer and the direct compile disagree about the shipped recipe, and two \
+         readers of one record may not disagree"
+    );
+    assert!(
+        two.model_decided() > 0,
+        "the model instrument decided nothing, and a second pass that only refuses is the \
+         absence `model-unreached` already names rather than a second instrument"
+    );
+
     // ---- one report, two readers ----
     let mut report = String::new();
     report.push_str(&format!("gate\t{}\n", voxel_package::recipe::HEADER));
@@ -138,7 +183,24 @@ fn main() {
         calibration.inverted_accuracy
     ));
     report.push_str("oracle-kind\tstructural-deterministic\n");
-    report.push_str("oracle-is-laya\tno\n");
+    // **Measured, not a literal.** The line answers *is the thing that ran the seam's model
+    // instrument?* from the pass's own decider. Before BLD-0025 it was the string `no`, which
+    // the record's own ticket convicted: a row that could read either way and could not.
+    report.push_str(&format!(
+        "oracle-is-laya\t{}\n",
+        if two.model.decider == voxel_package::oracle::MODEL_NAME {
+            "yes"
+        } else {
+            "no"
+        }
+    ));
+    // **The model oracle's establishment is measured too** (R-59.5). Either the judge beats the
+    // majority class of the known-answer set and may be quoted, or the gate says
+    // `not-established` rather than saying nothing.
+    report.push_str(&format!(
+        "model-oracle\t{}\n",
+        if model.is_quotable() { "established" } else { "not-established" }
+    ));
     for note in &calibration.calibration.notes {
         report.push_str(&format!("oracle-note\t{note}\n"));
     }
@@ -336,44 +398,16 @@ fn main() {
         }
     }
 
-    // ---- the decision layer: one pass over every subject ----
+    // ---- the decision layer: both passes, side by side ----
     //
-    // **H-14.1**: Laya is the *decision layer*, not one oracle behind a trait, so every decision
-    // this framework makes — the five axes of every crate, all nineteen feature rows, and the
-    // recipe — is asked of one seam. `deterministic` answers by delegating to the same census,
-    // feature table and codec the sections above used, which is what makes the agreement check
-    // below meaningful rather than circular: it compares one implementation read twice.
-    //
-    // The model instrument that will implement the same seam is **not** evaluated, and that stays
-    // stated in "what this gate is not" rather than being implied by a green section here.
-    // **Two passes, one vocabulary** (H-14.2): the system pass and the model pass over the same
-    // eighty subjects. The model instrument is a Rust model this tree has not built yet, so the
-    // second pass runs through `Unreachable` — which refuses every subject rather than passing
-    // them, and whose absences are reported as absences and not as disagreements.
-    let system = voxel_package::decision::Deterministic::new(&workspace).with_recipe(&source);
-    let two = voxel_package::decision::run(
-        &system,
-        &voxel_package::decision::Unreachable {
-            why: "the model decider is a Rust model this tree has not built yet (H-14.2), and a \
-                  missing instrument is not a pass"
-                .to_string(),
-        },
-    );
-    assert_eq!(
-        two.system
-            .of(voxel_package::decision::Subject::Recipe)
-            .map(|assessment| assessment.state),
-        Some(voxel_package::features::Establishment::Active),
-        "the decision layer and the direct compile disagree about the shipped recipe, and two \
-         readers of one record may not disagree"
-    );
+    // Computed before the report was built, so the oracle section could measure its own line;
+    // written here so the report's shape is unchanged.
     report.push_str(&two.report());
 
-    // The two claims this gate must never overstate, stated in the artefact itself.
+    // The claims this gate must never overstate, stated in the artefact itself.
     report.push_str("\n# what this gate is not\n");
     report.push_str("integrity\testablished\n");
     report.push_str("identity\tnot-established-no-signature\n");
-    report.push_str("model-oracle\tnot-evaluated\n");
 
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo build output directory"));
     fs::write(out.join("alpha-shell.shpkg"), &package).expect("write validated shell package");

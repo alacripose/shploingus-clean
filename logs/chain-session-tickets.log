@@ -1,0 +1,11 @@
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+    Finished `test` profile [optimized + debuginfo] target(s) in 10.82s
+     Running tests\file_work.rs (F:/shploingus-target\debug\deps\file_work-f163afa089634e28.exe)
+
+running 1 test
+test file_the_session_tickets_onto_the_record has been running for over 60 seconds
+error: test failed, to rerun pass `-p voxel-package --test file_work`
+
+Caused by:
+  process didn't exit successfully: `F:/shploingus-target\debug\deps\file_work-f163afa089634e28.exe --ignored file_the_session_tickets_onto_the_record` (exit code: 1)
+note: test exited abnormally; to see the full output pass --no-capture to the harness.

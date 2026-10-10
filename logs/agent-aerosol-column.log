@@ -1,0 +1,19 @@
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 15.61s
+     Running `F:/shploingus-target\debug\examples\aerosol-column.exe`
+1024 columns, seed 2468
+  water path m:  min 0.0  mean 8.2  p90 33.5  p99 71.4  max 125.0
+  humidity:      min 0.401  mean 0.497  max 0.637
+  cloudy columns: 300 of 1024 (29.3 %)
+
+  turbidity each reference would give (clear 2.0, gain 3.0):
+      ref m     clear    median       p90       max
+         25      2.00      2.00     10.05     31.99
+         50      2.00      2.00      6.02     17.00
+        100      2.00      2.00      4.01      9.50
+        200      2.00      2.00      3.01      5.75
+        400      2.00      2.00      2.50      3.87
+
+  at reference 100 m: 724 columns have no cloud at all and read T = 2.00
+
+  at reference 200 m: 724 columns have no cloud at all and read T = 2.00

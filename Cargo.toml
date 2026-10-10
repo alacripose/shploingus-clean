@@ -8,6 +8,7 @@ members = [
     "crates/voxel-stream",
     "crates/voxel-instrument",
     "crates/voxel-appearance",
+    "crates/voxel-light",
     "crates/voxel-work",
     "crates/voxel-audio",
     "crates/voxel-client",

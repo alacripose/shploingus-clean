@@ -42,6 +42,28 @@
 //! any declared window by id, so no window is unreachable. A package may declare **no** tabs: a recipe
 //! rendered from a ticket has no bar, and an empty bar is a real state.
 //!
+//! # The rows: the work, not the arrangement
+//!
+//! `row<TAB>id<TAB>text` names **one row of the record the package implements**, with that row's
+//! own words. It is not a window and it is not derived from one: a ticket like *"can't look
+//! around"* names no window at all, and a recipe that could only carry windows would carry
+//! **nothing** for it — a package that looks complete while declaring no work.
+//!
+//! **This is the shape `shploingus-game`'s compiler already had, and the reason this grammar
+//! grew it**: there, a compile produces a package *and* a slice spec, and the slice spec's
+//! `implemented_rows` is the list of gated rows the package implements. The row's text lived in
+//! the record store (`Record { id, title, text }` — *"this is the recipe the oracle judges code
+//! against"*), and the package's content identity folded the slice spec's digest in, so **a
+//! package compiled against a different spec is a different package**. Here the record is the
+//! chain (`forbidden.second-record`), the compiler derives the rows from the ticket it was handed
+//! rather than from a plan file, and the same binding is wanted: a recipe that names no row and
+//! no window declares nothing and is refused by name.
+//!
+//! **A row's id is an id, never prose**, and it is checked as one — the `[KIND]-[digits]` shape
+//! the record already uses (`BLD-0207`, `M14`, `B-214`, `C-99`) plus the chain's own
+//! `event-0142`. The text is the decision's words, on one line, and a tab is refused rather than
+//! silently splitting it into a second value nothing reads.
+//!
 //! # One key per row, not eighteen columns
 //!
 //! Each window is a **block** of `key<TAB>value` rows under a `window<TAB>id` header.
@@ -76,8 +98,15 @@ const MAGIC: &[u8; 8] = b"SHPKG002";
 /// Alpha input ceilings — declared resource limits, never silent truncation.
 pub const MAX_RECIPE_BYTES: usize = 1_048_576;
 pub const MAX_WINDOWS: usize = 256;
+/// How many rows one recipe may implement. **Its own ceiling**, because a row is the work and a
+/// window is the arrangement: one bound for both would either refuse a large plan or license a
+/// large declaration.
+pub const MAX_ROWS: usize = 256;
 /// Longest single value, so one row cannot be a megabyte of title.
 pub const MAX_VALUE_BYTES: usize = 256;
+/// Longest single row's text. **Bigger than [`MAX_VALUE_BYTES`] on purpose**: a row carries the
+/// decision's own words, and a decision is a paragraph, where a window's value is a value.
+pub const MAX_ROW_TEXT_BYTES: usize = 4096;
 
 /// How many content kinds the record names. UI-SPEC §2's closed twelve.
 pub const RECORD_KIND_COUNT: usize = 12;
@@ -349,6 +378,57 @@ impl BehaviorPolicy {
     }
 }
 
+/// **One row of the record this package implements** — a ticket, a milestone, a blocker, a
+/// decision, or the chain event that filed one.
+///
+/// The pair is the record store's own shape (`Record { id, title, text }` in the tree this
+/// grammar was read from), carried here because a package must be readable **alone**: the agent
+/// that implements it reads the recipe out of the package, and a row that named only an id would
+/// send that reader to a second file to find out what the id means. The words are the record's,
+/// copied verbatim by the compiler's renderer — never written here, and never paraphrased.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Row {
+    /// The record's id: `BLD-0207`, `M14`, `B-214`, `C-99`, `event-0142`.
+    pub id: String,
+    /// The decision's own words, on one line.
+    pub text: String,
+}
+
+/// Whether a row's id is the record's own id shape — a kind, a dash, and a number, or the
+/// chain's `event-<digits>`.
+///
+/// **Stricter than `identifier` and deliberately not `identifier`**: a window id is lowercase
+/// because a window id is read by the shell, and a row id is the record's because it is read by
+/// whoever goes looking for `C-99` in `docs/LEDGER.md`. Two vocabularies, two predicates.
+fn row_identifier(text: &str) -> bool {
+    if text.is_empty() || text.len() > 64 {
+        return false;
+    }
+    let Some((kind, number)) = text.rsplit_once('-') else {
+        // No dash: the record still uses bare series ids in places (`M14`, `R64`), so a bare
+        // `LETTERS DIGITS` id is accepted — and nothing else is.
+        return letters_then_digits(text);
+    };
+    // **The split is on the LAST dash**, so `B-214` reads as kind `B` and `event-0142` as kind
+    // `event`; a two-dash id with a dotted decision (`C-92.1`) is not a row, it is a section of
+    // one, and a section is not what a package implements.
+    !kind.is_empty()
+        && kind.len() <= 32
+        && kind.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_uppercase())
+        && !number.is_empty()
+        && number.len() <= 8
+        && number.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn letters_then_digits(text: &str) -> bool {
+    let split = text.find(|c: char| c.is_ascii_digit()).unwrap_or(0);
+    split > 0
+        && split <= 32
+        && text[..split].bytes().all(|b| b.is_ascii_alphabetic())
+        && !text[split..].is_empty()
+        && text[split..].bytes().all(|b| b.is_ascii_digit())
+}
+
 /// One window, exactly as UI-SPEC §2 tabulates it.
 ///
 /// **The window declares; the shell owns `WindowState`** (normal/minimized/maximized/
@@ -437,6 +517,10 @@ pub fn declared_window_vocabulary() -> String {
 pub struct Recipe {
     pub name: String,
     pub version: String,
+    /// **The rows of the record this package implements**, in declaration order, each with the
+    /// decision's own words. The work, as distinct from the arrangement: the windows below are
+    /// how it looks, and these are what it is for.
+    pub rows: Vec<Row>,
     pub windows: Vec<WindowSpec>,
     /// Window ids the arrangement pins into the HUD. Pinning is a **layer move**, so it
     /// is declared here and not baked into the spec — a window that is pinnable but not
@@ -527,6 +611,7 @@ impl Recipe {
     /// ```text
     /// shploingus.recipe/3
     /// package<TAB>id<TAB>version
+    /// row<TAB>id<TAB>text          (the record's rows this package implements; may be repeated)
     /// window<TAB>id
     ///     title           text
     ///     content         kind
@@ -602,6 +687,7 @@ impl Recipe {
             (String::new(), String::new())
         };
 
+        let mut rows: Vec<Row> = Vec::new();
         let mut windows: Vec<WindowSpec> = Vec::new();
         let mut pinned: Vec<String> = Vec::new();
         let mut tabs: Vec<String> = Vec::new();
@@ -612,6 +698,59 @@ impl Recipe {
             let line = all[cursor];
             cursor += 1;
             if line.trim().is_empty() || is_comment(line) {
+                continue;
+            }
+            // **A row is read before the match, because its text is the rest of the line.** The
+            // arms below read `fields[1]` and nothing else, so a two-column `split` would cut a
+            // row's text at its first tab. `row` is the one row kind whose value is prose, and it
+            // is read with its own splitter rather than by loosening every other kind's.
+            if line.split('\t').next() == Some("row") {
+                match line.splitn(3, '\t').collect::<Vec<&str>>().as_slice() {
+                    ["row", id, text] => {
+                        if !row_identifier(id) {
+                            note!(errors, format!(
+                                "row {id:?} is not an id the record uses; a row is `BLD-0207`, \
+                                 `M14`, `B-214`, `C-99` or `event-0142`"
+                            ));
+                        } else if text.trim().is_empty() {
+                            note!(errors, format!(
+                                "row {id:?} carries no text, and a row with no words is a row \
+                                 nobody can implement"
+                            ));
+                        } else if text.contains('\t') {
+                            // **Read with `splitn`, refused for containing one.** The splitter is
+                            // used so the whole text is refused *by name*; the refusal is what
+                            // makes the rule a rule, because a value after the tab would be read
+                            // by nothing and checked by nothing.
+                            note!(errors, format!(
+                                "row {id:?} carries a tab in its text, and a tab is the grammar's \
+                                 separator: the value after it would be a second value nothing \
+                                 reads"
+                            ));
+                        } else if text.len() > MAX_ROW_TEXT_BYTES {
+                            note!(errors, format!(
+                                "row {id:?} carries {} bytes and a row holds {}",
+                                text.len(),
+                                MAX_ROW_TEXT_BYTES
+                            ));
+                        } else if rows.iter().any(|row| row.id == *id) {
+                            note!(errors, format!(
+                                "row {id:?} is declared twice; a row is implemented once or \
+                                 implemented twice by two packages"
+                            ));
+                        } else if rows.len() == MAX_ROWS {
+                            note!(errors, format!(
+                                "recipe declares more than {MAX_ROWS} rows"
+                            ));
+                        } else {
+                            rows.push(Row { id: id.to_string(), text: text.to_string() });
+                        }
+                    }
+                    _ => note!(errors, 
+                        "a row is `row<TAB>id<TAB>text`, with both fields present: a row that is \
+                         only an id names work nobody can read",
+                    ),
+                }
                 continue;
             }
             let fields: Vec<&str> = line.split('\t').collect();
@@ -649,8 +788,8 @@ impl Recipe {
                 }
                 other => {
                     note!(errors, format!(
-                        "unexpected row {other:?}: expected `window<TAB>id`, `tab<TAB>id`, \
-                         `bar<TAB>id`, `filed<TAB>id<TAB>tab` or `pin<TAB>id`"
+                        "unexpected row {other:?}: expected `window<TAB>id`, `row<TAB>id<TAB>text`, \
+                         `tab<TAB>id`, `bar<TAB>id`, `filed<TAB>id<TAB>tab` or `pin<TAB>id`"
                     ));
                 }
             }
@@ -754,7 +893,21 @@ impl Recipe {
             );
         }
 
-        errors.into_result(Self { name, version, windows, pinned, tabs, bar, filed })
+        // **A package that declares nothing is refused, and this is the row's whole point.**
+        // Before the rows existed, a ticket that named no window compiled to a recipe that was
+        // *only* a `package` line — a package that looks complete while declaring no work, which
+        // is the defect `shploingus-game`'s `EmptySliceSpec` refusal names (*"a slice that names
+        // no row is a package with no declared content"*). Either kind of content satisfies it:
+        // an arrangement of windows, or the rows of the record the package implements.
+        if windows.is_empty() && rows.is_empty() {
+            errors.push(Refusal::owned(
+                RefusalKind::NoReading,
+                "the recipe declares no window and no row, so it declares nothing. An empty \
+                 package reads as a clean one, and the refusal is the honest alternative",
+            ));
+        }
+
+        errors.into_result(Self { name, version, rows, windows, pinned, tabs, bar, filed })
     }
 
     /// Read one window block: every required key, no unknown key, no duplicate.
@@ -1187,6 +1340,94 @@ window\tinventory
 \trecord-id\tledger-window-inventory
 pin\tinventory
 ";
+
+    /// **A ticket that names no window still declares work.** The row is the record's id and the
+    /// record's own words, and this is the shape `shploingus-game`'s slice spec had as
+    /// `implemented_rows` — the reason the grammar grew it: *"a slice that names no row is a
+    /// package with no declared content"*, and a ticket like *"can't look around"* names no window
+    /// at all.
+    #[test]
+    fn a_row_carries_the_records_own_words_and_its_id_is_the_records_shape() {
+        let source = "shploingus.recipe/3\n\
+                      package\tfrom-ticket\tv0\n\
+                      row\tBLD-0207\tcan't look around\n\
+                      row\tevent-0142\tmy agent is fucking missing\n\
+                      row\tM14\tFIRST-WORLD: the three-package demo\n\
+                      row\tB-214\tthe payload digest is content\n";
+        let recipe = Recipe::parse(source.as_bytes()).expect("rows parse");
+        assert_eq!(recipe.rows.len(), 4, "one row per declaration");
+        assert_eq!(recipe.rows[0].id, "BLD-0207");
+        assert_eq!(
+            recipe.rows[0].text, "can't look around",
+            "the decision's own words, unedited"
+        );
+        assert!(recipe.windows.is_empty(), "and there is no window to hang it on");
+
+        // **An id that is not the record's is refused**, because a row nothing can find is a row
+        // nobody can implement against.
+        for bad in ["blt-207!", "a row of prose", "", "event-0142-extra"] {
+            let source = format!("shploingus.recipe/3\npackage\tfrom-ticket\tv0\nrow\t{bad}\twords\n");
+            let refusals = Recipe::parse(source.as_bytes())
+                .expect_err("an id the record does not use is refused");
+            assert!(
+                refusals.all().iter().any(|r| r.detail().contains("is not an id the record uses")),
+                "{bad:?}: {refusals}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_recipe_that_declares_no_window_and_no_row_declares_nothing() {
+        // **The defect this refusal exists for.** A package whose recipe is nothing but its own
+        // name looks complete and declares no work — the agent handed it has nothing to implement
+        // and no way to tell that from a package whose work was lost.
+        let bare = "shploingus.recipe/3\npackage\tfrom-ticket\tv0\n";
+        let refusals = Recipe::parse(bare.as_bytes()).expect_err("nothing is not a declaration");
+        assert!(
+            refusals
+                .all()
+                .iter()
+                .any(|r| r.detail().contains("declares no window and no row")),
+            "{refusals}"
+        );
+        // Either kind of content satisfies it, and both at once is ordinary.
+        let rows_only = "shploingus.recipe/3\npackage\tfrom-ticket\tv0\nrow\tBLD-0207\twords\n";
+        assert!(Recipe::parse(rows_only.as_bytes()).is_ok());
+        assert!(
+            Recipe::parse(GOOD.as_bytes()).is_ok(),
+            "the shipped arrangement declares windows and no rows, and that is a declaration"
+        );
+    }
+
+    #[test]
+    fn a_row_with_a_tab_or_no_text_is_refused_rather_than_split() {
+        // A tab is the grammar's separator: a row carrying one would arrive as a second value
+        // nothing reads, which is a value nobody checked.
+        let tabbed = "shploingus.recipe/3\npackage\tfrom-ticket\tv0\nrow\tBLD-0207\ttwo\tvalues\n";
+        let refusals = Recipe::parse(tabbed.as_bytes()).expect_err("a second value is refused");
+        assert!(
+            refusals
+                .all()
+                .iter()
+                .any(|r| r.detail().contains("carries a tab in its text")),
+            "{refusals}"
+        );
+
+        let empty = "shploingus.recipe/3\npackage\tfrom-ticket\tv0\nrow\tBLD-0207\t   \n";
+        let refusals = Recipe::parse(empty.as_bytes()).expect_err("a row with no words is refused");
+        assert!(
+            refusals.all().iter().any(|r| r.detail().contains("carries no text")),
+            "{refusals}"
+        );
+
+        // And the same row twice is one row declared twice.
+        let twice = "shploingus.recipe/3\npackage\tfrom-ticket\tv0\nrow\tBLD-0207\tone\nrow\tBLD-0207\ttwo\n";
+        let refusals = Recipe::parse(twice.as_bytes()).expect_err("a row is implemented once");
+        assert!(
+            refusals.all().iter().any(|r| r.detail().contains("declared twice")),
+            "{refusals}"
+        );
+    }
 
     #[test]
     fn a_comment_is_part_of_the_format_and_cannot_smuggle_a_key() {

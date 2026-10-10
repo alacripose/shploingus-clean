@@ -1,0 +1,73 @@
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+    Finished `test` profile [optimized + debuginfo] target(s) in 9.99s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_package-ae0470561f476050.exe)
+
+running 16 tests
+
+thread 'census::tests::a_heading_defines_only_what_it_begins_with' (17580) panicked at crates\voxel-package\src\census.rs:1269:9:
+assertion failed: heading_defines("### voxel-noise\n", "voxel-noise")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test census::tests::a_crate_name_round_trips_and_an_unknown_one_is_refused ... ok
+test census::tests::a_short_census_is_refused_rather_than_being_called_one ... ok
+test census::tests::a_heading_defines_only_what_it_begins_with ... FAILED
+test census::tests::an_unmeasured_cell_is_refused_rather_than_reported_as_a_pass ... ok
+test census::tests::every_crate_has_a_row_and_a_witness ... ok
+test census::tests::the_axes_are_six_and_each_names_itself ... ok
+test census::tests::every_crate_has_a_witness_file_on_disk ... ok
+test census::tests::a_gap_is_reported_with_its_axis_and_reason ... ok
+test census::tests::a_crate_that_cannot_refuse_is_reported_as_inactive_with_a_reason ... ok
+test census::tests::the_census_finds_the_untested_crates_rather_than_this_module_asserting_it ... ok
+test census::tests::a_single_file_crate_is_measured_by_its_tests_not_by_its_file_count ... ok
+test census::tests::an_incomplete_crate_is_reported_as_incomplete_and_not_hidden ... ok
+test census::tests::the_census_measures_every_crate_and_every_cell ... ok
+--- crate census ---
+test census::tests::the_report_prints_every_crate_and_every_axis ... ok
+crate                named    moduled  tested   refusing claimed  documented
+voxel-model         active   active   active   active   active   refused  
+voxel-noise         active   active   active   inactive inactive refused  
+voxel-mesh          active   active   active   active   active   refused  
+voxel-shapers       active   active   active   active   active   refused  
+voxel-stream        active   active   active   active   active   refused  
+voxel-instrument    active   active   active   active   inactive refused  
+voxel-appearance    active   active   active   active   active   refused  
+voxel-work          active   active   active   active   inactive refused  
+voxel-ui            active   inactive active   inactive inactive refused  
+voxel-client        active   active   active   active   active   refused  
+voxel-package       active   active   active   active   inactive refused  
+shploingus          active   inactive inactive inactive inactive refused  
+  gap voxel-model/documented: refused — 38% of voxel-model's source over 18 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-noise/refusing: inactive — voxel-noise names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+  gap voxel-noise/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-noise. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap voxel-noise/documented: refused — 33% of voxel-noise's source over 6 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-mesh/documented: refused — 37% of voxel-mesh's source over 8 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-shapers/documented: refused — 41% of voxel-shapers's source over 28 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-stream/documented: refused — 35% of voxel-stream's source over 5 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-instrument/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-instrument. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap voxel-instrument/documented: refused — 38% of voxel-instrument's source over 5 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-appearance/documented: refused — 42% of voxel-appearance's source over 10 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-work/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-work. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap voxel-work/documented: refused — 40% of voxel-work's source over 6 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-ui/moduled: inactive — voxel-ui declares no `pub mod`. That is legal — a leaf crate can be one file — so this is reported as `inactive`, not refused: a state, and a fact a reader can check
+  gap voxel-ui/refusing: inactive — voxel-ui names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+  gap voxel-ui/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-ui. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap voxel-ui/documented: refused — 35% of voxel-ui's source over 2 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-client/documented: refused — 42% of voxel-client's source over 25 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap voxel-package/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-package. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap voxel-package/documented: refused — 40% of voxel-package's source over 30 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+  gap shploingus/moduled: inactive — shploingus declares no `pub mod`. That is legal — a leaf crate can be one file — so this is reported as `inactive`, not refused: a state, and a fact a reader can check
+  gap shploingus/tested: inactive — shploingus contains no `#[test]`. C-17 holds the whole client to 'every cargo test actually visible', and a crate with no test cannot show that it was looked at
+  gap shploingus/refusing: inactive — shploingus names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+  gap shploingus/claimed: inactive — the spec's declaration tables (docs/DESIGN-SPEC.md) never name shploingus. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+  gap shploingus/documented: refused — 45% of shploingus's source over 3 file(s) is comment, and no document under docs/ carries prose about it. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+cells active 48 of 72
+test census::tests::the_census_prints_its_own_measurements ... ok
+test census::tests::a_census_is_deterministic ... ok
+
+failures:
+
+failures:
+    census::tests::a_heading_defines_only_what_it_begins_with
+
+test result: FAILED. 15 passed; 1 failed; 0 ignored; 0 measured; 208 filtered out; finished in 1.03s
+
+error: test failed, to rerun pass `-p voxel-package --lib`

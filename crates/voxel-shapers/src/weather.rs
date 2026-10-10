@@ -31,7 +31,13 @@ const UPSLOPE_GAIN_MM: f64 = 26_000.0;
 pub fn prevailing_bearing_rad(spec: &WorldSpec) -> f64 {
     // Derived from the seed so two worlds do not have the same prevailing wind,
     // which would make every coastline identical.
-    let r = (voxel_noise::mix(spec.stage_seed("wind")) >> 11) as f64 / (1u64 << 53) as f64;
+    //
+    // **Stationary.** This is a world constant — the same value at every tick — so a
+    // moving seed would have made the prevailing wind a different direction every tick,
+    // which is the opposite of prevailing. The wobble below is the same field, sampled
+    // low, and it is stationary for the same reason.
+    let bits = voxel_noise::mix(spec.stationary_stage_seed("wind")) >> 11;
+    let r = bits as f64 / (1u64 << 53) as f64;
     r * std::f64::consts::TAU
 }
 
@@ -42,7 +48,7 @@ pub fn prevailing_bearing_rad(spec: &WorldSpec) -> f64 {
 pub fn wind_bearing_rad(spec: &WorldSpec, x: f64, z: f64) -> f64 {
     let f = Fractal::new(3, 2.0, 0.5, Kind::Perlin);
     let wobble = f.fbm(
-        spec.stage_seed("wind"),
+        spec.stationary_stage_seed("wind"),
         Vec3::new(x * spec.config.continent_frequency * 0.4, 0.0, z * spec.config.continent_frequency * 0.4),
     ) * 0.9; // radians of wobble; under a radian, so the prevailing direction reads
     prevailing_bearing_rad(spec) + wobble
@@ -56,8 +62,32 @@ fn gradient(spec: &WorldSpec, x: f64, z: f64) -> (f64, f64) {
     (dx, dz)
 }
 
-/// Precipitation at a column, mm/year.
-pub fn precipitation_mm(spec: &WorldSpec, x: f64, z: f64, tick: u64) -> f64 {
+/// A column's precipitation as the two parts that separate: the annual mean, and the
+/// gain the season's wet peak scales.
+///
+/// `precipitation_mm = dry_mm + wet_gain_mm · seasonal_gain(tick)` — exactly as the
+/// expression it replaces, with the x/z terms (moisture, wind, slope) read once.
+/// **Declared for the same reason as [`climate::TemperatureParts`]:** the biome samples
+/// twelve monthly means of this function, and re-deriving the column's terrain gradient
+/// ninety-six times to answer one column's climate was most of the cost
+/// (`examples/biome-cost.rs` measured 202 µs per column before this existed).
+pub struct PrecipitationParts {
+    /// The part that does not move with the season, mm/year.
+    pub dry_mm: f64,
+    /// The upslope gain the seasonal scalar scales, mm/year.
+    pub wet_gain_mm: f64,
+}
+
+/// The season's precipitation scalar: `0.75 + 0.5·sin(2π·phase)`.
+///
+/// Read at the sample coordinates [`crate::ecology`] asks about; see
+/// [`climate::seasonal_unit`] for why the tick enters as a scalar at all.
+pub fn seasonal_gain(tick: u64) -> f64 {
+    0.75 + 0.5 * (climate::season_phase(tick) * std::f64::consts::TAU).sin()
+}
+
+/// The x/z parts of [`precipitation_mm`], read once for a column.
+pub fn precipitation_parts(spec: &WorldSpec, x: f64, z: f64) -> PrecipitationParts {
     let m = climate::moisture(spec, x, z);
 
     // The wind's **bearing** is a compass angle in the x/z plane. The field
@@ -76,13 +106,19 @@ pub fn precipitation_mm(spec: &WorldSpec, x: f64, z: f64, tick: u64) -> f64 {
         // Downslope: the air is descending and warming, so it holds its water.
         // The base term still applies — a rain shadow is dry, not a desert with
         // no weather at all.
-        return BASE_PRECIPITATION_MM * m * 0.35;
+        return PrecipitationParts { dry_mm: BASE_PRECIPITATION_MM * m * 0.35, wet_gain_mm: 0.0 };
     }
 
-    // Seasonal modulation: the seasonal ramp scale, so a wet season is a season.
-    let seasonal = 0.75 + 0.5 * (climate::season_phase(tick) * std::f64::consts::TAU).sin();
+    PrecipitationParts {
+        dry_mm: BASE_PRECIPITATION_MM * m,
+        wet_gain_mm: UPSLOPE_GAIN_MM * m * upslope,
+    }
+}
 
-    BASE_PRECIPITATION_MM * m + UPSLOPE_GAIN_MM * m * upslope * seasonal
+/// Precipitation at a column, mm/year.
+pub fn precipitation_mm(spec: &WorldSpec, x: f64, z: f64, tick: u64) -> f64 {
+    let parts = precipitation_parts(spec, x, z);
+    parts.dry_mm + parts.wet_gain_mm * seasonal_gain(tick)
 }
 
 /// Everything weather says about one column.
@@ -233,6 +269,13 @@ const ONSET_DUTY: f64 = 0.0997;
 /// the other way round — `stage_seed`, which mixes the tick in — returns an unrelated
 /// field every tick: still deterministic, still in range, and worthless as weather.
 /// That is why [`WorldSpec::stationary_stage_seed`] exists.
+///
+/// **This is the one place in the shapers where the tick is a *sample coordinate*, and
+/// it is the shape the rest of the world's history is owed.** Weather is the only
+/// shaper that varies continuously with the tick today; terrain, geology, caves and the
+/// plates are now stationary (C-159.8) so the world stops reshuffling, and the things
+/// that *should* move with the tick — erosion, deposition, the earthworks record, Gaia's
+/// growth — are the ones still to be built on this pattern.
 pub fn onset(spec: &WorldSpec, x: f64, z: f64, tick: u64) -> f64 {
     let f = Fractal::new(3, 2.0, 0.5, Kind::Perlin);
     let n = f.fbm(

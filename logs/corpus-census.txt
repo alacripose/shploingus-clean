@@ -1,0 +1,67 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libversion_check-83b85b2dd80bcad7.rmeta
+warning: function `signed_area` is never used
+   --> crates\voxel-mesh\src\mesh.rs:858:4
+    |
+858 | fn signed_area(corners: &[[i16; 2]]) -> i64 {
+    |    ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-mesh` (lib) generated 1 warning
+warning: unused import: `voxel_model::MaterialId`
+  --> crates\voxel-client\src\scene.rs:37:5
+   |
+37 | use voxel_model::MaterialId;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `CHUNK_SIDE` and `MaterialId`
+   --> crates\voxel-client\src\scene.rs:516:23
+    |
+516 |     use voxel_model::{MaterialId, CHUNK_SIDE};
+    |                       ^^^^^^^^^^  ^^^^^^^^^^
+
+warning: unused variable: `wireframe`
+   --> crates\voxel-client\src\world.rs:847:9
+    |
+847 |         wireframe: bool,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_wireframe`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `empty_light` is never used
+   --> crates\voxel-client\src\scene.rs:520:8
+    |
+520 |     fn empty_light(_x: i32, _y: i32, _z: i32) -> Option<[f32; 6]> {
+    |        ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `mesh_at` is never used
+   --> crates\voxel-client\src\scene.rs:524:8
+    |
+524 |     fn mesh_at(x: i32, y: i32, z: i32) -> Mesh {
+    |        ^^^^^^^
+
+warning: `voxel-client` (lib test) generated 5 warnings (run `cargo fix --lib -p voxel-client --tests` to apply 3 suggestions)
+    Finished `test` profile [optimized + debuginfo] target(s) in 1.08s
+     Running unittests src\lib.rs (target\debug\deps\voxel_client-a39abb0453707c55.exe)
+
+running 1 test
+
+thread 'shading::tests::the_corpus_names_what_each_unadmitted_substance_is_missing' (15808) panicked at crates\voxel-client\src\shading.rs:510:9:
+68 of 70 declared substances have no admitted material: 1 lack a density, 67 lack a sourced reflectance, and 0 have both and are merely unadmitted.
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test shading::tests::the_corpus_names_what_each_unadmitted_substance_is_missing ... FAILED
+
+failures:
+
+failures:
+    shading::tests::the_corpus_names_what_each_unadmitted_substance_is_missing
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 420 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p voxel-client --lib`
+EXIT=101

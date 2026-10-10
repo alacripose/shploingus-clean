@@ -659,7 +659,12 @@ mod tests {
     fn accounting_counts_capacity_and_the_allocator_s_share() {
         // The three properties a budget depends on, each one thing a naive
         // `len() * size_of` would get wrong.
-        let empty = Mesh { chunk: ChunkPos::new(0, 0, 0), quads: Vec::new(), stats: MeshStats::default() };
+        let empty = Mesh {
+            chunk: ChunkPos::new(0, 0, 0),
+            quads: Vec::new(),
+            loops: Vec::new(),
+            stats: MeshStats::default(),
+        };
         assert!(empty.bytes() >= std::mem::size_of::<Mesh>());
 
         // Capacity, not length: a vec that grew is holding what it grew to.

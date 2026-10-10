@@ -1,0 +1,86 @@
+warning: calls to `push` immediately after creation
+  --> crates\voxel-model\src\materials\generated.rs:14:5
+   |
+14 | /     let mut tiers = Vec::new();
+15 | |     tiers.push(Tier { name: "hands & stone".to_string(), ordinal: 0, note: "no structure and no tool: what a person does with hands and with stone picked up and used".to_string() });
+16 | |     tiers.push(Tier { name: "bound & composite".to_string(), ordinal: 1, note: "things joined to other things — cord, haft, assembly — which is the first real manufacturing".to_string() });
+   | |_____________________________________________________________________________________________________________________________________________________________________________________________^ help: consider using the `vec![]` macro: `let tiers = vec![..];`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#vec_init_then_push
+   = note: `#[warn(clippy::vec_init_then_push)]` on by default
+
+warning: calls to `push` immediately after creation
+    --> crates\voxel-model\src\materials\generated.rs:17:5
+     |
+  17 | /     let mut substances = Vec::new();
+  18 | |     substances.push(Substance {
+  19 | |         name: "amethyst".to_string(),
+  20 | |         family: Family::Ceramic,
+...    |
+1276 | |         no_consumer: Some("drinking, washing and irrigation arrive with phase 7's couplings; the world already draws it, so the ...
+1277 | |     });
+     | |_______^ help: consider using the `vec![]` macro: `let substances = vec![..];`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#vec_init_then_push
+
+warning: calls to `push` immediately after creation
+    --> crates\voxel-model\src\materials\generated.rs:1278:5
+     |
+1278 | /     let mut processes = Vec::new();
+1279 | |     processes.push(Process {
+1280 | |         name: "gather timber".to_string(),
+1281 | |         tier: "hands & stone".to_string(),
+...    |
+1453 | |         note: "the warming fire: a kilo of charcoal a day, 2.5 % of it left as ash and the rest up the chimney as gas. heat_kind...
+1454 | |     });
+     | |_______^ help: consider using the `vec![]` macro: `let processes = vec![..];`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#vec_init_then_push
+
+warning: calls to `push` immediately after creation
+    --> crates\voxel-model\src\materials\generated.rs:1455:5
+     |
+1455 | /     let mut vocabulary = Vec::new();
+1456 | |     vocabulary.push(Vocabulary { kind: VocabKind::Structure, name: "kiln".to_string(), note: "a fire under clay: it fires brick, it chars timber, and it is where a person warms their hands (one kind with three jobs — an open hearth and an insulated kiln differ by how much heat they keep, which is a number this table does not model yet)".to_string() });
+     | |__________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________^ help: consider using the `vec![]` macro: `let vocabulary = vec![..];`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#vec_init_then_push
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+    --> crates\voxel-model\src\civilian\agency\action.rs:1257:43
+     |
+1257 |             self.store.cancel_reservation(&reservation)?;
+     |                                           ^^^^^^^^^^^^ help: change this to: `reservation`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_borrow
+     = note: `#[warn(clippy::needless_borrow)]` on by default
+
+warning: `voxel-model` (lib) generated 5 warnings (run `cargo clippy --fix --lib -p voxel-model -- ` to apply 1 suggestion)
+warning: very complex type used. Consider factoring parts into `type` definitions
+   --> crates\voxel-shapers\src\process.rs:391:75
+    |
+391 |       let (scope, class, conservation, residency, inputs, outputs, replay): (
+    |  ___________________________________________________________________________^
+392 | |         ProcessScope,
+393 | |         SimulationClass,
+394 | |         Vec<ConservationObligation>,
+...   |
+398 | |         Vec<FieldId>,
+399 | |     ) = match stage {
+    | |_____^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#type_complexity
+    = note: `#[warn(clippy::type_complexity)]` on by default
+
+warning: casting to the same type is unnecessary (`i128` -> `i128`)
+   --> crates\voxel-shapers\src\process.rs:720:9
+    |
+720 |         crate::chunk_fields::lithology_code(stratum.lithology) as i128,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `crate::chunk_fields::lithology_code(stratum.lithology)`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unnecessary_cast
+    = note: `#[warn(clippy::unnecessary_cast)]` on by default
+
+warning: `voxel-shapers` (lib) generated 2 warnings (run `cargo clippy --fix --lib -p voxel-shapers -- ` to apply 1 suggestion)
+    Checking voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 28.82s

@@ -41,6 +41,14 @@ license.workspace = true
 # calls. And there is no windowing dependency here at all — that is the
 # `shploingus` bin's job, so this crate stays renderable **offscreen**, which
 # is what lets a frame be verified without a display.
+# The examples render a frame and **write it where a person can look at it**, which
+# is the one thing a `Frame` in memory cannot do. `png 0.18` is in the offline
+# registry cache, and it is a **dev**-dependency: no shipped path writes a file, and
+# the encoder is named rather than hand-rolled because a hand-rolled PNG is a
+# compression format nobody asked this repository to maintain.
+[dev-dependencies]
+png = "0.18"
+
 [dependencies]
 voxel-model = { path = "../voxel-model" }
 voxel-package = { path = "../voxel-package" }
@@ -49,6 +57,9 @@ voxel-shapers = { path = "../voxel-shapers" }
 voxel-mesh = { path = "../voxel-mesh" }
 voxel-stream = { path = "../voxel-stream" }
 voxel-appearance = { path = "../voxel-appearance" }
+#   voxel-light �� the solar disc's own dilution, so the cuboid sun is the same sun
+#                   the band table radiates from rather than a second stated number.
+voxel-light = { path = "../voxel-light" }
 voxel-work = { path = "../voxel-work" }
 voxel-ui = { path = "../voxel-ui" }
 wgpu = "30"

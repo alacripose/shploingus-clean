@@ -1,0 +1,32 @@
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+    Finished `test` profile [optimized + debuginfo] target(s) in 7.32s
+     Running tests\chain_repair.rs (F:/shploingus-target\debug\deps\chain_repair-b564b86bcdafd719.exe)
+
+running 1 test
+chain-repair-file	C:\Users\ala\Documents\shploingus-clean\chains\workspace.chain
+chain-repair-bytes-before	1685224504
+test repair_the_chain_onto_the_record has been running for over 60 seconds
+chain-repair-frames-before	folded=207 corrupt=333016
+chain-repair-frames-would-keep	207
+chain-repair-frames-would-drop	333016
+chain-repair-would-write	555350 bytes of 1685224504 (0.0%)
+chain-repair	every frame that did not link to the record before it, and nothing else
+chain-repair-bytes	1685224504 -> 555350 (1684669154 removed)
+chain-repair-frames	207 kept, 333016 dropped
+chain-repair-before-digest	sha256:196d190a94e798c97621ae5e133cf937e12f84b77725ad4413f3920f05522b7a
+chain-repair-after-digest	sha256:a6085d1fa5088a0a3a4da75499950c3a5afbf2736c4087d1604a7237bdd26889
+chain-repair-before-folded	207
+chain-repair-before-corrupt	333016
+chain-repair-after-folded	207
+chain-repair-after-corrupt	0
+chain-repair-tickets	151 -> 151
+
+chain-repair-after-read	folded=207
+chain-repair-after-corrupt	0
+chain-repair-after-tickets	151
+chain-repair-after-bytes	555350
+chain-repair-kept	C:\Users\ala\Documents\shploingus-clean\logs/chain-repair\workspace.chain.as-found (the record as it was found)
+test repair_the_chain_onto_the_record ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 971.12s
+

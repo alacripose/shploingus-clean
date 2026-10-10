@@ -87,8 +87,10 @@ impl Void {
 pub fn dissolution(spec: &WorldSpec, lith: Lithology, x: f64, y: f64, z: f64, p: &CaveParams) -> f64 {
     let fracture_scale = 1.0 / p.fracture_scale_m.max(1.0);
 
+    // **Stationary**: the fracture network is a field over position. A seed that moved
+    // with the tick would open and close every cave when the clock advanced.
     let ridged = Fractal::new(4, 2.0, 0.5, Kind::Perlin).ridged(
-        spec.stage_seed("caves"),
+        spec.stationary_stage_seed("caves"),
         Vec3::new(x, y, z) * fracture_scale,
     );
     // `fracture_width` is the ridge height above the 0.5 baseline at which a
@@ -98,7 +100,7 @@ pub fn dissolution(spec: &WorldSpec, lith: Lithology, x: f64, y: f64, z: f64, p:
     // A slow field so the network is not uniform: some regions are more soluble.
     let f = Fractal::new(3, 2.0, 0.5, Kind::Perlin);
     let region01 = f.fbm(
-        spec.stage_seed("caves_region"),
+        spec.stationary_stage_seed("caves_region"),
         Vec3::new(x * fracture_scale * 0.12, y * fracture_scale * 0.12, z * fracture_scale * 0.12),
     ) * 0.5
         + 0.5;

@@ -34,6 +34,58 @@
 use crate::spec::WorldSpec;
 use voxel_noise::mix;
 
+/// **The stream-power law**, the landscape-scale law the droplet method does not
+/// supply: `E = K · A^m · S^n`.
+///
+/// * Whipple, K.X. & Tucker, G.E. *Dynamics of the stream-power river incision
+///   model.* JGR 104(B8), 1999.
+/// * Lague, D. *The stream power river incision model: evidence, theory and
+///   beyond.* ESPL 39, 2014 — the observed downslope decrease of channel slope
+///   with drainage area is reproduced for `m/n ≈ 0.5`.
+///
+/// The three coefficients are **declared dials**, named rather than buried: a
+/// different `K` is a different world, and this repository refuses to hide that in
+/// a call site. `m` and `n` are the literature's ratio and a linear slope term.
+pub const STREAM_POWER_K: f64 = 1.0e-4;
+pub const STREAM_POWER_M: f64 = 0.5;
+pub const STREAM_POWER_N: f64 = 1.0;
+
+/// Incision rate of the stream-power law, in the law's own units.
+pub fn stream_power_rate(drainage_area_m2: f64, slope: f64) -> f64 {
+    if !drainage_area_m2.is_finite() || drainage_area_m2 < 0.0 {
+        return 0.0;
+    }
+    if !slope.is_finite() || slope <= 0.0 {
+        // A flat bed incises nothing: the law's `S^n` is exactly zero there.
+        return 0.0;
+    }
+    STREAM_POWER_K * drainage_area_m2.powf(STREAM_POWER_M) * slope.powf(STREAM_POWER_N)
+}
+
+/// The critical slope `S_c` at which nonlinear hillslope transport diverges.
+///
+/// Roering, J.J., Kirchner, J.W. & Dietrich, W.E. *Evidence for nonlinear,
+/// diffusive sediment transport on hillslopes.* WRR 35(3), 1999 — transport is
+/// `q = K · S / (1 − (S/S_c)²)`, so it **refuses** at and above `S_c` rather than
+/// returning infinity. A slope in metres per metre; `0.8` is a steep hillslope.
+pub const CRITICAL_SLOPE: f64 = 0.8;
+
+/// Nonlinear hillslope transport `q = K S / (1 − (S/S_c)²)`.
+///
+/// `None` at or above [`CRITICAL_SLOPE`], because the law diverges there and a
+/// number would be a default where a refusal belongs.
+pub fn hillslope_transport(slope: f64) -> Option<f64> {
+    const K: f64 = 1.0e-3;
+    if !slope.is_finite() || slope < 0.0 {
+        return None;
+    }
+    let ratio = slope / CRITICAL_SLOPE;
+    if ratio >= 1.0 {
+        return None;
+    }
+    Some(K * slope / (1.0 - ratio * ratio))
+}
+
 /// The result of an erosion pass.
 #[derive(Clone, Debug)]
 pub struct Erosion {
@@ -189,7 +241,10 @@ pub fn hydraulic(
     let mut h = heights.to_vec();
     let mut removed = 0.0f64;
     let mut deposited = 0.0f64;
-    let seed = spec.stage_seed("erosion");
+    // **Stationary, because this seed chooses the droplet *starting positions*.** The
+    // droplets' walk is a field over the patch; a seed that moved with the tick would
+    // re-roll where every droplet lands, which is a reshuffle and not an erosion.
+    let seed = spec.stationary_stage_seed("erosion");
 
     for d in 0..p.droplets {
         let rx = (mix(seed ^ 0xE1) ^ d as u64) as f64 / u64::MAX as f64;

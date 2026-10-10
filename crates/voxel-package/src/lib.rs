@@ -44,9 +44,12 @@ pub mod board {
         Board::from_chain(chain).describe()
     }
 }
+pub mod bridge;
 pub mod census;
+pub mod civilians;
 pub mod compendium;
 pub mod compiler;
+pub mod context;
 pub mod decision;
 pub mod features;
 pub mod filing;

@@ -4,15 +4,21 @@
 //! order that graph declares, and where the result becomes something with
 //! **materials** in it.
 //!
-//! # The materials are a starter set, and it says so
+//! # The materials are a placeholder, and the ledger says so
 //!
 //! F2 measured the old project's material registry and found **zero admitted
 //! materials**: the registry machinery was complete and the content did not
-//! exist. [`materials::registry`] admits **eight**, each a single component at
-//! ratio 1, and they are labelled as what they are: the *minimum* set a world
-//! needs to have rock, soil, water and air. Anything else is a refusal
-//! ([`voxel_model::RefusalKind::UnadmittedMaterial`]), which is the honest state
-//! rather than a grey cube.
+//! exist. [`materials::registry`] admits **thirteen**, each a single component at
+//! ratio 1, and they keep the current world and its tests running — but they are
+//! **not authority**. Five of the thirteen (C-159.10) are the **surface covers**:
+//! the material a biome's ground is made of, so the visible world varies with the
+//! region instead of being one pale playa. `LEDGER.md` C-122 records the ruling: they are an AI
+//! fabrication, and the target is a **derived** material library (real-world
+//! materials with base patterns at the 4×4×4 slots and the addressed 256 level).
+//! A shape's material roles must not be chosen from these materials; the roster's
+//! inset/seam/calyx slots are destinations for the derived library's patterns.
+//! Anything else is a refusal ([`voxel_model::RefusalKind::UnadmittedMaterial`]),
+//! which is the honest state rather than a grey cube.
 //!
 //! # Composition, not a second generator
 //!
@@ -26,6 +32,7 @@ use crate::climate::{self, ClimateSample};
 use crate::ecology::{self, Biome};
 use crate::erosion;
 use crate::geology::{self, Lithology, OreDials};
+use crate::habitat::{self, Habitat};
 use crate::earthworks::Earthworks;
 use crate::hydrology::{self, HydroSample};
 use crate::spec::WorldSpec;
@@ -34,16 +41,18 @@ use crate::tectonics::{self, PlateSample};
 use crate::terrain::{self, TerrainSample};
 use crate::weather::{self, WeatherSample};
 use voxel_model::conservation::{Exact, Ledger, Mass, MassPumpDeclaration, Source};
+use voxel_model::materials::spectra;
 use voxel_model::{
-    Component, ComponentId, Material, MaterialId, MaterialRegistry, OpticalClass, Ratio,
-    Reflectance, Refusal, RefusalKind, Refused, SourcedReflectance,
+    Component, ComponentId, DetailIndex, Material, MaterialId, MaterialRegistry, OpticalClass,
+    Ratio, Reflectance, Refusal, RefusalKind, Refused, ShadingField, SourcedReflectance,
 };
 
 /// Neighbourhood radius hydrology uses per column, in cells. Declared: shrinking
 /// it shrinks the watershed, it does not approximate the same one.
 pub const DEFAULT_HYDRO_RADIUS: usize = 12;
 
-/// The starter material set.
+/// The placeholder material set — **not authority**; see the module docs and
+/// `LEDGER.md` C-122. The derived material library replaces its content.
 pub mod materials {
     use super::*;
 
@@ -57,8 +66,18 @@ pub mod materials {
     pub const IGNEOUS: MaterialId = MaterialId(6);
     pub const BEDROCK: MaterialId = MaterialId(7);
 
-    const ROCK: ComponentId = ComponentId(1);
-    const FLUID: ComponentId = ComponentId(2);
+    /// The surface covers (C-159.10). These are not rock classes: each is the
+    /// **ground a formation is covered with**, chosen by [`surface_for_biome`] and
+    /// carrying its own USGS sample, so walking from a grassland into a desert
+    /// changes the colour under the eye.
+    pub const GRASS: MaterialId = MaterialId(8);
+    pub const DRY_GRASS: MaterialId = MaterialId(9);
+    pub const LEAF: MaterialId = MaterialId(10);
+    pub const CONIFER: MaterialId = MaterialId(11);
+    pub const SAND: MaterialId = MaterialId(12);
+    /// The trunk of a tree (C-159.11). Not chosen by any biome: it is what
+    /// [`crate::flora`] stands, wherever a tree exists.
+    pub const WOOD: MaterialId = MaterialId(13);
 
     /// The material a rock class is made of.
     pub const fn for_lithology(l: Lithology) -> MaterialId {
@@ -69,6 +88,62 @@ pub mod materials {
             Lithology::Igneous => IGNEOUS,
             Lithology::Bedrock => BEDROCK,
         }
+    }
+
+    /// **The one rule mapping a formation to its ground cover** (C-159.10).
+    ///
+    /// Both material paths read this — the column profile through its cached biome and
+    /// the field plane through its `Climate` law — so "what is this biome's surface"
+    /// has exactly one spelling. Alpine and polar desert are the exception that needs
+    /// no new material: bare scree and gravel are what `REGOLITH` already is.
+    pub const fn surface_for_biome(biome: Biome) -> MaterialId {
+        match biome {
+            Biome::Desert => SAND,
+            Biome::Grassland => GRASS,
+            Biome::Tundra | Biome::SubtropicalScrub => DRY_GRASS,
+            Biome::BorealForest => CONIFER,
+            Biome::CoolTemperateForest
+            | Biome::TemperateForest
+            | Biome::TropicalDryForest
+            | Biome::TropicalRainforest => LEAF,
+            Biome::Alpine | Biome::PolarDesert => REGOLITH,
+        }
+    }
+
+    /// What the column's **terrain expression** does to a cover (C-160) — the sub-biome
+    /// layer's material consequence.
+    ///
+    /// `None` is `Steep`: bare ground is not a cover at all, it is the **lithology's own
+    /// rock**, and the caller resolves it because it holds the column's stratum (the
+    /// column path) or reads the `Geology` field (the plane path). Everything else maps
+    /// a cover to its drier, wetter or colder expression; an unknown cover passes
+    /// through, so a future material is never silently restyled.
+    pub const fn surface_under(cover: MaterialId, habitat: Habitat) -> Option<MaterialId> {
+        match habitat {
+            Habitat::Lowland => Some(cover),
+            Habitat::Steep => None,
+            Habitat::Wet => Some(match cover {
+                DRY_GRASS => GRASS,
+                other => other,
+            }),
+            Habitat::Dry => Some(match cover {
+                GRASS | LEAF => DRY_GRASS,
+                other => other,
+            }),
+            Habitat::Montane => Some(match cover {
+                GRASS => DRY_GRASS,
+                LEAF => CONIFER,
+                SAND => REGOLITH,
+                other => other,
+            }),
+        }
+    }
+
+    /// The formation's cover under its terrain expression — the composition of
+    /// [`surface_for_biome`] and [`surface_under`], so no caller can apply the two rules
+    /// in the other order and drift.
+    pub const fn surface_of(biome: Biome, habitat: Habitat) -> Option<MaterialId> {
+        surface_under(surface_for_biome(biome), habitat)
     }
 
     /// The rock class a material is, if it is rock.
@@ -83,69 +158,85 @@ pub mod materials {
         }
     }
 
-    /// The admitted registry: eight materials, each one component at ratio 1.
+    /// The admitted registry: twelve materials, each one component at ratio 1.
     ///
     /// Returns a `Refusal` rather than panicking if the set ever stops being
     /// internally consistent — the registry is the thing that decides what exists,
     /// so it is the last place that should `unwrap`.
     pub fn registry() -> Refused<MaterialRegistry> {
         let mut r = MaterialRegistry::new();
-        r.admit_component(ROCK, "silicate rock");
-        r.admit_component(FLUID, "water/ice");
 
         // ---- what each material reflects, and where that came from ----------
         //
         // Until this round no material carried a reflectance at all, and the
         // consequence was measured: `openpbr::derive` refuses to invent one, so
         // the ambient and half-Lambert terms were not drawn, and the only term
-        // left — the rim — is scaled by `(1 - roughness)`, which is exactly zero
-        // for the least dense opaque material. That is `regolith`, 83 % of the
-        // world's visible quads, drawn black by arithmetic (`docs/LEDGER.md`
-        // C-38). So the values below are not decoration; they are the difference
-        // between a world and a black rectangle.
+        // left in those frames — the rim — carried no reflectance of its own
+        // either (it was scaled by `(1 - roughness)`, exactly zero for the least
+        // dense opaque material, so `regolith` — 83 % of the world's visible quads
+        // — was drawn black by arithmetic, `docs/LEDGER.md` C-38). The rim now
+        // carries the block's own reflectance, and every other term does too, so
+        // a material with no reflectance is drawn by *nothing* rather than by a
+        // leftover: the values below are still the difference between a world and
+        // a black rectangle.
         //
-        // Every one is a **broadband albedo**, so every one is achromatic, and
-        // the source says so. Per-channel hue needs the individual sample spectra
-        // in the USGS library rather than its class ranges, and taking a class
-        // range and inventing a hue from it is the thing this project does not
-        // do.
+        // Six of the seven now carry a **sampled** reflectance: the whole USGS
+        // Spectral Library v7 spectrum is retained in `voxel_model::materials::
+        // spectra`, and the value here is the declared derivation — the mean of
+        // the sample's own channels in each visible window, exact (C-140/C-141).
+        // The seventh, ice, stays broadband: the only H2O-ice AREF in v7 has no
+        // present channels across the visible windows at all, and a snow sample
+        // is a different material (C-39), so there is nothing to derive from yet
+        // (C-143).
         let hundredths = |n: u64| -> Refused<Ratio> { Ratio::new(n, 100) };
         let sourced = |n: u64, source: &'static str| -> Refused<SourcedReflectance> {
             Ok(SourcedReflectance { value: Reflectance::broadband(hundredths(n)?)?, source })
         };
 
+        // **A row is one substance, and its component says so** (C-141). The three
+        // generic components this used to build ("silicate rock", "water/ice",
+        // "plant matter") were the fabricated scheme C-122 refuses as authority, and
+        // they could not carry an appearance at all: two materials sharing a component
+        // would have to share the one reflectance the component holds. So each row owns
+        // a component named for itself and carrying its own measured reflectance, which
+        // is also what makes the row's value and its composition's blend the same claim.
         let one =
             |id: MaterialId, name: &str, density: u64, optical, reflectance: SourcedReflectance| {
                 Material {
                     id,
                     name: name.to_string(),
                     components: vec![Component {
-                        id: if id == WATER || id == ICE { FLUID } else { ROCK },
+                        id: ComponentId(id.0),
                         ratio: Ratio::ONE,
                         density_kg_m3: Ratio::from_u64(density),
+                        reflectance: Some(reflectance),
                     }],
                     optical_class: optical,
                     reflectance: Some(reflectance),
+                    // **None is the honest claim for all of these.** They reflect; none of
+                    // them emits, and a body is what emits. This stays `None` per-material
+                    // rather than defaulted at derive time so that "emits nothing" and
+                    // "nobody has measured whether it emits" do not become one answer.
+                    emission: None,
                 }
             };
 
         let materials = [
-            // Open ocean is the surface, not a puddle on a table: 0.06 is the
-            // tabulated figure for it, and a high sun angle is implicit in it.
+            // Open ocean is the surface, not a puddle on a table; the value is
+            // the open-ocean seawater spectrum's own visible-window mean
+            // (record 13635), dark and blue-leaning by measurement.
             one(
                 WATER,
                 "water",
                 1000,
                 OpticalClass::Transmissive,
-                sourced(
-                    6,
-                    "open-ocean albedo is 0.06 (tabulated standard value; Massom et al. 2025 gives \
-                     0.06–0.07 for open water). Broadband, so achromatic",
-                )?,
+                spectra::seawater_open_ocean()?,
             ),
             // The low end of bare sea ice, because this material is *bare ice*:
             // the 0.7–0.9 figures are snow-covered ice, which is a different
-            // material and not one the shapers produce.
+            // material and not one the shapers produce. Still broadband: the
+            // only H2O-ice AREF in splib07a v7 has no present channels across
+            // the visible windows, so no sampled colour exists to take (C-143).
             one(
                 ICE,
                 "ice",
@@ -155,7 +246,8 @@ pub mod materials {
                     50,
                     "bare sea-ice albedo is 0.5–0.7, snow-covered up to 0.9 (NSIDC/Carleton \
                      cryosphere figures); the low end is taken because this is bare ice. \
-                     Broadband, so achromatic",
+                     Broadband, so achromatic; sampled colour waits for an ice spectrum \
+                     (the v7 AREF has no visible channels, C-143)",
                 )?,
             ),
             one(
@@ -163,64 +255,87 @@ pub mod materials {
                 "regolith",
                 1400,
                 OpticalClass::Opaque,
-                sourced(17, "bare-soil albedo is 0.17 (tabulated standard value). Broadband, so achromatic")?,
+                spectra::stonewall_playa_dry_mud()?,
             ),
             one(
                 SEDIMENTARY,
                 "sedimentary rock",
                 2400,
                 OpticalClass::Opaque,
-                sourced(
-                    40,
-                    "USGS Spectral Library v7 (Kokaly et al. 2017) rock and soil spectra; Lee et al. \
-                     2021 measures 16.0–85.8 % visible reflectance across ten rocks, and a \
-                     light-coloured sedimentary rock sits at the upper end of that range. A class \
-                     value inside a published range is this project's choice, not a sample; \
-                     broadband, so achromatic",
-                )?,
+                spectra::limestone_cu02()?,
             ),
             one(
                 METAMORPHIC,
                 "metamorphic rock",
                 2750,
                 OpticalClass::Opaque,
-                sourced(
-                    22,
-                    "USGS Spectral Library v7 (Kokaly et al. 2017) rock and soil spectra; Lee et al. \
-                     2021 measures 16.0–85.8 % visible reflectance across ten rocks, and a foliated \
-                     metamorphic rock sits in the middle of it. A class value inside a published \
-                     range is this project's choice, not a sample; broadband, so achromatic",
-                )?,
+                spectra::actinolite_hornfels()?,
             ),
             one(
                 IGNEOUS,
                 "igneous rock",
                 2900,
                 OpticalClass::Opaque,
-                sourced(
-                    12,
-                    "USGS Spectral Library v7 (Kokaly et al. 2017) rock and soil spectra; Lee et al. \
-                     2021 measures 16.0–85.8 % visible reflectance across ten rocks, and a dark \
-                     mafic rock sits near the bottom of it. A class value inside a published range \
-                     is this project's choice, not a sample; broadband, so achromatic",
-                )?,
+                spectra::basalt_fresh()?,
             ),
             one(
                 BEDROCK,
                 "bedrock",
                 3000,
                 OpticalClass::Opaque,
-                sourced(
-                    18,
-                    "USGS Spectral Library v7 (Kokaly et al. 2017) rock and soil spectra; Lee et al. \
-                     2021 measures 16.0–85.8 % visible reflectance across ten rocks, and rock seen \
-                     only in section is taken dark within it. A class value inside a published \
-                     range is this project's choice, not a sample; broadband, so achromatic",
-                )?,
+                spectra::magnetite_skarn()?,
+            ),
+            // ---- the surface covers (C-159.10) --------------------------------
+            //
+            // These five are what the **biome** decides: [`surface_for_biome`] maps
+            // every formation to one of them, so a region's ground carries the
+            // region's own sampled colour instead of the single REGOLITH stand-in.
+            // Four are new Chapter V samples (`materials/spectra/sources.tsv`); SAND
+            // is `sand_dwo3`, retained since C-141 as the alternate regolith candidate
+            // and now the desert's own surface.
+            one(SAND, "sand", 1600, OpticalClass::Opaque, spectra::sand_dwo3()?),
+            one(
+                GRASS,
+                "grass",
+                1250,
+                OpticalClass::Opaque,
+                spectra::grass_mixed_green()?,
+            ),
+            one(
+                DRY_GRASS,
+                "dry grass",
+                1250,
+                OpticalClass::Opaque,
+                spectra::grass_golden_dry()?,
+            ),
+            one(
+                LEAF,
+                "leaf",
+                900,
+                OpticalClass::Opaque,
+                spectra::aspen_green_top()?,
+            ),
+            one(
+                CONIFER,
+                "conifer needles",
+                900,
+                OpticalClass::Opaque,
+                spectra::spruce_needles()?,
+            ),
+            // The trunk (C-159.11): a gray pine branch — bark and wood of a standing
+            // conifer, from Chapter V, because a milled 2×4 (Chapter A's `Wood_Beam`)
+            // is a processed material and not what a tree is made of.
+            one(
+                WOOD,
+                "wood",
+                650,
+                OpticalClass::Opaque,
+                spectra::gray_pine_branch()?,
             ),
         ];
 
         for m in materials {
+            r.admit_component(ComponentId(m.id.0), m.name.clone());
             if let Err(set) = r.admit_material(m) {
                 return Err(Refusal::owned(
                     RefusalKind::RatiosDoNotSumToOne,
@@ -228,7 +343,164 @@ pub mod materials {
                 ));
             }
         }
+
+        // ---- the corpus: one admitted material per declared substance (C-122) ----
+        //
+        // The registry is additive from here: the world's own ids 1..=13 above do not
+        // move, and every declared substance the world does not draw yet becomes a row
+        // with its own composition and its own sourced colour. `corpus.rs` owns that
+        // table and the reason each row is shaped the way it is.
+        crate::corpus::admit(&mut r)?;
         Ok(r)
+    }
+
+    // ---- the 256-level shading field (C-161) ----------------------------
+    //
+    // `ShadingField` is the material shaper's declaration at the 256 level: **how
+    // much** of `voxel-appearance::detail::DetailLattice`'s own mean-zero deviation
+    // each material shows. It is the "material slot's own pattern" C-122 describes —
+    // carried by the material, read per fragment off the fragment's address, so a
+    // greedy-merged rectangle shows its blocks with **no extra quads**.
+    //
+    // The gains belong to the **derived library** row by row, and that content is
+    // owed (MATERIALS.md 4.9/4.10). Until it lands, this is the world's standing
+    // declaration: every opaque material shows the same share of the lattice, and a
+    // **transmissive** material shows none — a fluid boundary is a surface with no
+    // composition pattern, and water's look is its Fresnel reflection (C-159.2).
+
+    /// The domain tag of the world's shading field, folded into the lattice's seed
+    /// (`ShadingField::domain`). A constant because the pattern is a property of the
+    /// **material and the instance address** and not of the world's seed: a block of
+    /// sand patterns the same way in every world, the way a texture does.
+    pub const SHADING_FIELD_DOMAIN: u64 = 0x5A17_0000_0000_0001;
+
+    /// How much of the lattice's deviation the standing declaration gives an opaque
+    /// material, per channel.
+    ///
+    /// Each channel is in `[-1, 1)`, and a material shaper may declare a gain in
+    /// `[0, 1]` — above 1 the deviation could push a parameter out of the range
+    /// OpenPBR refuses rather than clamps (`ShadingField::declare` says so). One half
+    /// is declared here because a deviation at the model's own full scale moves a
+    /// value all the way to its domain edge — every cell reads as a *different*
+    /// material — and zero is the flat block the C-160 report was about. The
+    /// library's rows replace both numbers per material.
+    pub const STANDING_ROUGHNESS_GAIN: f64 = 0.5;
+    /// See [`STANDING_ROUGHNESS_GAIN`].
+    pub const STANDING_REFLECTANCE_GAIN: f64 = 0.5;
+
+    /// The world's 256-level shading field, declared for every material [`registry`]
+    /// admits.
+    pub fn shading_field() -> Refused<ShadingField> {
+        let registry = registry()?;
+        let mut field = ShadingField::none();
+        field.set_domain(SHADING_FIELD_DOMAIN);
+        for m in registry.materials() {
+            let (roughness, reflectance) = if m.optical_class == OpticalClass::Opaque {
+                (STANDING_ROUGHNESS_GAIN, STANDING_REFLECTANCE_GAIN)
+            } else {
+                (0.0, 0.0)
+            };
+            field.declare(m.id, roughness, reflectance)?;
+        }
+        Ok(field)
+    }
+
+    // ---- the surface shapers (C-162) ------------------------------------
+    //
+    // White noise at a millimetre is not yet a material's pattern: it is static.
+    // The user's ruling (2026-10-05) is that the 256 level stays white noise and
+    // each material *shapes* it: *"for sand it'd be speckled, for trees it'd be
+    // bark, metal could be brushed/shiny"*. So a shaper is a **stencil** on the
+    // lattice address (which axes a value repeats across) and a **curve** on the
+    // value (what the noise is read through) — nothing is stored, and the lattice
+    // keeps C-2's pure-function contract.
+    //
+    // The derived library still owns the *content* (`MATERIALS.md` 4.9/4.10): when
+    // it lands, every row brings its own shaper and these ids become its ids. Until
+    // then this is the mechanism, declared per material **role** rather than by the
+    // placeholder ids' names.
+
+    /// How a material's 256-level noise is shaped into its own pattern.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    pub enum SurfacePattern {
+        /// Isotropic, sparse bright and dark specks — sand, dust, regolith.
+        Speckle,
+        /// Clumps twice the cell across on every axis — leaves, grass.
+        Foliage,
+        /// Grain stretched four cells **along z**, a tree's own axis — bark.
+        Bark,
+        /// Grain stretched **along x** — brushed stone now, the library's metals
+        /// later (the user's own example: *"metal could be brushed/shiny"*).
+        Brushed,
+    }
+
+    impl SurfacePattern {
+        /// The id a material row carries to the shader (`pattern.z`), which
+        /// dispatches on it; `shading.wgsl`'s transcription names the same numbers,
+        /// and a test in `voxel-client` holds the two together.
+        pub const fn index(self) -> u32 {
+            match self {
+                SurfacePattern::Speckle => 0,
+                SurfacePattern::Foliage => 1,
+                SurfacePattern::Bark => 2,
+                SurfacePattern::Brushed => 3,
+            }
+        }
+
+        /// The lattice address a shaped sample reads at: an axis **shifted right by
+        /// `k`** reads its values in runs `2^k` cells long, which is the stretch. It
+        /// is a shift and not a bit-mask because the ladder quantises the address
+        /// again for every rung (C-163): a mask's cleared bits are re-cleared by the
+        /// rung's own mask — they compose to the *max*, so bark's stretch vanished at
+        /// every rung above the floor. A shift moves the axis into a coarser address
+        /// space **before** the rung quantises it, so the character — grain four times
+        /// longer than it is thick — holds at every drawn scale (C-164).
+        ///
+        /// So the shaper's stretch is **relative to the cell the ladder draws**, not an
+        /// absolute length: at the floor rung (31.25 mm) bark's grain runs ~125 mm along
+        /// z; twice as far out it runs 250 mm, and it still reads as bark.
+        ///
+        /// The stencil is applied **before** the ladder quantises the address (the
+        /// call order `pattern::Pattern::deviation` and `shading.wgsl` both state),
+        /// which is what lets a rung coarser than the shift still see the stretch.
+        pub const fn stencil(self, at: DetailIndex) -> DetailIndex {
+            match self {
+                SurfacePattern::Speckle => at,
+                SurfacePattern::Foliage => {
+                    DetailIndex { x: at.x >> 1, y: at.y >> 1, z: at.z >> 1 }
+                }
+                SurfacePattern::Bark => DetailIndex { x: at.x, y: at.y, z: at.z >> 2 },
+                SurfacePattern::Brushed => DetailIndex { x: at.x >> 2, y: at.y, z: at.z },
+            }
+        }
+
+        /// What the noise is read through. Speckle squares its value — sparse
+        /// specks rather than uniform static, which is what makes it read as grain
+        /// — and the directional shapers keep the value, because their character is
+        /// the stretch and not the amplitude.
+        pub fn curve(self, s: f64) -> f64 {
+            match self {
+                SurfacePattern::Speckle => s * s.abs(),
+                SurfacePattern::Foliage | SurfacePattern::Bark | SurfacePattern::Brushed => s,
+            }
+        }
+    }
+
+    /// Which shape a material's 256-level pattern is drawn with.
+    ///
+    /// Total over the admitted set: every material answers, and the transmissive
+    /// ones answer too even though the standing field gives them no gains — a row
+    /// that is never varied still carries a complete declaration.
+    pub const fn pattern_of(m: MaterialId) -> SurfacePattern {
+        match m {
+            SAND | REGOLITH => SurfacePattern::Speckle,
+            GRASS | DRY_GRASS | LEAF | CONIFER => SurfacePattern::Foliage,
+            WOOD => SurfacePattern::Bark,
+            // The rock classes, plus ICE and WATER, which the gains keep flat. The
+            // library's metals will land on `Brushed`; stone reads as brushed until
+            // its own rows exist.
+            _ => SurfacePattern::Brushed,
+        }
     }
 }
 
@@ -247,6 +519,9 @@ pub struct Column {
     /// The top of the rock column, below the soil.
     pub lithology: Lithology,
     pub biome: Biome,
+    /// The **terrain expression inside the biome** (C-160) — the sub-biome layer, read
+    /// from the same slope and moisture the material rule reads.
+    pub habitat: Habitat,
     /// Whether the surface is bare rock (the substrate refusal).
     pub bare_rock: bool,
 }
@@ -282,12 +557,23 @@ pub fn derive(spec: &WorldSpec, x: f64, z: f64, tick: u64, hydro_radius: usize) 
     );
     let bare_rock = soil_depth_m <= 0.0;
 
+    // **The biome's two numbers are aggregates, sampled from the ticked shapers** —
+    // twelve monthly means (each clamped to Holdridge's 0..30 °C) and a mean annual
+    // total. The instantaneous `clim`/`wx` above stay instantaneous for every consumer
+    // that wants *this tick*; the biome wants the region's climate (ECO-0001, ruled
+    // 2026-10-02). Before this, `clim.temperature_c` and `wx.precipitation_mm` were fed
+    // straight in and four of four probed columns flickered between biomes twice a year.
+    let (biotemperature_c, mean_annual_precipitation_mm) =
+        ecology::holdridge_inputs(spec, x, z, terr.elevation_m, tick);
     let biome = ecology::biome_at(
         spec,
         terr.elevation_m,
-        clim.temperature_c,
-        wx.precipitation_mm,
+        biotemperature_c,
+        mean_annual_precipitation_mm,
     );
+    // The sub-biome layer (C-160): the **terrain expression** inside the formation,
+    // read from the slope and moisture this column already computed.
+    let habitat = habitat::habitat_of(spec, terr.elevation_m, terr.slope, clim.moisture);
 
     Column {
         x,
@@ -300,6 +586,7 @@ pub fn derive(spec: &WorldSpec, x: f64, z: f64, tick: u64, hydro_radius: usize) 
         soil_depth_m,
         lithology: stratum.lithology,
         biome,
+        habitat,
         bare_rock,
     }
 }
@@ -311,7 +598,7 @@ pub fn cave_params(spec: &WorldSpec) -> CaveParams {
 
 /// Everything about a **column** that does not depend on height.
 ///
-/// A voxel's material is a function of `(x, z)` through these three numbers and
+/// A voxel's material is a function of `(x, z)` through these numbers and
 /// of `y` through nothing else. Computing them once per column instead of once
 /// per voxel is the difference between a world that streams and a world that
 /// does not — and because [`ColumnProfile::material_at`] is the **same code**
@@ -319,12 +606,20 @@ pub fn cave_params(spec: &WorldSpec) -> CaveParams {
 /// not a second rule.
 ///
 /// `surface_m` is the terrain height, `slope` the surface gradient the substrate
-/// reads, and `moisture` the climate the substrate and the karst both read.
+/// reads, `moisture` the climate the substrate and the karst both read, and
+/// **`biome`** (C-159.10) the formation the region's climate supports — which is
+/// what decides the surface material. It is read here, once per column, at
+/// **tick 0**: the biome is the region's climate and not the moment's
+/// (`LEDGER.md` ECO-0001), so the ground does not change colour with the season.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct ColumnProfile {
     pub surface_m: f64,
     pub slope: f64,
     pub moisture: f64,
+    pub biome: Biome,
+    /// The **terrain expression inside the biome** (C-160) — the sub-biome layer,
+    /// computed from the slope and moisture above so both material paths read one value.
+    pub habitat: Habitat,
 }
 
 /// The height-independent part of a column, at a surface **fractional** position.
@@ -339,10 +634,27 @@ pub fn profile(spec: &WorldSpec, x: f64, z: f64) -> ColumnProfile {
 /// passing it in saves an entire elevation evaluation per column rather than
 /// being a convenience.
 pub fn profile_with_surface(spec: &WorldSpec, x: f64, z: f64, surface_m: f64) -> ColumnProfile {
+    // The biome is the **region's climate**, read through the same two aggregates
+    // `derive` reads (ECO-0001) — and read at tick 0 because it does not move with the
+    // tick. The field plane's `Climate` law computes exactly this from the same
+    // elevation, so the two paths cannot disagree about a column's ground.
+    let (biotemperature_c, mean_annual_precipitation_mm) =
+        ecology::holdridge_inputs(spec, x, z, surface_m, 0);
+    let slope = terrain::sample(spec, x, z).slope;
+    let moisture = climate::moisture(spec, x, z);
     ColumnProfile {
         surface_m,
-        slope: terrain::sample(spec, x, z).slope,
-        moisture: climate::moisture(spec, x, z),
+        slope,
+        moisture,
+        biome: ecology::biome_at(
+            spec,
+            surface_m,
+            biotemperature_c,
+            mean_annual_precipitation_mm,
+        ),
+        // The sub-biome layer (C-160) reads the two values above; the plane computes it
+        // from the `Slope` and `Moisture` fields it already carries.
+        habitat: habitat::habitat_of(spec, surface_m, slope, moisture),
     }
 }
 
@@ -359,10 +671,18 @@ impl ColumnProfile {
         let sea = spec.config.sea_level_m;
 
         if fy > self.surface_m {
-            // Above ground: sea where the ground is below sea level, otherwise
-            // air. A voxel that is *partly* below the water line is water: the
+            // Above ground: sea where the ground is below sea level, otherwise a tree
+            // where one reaches this voxel (`crate::flora` — a pure function of position),
+            // otherwise air. A voxel that is *partly* below the water line is water: the
             // surface is sampled at its centre and the centre is what decides.
-            return Ok(if fy <= sea { materials::WATER } else { materials::AIR });
+            if fy <= sea {
+                return Ok(materials::WATER);
+            }
+            if let Some(material) = crate::flora::tree_material_at(spec, x, y, z, self.surface_m)
+            {
+                return Ok(material);
+            }
+            return Ok(materials::AIR);
         }
 
         let depth = self.surface_m - fy;
@@ -371,8 +691,19 @@ impl ColumnProfile {
         // what falls *into* a void, not what is dissolved.
         let stratum = geology::stratum_at(spec, fx, fz, self.surface_m, fy);
         let soil = substrate::soil_depth_m(spec, stratum.lithology, self.slope, self.moisture);
+        // **The biome decides the cover and the terrain expression decides its
+        // variant** (C-159.10, C-160). Before this the soil branch returned the biome's
+        // cover wherever soil existed; a rock face inside a grassland read as grass.
         if depth <= soil && soil > 0.0 {
-            return Ok(materials::REGOLITH);
+            if let Some(cover) = materials::surface_of(self.biome, self.habitat) {
+                return Ok(cover);
+            }
+            // `None` is `Steep`: bare ground shows the lithology's own rock — the same
+            // material the rock branch below returns, and the same one the field plane
+            // reads from its `Geology` field. Since C-172 that rock is the **declared
+            // substance this region's bed is made of** (`corpus::rock_voxel`), not the
+            // generic class.
+            return crate::corpus::rock_voxel(spec, stratum.lithology, fx, fy, fz, depth);
         }
 
         // Rock, or a void in it.
@@ -380,7 +711,9 @@ impl ColumnProfile {
         match caves::void_at(spec, stratum.lithology, fx, fy, fz, self.surface_m, &params) {
             Void::Open => Ok(materials::AIR),
             Void::Flooded => Ok(materials::WATER),
-            Void::Rock => Ok(materials::for_lithology(stratum.lithology)),
+            // The region's declared rock, or its ore where a vein is present — the one
+            // rule the field plane also calls (`corpus::rock_voxel`, C-172).
+            Void::Rock => crate::corpus::rock_voxel(spec, stratum.lithology, fx, fy, fz, depth),
         }
     }
 }
@@ -411,11 +744,39 @@ pub fn material_at(
     Ok(earthworks.material_at(x, y, z, base))
 }
 
+/// Whether a material is a **fluid** — world state, not a mineable block.
+///
+/// Water is the fluid this world places (`fy <= sea` above ground, and flooded
+/// voids below it). Ice is **not** a fluid here even though the registry's
+/// component is "water/ice": ice is solid, it blocks movement, and mining it is
+/// not the filed defect — the user's words are about *water*, and "Wait for a real
+/// ice spectrum" keeps its material row on hold (C-143.3, C-152.1).
+///
+/// This is **the one rule** the edit path, the mesh and the movement check share:
+/// a second spelling of "is this water" is how the collider and the pick come to
+/// disagree about where the sea is (`blocks_movement` is the same lesson).
+pub fn is_fluid(m: MaterialId) -> bool {
+    m == materials::WATER
+}
+
+/// Whether a material blocks movement. **The one rule about solidity.**
+///
+/// Exposed as its own function because a caller can hold a material *without*
+/// holding a world: the client's collision asks the streamer's live record, which
+/// already knows about the player's edits, and has to answer the same question
+/// [`is_solid`] answers. Two copies of this rule is how a camera ends up walking
+/// through a block the player just placed — the first copy asks the generator, the
+/// second asks the record, and they disagree the moment anyone digs.
+pub fn blocks_movement(m: MaterialId) -> bool {
+    // Water is not solid; ice is. Air is not. A fluid is never something a body
+    // stands on, which is why the fluid rule and the solidity rule are read from
+    // the same predicate.
+    m != materials::AIR && !is_fluid(m)
+}
+
 /// Whether a voxel blocks movement.
 pub fn is_solid(spec: &WorldSpec, earthworks: &Earthworks, x: i32, y: i32, z: i32) -> Refused<bool> {
-    let m = material_at(spec, earthworks, x, y, z)?;
-    // Water is not solid; ice is. Air is not.
-    Ok(m != materials::AIR && m != materials::WATER)
+    Ok(blocks_movement(material_at(spec, earthworks, x, y, z)?))
 }
 
 /// The mean density of the admitted set, as a sanity check a caller can assert on.
@@ -482,7 +843,24 @@ mod tests {
     #[test]
     fn the_starter_registry_is_self_consistent() {
         let r = materials::registry().unwrap();
-        assert_eq!(r.admitted_material_count(), 7, "the starter set changed size");
+        // **The size is the claim, and the claim grew on purpose** (C-122): thirteen rows
+        // are the world's own, and the rest is one admitted material per declared
+        // substance, so the count is asserted as the sum rather than as a constant that
+        // would have to be edited whenever content lands — and would hide a row that
+        // never arrived if it were not.
+        assert_eq!(
+            r.admitted_material_count(),
+            13 + crate::corpus::ROWS.len(),
+            "the admitted set changed size"
+        );
+        for material in r.materials() {
+            assert!(
+                material.reflectance.is_some(),
+                "{} is admitted with no reflectance, so it would be drawn black by \
+                 arithmetic (C-38)",
+                material.name
+            );
+        }
         // Every material resolves, and an unknown id refuses.
         assert!(r.material(materials::WATER).is_ok());
         assert_eq!(
@@ -496,6 +874,39 @@ mod tests {
     }
 
     #[test]
+    fn the_terrain_expression_moves_the_cover_and_steep_shows_rock() {
+        // C-160's table, pinned: the habitat is not a label, it is a change to what the
+        // ground is made of.
+        assert_eq!(
+            materials::surface_of(Biome::Grassland, Habitat::Lowland),
+            Some(materials::GRASS)
+        );
+        assert_eq!(
+            materials::surface_of(Biome::Grassland, Habitat::Dry),
+            Some(materials::DRY_GRASS)
+        );
+        assert_eq!(
+            materials::surface_of(Biome::Tundra, Habitat::Wet),
+            Some(materials::GRASS)
+        );
+        assert_eq!(
+            materials::surface_of(Biome::TemperateForest, Habitat::Montane),
+            Some(materials::CONIFER)
+        );
+        assert_eq!(
+            materials::surface_of(Biome::Desert, Habitat::Montane),
+            Some(materials::REGOLITH)
+        );
+        // Steep is not a cover: the caller resolves it to the lithology.
+        assert_eq!(materials::surface_of(Biome::Grassland, Habitat::Steep), None);
+        // And a cover the table does not know passes through untouched.
+        assert_eq!(
+            materials::surface_under(materials::WATER, Habitat::Dry),
+            Some(materials::WATER)
+        );
+    }
+
+    #[test]
     fn air_is_above_the_surface_and_rock_is_below_it() {
         let s = spec();
         let (x, z) = (11, -7);
@@ -506,10 +917,31 @@ mod tests {
             high == materials::AIR || high == materials::WATER,
             "high voxel was {high:?}"
         );
+        // Since C-172 a deep voxel is the **region's declared rock, or an ore where the
+        // vein field puts one** — not the generic class — so the claim the rule still
+        // supports is that it is solid ground: not air, not water, and something a body
+        // stands on. Asking for a lithology here would fail on a coal seam the way it used
+        // to fail on nothing.
         assert!(
-            materials::lithology_of(deep).is_some() || deep == materials::WATER,
+            deep != materials::AIR && deep != materials::WATER && blocks_movement(deep),
             "deep voxel was {deep:?}"
         );
+    }
+
+    #[test]
+    fn water_is_a_fluid_and_ice_is_a_block() {
+        // **The one rule the edit refusal reads.** Water is world state; ice is a
+        // mineable solid, and its material row waits for a real spectrum (C-143.3).
+        assert!(is_fluid(materials::WATER));
+        assert!(!is_fluid(materials::ICE), "ice blocks movement, so it is a block");
+        assert!(!is_fluid(materials::AIR), "air is nothing, not a fluid");
+        assert!(!is_fluid(materials::REGOLITH));
+        // And solidity reads the same predicate, so the two cannot disagree:
+        // a fluid is never something a body stands on.
+        assert!(!blocks_movement(materials::WATER));
+        assert!(blocks_movement(materials::ICE));
+        assert!(blocks_movement(materials::IGNEOUS));
+        assert!(!blocks_movement(materials::AIR));
     }
 
     #[test]
@@ -537,10 +969,15 @@ mod tests {
             "a voxel under the sea was not water"
         );
         let floor = (sea_floor - 3.0) as i32;
-        assert!(materials::lithology_of(
-            material_at(&s, &Earthworks::new(), x, floor, z).unwrap()
-        )
-        .is_some());
+        let floor_material = material_at(&s, &Earthworks::new(), x, floor, z).unwrap();
+        // The sea floor is **ground, not a class**: since C-172 it is the region's declared
+        // rock (or an ore), so the rule the test keeps is that it is not water and a body
+        // stands on it.
+        assert_ne!(floor_material, materials::WATER, "the sea floor was water");
+        assert!(
+            blocks_movement(floor_material),
+            "the sea floor was {floor_material:?}, which a body does not stand on"
+        );
     }
 
     #[test]
@@ -570,15 +1007,54 @@ mod tests {
         let a = derive(&s, 100.0, -200.0, 7, DEFAULT_HYDRO_RADIUS);
         let b = derive(&s, 100.0, -200.0, 7, DEFAULT_HYDRO_RADIUS);
         assert_eq!(a, b);
-        // Cross-stage coupling: the biome is a reading of this column's own
-        // climate and precipitation, not an independent field.
+        // Cross-stage coupling: the biome is a reading of this column's own climate and
+        // precipitation — sampled across the year — and not an independent field.
+        let (biotemperature_c, mean_annual_precipitation_mm) =
+            ecology::holdridge_inputs(&s, a.x, a.z, a.terrain.elevation_m, 7);
         let expected = ecology::biome_at(
             &s,
             a.terrain.elevation_m,
-            a.climate.temperature_c,
-            a.weather.precipitation_mm,
+            biotemperature_c,
+            mean_annual_precipitation_mm,
         );
         assert_eq!(a.biome, expected);
+    }
+
+    #[test]
+    fn the_biome_is_the_same_at_every_tick_of_the_year() {
+        // **ECO-0001's regression, inverted.** C-93.2 measured four of four probed
+        // columns changing biome within one world year and returning to where they
+        // started — `(0, 0)` ran `boreal_forest ↔ tundra` on days 21 and 76 — because
+        // the classifier was fed one tick of a season. Since the ruling of 2026-10-02 the
+        // biome is classified on biotemperature and mean annual precipitation, sampled
+        // from the same ticked shapers, so it must not move at all.
+        let s = spec();
+        let columns = [(0.0, 0.0), (1200.0, -800.0), (-3000.0, 2500.0), (6000.0, 6000.0)];
+        // A small hydrology radius: this test reads the biome, which does not depend on
+        // the watershed, and the sweep is 384 derivations.
+        let hydro_radius = 2;
+        let day = climate::YEAR_TICKS / 96;
+        let at_zero: Vec<_> = columns
+            .iter()
+            .map(|(x, z)| derive(&s, *x, *z, 0, hydro_radius).biome)
+            .collect();
+        let mut t = 0u64;
+        while t < climate::YEAR_TICKS {
+            for (i, (x, z)) in columns.iter().enumerate() {
+                let now = derive(&s, *x, *z, t, hydro_radius).biome;
+                assert_eq!(
+                    now, at_zero[i],
+                    "the biome at ({x}, {z}) moved from {:?} to {now:?} at tick {t}",
+                    at_zero[i]
+                );
+            }
+            t += day;
+        }
+        // And a later year is the same world's climate: the cycle is periodic.
+        for (i, (x, z)) in columns.iter().enumerate() {
+            let later = derive(&s, *x, *z, climate::YEAR_TICKS * 3 + 7, hydro_radius).biome;
+            assert_eq!(later, at_zero[i], "({x}, {z}) changed biome between world years");
+        }
     }
 
     #[test]
@@ -617,6 +1093,19 @@ mod tests {
             to: target,
             reason: "test".into(),
             ledger,
+            actor: voxel_model::world::ActorId::player(),
+            task: None,
+            verb: voxel_model::world::PhysicalVerb::Place,
+            reservation: None,
+            transition: crate::earthworks::hand_change_id(
+                x,
+                y,
+                z,
+                base,
+                target,
+                &voxel_model::world::ActorId::player(),
+                voxel_model::world::PhysicalVerb::Place,
+            ),
         })
         .unwrap();
 
@@ -630,14 +1119,36 @@ mod tests {
     fn the_pipeline_covers_biomes_and_lithologies_across_a_world() {
         // A world that produced one biome and one rock everywhere would pass
         // every test above and be a worse world.
+        //
+        // **The probe is a grid, and that was measured.** ECO-0001 replaced the
+        // instantaneous inputs with Holdridge's aggregates — biotemperature and mean
+        // annual precipitation, sampled from the ticked shapers — and the old
+        // diagonal (`z = 0.7x`) then saw only `{Tundra, BorealForest}`. The diagonal
+        // was thinner than the world, which is the fact the water test below also
+        // records about itself.
+        //
+        // **The world's real set was then measured twice, and the first measurement
+        // was of a defect.** `examples/biome-census.rs` swept this grid and read
+        // `{Tundra, BorealForest, Alpine}` with a warmest biotemperature of
+        // **2.536 °C** — because the climate envelope was applying latitude twice
+        // (C-159.7). With that repaired the same sweep reads **eight** formations
+        // (`logs/c159-biome-census-3.txt`), so the assertion below is now comfortably
+        // clear rather than barely met — and the old figure is kept here only as the
+        // record of what the defect looked like from this test.
         let s = spec();
         let mut biomes = std::collections::BTreeSet::new();
         let mut rocks = std::collections::BTreeSet::new();
         let mut x = -6000.0;
-        while x < 6000.0 {
-            let c = derive(&s, x, x * 0.7, 0, 8);
-            biomes.insert(c.biome);
-            rocks.insert(c.lithology);
+        while x <= 6000.0 {
+            let mut z = -6000.0;
+            while z <= 6000.0 {
+                // A small hydrology radius: neither the biome nor the lithology
+                // reads the watershed, and this is 1681 derivations.
+                let c = derive(&s, x, z, 0, 2);
+                biomes.insert(c.biome);
+                rocks.insert(c.lithology);
+                z += 300.0;
+            }
             x += 300.0;
         }
         assert!(biomes.len() >= 3, "only {} biomes appeared: {biomes:?}", biomes.len());
@@ -659,5 +1170,34 @@ mod tests {
         let m = mean_admitted_density().unwrap();
         assert!(m.exact().ratio().to_f64() > 500.0);
         assert!(m.exact().ratio().to_f64() < 4000.0);
+    }
+
+    #[test]
+    fn the_shading_field_varies_the_world_it_is_drawn_in() {
+        // C-161's declaration. A field that varies **nothing** would pass every
+        // count in this file and draw the flat blocks the report was about, so the
+        // test asks for the picture's two halves: opaque materials are varied,
+        // transmissive ones are not.
+        let field = materials::shading_field().expect("the field declares");
+        let registry = materials::registry().expect("the registry admits");
+        assert_eq!(field.domain(), materials::SHADING_FIELD_DOMAIN);
+        let mut opaque = 0;
+        let mut transmissive = 0;
+        for m in registry.materials() {
+            let (roughness, reflectance) =
+                field.gain(m.id).unwrap_or_else(|| panic!("{} has no gains", m.name));
+            if m.optical_class == OpticalClass::Opaque {
+                assert_eq!((roughness, reflectance), (0.5, 0.5), "{}", m.name);
+                opaque += 1;
+            } else {
+                assert_eq!((roughness, reflectance), (0.0, 0.0), "{}", m.name);
+                transmissive += 1;
+            }
+        }
+        assert!(opaque > 0 && transmissive > 0, "the registry lost its two classes");
+        // And every admitted material is declared — `none` for a material is "not
+        // varied at this level at all", which is a claim this declaration does not
+        // make about any of them.
+        assert_eq!(field.len(), registry.admitted_material_count());
     }
 }

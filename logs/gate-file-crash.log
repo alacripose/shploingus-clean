@@ -1,0 +1,53 @@
+kache: this volume (F:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: F:/shploingus-target\debug\deps\libautocfg-5e403e1b97928eea.rmeta
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+   Compiling voxel-mesh v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-mesh)
+   Compiling voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+   Compiling voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+   Compiling voxel-work v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-work)
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `test` profile [optimized + debuginfo] target(s) in 1m 46s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-e73fdc2a27c87135.exe)
+
+running 37 tests
+test shell::mount::tests::a_click_on_the_close_glyph_closes_the_window_and_not_its_neighbour ... ok
+test shell::mount::tests::a_maximized_window_keeps_the_rect_it_will_restore_to ... ok
+test shell::mount::tests::a_filing_with_no_workspace_is_refused_by_name_rather_than_guessing_a_path ... ok
+test shell::mount::tests::a_bar_entry_that_is_not_a_tab_opens_its_window_without_a_menu ... ok
+test shell::mount::tests::a_tab_s_menu_offers_its_own_window_and_the_windows_filed_under_it ... ok
+test shell::mount::tests::a_pane_tree_that_cannot_hold_its_floor_is_refused_before_it_is_drawn ... ok
+test shell::mount::tests::a_panel_that_does_not_fit_its_pane_is_refused_with_both_numbers ... ok
+test shell::mount::tests::a_filing_onto_an_unfiled_workspace_is_refused_because_grow_refuses_to_create ... ok
+test shell::mount::tests::a_missing_argument_and_an_unknown_window_are_two_different_refusals ... ok
+test shell::mount::tests::a_report_the_reader_cannot_understand_is_refused_by_name_and_says_nothing_is_wrong ... ok
+test shell::mount::tests::a_window_split_beside_another_derives_its_title_from_the_pane_set ... ok
+test shell::mount::tests::a_refused_command_is_logged_with_its_reason_and_not_only_the_attempt ... ok
+test shell::mount::tests::a_window_verb_moves_the_window_and_takes_the_keyboard_with_it ... ok
+test shell::mount::tests::a_verb_with_no_target_in_this_shell_is_refused_by_name_and_with_the_reason ... ok
+test shell::mount::tests::an_empty_console_is_a_named_absence_rather_than_a_blank_pane ... ok
+test shell::mount::tests::an_empty_enter_is_nothing_at_all ... ok
+test shell::mount::tests::closing_a_host_releases_its_panes_instead_of_taking_them_with_it ... ok
+test shell::mount::tests::every_window_on_screen_draws_with_the_palette_the_record_declares ... ok
+test shell::mount::tests::history_recalls_the_last_line_and_empties_past_the_end ... ok
+test shell::mount::tests::backspace_on_an_empty_draft_says_nothing_changed ... ok
+test shell::mount::tests::one_window_that_refuses_does_not_take_the_others_with_it ... ok
+test shell::mount::tests::keys_reach_the_console_only_while_it_holds_focus ... ok
+test shell::mount::tests::the_console_window_is_hosted_by_the_console_and_not_by_the_empty_view_rule ... ok
+test shell::mount::tests::the_bar_is_the_declared_tabs_in_strip_order_then_the_entries_that_are_not_tabs ... ok
+test shell::mount::tests::the_draft_is_a_row_on_the_panel_so_a_command_can_be_checked_before_it_is_run ... ok
+test shell::mount::tests::an_unpermitted_control_is_absent_rather_than_drawn_disabled ... ok
+test shell::mount::tests::the_gates_pass_is_on_the_console_with_every_unsettled_subject_and_its_reason ... ok
+test shell::mount::tests::the_ink_used_by_the_bar_and_the_windows_is_measured_not_assumed ... ok
+test shell::mount::tests::the_gate_is_read_before_the_window_opens_and_survives_a_reload ... ok
+test shell::mount::tests::the_shipped_package_declares_windows_that_can_hold_the_views_they_host ... ok
+test shell::mount::tests::the_typed_command_is_on_the_record_before_anything_acts_on_it ... ok
+test shell::mount::tests::the_console_window_is_bounded_by_the_pane_it_is_drawn_in_and_says_what_it_holds ... ok
+test shell::mount::tests::a_filed_ticket_is_emitted_to_disk_and_the_shell_reloads_from_it ... ok
+test shell::mount::tests::a_typed_ticket_lands_on_the_chain_and_compiles_to_a_solution ... ok
+test shell::mount::tests::a_ticket_whose_package_would_take_the_console_window_is_refused_and_nothing_is_lost ... ok
+test shell::mount::tests::the_loader_reads_the_path_it_is_given_and_refuses_rather_than_serving_the_last_package ... ok
+test shell::mount::tests::the_console_window_counts_records_it_dropped_rather_than_reading_as_complete ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 0.22s
+

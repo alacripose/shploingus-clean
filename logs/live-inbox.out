@@ -1,0 +1,624 @@
+gate	shploingus.recipe/3
+package	alpha-shell
+version	v1-alpha
+source-sha256	74f6833dd5da4f643426ad9ca7aa408adec31a2a08bee025a74af55be34ef4b0
+package-sha256	e591e9dc5b35ec292a01caf357fabcffdfefb7957becabe676382fac2c5aaba8
+windows	16
+pinned	4
+
+# declared features
+feature	package_intake	active	witness present at crates/voxel-package/src/lib.rs
+feature	recipe_compilation	active	witness present at crates/voxel-package/src/recipe.rs
+feature	build_gate	active	witness present at crates/shploingus/build.rs
+feature	world_generation	active	witness present at crates/voxel-shapers/src/voxel.rs
+feature	signing_seam	active	witness present at crates/voxel-package/src/signing.rs
+feature	signature_verification	unchecked	no witness at crates/voxel-envelope/src/lib.rs, so signature_verification is not implemented; it is pending, so it is displayed and the build continues
+feature	sealed_container	unchecked	no witness at crates/voxel-package/src/envelope.rs, so sealed_container is not implemented; it is pending, so it is displayed and the build continues
+feature	conformance_oracle	active	witness present at crates/voxel-package/src/oracle.rs
+feature	feature_evaluation	active	witness present at crates/voxel-package/src/features.rs
+feature	provenance_digest	active	witness present at crates/voxel-package/src/provenance.rs
+feature	command_line_tool	unchecked	no witness at crates/voxelctl/src/main.rs, so command_line_tool is not implemented; it is pending, so it is displayed and the build continues
+feature	shell_arrangement	active	witness present at crates/voxel-client/src/shell/arrangement.rs
+feature	pinned_hud	active	witness present at crates/voxel-client/src/shell/hud.rs
+feature	notification_queue	active	witness present at crates/voxel-client/src/shell/notifications.rs
+feature	ticket_window	unchecked	no witness at crates/voxel-client/src/shell/tickets.rs, so ticket_window is not implemented; it is pending, so it is displayed and the build continues
+feature	event_chain	active	witness present at crates/voxel-model/src/chain.rs
+feature	stage_cadences	active	witness present at crates/voxel-shapers/src/stages.rs
+feature	save_load	active	witness present at crates/voxel-stream/src/resident.rs
+feature	change_view	unchecked	no witness at crates/voxel-client/src/shell/changes.rs, so change_view is not implemented; it is pending, so it is displayed and the build continues
+
+# conformance oracle
+oracle	active
+known-answers	53
+accuracy	1.0000
+majority-class	0.6226
+inverted-accuracy	0.0566
+oracle-kind	structural-deterministic
+oracle-is-laya	no
+oracle-note	accuracy 1.0000 against a majority class of 0.6226
+oracle-note	inverted accuracy 0.0566
+oracle-note	53 of 53 known answers produced a reading
+oracle-refusal	signature_verification: the row names crates/voxel-envelope/src/lib.rs as its witness, and nothing is at C:\Users\ala\Documents\shploingus-clean\crates/voxel-envelope/src/lib.rs
+oracle-refusal	sealed_container: the row names crates/voxel-package/src/envelope.rs as its witness, and nothing is at C:\Users\ala\Documents\shploingus-clean\crates/voxel-package/src/envelope.rs
+oracle-refusal	command_line_tool: the row names crates/voxelctl/src/main.rs as its witness, and nothing is at C:\Users\ala\Documents\shploingus-clean\crates/voxelctl/src/main.rs
+oracle-refusal	ticket_window: the row names crates/voxel-client/src/shell/tickets.rs as its witness, and nothing is at C:\Users\ala\Documents\shploingus-clean\crates/voxel-client/src/shell/tickets.rs
+oracle-refusal	change_view: the row names crates/voxel-client/src/shell/changes.rs as its witness, and nothing is at C:\Users\ala\Documents\shploingus-clean\crates/voxel-client/src/shell/changes.rs
+
+# the record
+document	docs/LEDGER.md	authority	b50da66b46697f9385491fbf3fd33a76c6f49e82215750022cffaadfb1c08272
+document	docs/HYPERGRILLING.md	authority	f00ae4fd311bf1a6aff1a095bbd773f026f38928805700d8bce638f268618d92
+document	docs/DESIGN-SPEC.md	authority	4bf8d56bb9d24b105b8e791e6cb55410f27098b6d7915a488dff6073e1e0826f
+document	docs/SHAPERS.md	authority	426b58d7f518aef6cd196d99b9c9659577e63bd030495fa046fd74be7309cff7
+document	docs/UI-SPEC.md	authority	0ab49afec470a2c59915b31dea170ba07c5d21758d24a5dfad0f1213de723e37
+document	docs/MODS-MAP.md	authority	20bb2c267bdaa380a6ca0d45567f35fedf8b82818072bece51186a70a97edc29
+document	docs/APPEARANCE.md	authority	4ad27b052116bb8e9940d6daaf8d6ec22c66e41fd37baf68065fcd2c85edfdd8
+document	docs/TODO.md	authority	e342c8d7e16111f04e5073675666313cc254d838d5449fa7c5aed90c82dc960b
+document	docs/STATUS.md	authority	4ba110ef664da42168d305cfa93a31ec93562fc68eb2ed4e7d7556b59bb06c84
+document	docs/HANDOFF.md	derived	05297ee6a36a750ea75a5f2d0b3446313ec3e7fd3724b498fe458f65258e77a9
+
+# the record, compressed
+compendium-format	shploingus.compendium/1
+record-sha256	90f09aeec022d7758303750596837ad121e824b1426251d929ccda2f9deba1af
+decisions	156
+anchors	153
+anchors-written-twice	3
+series	ledger	65	authority=true
+series	answer	73	authority=true
+series	research	7	authority=false
+series	ruling	11	authority=true
+open-questions	31
+question	H-7.1	docs/HYPERGRILLING.md:30	open
+question	H-7.2	docs/HYPERGRILLING.md:59	open
+question	H-7.3	docs/HYPERGRILLING.md:81	open
+question	H-7.4	docs/HYPERGRILLING.md:104	open
+question	H-7.5	docs/HYPERGRILLING.md:128	open
+question	H-7.6	docs/HYPERGRILLING.md:144	open
+question	H-7.7	docs/HYPERGRILLING.md:156	open
+question	H-7.8	docs/HYPERGRILLING.md:168	open
+question	H-7.9	docs/HYPERGRILLING.md:186	open
+question	H-7.10	docs/HYPERGRILLING.md:202	open
+question	H-7.11	docs/HYPERGRILLING.md:229	open
+question	H-7.12	docs/HYPERGRILLING.md:234	open
+question	H-7.13	docs/HYPERGRILLING.md:252	open
+question	H-7.14	docs/HYPERGRILLING.md:270	open
+question	H-7.15	docs/HYPERGRILLING.md:281	open
+question	H-7.16	docs/HYPERGRILLING.md:299	open
+question	H-7.17	docs/HYPERGRILLING.md:313	open
+question	H-7.18	docs/HYPERGRILLING.md:329	open
+question	H-7.19	docs/HYPERGRILLING.md:345	open
+question	H-7.23	docs/HYPERGRILLING.md:409	open
+question	H-7.24	docs/HYPERGRILLING.md:421	open
+question	H-7.25	docs/HYPERGRILLING.md:436	open
+question	H-7.26	docs/HYPERGRILLING.md:445	open
+question	H-7.27	docs/HYPERGRILLING.md:462	open
+question	H-7.28	docs/HYPERGRILLING.md:476	open
+question	H-8.1	docs/HYPERGRILLING.md:778	open
+question	H-11.5	docs/HYPERGRILLING.md:1036	open
+question	H-14.1	docs/HYPERGRILLING.md:1700	open
+question	H-14.2	docs/HYPERGRILLING.md:1751	open
+question	H-15.1	docs/HYPERGRILLING.md:1818	open
+question	H-16.1	docs/HYPERGRILLING.md:1937	open
+
+# what the record costs
+ledger-bloat-file	workspace.chain
+ledger-bloat-records	217
+ledger-bloat-total-bytes	560298
+ledger-bloat-payload-bytes	376822
+ledger-bloat-frame-bytes	183476
+ledger-bloat-payload-percent	67
+ledger-bloat-linked	217
+ledger-bloat-linkage	217 of 217 records carry a previous-event hash; a hash is evidence about bytes and order, not permission
+ledger-bloat-digest	bc7469c8d00482fa1fb86a575b47f838155fa61df15801453497d77a7838b3a1
+
+# which bytes this build read
+provenance-digest	f9cb6151e090c92cb5817d5c7e0abe7c7f9dd7ebb4813ae1cc5a402615647edb
+provenance-files	172
+provenance-scope		these bytes, this build. Not authorship, not history, not a commit, and not tamper-evidence against anyone who can rewrite both the tree and the digest (R-59.1)
+provenance-commit	false
+provenance-object-format	sha1
+provenance-digest-expressible	false
+provenance-commit-why	.git/HEAD is "ref: refs/heads/main", which names a branch and no commit; rev-list over it resolves to nothing, so there is no commit to read; and the object format is "sha1", which voxel_model::Digest refuses to express, so a commit here would not be readable by this project even once one exists
+provenance-gix		deferred: read-only gix provenance is adopted when a commit exists, and this repository is not a commit yet. The working-tree digest is what stands today (R-59.1)
+
+# do the two views of the record agree
+projection-disagreements	152
+projection-in-record-not-in-chain	0
+projection-in-chain-not-in-record	152
+projection-divergent	0
+projection		the two views DISAGREE, so docs/LEDGER.md is currently a second hand-written record rather than a projection of the chain; writing the projection now would delete the entries listed above
+board-tickets	161
+board-duplicate-filings	42
+board	the board holds 161 tickets, of which 84 are repeat filings of 42 distinct objectives. An append-only record cannot retract a filing, so these are reported rather than removed, and the ticket count above is NOT a count of distinct pieces of work
+board-duplicate	86 and 130, 172	add RecordState::Contested for the case where the ACTION is settled and a CONSEQUENCE is owed — because Unresolved says no answer was given and Superseded says a newer one replaced it, and neither is what happened
+board-duplicate	97 and 141, 183	add a behavioural census axis whose cell is a NAMED TEST PATH the coverage matrix forces every crate to fill — derived from this record format, not from the old tree's per-part claim gate
+board-duplicate	92 and 136, 178	admit the baseline atmosphere as TICK-ZERO DATA with a source per number, instead of four f64 constants in a shaper — because that admission is the exact thing the other tree is blocked without
+board-duplicate	69 and 113, 155	build the fixed 20 Hz clock with an accumulator that bounds how many missed ticks one slow frame may catch up on, and count what it dropped
+board-duplicate	58 and 102, 144	build the shell-owned notification queue: one writer, one rendering per record, one at a time
+board-duplicate	66 and 110, 152	carry every sky constant in a provenance inventory that names its source, and count the project extensions in a test so an unsourced number cannot be added silently
+board-duplicate	85 and 129, 171	carry pressure, temperature and flow as fixed-point integers at a DECLARED scale, so a threshold test is an exact integer comparison, and bind the scale into identity so changing it refuses an old save
+board-duplicate	89 and 133, 175	declare the voxel-to-metre scale as one constant with a named source, and bind it into identity — because the world states a density in kg/m^3 and holds a lattice in voxels with no declared number between them
+board-duplicate	77 and 121, 163	delete the second air column: one function answers what a light ray's path loses, and both the noon normaliser and the sun's own colour read it
+board-duplicate	83 and 127, 169	derive soil porosity HERE from a named source, or refuse every porosity this tree states — because the only number available is another tree's provisional row with its own tolerance undefined
+board-duplicate	75 and 119, 161	derive the extra subvoxel shapers from the gas and fluid ruling rather than inventing them, so a machine's behaviour is a consequence of what a fluid is and not a list of shapes
+board-duplicate	57 and 101, 143	dock a window: hit-test a drag to a pane or an outer edge, preview the zone, and insert on drop
+board-duplicate	60 and 104, 146	enforce the unenforced halves of the craft floor in voxel-ui as refusals: depth offset, measure, motion easing, copy naming recovery
+board-duplicate	67 and 111, 153	evaluate sky radiance from the real scattering models so the sky's colour is the model's output: Rayleigh and Mie coefficients, the Henyey-Greenstein phase function, and Kasten-Young air mass
+board-duplicate	65 and 109, 151	give SkyPhase the real twilight thresholds of -6, -12 and -18 degrees plus golden hour, blue hour and the Belt of Venus, and test each at its exact boundary angle
+board-duplicate	90 and 134, 176	give a subvoxel cell a DECLARED EXACT VOLUME, so a cell's mass is volume times bulk density as an exact rational and a cell can hold matter
+board-duplicate	79 and 123, 165	give every decision in this record a status and a hazard beside it, and a withdrawal record that supersedes a wrong claim by id — so a settled decision carries what could still break it
+board-duplicate	68 and 112, 154	give the night a source that is not the sun dimmed: the Moon's real phase derived from tick at the published Bond albedo, so a night is not the day with a smaller number
+board-duplicate	81 and 125, 167	key the surface displacement by (structure, material, face) instead of (material, face) for the whole world, so two machines may pattern the same wall without one refusing the other
+board-duplicate	62 and 106, 148	make Openness::Settled constructible, so a reader of the record can see that a question is answered
+board-duplicate	64 and 108, 150	make solar position a pure function of (tick, declared latitude): declination and hour angle to altitude and azimuth, with no clock and no RNG
+board-duplicate	78 and 122, 164	make the moon a REFLECTANCE on a lit surface — solar constant at its orbit, Bond albedo as a SourcedReflectance, attenuated back through the same air column — instead of an independent emitter
+board-duplicate	72 and 116, 158	measure the sky offscreen: read the pixels back and show that the clear colour and the rig both change with the tick, so 'the sky is lit' is a number rather than a claim
+board-duplicate	95 and 139, 181	prove every gate reading can go RED — a mutation check on the values the gate measures, because a suite that cannot go red is not evidence and a number asserted in isolation can be a number that goes nowhere
+board-duplicate	61 and 105, 147	re-audit each feature row's means text against what its witness actually contains, and stop reporting active when the witness is thinner than the feature
+board-duplicate	88 and 132, 174	record a decision the tooling could not write as a NAMED GAP with its count left unreconciled, rather than leaving a silence a later session would be free to fill with an invention
+board-duplicate	59 and 103, 145	render the gate's findings as a Panel from the same structure the gate prints, so a green build and a legible panel cannot disagree
+board-duplicate	56 and 100, 142	resize a pane: drag a divider, move the stretch factors, and refuse a resize that would break the 40x40 floor
+board-duplicate	76 and 120, 162	rule air as a CONSERVED TYPED FLUID in the world's own ledger rather than as an analytic formula, and make the sky derive from that authority rather than beside it
+board-duplicate	63 and 107, 149	rule how the pre-chain ledger entries become chain history, or rule that the projection begins fresh from C-73
+board-duplicate	73 and 117, 159	rule how the sun and the moon are bodies: a sky pass drawing each disc from its angular radius, the moon as real voxels at a scaled distance, or both as voxels with a declared compression ratio
+board-duplicate	80 and 124, 166	rule that a structure is a NAMED LEDGER-RESIDENT OBJECT with an owner rather than a gesture over voxels, because 'the machine moved' is false otherwise
+board-duplicate	94 and 138, 180	rule that a world with no ADMITTED initial atmospheric state must REFUSE its first weather process and name the missing declaration — never begin at a standard pressure, however well sourced that constant is
+board-duplicate	82 and 126, 168	rule that air is SEVERAL NAMED POOLS mixing only through declared processes, with a stored global account and per-basin accounts cross-checked at audit — not one global scalar and not one account
+board-duplicate	93 and 137, 179	rule that climate is NOT a regional field — temperature, moisture, precipitation, humidity, pressure, wind and storms are PROCESSES — and that the field ladder therefore carries lithology, elevation and soil depth only
+board-duplicate	87 and 131, 173	rule that withdrawing a decision does NOT refute what it described, and carry a flag saying so — or a later reader will 'fix' a seam that was left open on purpose
+board-duplicate	84 and 128, 170	rule the exact/approximate boundary for a fluid: mass and volume as exact rationals, pressure and temperature and flow as declared-approximate with a named scale — and forbid a tolerance-bearing quantity feeding a conserved one
+board-duplicate	71 and 115, 157	rule the fusion declaration's constraint: customization of how the world looks, bounded to the real-world models, with every override carrying a source the way SourcedReflectance does
+board-duplicate	74 and 118, 160	rule whether the gas and fluid model is in this branch, because machines and extra subvoxel shapers depend on what a fluid is and nothing has decided it
+board-duplicate	96 and 140, 182	rule whether this tree adopts the octree-aligned field ladder — a rung INDEX (level n = 32 * 2^n, octree-aligned to the 32^3 chunk, level count the only free parameter) carrying lithology, elevation and soil depth only — or states its own shape and records the divergence
+board-duplicate	91 and 135, 177	split materials::AIR from MaterialId::EMPTY so an air mixture is an admitted Material with gas components and a density, rather than the absence of matter by another name
+board-duplicate	70 and 114, 156	wire the tick into the client so the sun and the sky reach the frame: the clear colour and the light rig both read the tick, and the sun carries its own colour, intensity and direction so a shadow can be lit by it
+board-ticket	98	give the shaper stage set a declared authority, reusing the existing governance vocabulary rather than a second one
+board-ticket	99	window text overlaps without respecting hierarchy; oracle-is-laya is printed rather than measured; axis.rs grading is needed for the mods API view
+board-ticket	184	text from windows not respecting z-order
+board-ticket	185	window text not respecting z order
+board-ticket	186	mouse does not lock
+board-ticket	187	repair the governance stack through the ticket system itself: a person's plain-prose ticket back-compiles from the mods api tracking instead of refusing for a missing window token (BLD-0187), a filing updates the mods api section and raises the shell's toast queue record (H-12.2, UI-SPEC §7) in window[notifications] and window[api-viewer], milestones and blocks are built against the recipes, and laya decides at runtime and at compile (H-14.2, two passes)
+board-ticket	188	claim the nine unclaimed commits: no commit on this tree references a ticket and no claim step bound it
+board-ticket	189	enforce the claim step: the pipeline accepts work that names no ticket
+board-ticket	190	version chains/workspace.chain: the record every view reads is untracked in git
+board-ticket	191	commit C-97: the ruling is recorded in the docs and uncommitted on disk
+board-ticket	192	resolve the BLD-0187 id ambiguity: scratch filings and the canonical chain mint the same ids
+board-ticket	193	pin Control totality: the envelope's Control enum carries no CONTROLS_ARE_TOTAL pin
+board-ticket	194	SES-01 the laya gate at cargo test time judges every file, function, token and byte
+board-ticket	195	SES-02 the notification queue rides the decided stack: musli-wire metadata records, sha256 via identity::Digest, a directory the client watches
+board-ticket	196	SES-03 notifications stream like the chunk streamer
+board-ticket	197	SES-04 the decision layer is never reduced in transit
+board-ticket	198	SES-05 test scratch leaves temp_dir and lands in-project
+board-ticket	199	SES-06 the six framework findings filed with recipes and packages
+board-ticket	200	SES-07 a person's plain-prose ticket must file and compile — window derivation is the system's job
+board-ticket	201	SES-08 laya is the entire decision layer across the framework, the game's systems and the compiler
+board-ticket	202	SES-09 gate-file-findings.log was destroyed and is unrecoverable
+board-ticket	203	SES-10 the session infraction record, events 0043-0072
+board-ticket	204	SES-11 the infraction record, event 0078: contempt for the principal inside the agent's own reasoning
+board-ticket	205	SES-12 the infraction record, strikes 2-4: deliberating instead of asking, and long sweeps for a path already given
+board-ticket	206	SES-13 the chain-doubling defect: filing::grow appended the chain's own history a second time
+board-ticket	207	can't look around
+board-ticket	208	console fucking sucks
+board-ticket	209	no goddamn windows
+board-ticket	210	my agent is fucking missing
+board-ticket	211	you just closed my game without seeing what tickets I =opened
+board-ticket	212	where is my agent
+board-ticket	213	api window missing content and information about agent
+board-ticket	214	console window still not the one drom portal_smulator
+board-ticket	215	closing gane to edit shell
+board-ticket	216	help
+plan-milestones	0
+plan-blockers	0
+plan-malformed	0
+
+# every crate in the workspace
+crates	12
+axes	6
+census-claimed	6
+census-unclaimed	6
+census-declaration-table	docs/DESIGN-SPEC.md
+census-unclaimed-by	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-noise. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+census-unclaimed-by	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-instrument. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+census-unclaimed-by	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-work. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+census-unclaimed-by	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-ui. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+census-unclaimed-by	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-package. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+census-unclaimed-by	the spec's declaration tables (docs/DESIGN-SPEC.md) never name shploingus. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+crate	voxel-model	active	active	active	active	active	refused
+crate-gap	voxel-model	axis=documented	state=refused	38% of voxel-model's source over 18 of 18 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	voxel-noise	active	active	active	inactive	inactive	refused
+crate-gap	voxel-noise	axis=refusing	state=inactive	voxel-noise names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+crate-gap	voxel-noise	axis=claimed	state=inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-noise. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+crate-gap	voxel-noise	axis=documented	state=refused	33% of voxel-noise's source over 6 of 6 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	voxel-mesh	active	active	active	active	active	refused
+crate-gap	voxel-mesh	axis=documented	state=refused	37% of voxel-mesh's source over 8 of 8 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	voxel-shapers	active	active	active	active	active	refused
+crate-gap	voxel-shapers	axis=documented	state=refused	41% of voxel-shapers's source over 28 of 28 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	voxel-stream	active	active	active	active	active	refused
+crate-gap	voxel-stream	axis=documented	state=refused	35% of voxel-stream's source over 5 of 5 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	voxel-instrument	active	active	active	active	inactive	refused
+crate-gap	voxel-instrument	axis=claimed	state=inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-instrument. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+crate-gap	voxel-instrument	axis=documented	state=refused	38% of voxel-instrument's source over 5 of 5 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	voxel-appearance	active	active	active	active	active	refused
+crate-gap	voxel-appearance	axis=documented	state=refused	42% of voxel-appearance's source over 10 of 10 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	voxel-work	active	active	active	active	inactive	refused
+crate-gap	voxel-work	axis=claimed	state=inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-work. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+crate-gap	voxel-work	axis=documented	state=refused	40% of voxel-work's source over 6 of 6 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	voxel-ui	active	inactive	active	inactive	inactive	refused
+crate-gap	voxel-ui	axis=moduled	state=inactive	voxel-ui declares no `pub mod`. That is legal — a leaf crate can be one file — so this is reported as `inactive`, not refused: a state, and a fact a reader can check
+crate-gap	voxel-ui	axis=refusing	state=inactive	voxel-ui names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+crate-gap	voxel-ui	axis=claimed	state=inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-ui. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+crate-gap	voxel-ui	axis=documented	state=refused	35% of voxel-ui's source over 2 of 2 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	voxel-client	active	active	active	active	active	refused
+crate-gap	voxel-client	axis=documented	state=refused	42% of voxel-client's source over 25 of 25 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	voxel-package	active	active	active	active	inactive	refused
+crate-gap	voxel-package	axis=claimed	state=inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-package. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+crate-gap	voxel-package	axis=documented	state=refused	40% of voxel-package's source over 31 of 31 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+crate	shploingus	active	inactive	inactive	inactive	inactive	refused
+crate-gap	shploingus	axis=moduled	state=inactive	shploingus declares no `pub mod`. That is legal — a leaf crate can be one file — so this is reported as `inactive`, not refused: a state, and a fact a reader can check
+crate-gap	shploingus	axis=tested	state=inactive	shploingus contains no `#[test]`. C-17 holds the whole client to 'every cargo test actually visible', and a crate with no test cannot show that it was looked at
+crate-gap	shploingus	axis=refusing	state=inactive	shploingus names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+crate-gap	shploingus	axis=claimed	state=inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name shploingus. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+crate-gap	shploingus	axis=documented	state=refused	46% of shploingus's source over 3 of 3 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+
+# the decision layer
+decider	deterministic
+subjects	98
+subject-active	67
+subject-inactive	14
+subject-unchecked	5
+subject-refused	12
+subject	axis/voxel-model/documented	refused	38% of voxel-model's source over 18 of 18 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/voxel-noise/refusing	inactive	voxel-noise names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+subject	axis/voxel-noise/claimed	inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-noise. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+subject	axis/voxel-noise/documented	refused	33% of voxel-noise's source over 6 of 6 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/voxel-mesh/documented	refused	37% of voxel-mesh's source over 8 of 8 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/voxel-shapers/documented	refused	41% of voxel-shapers's source over 28 of 28 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/voxel-stream/documented	refused	35% of voxel-stream's source over 5 of 5 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/voxel-instrument/claimed	inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-instrument. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+subject	axis/voxel-instrument/documented	refused	38% of voxel-instrument's source over 5 of 5 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/voxel-appearance/documented	refused	42% of voxel-appearance's source over 10 of 10 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/voxel-work/claimed	inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-work. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+subject	axis/voxel-work/documented	refused	40% of voxel-work's source over 6 of 6 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/voxel-ui/moduled	inactive	voxel-ui declares no `pub mod`. That is legal — a leaf crate can be one file — so this is reported as `inactive`, not refused: a state, and a fact a reader can check
+subject	axis/voxel-ui/refusing	inactive	voxel-ui names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+subject	axis/voxel-ui/claimed	inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-ui. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+subject	axis/voxel-ui/documented	refused	35% of voxel-ui's source over 2 of 2 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/voxel-client/documented	refused	42% of voxel-client's source over 25 of 25 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/voxel-package/claimed	inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name voxel-package. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+subject	axis/voxel-package/documented	refused	40% of voxel-package's source over 31 of 31 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	axis/shploingus/moduled	inactive	shploingus declares no `pub mod`. That is legal — a leaf crate can be one file — so this is reported as `inactive`, not refused: a state, and a fact a reader can check
+subject	axis/shploingus/tested	inactive	shploingus contains no `#[test]`. C-17 holds the whole client to 'every cargo test actually visible', and a crate with no test cannot show that it was looked at
+subject	axis/shploingus/refusing	inactive	shploingus names no RefusalKind. A crate that cannot refuse returns a plausible value where the record says it should decline; whether this one should is a question the record has not answered, so none is asserted here
+subject	axis/shploingus/claimed	inactive	the spec's declaration tables (docs/DESIGN-SPEC.md) never name shploingus. It is **unclaimed**: not mis-conformant, and not a failure — a thing nobody has claimed yet. Either a feature row is owed for it, or it is a crate this project does not need
+subject	axis/shploingus/documented	refused	46% of shploingus's source over 3 of 3 covered file(s) is comment, and no document under docs/ defines it — no heading there begins with its name. The documentation was not created: prose in a code artifact is documentation written where a reader does not look for it
+subject	feature/signature_verification	unchecked	no witness at crates/voxel-envelope/src/lib.rs, so signature_verification is not implemented; it is pending, so it is displayed and the build continues
+subject	feature/sealed_container	unchecked	no witness at crates/voxel-package/src/envelope.rs, so sealed_container is not implemented; it is pending, so it is displayed and the build continues
+subject	feature/command_line_tool	unchecked	no witness at crates/voxelctl/src/main.rs, so command_line_tool is not implemented; it is pending, so it is displayed and the build continues
+subject	feature/ticket_window	unchecked	no witness at crates/voxel-client/src/shell/tickets.rs, so ticket_window is not implemented; it is pending, so it is displayed and the build continues
+subject	feature/change_view	unchecked	no witness at crates/voxel-client/src/shell/changes.rs, so change_view is not implemented; it is pending, so it is displayed and the build continues
+subject	number/dense-samples-per-voxel-ledger	inactive	dense-samples-per-voxel-ledger still reads "Why: dense storage is 16.7M samples/voxel. Cost: detail must be a pure function," in docs/LEDGER.md. The record's figure is 1,073,741,824, and the prose is not edited here: C-2 is stamped OPEN TO CORRECTION and appearance is the user's area (C-27, C-38), so the correction is theirs to make. This line prints on every build until they make it.
+subject	number/dense-samples-per-voxel-spec	inactive	dense-samples-per-voxel-spec still reads "16,777,216 samples per voxel; addressing it costs one hash per sample and buys" in docs/DESIGN-SPEC.md. The record's figure is 1,073,741,824, and the prose is not edited here: C-2 is stamped OPEN TO CORRECTION and appearance is the user's area (C-27, C-38), so the correction is theirs to make. This line prints on every build until they make it.
+
+# the decision layer, pass two (the model instrument)
+model-decider	unreachable
+model-decided	0
+model-unreached	98
+divergences	0
+
+# what this gate is not
+integrity	established
+identity	not-established-no-signature
+model-oracle	not-evaluated
+
+shploingus: the gate report could not be read onto the console: the model pass's report carries a key "integrity" that `TwoPass::report` never writes; the model pass's report carries a key "identity" that `TwoPass::report` never writes; the model pass's report carries a key "model-oracle" that `TwoPass::report` never writes
+shploingus: the agent's inbox: 4 recipe(s) handed over, 0 already there, 9 refused
+shell mounted: 16 windows, 6 tabs [inventory, trees, mods, docs, settings, map-plan], 4 pinned [world, streamer, determinism, refusals], bar windows [console]
+  window	inventory	Inventory / crafting	tab	inventory
+  window	trees	Working / crafting trees	tab	trees
+  window	governance	Tickets / governance	tab	ledger
+  window	mods	Mods	tab	mods
+  window	docs	Docs	tab	ledger
+  window	settings	Settings	control	settings
+  window	tools	Tools	tab	tools
+  window	map-plan	Map / plan	world	map-plan
+  window	console	Console	control	console
+  window	log	Log	frame	log
+  window	api-viewer	API viewer	frame	api-viewer
+  window	notifications	Notifications	beacon	notifications
+  window	streamer	Streamer	motion	streamer
+  window	world	World	world	world-view
+  window	determinism	Determinism	frame	readout
+  window	refusals	Refusals	beacon	table
+  Escape or F1 hides and shows the shell; a pinned window stays (H-9.8)
+  F3 draws the debug lanes over the shell, and works with the shell closed (H-7.25, H-7.9)
+shploingus on NVIDIA GeForce RTX 2070 SUPER (Vulkan) — 15 worker threads, window 605×11 chunks, 256 MB ceiling
+console	[EVENT] t9000 inbox: recipe-BLD-0184.musli — BLD-0184 handed to the agent: text from windows not respecting z-order
+console	[EVENT] t9000 inbox: recipe-BLD-0185.musli — BLD-0185 handed to the agent: window text not respecting z order
+console	[EVENT] t9000 inbox: recipe-BLD-0186.musli — BLD-0186 handed to the agent: mouse does not lock
+console	[WARN] t9000 inbox: BLD-0207's package does not frame, so there is no recipe to hand over: 1 refusal(s): no_reading: the recipe declares no window and no row, so it declares nothing. An empty package reads as a clean one, and the refusal is the honest alternative
+console	[WARN] t9000 inbox: BLD-0208's package does not frame, so there is no recipe to hand over: 1 refusal(s): no_reading: the recipe declares no window and no row, so it declares nothing. An empty package reads as a clean one, and the refusal is the honest alternative
+console	[WARN] t9000 inbox: BLD-0209's package does not frame, so there is no recipe to hand over: 1 refusal(s): no_reading: the recipe declares no window and no row, so it declares nothing. An empty package reads as a clean one, and the refusal is the honest alternative
+console	[WARN] t9000 inbox: BLD-0210's package does not frame, so there is no recipe to hand over: 1 refusal(s): no_reading: the recipe declares no window and no row, so it declares nothing. An empty package reads as a clean one, and the refusal is the honest alternative
+console	[WARN] t9000 inbox: BLD-0211's package does not frame, so there is no recipe to hand over: 1 refusal(s): no_reading: the recipe declares no window and no row, so it declares nothing. An empty package reads as a clean one, and the refusal is the honest alternative
+console	[WARN] t9000 inbox: BLD-0212's package does not frame, so there is no recipe to hand over: 1 refusal(s): no_reading: the recipe declares no window and no row, so it declares nothing. An empty package reads as a clean one, and the refusal is the honest alternative
+console	[WARN] t9000 inbox: BLD-0213's package does not frame, so there is no recipe to hand over: 1 refusal(s): no_reading: the recipe declares no window and no row, so it declares nothing. An empty package reads as a clean one, and the refusal is the honest alternative
+console	[WARN] t9000 inbox: BLD-0214's package does not frame, so there is no recipe to hand over: 1 refusal(s): no_reading: the recipe declares no window and no row, so it declares nothing. An empty package reads as a clean one, and the refusal is the honest alternative
+console	[WARN] t9000 inbox: BLD-0215's package does not frame, so there is no recipe to hand over: 1 refusal(s): no_reading: the recipe declares no window and no row, so it declares nothing. An empty package reads as a clean one, and the refusal is the honest alternative
+console	[EVENT] t9000 inbox: recipe-BLD-0216.musli — BLD-0216 handed to the agent: help
+console	[EVENT] t9000 inbox: the board's console filings: 4 handed to the agent, 0 already in the inbox, 9 refused (scope: world shploingus)
+console	[EVENT] t9000 laya: the game asked for this run's judgement at tick 9000: 133 decision(s) written to C:\Users\ala\Documents\shploingus-clean\logs\laya-decisions, 0 cleared, the judge is quotable
+console	[EVENT] t9000 laya: laya-0000 refused crates/shploingus/build.rs [not_belongs] at tick 9000: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[WARN] t9000 reload: C:\Users\ala\Documents\shploingus-clean\packages\BLD-0186.shpkg was refused: the package declares 0 window(s) () and none of them is "console", so adopting it would take the command line off the screen. Not reloaded; the arrangement in force is unchanged
+console	[EVENT] t9000 shell: shell drawing: 13 surface(s), 97 ink, 1 with no host, 9 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9002 laya: laya-0001 refused crates/shploingus/src/main.rs [not_belongs] at tick 9002: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9003 laya: laya-0002 refused crates/voxel-appearance/src/composition.rs [not_belongs] at tick 9003: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9004 laya: laya-0003 refused crates/voxel-appearance/src/detail.rs [not_belongs] at tick 9004: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9006 laya: laya-0004 refused crates/voxel-appearance/src/lib.rs [not_belongs] at tick 9006: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9007 laya: laya-0005 refused crates/voxel-appearance/src/npr.rs [not_belongs] at tick 9007: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9008 laya: laya-0006 refused crates/voxel-appearance/src/openpbr.rs [not_belongs] at tick 9008: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9010 laya: laya-0007 refused crates/voxel-appearance/src/provenance.rs [not_belongs] at tick 9010: no proof of work on record: no claim, no evidence, no origin — the default is fail
+34 fps | 48/605 chunks | 0 stale-but-drawn | 3922 quads | 0.2/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 599 | digest d8c2e0f855ef69ea
+console	[EVENT] t9011 laya: laya-0008 refused crates/voxel-appearance/src/response.rs [not_belongs] at tick 9011: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9012 laya: laya-0009 refused crates/voxel-appearance/src/sky.rs [not_belongs] at tick 9012: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9013 laya: laya-0010 refused crates/voxel-appearance/src/wrap.rs [not_belongs] at tick 9013: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9014 laya: laya-0011 refused crates/voxel-audio/src/lib.rs [not_belongs] at tick 9014: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9015 laya: laya-0012 refused crates/voxel-client/src/camera.rs [not_belongs] at tick 9015: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9016 laya: laya-0013 refused crates/voxel-client/src/change.rs [not_belongs] at tick 9016: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9017 laya: laya-0014 refused crates/voxel-client/src/clock.rs [not_belongs] at tick 9017: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9018 laya: laya-0015 refused crates/voxel-client/src/debug.rs [not_belongs] at tick 9018: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9019 laya: laya-0016 refused crates/voxel-client/src/frame.rs [not_belongs] at tick 9019: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9020 laya: laya-0017 refused crates/voxel-client/src/game.rs [not_belongs] at tick 9020: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9021 laya: laya-0018 refused crates/voxel-client/src/hud.rs [not_belongs] at tick 9021: A08 hand-rolled byte encoding at crates/voxel-client/src/hud.rs:630: `bytes.extend_from_slice(&value.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 1 byte-level site(s) in this artifact
+console	[EVENT] t9022 laya: laya-0019 refused crates/voxel-client/src/lib.rs [not_belongs] at tick 9022: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9023 laya: laya-0020 refused crates/voxel-client/src/motion.rs [not_belongs] at tick 9023: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9024 laya: laya-0021 refused crates/voxel-client/src/renderer.rs [not_belongs] at tick 9024: A08 hand-rolled byte encoding at crates/voxel-client/src/renderer.rs:224: `*cell = f32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]])` — a wire format rolled by hand over untrusted bytes; 1 byte-level site(s) in this artifact
+console	[EVENT] t9025 laya: laya-0022 refused crates/voxel-client/src/scene.rs [not_belongs] at tick 9025: A08 hand-rolled byte encoding at crates/voxel-client/src/scene.rs:68: `out.extend_from_slice(&v.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 5 byte-level site(s) in this artifact
+console	[EVENT] t9026 laya: laya-0023 refused crates/voxel-client/src/shading.rs [not_belongs] at tick 9026: A08 hand-rolled byte encoding at crates/voxel-client/src/shading.rs:161: `out[i..i + 4].copy_from_slice(&v.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 7 byte-level site(s) in this artifact
+console	[EVENT] t9027 laya: laya-0024 refused crates/voxel-client/src/shell/arrangement.rs [not_belongs] at tick 9027: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9028 laya: laya-0025 refused crates/voxel-client/src/shell/console.rs [not_belongs] at tick 9028: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9029 laya: laya-0026 refused crates/voxel-client/src/shell/debug.rs [not_belongs] at tick 9029: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9030 laya: laya-0027 refused crates/voxel-client/src/shell/hud.rs [not_belongs] at tick 9030: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9031 laya: laya-0028 refused crates/voxel-client/src/shell/mod.rs [not_belongs] at tick 9031: no proof of work on record: no claim, no evidence, no origin — the default is fail
+142 fps | 74/605 chunks | 0 stale-but-drawn | 4997 quads | 0.3/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 547 | digest 1ccb000a5d7f6050
+console	[EVENT] t9032 laya: laya-0029 refused crates/voxel-client/src/shell/mount.rs [not_belongs] at tick 9032: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9033 laya: laya-0030 refused crates/voxel-client/src/shell/notifications.rs [not_belongs] at tick 9033: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9034 laya: laya-0031 refused crates/voxel-client/src/skylight.rs [not_belongs] at tick 9034: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9035 laya: laya-0032 refused crates/voxel-client/src/world.rs [not_belongs] at tick 9035: A08 hand-rolled byte encoding at crates/voxel-client/src/world.rs:327: `bytes.extend_from_slice(&v.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 6 byte-level site(s) in this artifact
+console	[EVENT] t9036 laya: laya-0033 refused crates/voxel-instrument/src/band.rs [not_belongs] at tick 9036: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9037 laya: laya-0034 refused crates/voxel-instrument/src/gauge_wall.rs [not_belongs] at tick 9037: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9038 laya: laya-0035 refused crates/voxel-instrument/src/lib.rs [not_belongs] at tick 9038: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9039 laya: laya-0036 refused crates/voxel-instrument/src/stock.rs [not_belongs] at tick 9039: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9040 laya: laya-0037 refused crates/voxel-mesh/src/chunk.rs [not_belongs] at tick 9040: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9040 shell: shell drawing: 16 surface(s), 125 ink, 1 with no host, 33 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9041 laya: laya-0038 refused crates/voxel-mesh/src/lib.rs [not_belongs] at tick 9041: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9042 laya: laya-0039 refused crates/voxel-mesh/src/mesh.rs [not_belongs] at tick 9042: A08 hand-rolled byte encoding at crates/voxel-mesh/src/mesh.rs:369: `t.extend_from_slice(&self.chunk.x.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 10 byte-level site(s) in this artifact
+console	[EVENT] t9043 laya: laya-0040 refused crates/voxel-mesh/src/octree.rs [not_belongs] at tick 9043: A08 hand-rolled byte encoding at crates/voxel-mesh/src/octree.rs:472: `out.extend_from_slice(&m.0.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 2 byte-level site(s) in this artifact
+console	[EVENT] t9044 laya: laya-0041 refused crates/voxel-mesh/src/raycast.rs [not_belongs] at tick 9044: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9045 laya: laya-0042 refused crates/voxel-mesh/src/refine.rs [not_belongs] at tick 9045: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9046 laya: laya-0043 refused crates/voxel-mesh/src/source.rs [not_belongs] at tick 9046: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9047 laya: laya-0044 refused crates/voxel-model/src/axis.rs [not_belongs] at tick 9047: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9048 laya: laya-0045 refused crates/voxel-model/src/chain.rs [not_belongs] at tick 9048: A08 hand-rolled byte encoding at crates/voxel-model/src/chain.rs:372: `let year = index.to_le_bytes();` — a wire format rolled by hand over untrusted bytes; 3 byte-level site(s) in this artifact
+console	[EVENT] t9049 laya: laya-0046 refused crates/voxel-model/src/conservation.rs [not_belongs] at tick 9049: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9050 laya: laya-0047 refused crates/voxel-model/src/coord.rs [not_belongs] at tick 9050: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9051 laya: laya-0048 refused crates/voxel-model/src/envelope.rs [not_belongs] at tick 9051: no proof of work on record: no claim, no evidence, no origin — the default is fail
+113 fps | 89/605 chunks | 0 stale-but-drawn | 5725 quads | 0.4/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 531 | digest a64f271e6e1281fc
+console	[EVENT] t9052 laya: laya-0049 refused crates/voxel-model/src/grant.rs [not_belongs] at tick 9052: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9053 laya: laya-0050 refused crates/voxel-model/src/identity.rs [not_belongs] at tick 9053: A08 hand-rolled byte encoding at crates/voxel-model/src/identity.rs:36: `h.update((tag.len() as u64).to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 3 byte-level site(s) in this artifact
+console	[EVENT] t9054 laya: laya-0051 refused crates/voxel-model/src/laya.rs [not_belongs] at tick 9054: A08 hand-rolled byte encoding at crates/voxel-model/src/laya.rs:616: `"from_le_bytes",` — a wire format rolled by hand over untrusted bytes; 5 byte-level site(s) in this artifact
+console	[EVENT] t9055 laya: laya-0052 refused crates/voxel-model/src/lib.rs [not_belongs] at tick 9055: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9056 laya: laya-0053 refused crates/voxel-model/src/material.rs [not_belongs] at tick 9056: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9057 laya: laya-0054 refused crates/voxel-model/src/plan.rs [not_belongs] at tick 9057: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9058 laya: laya-0055 refused crates/voxel-model/src/profile.rs [not_belongs] at tick 9058: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9059 laya: laya-0056 refused crates/voxel-model/src/refusal.rs [not_belongs] at tick 9059: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9060 laya: laya-0057 refused crates/voxel-model/src/shaper.rs [not_belongs] at tick 9060: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9061 laya: laya-0058 refused crates/voxel-model/src/subvoxel.rs [not_belongs] at tick 9061: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9062 laya: laya-0059 refused crates/voxel-model/src/ticket.rs [not_belongs] at tick 9062: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9062 shell: shell drawing: 16 surface(s), 125 ink, 1 with no host, 30 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9062 shell: shell drawing: 16 surface(s), 125 ink, 1 with no host, 23 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9062 shell: shell drawing: 16 surface(s), 125 ink, 1 with no host, 16 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9063 laya: laya-0060 refused crates/voxel-model/src/wire.rs [not_belongs] at tick 9063: A08 hand-rolled byte encoding at crates/voxel-model/src/wire.rs:445: `out.extend_from_slice(&WIRE_VERSION.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 12 byte-level site(s) in this artifact
+console	[EVENT] t9064 laya: laya-0061 refused crates/voxel-noise/src/fractal.rs [not_belongs] at tick 9064: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9064 shell: shell drawing: 16 surface(s), 125 ink, 1 with no host, 11 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9065 laya: laya-0062 refused crates/voxel-noise/src/lib.rs [not_belongs] at tick 9065: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9065 shell: shell drawing: 16 surface(s), 125 ink, 1 with no host, 10 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9066 laya: laya-0063 refused crates/voxel-noise/src/noise.rs [not_belongs] at tick 9066: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9067 laya: laya-0064 refused crates/voxel-noise/src/point.rs [not_belongs] at tick 9067: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9068 laya: laya-0065 refused crates/voxel-noise/src/rng.rs [not_belongs] at tick 9068: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9068 shell: shell drawing: 16 surface(s), 125 ink, 1 with no host, 9 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9069 laya: laya-0066 refused crates/voxel-package/src/apidoc.rs [not_belongs] at tick 9069: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9070 laya: laya-0067 refused crates/voxel-package/src/bloat.rs [not_belongs] at tick 9070: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9071 laya: laya-0068 refused crates/voxel-package/src/census.rs [not_belongs] at tick 9071: no proof of work on record: no claim, no evidence, no origin — the default is fail
+100 fps | 106/605 chunks | 0 stale-but-drawn | 7204 quads | 0.7/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 514 | digest c9fae72a5803c657
+console	[EVENT] t9072 laya: laya-0069 refused crates/voxel-package/src/compendium.rs [not_belongs] at tick 9072: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9073 laya: laya-0070 refused crates/voxel-package/src/compiler.rs [not_belongs] at tick 9073: A08 hand-rolled byte encoding at crates/voxel-package/src/compiler.rs:1341: `Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))` — a wire format rolled by hand over untrusted bytes; 1 byte-level site(s) in this artifact
+console	[EVENT] t9074 laya: laya-0071 refused crates/voxel-package/src/decision.rs [not_belongs] at tick 9074: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9075 laya: laya-0072 refused crates/voxel-package/src/features.rs [not_belongs] at tick 9075: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9076 laya: laya-0073 refused crates/voxel-package/src/filing.rs [not_belongs] at tick 9076: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9077 laya: laya-0074 refused crates/voxel-package/src/lib.rs [not_belongs] at tick 9077: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9078 laya: laya-0075 refused crates/voxel-package/src/migration.rs [not_belongs] at tick 9078: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9079 laya: laya-0076 refused crates/voxel-package/src/numbers.rs [not_belongs] at tick 9079: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9080 laya: laya-0077 refused crates/voxel-package/src/oracle.rs [not_belongs] at tick 9080: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9080 shell: shell drawing: 16 surface(s), 125 ink, 1 with no host, 10 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9081 laya: laya-0078 refused crates/voxel-package/src/policy.rs [not_belongs] at tick 9081: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9081 shell: shell drawing: 16 surface(s), 125 ink, 1 with no host, 11 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9082 laya: laya-0079 refused crates/voxel-package/src/projection.rs [not_belongs] at tick 9082: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9083 laya: laya-0080 refused crates/voxel-package/src/provenance.rs [not_belongs] at tick 9083: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9084 laya: laya-0081 refused crates/voxel-package/src/recipe.rs [not_belongs] at tick 9084: A08 hand-rolled byte encoding at crates/voxel-package/src/recipe.rs:1198: `frame.extend_from_slice(&(source.len() as u32).to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 2 byte-level site(s) in this artifact
+console	[EVENT] t9085 laya: laya-0082 refused crates/voxel-package/src/record.rs [not_belongs] at tick 9085: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9086 laya: laya-0083 refused crates/voxel-package/src/signing.rs [not_belongs] at tick 9086: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9087 laya: laya-0084 refused crates/voxel-package/tests/answer_audit.rs [not_belongs] at tick 9087: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9088 laya: laya-0085 refused crates/voxel-package/tests/board_report.rs [not_belongs] at tick 9088: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9089 laya: laya-0086 refused crates/voxel-package/tests/chain_repair.rs [not_belongs] at tick 9089: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9090 laya: laya-0087 refused crates/voxel-package/tests/claimed_by_spec.rs [not_belongs] at tick 9090: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9091 laya: laya-0088 refused crates/voxel-package/tests/file_questions.rs [not_belongs] at tick 9091: no proof of work on record: no claim, no evidence, no origin — the default is fail
+98 fps | 123/605 chunks | 0 stale-but-drawn | 7662 quads | 0.8/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 498 | digest ad17f5dd00f94178
+console	[EVENT] t9092 laya: laya-0089 refused crates/voxel-package/tests/file_reference_gaps.rs [not_belongs] at tick 9092: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9093 laya: laya-0090 refused crates/voxel-package/tests/file_work.rs [not_belongs] at tick 9093: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9094 laya: laya-0091 refused crates/voxel-package/tests/filed_record.rs [not_belongs] at tick 9094: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9095 laya: laya-0092 refused crates/voxel-package/tests/first_ticket.rs [not_belongs] at tick 9095: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9096 laya: laya-0093 refused crates/voxel-package/tests/open_questions.rs [not_belongs] at tick 9096: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9097 laya: laya-0094 refused crates/voxel-package/tests/round_trip.rs [not_belongs] at tick 9097: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9097 shell: shell drawing: 16 surface(s), 125 ink, 0 with no host, 89 covered by a later surface
+console	[EVENT] t9098 laya: laya-0095 refused crates/voxel-package/tests/two_views.rs [not_belongs] at tick 9098: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9099 laya: laya-0096 refused crates/voxel-shapers/examples/audio-noise-floor.rs [not_belongs] at tick 9099: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9100 laya: laya-0097 refused crates/voxel-shapers/examples/biome-drift.rs [not_belongs] at tick 9100: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9101 laya: laya-0098 refused crates/voxel-shapers/examples/onset-profile.rs [not_belongs] at tick 9101: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9102 laya: laya-0099 refused crates/voxel-shapers/examples/relief-profile.rs [not_belongs] at tick 9102: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9103 laya: laya-0100 refused crates/voxel-shapers/examples/water-ledger.rs [not_belongs] at tick 9103: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9104 laya: laya-0101 refused crates/voxel-shapers/src/atmosphere.rs [not_belongs] at tick 9104: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9105 laya: laya-0102 refused crates/voxel-shapers/src/caves.rs [not_belongs] at tick 9105: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9106 laya: laya-0103 refused crates/voxel-shapers/src/climate.rs [not_belongs] at tick 9106: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9107 laya: laya-0104 refused crates/voxel-shapers/src/column.rs [not_belongs] at tick 9107: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9108 laya: laya-0105 refused crates/voxel-shapers/src/delta.rs [not_belongs] at tick 9108: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9109 laya: laya-0106 refused crates/voxel-shapers/src/earthworks.rs [not_belongs] at tick 9109: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9110 laya: laya-0107 refused crates/voxel-shapers/src/ecology.rs [not_belongs] at tick 9110: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9111 laya: laya-0108 refused crates/voxel-shapers/src/erosion.rs [not_belongs] at tick 9111: no proof of work on record: no claim, no evidence, no origin — the default is fail
+88 fps | 143/605 chunks | 0 stale-but-drawn | 8552 quads | 0.9/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 477 | digest 1054c9e8161e1bf6
+console	[EVENT] t9112 laya: laya-0109 refused crates/voxel-shapers/src/fields.rs [not_belongs] at tick 9112: A08 hand-rolled byte encoding at crates/voxel-shapers/src/fields.rs:194: `tolerance[1..9].copy_from_slice(&n.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 3 byte-level site(s) in this artifact
+console	[EVENT] t9113 laya: laya-0110 refused crates/voxel-shapers/src/geology.rs [not_belongs] at tick 9113: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9114 laya: laya-0111 refused crates/voxel-shapers/src/hydrology.rs [not_belongs] at tick 9114: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9115 laya: laya-0112 refused crates/voxel-shapers/src/lib.rs [not_belongs] at tick 9115: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9116 laya: laya-0113 refused crates/voxel-shapers/src/sky.rs [not_belongs] at tick 9116: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9117 laya: laya-0114 refused crates/voxel-shapers/src/spec.rs [not_belongs] at tick 9117: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9118 laya: laya-0115 refused crates/voxel-shapers/src/stages.rs [not_belongs] at tick 9118: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9119 laya: laya-0116 refused crates/voxel-shapers/src/substrate.rs [not_belongs] at tick 9119: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9120 laya: laya-0117 refused crates/voxel-shapers/src/tectonics.rs [not_belongs] at tick 9120: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9121 laya: laya-0118 refused crates/voxel-shapers/src/terrain.rs [not_belongs] at tick 9121: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9122 laya: laya-0119 refused crates/voxel-shapers/src/transition.rs [not_belongs] at tick 9122: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9123 laya: laya-0120 refused crates/voxel-shapers/src/voxel.rs [not_belongs] at tick 9123: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9124 laya: laya-0121 refused crates/voxel-shapers/src/water.rs [not_belongs] at tick 9124: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9125 laya: laya-0122 refused crates/voxel-shapers/src/weather.rs [not_belongs] at tick 9125: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9126 laya: laya-0123 refused crates/voxel-stream/src/horizons.rs [not_belongs] at tick 9126: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9127 laya: laya-0124 refused crates/voxel-stream/src/lib.rs [not_belongs] at tick 9127: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9128 laya: laya-0125 refused crates/voxel-stream/src/resident.rs [not_belongs] at tick 9128: A08 hand-rolled byte encoding at crates/voxel-stream/src/resident.rs:344: `t.extend_from_slice(&(self.chunks.len() as u64).to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 8 byte-level site(s) in this artifact
+console	[EVENT] t9128 shell: shell drawing: 16 surface(s), 125 ink, 1 with no host, 11 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9129 laya: laya-0126 refused crates/voxel-stream/src/world_source.rs [not_belongs] at tick 9129: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9130 laya: laya-0127 refused crates/voxel-ui/src/lib.rs [not_belongs] at tick 9130: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9131 laya: laya-0128 refused crates/voxel-work/src/budget.rs [not_belongs] at tick 9131: no proof of work on record: no claim, no evidence, no origin — the default is fail
+75 fps | 169/605 chunks | 0 stale-but-drawn | 9794 quads | 1.0/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 452 | digest 41c06da506fa9b10
+console	[EVENT] t9132 laya: laya-0129 refused crates/voxel-work/src/lib.rs [not_belongs] at tick 9132: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9133 laya: laya-0130 refused crates/voxel-work/src/pool.rs [not_belongs] at tick 9133: A08 hand-rolled byte encoding at crates/voxel-work/src/pool.rs:534: `t.extend_from_slice(&m.chunk.x.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 3 byte-level site(s) in this artifact
+console	[EVENT] t9134 laya: laya-0131 refused crates/voxel-work/src/stream.rs [not_belongs] at tick 9134: A08 hand-rolled byte encoding at crates/voxel-work/src/stream.rs:450: `t.extend_from_slice(&(self.meshes.len() as u64).to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 4 byte-level site(s) in this artifact
+console	[EVENT] t9135 laya: laya-0132 refused crates/voxel-work/src/tick.rs [not_belongs] at tick 9135: no proof of work on record: no claim, no evidence, no origin — the default is fail
+console	[EVENT] t9136 laya: the queue is drained: 133 decision(s) shown by tick 9136
+console	[EVENT] t9140 shell: shell drawing: 13 surface(s), 98 ink, 1 with no host, 8 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+71 fps | 189/605 chunks | 0 stale-but-drawn | 10653 quads | 1.2/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 431 | digest 4db52f97fd2ea559
+console	[EVENT] t9155 shell: shell drawing: 10 surface(s), 87 ink, 1 with no host, 8 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+67 fps | 210/605 chunks | 0 stale-but-drawn | 11201 quads | 1.2/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 411 | digest cb8323c65b2a4f0c
+console	[EVENT] t9172 shell: shell drawing: 7 surface(s), 57 ink, 1 with no host, 2 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9180 shell: shell drawing: 7 surface(s), 57 ink, 1 with no host, 1 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9180 shell: shell drawing: 7 surface(s), 57 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+67 fps | 237/605 chunks | 0 stale-but-drawn | 11201 quads | 1.2/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 383 | digest 216f3fb164d6094d
+console	[EVENT] t9195 shell: shell drawing: 4 surface(s), 36 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+74 fps | 260/605 chunks | 0 stale-but-drawn | 11570 quads | 1.3/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 360 | digest 5241ea5c2fb6961b
+console	[EVENT] t9213 shell: shell drawing: 4 surface(s), 36 ink, 0 with no host, 0 covered by a later surface
+73 fps | 277/605 chunks | 0 stale-but-drawn | 13324 quads | 1.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 343 | digest 16522a2df2f793ae
+64 fps | 300/605 chunks | 0 stale-but-drawn | 14396 quads | 1.7/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 321 | digest dbf6bd2b7f4e6287
+console	[EVENT] t9268 shell: shell drawing: 5 surface(s), 42 ink, 0 with no host, 0 covered by a later surface
+64 fps | 323/605 chunks | 0 stale-but-drawn | 15335 quads | 1.8/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 298 | digest d5fec2d2f5b1d894
+console	[EVENT] t9288 shell: shell drawing: 5 surface(s), 45 ink, 0 with no host, 0 covered by a later surface
+60 fps | 343/605 chunks | 0 stale-but-drawn | 15494 quads | 1.9/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 279 | digest 6f4f54cadd9ee902
+console	[EVENT] t9301 shell: shell drawing: 7 surface(s), 62 ink, 0 with no host, 0 covered by a later surface
+62 fps | 363/605 chunks | 0 stale-but-drawn | 15828 quads | 1.9/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 257 | digest 76e92752da0be9eb
+58 fps | 387/605 chunks | 0 stale-but-drawn | 16647 quads | 2.0/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 235 | digest c7d310ea035ad4e7
+shploingus: the shell refused to lay out: window "api-viewer" places a 358 dp panel in a 312 dp pane; the two numbers have to be the same number
+console	[EVENT] t9340 shell: shell drawing: 3 surface(s), 18 ink, 0 with no host, 0 covered by a later surface
+70 fps | 405/605 chunks | 0 stale-but-drawn | 16647 quads | 2.0/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 215 | digest 83e198e65f87a941
+shploingus: the shell refused to lay out: window "api-viewer" places a 358 dp panel in a 179 dp pane; the two numbers have to be the same number
+console	[EVENT] t9369 shell: shell drawing: 3 surface(s), 18 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+75 fps | 423/605 chunks | 0 stale-but-drawn | 17567 quads | 2.1/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 197 | digest d39208eae9a9ffc1
+console	[EVENT] t9387 shell: shell drawing: 4 surface(s), 35 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+71 fps | 445/605 chunks | 0 stale-but-drawn | 17927 quads | 2.2/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 176 | digest 5943195e9fde2143
+72 fps | 465/605 chunks | 0 stale-but-drawn | 17927 quads | 2.2/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 156 | digest 1b642b03b27cceac
+console	[EVENT] t9417 shell: shell drawing: 5 surface(s), 44 ink, 1 with no host, 1 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+shploingus: the shell refused to lay out: window "api-viewer" places a 358 dp panel in a 179 dp pane; the two numbers have to be the same number
+console	[EVENT] t9432 shell: shell drawing: 6 surface(s), 45 ink, 1 with no host, 3 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+68 fps | 486/605 chunks | 0 stale-but-drawn | 18515 quads | 2.3/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 136 | digest db2c1aa346e05743
+console	[EVENT] t9446 shell: shell drawing: 6 surface(s), 45 ink, 1 with no host, 2 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t9451 shell: shell drawing: 6 surface(s), 45 ink, 1 with no host, 1 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+66 fps | 506/605 chunks | 0 stale-but-drawn | 19278 quads | 2.4/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 114 | digest ec364db2fe01638c
+console	[EVENT] t9467 shell: shell drawing: 4 surface(s), 35 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+63 fps | 528/605 chunks | 0 stale-but-drawn | 19278 quads | 2.4/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 94 | digest 9affc58b380ae8d7
+66 fps | 547/605 chunks | 0 stale-but-drawn | 19278 quads | 2.4/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 75 | digest 46a8149d4cbe4e0d
+65 fps | 568/605 chunks | 0 stale-but-drawn | 19555 quads | 2.4/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 52 | digest 839077bd4f50a409
+console	[EVENT] t9519 shell: shell drawing: 1 surface(s), 8 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+shploingus: the shell refused to lay out: window "api-viewer" places a 358 dp panel in a 179 dp pane; the two numbers have to be the same number
+console	[EVENT] t9528 shell: shell drawing: 3 surface(s), 18 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+64 fps | 589/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 31 | digest 27bf85753392390b
+69 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t9568 shell: shell drawing: 1 surface(s), 8 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+110 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+shploingus: the shell refused to lay out: window "api-viewer" places a 358 dp panel in a 179 dp pane; the two numbers have to be the same number
+console	[EVENT] t9580 shell: shell drawing: 3 surface(s), 18 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+110 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+110 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+119 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t9639 shell: shell drawing: 1 surface(s), 8 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+116 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+118 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+124 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+125 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+122 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+119 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+124 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+123 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+121 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+129 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+126 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+118 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+130 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+133 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+133 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+121 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+126 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+122 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+124 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+122 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+126 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+127 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+129 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+118 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+117 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+108 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+114 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+94 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+83 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+66 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+114 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+111 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+100 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+73 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+shploingus: the shell refused to lay out: window "api-viewer" places a 358 dp panel in a 179 dp pane; the two numbers have to be the same number
+console	[EVENT] t10339 shell: shell drawing: 3 surface(s), 18 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+81 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10358 shell: shell drawing: 1 surface(s), 8 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+65 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10370 shell: shell drawing: 2 surface(s), 17 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t10379 shell: shell drawing: 2 surface(s), 20 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+65 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10387 shell: shell drawing: 2 surface(s), 17 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+console	[EVENT] t10396 shell: shell drawing: 2 surface(s), 20 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+79 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10419 shell: shell drawing: 4 surface(s), 36 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+100 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+66 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+110 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+117 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10495 shell: shell drawing: 4 surface(s), 36 ink, 0 with no host, 0 covered by a later surface
+112 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+112 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+86 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10556 shell: shell drawing: 4 surface(s), 36 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+78 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10571 shell: shell drawing: 1 surface(s), 8 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+85 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10581 shell: shell drawing: 2 surface(s), 17 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+102 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10605 shell: shell drawing: 4 surface(s), 19 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+119 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10624 shell: shell drawing: 1 surface(s), 8 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+shploingus: the shell refused to lay out: window "api-viewer" places a 358 dp panel in a 179 dp pane; the two numbers have to be the same number
+console	[EVENT] t10636 shell: shell drawing: 3 surface(s), 18 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+111 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+console	[EVENT] t10656 shell: shell drawing: 1 surface(s), 8 ink, 1 with no host, 0 covered by a later surface; first unhosted: "a rule" at 0,48 1280x1
+123 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f
+57 fps | 605/605 chunks | 0 stale-but-drawn | 19960 quads | 2.5/256.0 MB mesh | scratch 72.4 MB | refusals-for-budget 0 | evicted 0 | in flight 0 | digest 8edd7b30cc84ba6f

@@ -1,0 +1,4 @@
+Rendered SystemContext -> logs/structurizr\SystemContext.svg
+Rendered Containers -> logs/structurizr\Containers.svg
+Rendered DecisionLayer -> logs/structurizr\DecisionLayer.svg
+Rendered TicketPipeline -> logs/structurizr\TicketPipeline.svg

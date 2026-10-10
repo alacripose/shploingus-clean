@@ -1,0 +1,828 @@
+//! **The Sun's light that reached a cell** — sampled through the world's own octree,
+//! at the world's own subvoxel addresses.
+//!
+//! The shading model has had a per-cell light field since `Scene::build_with_light`
+//! (`shading.wgsl` reads it as `light_present`), and nothing in the tree ever
+//! **measured** one: the world's blocks were lit by a scene-wide rig, so a cell in a
+//! cave mouth and a cell on an open ridge received the same Sun. This module is the
+//! measurement.
+//!
+//! # What it walks, and why that is the octree
+//!
+//! A cell's light is decided by what stands between it and the Sun, so the question
+//! is a **ray** question, and the answer has to be the world's real geometry or it is
+//! a decoration. [`voxel_mesh::raycast::Crossings`] is Amanatides & Woo's traversal —
+//! the same walk `SparseVoxelOctree::raycast_local` uses for picking — and it visits
+//! *only* the voxels the ray passes through, in order, with no bound to choose. Above
+//! it, the provider answers one **subvoxel address** at a time
+//! ([`Matter::subvoxel`]), which is what makes a dug-out voxel shadow a beam where it
+//! is solid and not where it has been removed: the address is the material system's
+//! own (`SubvoxelIndex` into a `VoxelShape`), not a second grid invented here.
+//!
+//! # The three laws, and the one absence
+//!
+//! A **material** either **stops** the beam or **attenuates** it at a rate per metre
+//! ([`Blocking`]). The world's own records carry no absorption coefficient
+//! (`APPEARANCE.md` §5: absent, never defaulted, and the spec's Beer-Lambert wants a
+//! `σ = −ln(T_ref)/d_ref` this tree has not been given), so the honest default is
+//! [`Matter::blocking`]'s: **matter stops the beam.** The attenuating arm exists, is
+//! tested, and is what a record with a measured extinction will use — it is not a
+//! placeholder for a number nobody has.
+//!
+//! A **medium** is the third case, and it is not a material with a small rate.
+//! `voxel_model::OpticalClass::Scattering` says what the difference is: a material has an
+//! *interface*, so a beam is stopped at it or bent by it, while a medium has **no surface
+//! at all** and the beam is attenuated *along the path inside it*. That is why the medium
+//! is a second question on [`Matter`] ([`Matter::medium`]) rather than another [`Blocking`]:
+//! a cloud cell's rate changes with where the cell is (density is highest in the middle of
+//! the layer and zero at its base and top), and a rate carried by a *material id* could not
+//! say so. The rate a medium reports is already the address's own, so the walk needs no
+//! extra structure — and the cloud is the first provider (`voxel_client::cloud_field`).
+//!
+//! # Units
+//!
+//! Everything here is a **fraction in `[0, 1]`**: the transmittance along the beam,
+//! and the sky's own visibility. Turning that into the bands `shading.wgsl` reads is
+//! `voxel-client::skylight`'s job, because the sky's radiance and its normaliser live
+//! there — a second copy of them here would be a second atmosphere.
+//!
+//! **Refuse, never default**, in this module's own form: a degenerate ray returns
+//! `0.0` and not `1.0`. An unmeasurable beam is not an unobstructed one, and a
+//! sampler that answered "fully lit" to a NaN would put a bright cell in a stone wall.
+
+use voxel_mesh::raycast::{Crossings, Ray};
+use voxel_model::{MaterialId, SubvoxelIndex, SUBVOXEL_SIDE};
+
+/// What the world is, at one **subvoxel address**.
+///
+/// `None` is *nothing there* — air, and not a material with no colour. The whole
+/// sampler rests on that distinction: a voxel the ray crosses with nothing in it
+/// attenuates nothing, and one with matter in it does whatever [`Matter::blocking`]
+/// says.
+pub trait Matter {
+    /// The material at `world`'s subvoxel `at`, or `None` where that address holds
+    /// nothing.
+    fn subvoxel(&self, world: [i32; 3], at: SubvoxelIndex) -> Option<MaterialId>;
+
+    /// What the beam does when it meets `material`.
+    ///
+    /// The default is the honest one for a record with no absorption in it — **matter
+    /// stops the beam** — and a provider with a measured extinction overrides it. The
+    /// per-material question is deliberately *here* rather than in the walk: which
+    /// material a ray met is an addressing question, and what the light does in it is
+    /// an optics question, and the two change for different reasons.
+    fn blocking(&self, material: MaterialId) -> Blocking {
+        let _ = material;
+        Blocking::Stops
+    }
+
+    /// The **participating medium** at `world`'s subvoxel `at`: its **extinction rate per
+    /// metre**, or `None` where that address holds no medium.
+    ///
+    /// A medium is not a material and the trait keeps them apart for the reason
+    /// [`Matter::blocking`] is per-material and this is per-address: a medium's rate is a
+    /// function of *where* the beam is (a cloud's water), not of *what* it met. It takes
+    /// precedence over [`Matter::subvoxel`], because a cell that holds a medium has no
+    /// surface for a material to describe — so an address answers one question or the
+    /// other, never both at once.
+    ///
+    /// A rate that is not a rate (`NaN`, negative) is a **refusal**, the same rule
+    /// [`Blocking::Attenuates`] carries; `0.0` is legal and means clear. The default is
+    /// `None`, which is every provider that existed before this question did.
+    fn medium(&self, world: [i32; 3], at: SubvoxelIndex) -> Option<f64> {
+        let _ = (world, at);
+        None
+    }
+}
+
+/// Any closure is a provider, so a test (or a caller with its own resident chunks) can
+/// inline one.
+impl<F> Matter for F
+where
+    F: Fn([i32; 3], SubvoxelIndex) -> Option<MaterialId>,
+{
+    fn subvoxel(&self, world: [i32; 3], at: SubvoxelIndex) -> Option<MaterialId> {
+        self(world, at)
+    }
+}
+
+/// What matter does to a beam.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Blocking {
+    /// The beam does not get past it.
+    Stops,
+    /// The beam is attenuated at this **rate per metre** of the material it crosses:
+    /// `exp(−σ·d)`, the spec's Beer-Lambert (`OpenPBR_Energy_Conservation.pdf` §10),
+    /// applied to the path through the material rather than to a surface.
+    Attenuates(f64),
+}
+
+/// The **sky's** own visibility: a fixed stencil of upward rays, in world space.
+///
+/// The dome is a hemisphere, so one vertical ray is not a dome. Five is still not a
+/// hemisphere, and saying so is the point: this is a declared sample, not an integral,
+/// and every cell in the world is measured with the *same* stencil so two cells' skies
+/// are comparable. The four tilted rays carry `1/√2` in the horizontal and vertical
+/// components, which is 45° above the horizon.
+pub const SKY_STENCIL: [[f64; 3]; 5] = [
+    [0.0, 1.0, 0.0],
+    [0.707_106_781_186_547_6, 0.707_106_781_186_547_6, 0.0],
+    [0.0, 0.707_106_781_186_547_6, 0.707_106_781_186_547_6],
+    [-0.707_106_781_186_547_6, 0.707_106_781_186_547_6, 0.0],
+    [0.0, 0.707_106_781_186_547_6, -0.707_106_781_186_547_6],
+];
+
+/// One cell's own light, as fractions of what the sky above it delivers.
+///
+/// `beam` is the direct Sun, `sky` the dome. Both are `[0, 1]`, and both are
+/// **measurements of this cell**: a cell that opens to the sky is `1.0` and a cell
+/// under a lid is `0.0`, which is the difference the shading model has been missing.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Visibility {
+    pub beam: f64,
+    pub sky: f64,
+}
+
+/// The state every ray of a cell's measurement walks through, reusable across cells so
+/// a chunk's worth of cells does not allocate per ray.
+pub struct Sampler {
+    /// The ray's direction, unit length: `Crossings`' `t` is in voxel units (metres),
+    /// and the path length through a material is the difference of two `t`s.
+    toward_sun: [f64; 3],
+    reach_m: f64,
+}
+
+impl Sampler {
+    /// A sampler aimed at the Sun, with the reach a shadow ray is allowed to walk.
+    ///
+    /// The direction is normalised here, once, because the arithmetic that depends on
+    /// it (path length, and the angles of the sky's stencil) is wrong for an
+    /// unnormalised one — and *silently* wrong, which is the kind of wrong worth
+    /// spending a normalisation on. A degenerate direction is refused by
+    /// [`Sampler::new`], because a sampler that cannot be aimed cannot be used
+    /// honestly.
+    pub fn new(toward_sun: [f64; 3], reach_m: f64) -> Option<Self> {
+        let length = (toward_sun[0] * toward_sun[0]
+            + toward_sun[1] * toward_sun[1]
+            + toward_sun[2] * toward_sun[2])
+            .sqrt();
+        if !length.is_finite() || length <= 0.0 || !reach_m.is_finite() || reach_m <= 0.0 {
+            return None;
+        }
+        Some(Sampler {
+            toward_sun: [
+                toward_sun[0] / length,
+                toward_sun[1] / length,
+                toward_sun[2] / length,
+            ],
+            reach_m,
+        })
+    }
+
+    /// The Sun's own reach, as a fraction of the light delivered to the top of the sky:
+    /// `1.0` clear, `0.0` stopped.
+    pub fn beam(&self, matter: &impl Matter, from_m: [f64; 3]) -> f64 {
+        transmittance(matter, from_m, self.toward_sun, self.reach_m)
+    }
+
+    /// The **sky's** own visibility at a cell: the mean transmittance of
+    /// [`SKY_STENCIL`]'s five upward rays.
+    ///
+    /// This is what makes a cave mouth darker than a ridge while both are out of the
+    /// Sun's direct line: the dome is the world's other light, and a cell that can see
+    /// less of it receives less of it.
+    pub fn sky(&self, matter: &impl Matter, from_m: [f64; 3]) -> f64 {
+        let mut total = 0.0;
+        for direction in SKY_STENCIL {
+            total += transmittance(matter, from_m, direction, self.reach_m);
+        }
+        total / SKY_STENCIL.len() as f64
+    }
+
+    /// Both halves of one cell's light.
+    pub fn visibility(&self, matter: &impl Matter, from_m: [f64; 3]) -> Visibility {
+        Visibility { beam: self.beam(matter, from_m), sky: self.sky(matter, from_m) }
+    }
+}
+
+/// The transmittance of one ray: what fraction of the light starting at `from_m` and
+///
+/// travelling along `direction` survives the matter up to `reach_m` away.
+///
+/// **The cell's own voxel is not between it and the Sun.** The walk's first crossing is
+/// the voxel the ray *starts* in, and counting it would make every cell shadow itself:
+/// the start point is inside the surface whose light is being measured, so a wall
+/// would be dark and a floor would be dark and the whole world would be black. That
+/// one `continue` is the difference between a shadow and a black screen.
+///
+/// The direction need not be normalised; `reach_m` and the path lengths are in the
+/// units of `direction`. [`Sampler`] normalises once for a whole cell's worth of rays.
+pub fn transmittance(
+    matter: &impl Matter,
+    from_m: [f64; 3],
+    direction: [f64; 3],
+    reach_m: f64,
+) -> f64 {
+    let Some(walk) = Crossings::new(&Ray::new(from_m, direction), reach_m) else {
+        // A degenerate ray is **not** a clear one: an unmeasurable beam is not an
+        // unobstructed one.
+        return 0.0;
+    };
+    let mut through = 1.0;
+    // **The segment is charged to the voxel the ray was in, not the one it entered.**
+    // A crossing reports the voxel *entered* at that distance, so its own length is the
+    // distance to the *next* crossing: charging it at the moment it is reported would
+    // attribute one voxel's matter to the voxel before it, which is half a metre of rock
+    // counted as the air above it. The first version of this walk did exactly that, and
+    // `an_attenuating_material_dims_the_beam_rather_than_stopping_it` measured it as
+    // `exp(−σ/2)` where Beer-Lambert gives `exp(−σ)`.
+    let mut held: Option<([i32; 3], SubvoxelIndex)> = None;
+    let mut held_since = 0.0;
+    let mut started = false;
+    for crossing in walk {
+        if !started {
+            // The first crossing is the voxel the ray starts in — see the note above.
+            started = true;
+            held_since = crossing.t;
+            continue;
+        }
+        if let Some((voxel, at)) = held.take() {
+            let path_m = crossing.t - held_since;
+            let Some(reached) = charge(matter, voxel, at, path_m, through) else {
+                return 0.0;
+            };
+            through = reached;
+        }
+        held = Some((
+            crossing.voxel,
+            subvoxel_of(
+                [
+                    from_m[0] + direction[0] * crossing.t,
+                    from_m[1] + direction[1] * crossing.t,
+                    from_m[2] + direction[2] * crossing.t,
+                ],
+                crossing.voxel,
+                direction,
+            ),
+        ));
+        held_since = crossing.t;
+    }
+    // **The last segment is charged too.** The walk ends at `reach_m`, and the matter the
+    // ray is inside when it gets there is still matter: leaving it uncharged would let a
+    // beam reach straight through the block it stopped in, so the final voxel is charged
+    // over the distance it was held.
+    if let Some((voxel, at)) = held {
+        let path_m = reach_m - held_since;
+        let Some(reached) = charge(matter, voxel, at, path_m, through) else {
+            return 0.0;
+        };
+        through = reached;
+    }
+    through
+}
+
+/// One segment's worth of matter: `Some(transmittance)` through it, or `None` when it
+/// stops the beam.
+///
+/// **The medium is asked first**, and the order is the class distinction rather than a
+/// preference: an address that holds a participating medium has no interface, so there is
+/// no material there to stop anything and asking the solid question first would let a
+/// provider's empty `subvoxel` answer stand for a cell that is full of cloud.
+fn charge(
+    matter: &impl Matter,
+    voxel: [i32; 3],
+    at: SubvoxelIndex,
+    path_m: f64,
+    through: f64,
+) -> Option<f64> {
+    if path_m <= 0.0 {
+        return Some(through);
+    }
+    if let Some(sigma) = matter.medium(voxel, at) {
+        return attenuate(sigma, path_m, through);
+    }
+    match matter.subvoxel(voxel, at) {
+        None => Some(through),
+        Some(material) => match matter.blocking(material) {
+            Blocking::Stops => None,
+            Blocking::Attenuates(sigma) => attenuate(sigma, path_m, through),
+        },
+    }
+}
+
+/// Beer-Lambert over one segment: `through · exp(−σ·d)`, or `None` for a rate that is not
+/// a rate and for a path that ends dark.
+///
+/// **Shared by the material's rate and the medium's**, because they are the same law: the
+/// spec's `exp(−σ·d)` does not change because the thing it is applied to has a surface or
+/// does not. What differs is only where the rate came from — a material id or an address —
+/// and that is [`Matter`]'s question, not this one's.
+fn attenuate(sigma: f64, path_m: f64, through: f64) -> Option<f64> {
+    if !sigma.is_finite() || sigma < 0.0 {
+        // A rate that is not a rate is a refusal, not a free pass. `0.0` is legal: it is a
+        // medium that is not there, and the caller may say so instead of answering `None`.
+        return None;
+    }
+    let reached = through * (-sigma * path_m).exp();
+    if reached <= 0.0 {
+        None
+    } else {
+        Some(reached)
+    }
+}
+
+/// The subvoxel a point on a voxel's boundary belongs to — the **entered** one.
+///
+/// A crossing lands exactly on the boundary, where a `floor` is a coin toss between
+/// the voxel the ray is leaving and the one it is entering. So the point is nudged a
+/// half-subvoxel along the ray first, which puts it unambiguously inside the entered
+/// voxel — and the nudge is *along the ray* rather than per axis, so a ray sliding
+/// along a grid plane (a zero component in the direction) is not pushed sideways into
+/// a subvoxel it does not pass through.
+fn subvoxel_of(point: [f64; 3], voxel: [i32; 3], direction: [f64; 3]) -> SubvoxelIndex {
+    let half_cell = 0.5 / SUBVOXEL_SIDE as f64;
+    let mut at = [0u8; 3];
+    for axis in 0..3 {
+        let nudged = point[axis] + direction[axis] * half_cell;
+        let fraction = (nudged - voxel[axis] as f64) * SUBVOXEL_SIDE as f64;
+        at[axis] = fraction.floor().clamp(0.0, (SUBVOXEL_SIDE - 1) as f64) as u8;
+    }
+    SubvoxelIndex { x: at[0], y: at[1], z: at[2] }
+}
+
+/// [`Matter`] for the **generated world**, one voxel at a time.
+///
+/// The honest slow path: every address runs the generator, because there is no
+/// resident chunk to read. A shadow ray asks up to [`Sampler::reach_m`] addresses, so
+/// this is for a first chunk, a test, or a tool — the frame path's provider is the
+/// resident octrees, whose subvoxel addressing this walks identically.
+///
+/// Every subvoxel of a generated voxel answers the same material, and that is not a
+/// shortcut: the generator writes one material per voxel, and the subvoxel grid exists
+/// for what is *authored* (dug, placed, partially built), which is exactly what the
+/// resident octrees carry.
+impl Matter for crate::WorldSource {
+    fn subvoxel(&self, world: [i32; 3], _at: SubvoxelIndex) -> Option<MaterialId> {
+        match self.material_at(world[0], world[1], world[2]) {
+            Ok(id) if !id.is_empty() => Some(id),
+            _ => None,
+        }
+    }
+
+}
+
+// **No `blocking` override, and that is the measurement.** The generated world's
+// materials carry no absorption coefficient (`APPEARANCE.md` §5), so the trait's own
+// default applies: matter stops the beam. The generated world is also **not a medium**: it
+// is made of materials with interfaces, and the one participating medium this tree draws —
+// a cloud — is a field over the world rather than a row in it, so [`CloudMedium`] answers
+// [`Matter::medium`] above and this impl answers `None` to that question, which is the
+// truth about rock.
+//
+// [`CloudMedium`]: ../../voxel_client/cloud_field/struct.CloudMedium.html
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    /// A provider over hand-placed voxels: `(world, material)` pairs, with everything
+    /// else air. Built from a `BTreeMap` for the reason `VoxelGrid` is: iteration is
+    /// deterministic, so a test can be too.
+    struct Placed {
+        cells: BTreeMap<[i32; 3], MaterialId>,
+        /// A rate to report for every material placed, or `None` to stop the beam.
+        attenuation: Option<f64>,
+    }
+
+    impl Placed {
+        fn new(cells: &[([i32; 3], u16)]) -> Self {
+            Placed {
+                cells: cells.iter().map(|(world, material)| (*world, MaterialId(*material))).collect(),
+                attenuation: None,
+            }
+        }
+
+        /// Only the **subvoxels** named are solid, in one voxel — the addressing case.
+        fn partial(voxel: [i32; 3], solid: &[usize], material: MaterialId) -> SubvoxelFn {
+            let mut set = Vec::new();
+            for index in solid {
+                set.push(*index as u8);
+            }
+            SubvoxelFn { voxel, set, material }
+        }
+    }
+
+    /// A provider solid at exactly the subvoxels listed, in one voxel.
+    struct SubvoxelFn {
+        voxel: [i32; 3],
+        /// Subvoxel ordinals in `0..64`, `x + 4y + 16z`.
+        set: Vec<u8>,
+        material: MaterialId,
+    }
+
+    impl Matter for Placed {
+        fn subvoxel(&self, world: [i32; 3], _at: SubvoxelIndex) -> Option<MaterialId> {
+            self.cells.get(&world).copied()
+        }
+
+        fn blocking(&self, _material: MaterialId) -> Blocking {
+            match self.attenuation {
+                Some(sigma) => Blocking::Attenuates(sigma),
+                None => Blocking::Stops,
+            }
+        }
+    }
+
+    impl Matter for SubvoxelFn {
+        fn subvoxel(&self, world: [i32; 3], at: SubvoxelIndex) -> Option<MaterialId> {
+            if world != self.voxel {
+                return None;
+            }
+            let ordinal = at.x as u16 + 4 * at.y as u16 + 16 * at.z as u16;
+            if self.set.contains(&(ordinal as u8)) {
+                Some(self.material)
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Straight up, so the arithmetic in these tests is checkable by eye.
+    fn sun() -> Sampler {
+        Sampler::new([0.0, 1.0, 0.0], 64.0).expect("an overhead Sun")
+    }
+
+    /// A provider that is **a medium and nothing else** (C-178): solid at no subvoxel, and
+    /// with one declared rate everywhere at or above `from_y`.
+    struct Medium {
+        sigma: f64,
+        from_y: i32,
+    }
+
+    impl Matter for Medium {
+        fn subvoxel(&self, _world: [i32; 3], _at: SubvoxelIndex) -> Option<MaterialId> {
+            None
+        }
+
+        fn medium(&self, world: [i32; 3], _at: SubvoxelIndex) -> Option<f64> {
+            if world[1] >= self.from_y {
+                Some(self.sigma)
+            } else {
+                None
+            }
+        }
+    }
+
+    /// A provider that answers **both questions** at every address: a material that stops the
+    /// beam *and* a medium with a rate. Built to pin which one the walk asks first.
+    struct Both {
+        sigma: f64,
+    }
+
+    impl Matter for Both {
+        fn subvoxel(&self, _world: [i32; 3], _at: SubvoxelIndex) -> Option<MaterialId> {
+            Some(MaterialId(7))
+        }
+
+        fn blocking(&self, _material: MaterialId) -> Blocking {
+            Blocking::Stops
+        }
+
+        fn medium(&self, _world: [i32; 3], _at: SubvoxelIndex) -> Option<f64> {
+            Some(self.sigma)
+        }
+    }
+
+    #[test]
+    fn a_clear_column_passes_the_whole_beam() {
+        let matter = Placed::new(&[]);
+        assert_eq!(sun().beam(&matter, [0.5, 0.5, 0.5]), 1.0);
+        assert_eq!(sun().sky(&matter, [0.5, 0.5, 0.5]), 1.0);
+    }
+
+    #[test]
+    fn a_lid_stops_the_beam_and_the_sky() {
+        // **Two claims, and the second is about the dome's own shape.** One solid metre
+        // of rock three metres up stops the beam — one voxel is enough, because the beam
+        // is a ray. The *dome* is five rays at 45°, so the same single voxel blocks only
+        // the vertical one: by the time a tilted ray climbs 2.5 m it is 2.5 m to the
+        // side. Blocking all five needs a slab, so a slab is what this asserts, and the
+        // seven-by-seven one is sized from the stencil's own geometry rather than guessed.
+        let lid = Placed::new(&[([0, 3, 0], 7)]);
+        assert_eq!(
+            sun().beam(&lid, [0.5, 0.5, 0.5]),
+            0.0,
+            "a solid metre of rock did not stop the Sun"
+        );
+        assert!(
+            sun().sky(&lid, [0.5, 0.5, 0.5]) < 1.0,
+            "a solid metre of rock did not shade any of the dome"
+        );
+
+        let mut cells = Vec::new();
+        for x in -3..=3 {
+            for z in -3..=3 {
+                cells.push(([x, 3, z], 7));
+            }
+        }
+        let slab = Placed::new(&cells);
+        assert_eq!(
+            sun().sky(&slab, [0.5, 0.5, 0.5]),
+            0.0,
+            "a roof over every one of the dome's five rays left some of it visible"
+        );
+    }
+
+    #[test]
+    fn a_cell_is_not_shadowed_by_itself() {
+        // **The classic defect, and the one that turns a world black.** The origin
+        // voxel is solid — it is the surface whose light is being measured — and a
+        // sampler that counted it would give every cell in the world a beam of zero
+        // and every wall a sky of zero. Nothing else is placed, so the answer is the
+        // open sky's.
+        let matter = Placed::new(&[([0, 0, 0], 7)]);
+        assert_eq!(sun().beam(&matter, [0.5, 0.5, 0.5]), 1.0);
+        assert_eq!(sun().sky(&matter, [0.5, 0.5, 0.5]), 1.0);
+    }
+
+    #[test]
+    fn a_partial_voxel_shadows_only_where_it_is_solid() {
+        // A voxel at `y = 2` with **one subvoxel column** solid: `x = 0, z = 0`, all
+        // four `y` cells (ordinals 0, 4, 8, 12). A ray straight up through `(0.125,
+        // ., 0.125)` passes through that column and is stopped; a ray up through
+        // `(0.875, ., 0.875)` misses every solid subvoxel and is not.
+        //
+        // This is the material-addressing payoff: the occluder is a *quarter* of a
+        // voxel, and the shadow it casts is that quarter's, because the sampler asks
+        // the world at subvoxel addresses rather than per block.
+        let partial = Placed::partial([0, 2, 0], &[0, 4, 8, 12], MaterialId(7));
+        assert_eq!(
+            transmittance(&partial, [0.125, 0.5, 0.125], [0.0, 1.0, 0.0], 64.0),
+            0.0,
+            "a ray through the solid subvoxel column passed"
+        );
+        assert_eq!(
+            transmittance(&partial, [0.875, 0.5, 0.875], [0.0, 1.0, 0.0], 64.0),
+            1.0,
+            "a ray through the emptied subvoxels was shadowed by the quarter beside it"
+        );
+    }
+
+    #[test]
+    fn an_attenuating_material_dims_the_beam_rather_than_stopping_it() {
+        // Four one-metre voxels of a medium, straight up: `exp(−σ·4)`.
+        let mut matter = Placed::new(&[
+            ([0, 1, 0], 7),
+            ([0, 2, 0], 7),
+            ([0, 3, 0], 7),
+            ([0, 4, 0], 7),
+        ]);
+        matter.attenuation = Some(0.25);
+        let one = {
+            let mut single = Placed::new(&[([0, 1, 0], 7)]);
+            single.attenuation = Some(0.25);
+            transmittance(&single, [0.5, 0.5, 0.5], [0.0, 1.0, 0.0], 64.0)
+        };
+        let four = transmittance(&matter, [0.5, 0.5, 0.5], [0.0, 1.0, 0.0], 64.0);
+        assert!(
+            (one - (-0.25f64).exp()).abs() < 1e-12,
+            "one metre of the medium gave {one} where Beer-Lambert gives {}",
+            (-0.25f64).exp()
+        );
+        assert!(
+            (four - (-1.0f64).exp()).abs() < 1e-12,
+            "four metres gave {four} where Beer-Lambert gives {}",
+            (-1.0f64).exp()
+        );
+        assert!(four < one && four > 0.0, "four metres was not dimmer but still lit");
+    }
+
+    #[test]
+    fn a_medium_dims_the_beam_along_the_path_rather_than_stopping_it() {
+        // **The cloud's own case, at a rate checkable by eye.** Four one-metre voxels of a
+        // medium at σ = 0.25/m, straight up, give `exp(−σ·4) = exp(−1)` — the same number
+        // [`an_attenuating_material_dims_the_beam_rather_than_stopping_it`] measures for a
+        // material at the same rate, because Beer-Lambert is one law. What differs is that
+        // this rate came from **where the beam is** and not from *what it met*: a cloud has
+        // no id to hang a rate on, and its density falls to zero at the layer's base and top,
+        // which a per-material rate could not express.
+        let uniform = Medium { sigma: 0.25, from_y: 1 };
+        let got = transmittance(&uniform, [0.5, 0.5, 0.5], [0.0, 1.0, 0.0], 4.5);
+        assert!(
+            (got - (-1.0f64).exp()).abs() < 1e-12,
+            "4 m of the medium gave {got} where Beer-Lambert gives {}",
+            (-1.0f64).exp()
+        );
+        assert!(
+            got > 0.0 && got < 1.0,
+            "a medium stopped the beam ({got}) instead of dimming it"
+        );
+    }
+
+    #[test]
+    fn a_medium_is_asked_before_the_material_beside_it() {
+        // **The order, pinned, because the alternative is the exact bug the class exists to
+        // avoid.** A cloud cell answers `None` to `subvoxel` (it has no surface) and a rate to
+        // `medium`; a walk that asked the solid question first would take that `None` for an
+        // empty cell and let the whole cloud through. This provider answers *both*, and the
+        // medium must win: three metres at σ = 0.5 reads `exp(−1.5)`, not the material's stop.
+        let both = Both { sigma: 0.5 };
+        let got = transmittance(&both, [0.5, 0.5, 0.5], [0.0, 1.0, 0.0], 3.5);
+        assert!(
+            (got - (-1.5f64).exp()).abs() < 1e-12,
+            "the solid answer won over the medium: got {got}, Beer-Lambert gives {}",
+            (-1.5f64).exp()
+        );
+    }
+
+    #[test]
+    fn a_medium_that_is_not_there_is_clear_and_a_rate_that_is_not_a_rate_is_a_refusal() {
+        // `0.0` is a legal rate — a medium that is not there — and must pass the whole beam,
+        // so a provider can keep its shape instead of dropping to `None`. A rate that is not a
+        // rate (`NaN`, negative) is the refusal [`Blocking::Attenuates`] already makes, and it
+        // is a **refusal and not a free pass** for the module's own reason: an unmeasurable
+        // beam is not an unobstructed one.
+        let clear = Medium { sigma: 0.0, from_y: 1 };
+        assert_eq!(
+            transmittance(&clear, [0.5, 0.5, 0.5], [0.0, 1.0, 0.0], 8.0),
+            1.0,
+            "a medium with a rate of zero dimmed the beam"
+        );
+        for bad in [f64::NAN, f64::INFINITY, -0.5] {
+            let broken = Medium { sigma: bad, from_y: 1 };
+            assert_eq!(
+                transmittance(&broken, [0.5, 0.5, 0.5], [0.0, 1.0, 0.0], 8.0),
+                0.0,
+                "a medium with a rate of {bad} passed the beam"
+            );
+        }
+    }
+
+    #[test]
+    fn a_degenerate_ray_is_a_refusal_and_not_a_clear_view() {
+        // A NaN start point, and a zero direction. Both are answered `0.0` — the beam
+        // is *unmeasurable*, which is not the same claim as *unobstructed*, and the
+        // difference is a bright cell in a stone wall.
+        let matter = Placed::new(&[]);
+        assert_eq!(
+            transmittance(&matter, [f64::NAN, 0.5, 0.5], [0.0, 1.0, 0.0], 64.0),
+            0.0
+        );
+        assert_eq!(transmittance(&matter, [0.5, 0.5, 0.5], [0.0, 0.0, 0.0], 64.0), 0.0);
+        assert!(Sampler::new([0.0, 0.0, 0.0], 64.0).is_none());
+        assert!(Sampler::new([0.0, 1.0, 0.0], 0.0).is_none());
+    }
+
+    #[test]
+    fn the_sun_s_angle_is_what_it_is_asked_about() {
+        // A wall one metre to the east of the cell, and a Sun over the horizon: the
+        // beam is stopped by it when the Sun is on the far side, and clear when the
+        // Sun is on the cell's side. Same cell, same wall, only the angle differs —
+        // which is the whole of "the Sun's own direction decides what is in the way".
+        let matter = Placed::new(&[([1, 0, 0], 7)]);
+        let from = [0.5, 0.5, 0.5];
+        let low_east = Sampler::new([1.0, 0.2, 0.0], 64.0).expect("a Sun near the horizon");
+        let low_west = Sampler::new([-1.0, 0.2, 0.0], 64.0).expect("the other side");
+        assert_eq!(low_east.beam(&matter, from), 0.0, "the wall is between the cell and a rising Sun");
+        assert_eq!(low_west.beam(&matter, from), 1.0, "a setting Sun sees past the same wall");
+    }
+
+    #[test]
+    fn the_same_cell_measured_twice_is_the_same_answer() {
+        // Determinism is a contract here (F1): no clock, no RNG, no resident state.
+        let matter = Placed::new(&[([0, 3, 0], 7), ([0, 5, 0], 7)]);
+        let first = sun().visibility(&matter, [0.25, 0.5, 0.75]);
+        let second = sun().visibility(&matter, [0.25, 0.5, 0.75]);
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn a_reach_that_is_too_short_is_not_a_clear_sky() {
+        // The reach bounds the walk, and a ray that leaves it without meeting matter
+        // is clear *within the reach*. A lid beyond the reach is therefore not seen —
+        // which is why the reach has to be the world's own scale and not a guess: the
+        // test states what the bound does rather than pretending it is unbounded.
+        let matter = Placed::new(&[([0, 40, 0], 7)]);
+        let short = Sampler::new([0.0, 1.0, 0.0], 8.0).expect("a short reach");
+        let long = Sampler::new([0.0, 1.0, 0.0], 64.0).expect("a reach that arrives");
+        assert_eq!(short.beam(&matter, [0.5, 0.5, 0.5]), 1.0, "the lid is past the reach");
+        assert_eq!(long.beam(&matter, [0.5, 0.5, 0.5]), 0.0, "the reach that arrives sees it");
+    }
+
+    #[test]
+    fn the_generated_world_shadows_itself_where_it_is_solid() {
+        // **The end-to-end claim, on the real generator and the real octree.** One
+        // chunk of the shipped world, built the way the mesher builds it, sampled at
+        // the addresses a shadow ray walks: a cell inside the rock is dark, and a cell
+        // above the surface is the open sky. Those two are the whole point of the
+        // module, and the chunk's own octree answers the addresses — so this is the
+        // sampler reading an octree and not a hand-written grid.
+        use crate::world_source::WorldSource;
+        use voxel_mesh::octree::{local_from, SparseVoxelOctree};
+        use voxel_model::{ChunkPos, CHUNK_SIDE};
+
+        // The client's own spawn column, **restated because this crate is below the
+        // client**: `voxel_client::game::GAME_SPAWN_XZ` is `(0.5, -95.5)`, and a test
+        // in `voxel-client` is what holds the two together.
+        const SPAWN_X: i32 = 0;
+        const SPAWN_Z: i32 = -95;
+
+        let spec = voxel_shapers::WorldSpec::new(2468, voxel_shapers::Config::default());
+        let source = WorldSource::new(spec);
+
+        // **Which chunk to build is a question about the world**, so it is asked rather
+        // than picked: find the ground first, then build the chunk it is in. A test
+        // that hard-coded the chunk would be about the picking.
+        let mut surface_y = None;
+        for y in -32..128 {
+            let solid = source
+                .material_at(SPAWN_X, y, SPAWN_Z)
+                .map(|material| !material.is_empty())
+                .unwrap_or(false);
+            if solid {
+                surface_y = Some(y);
+            }
+        }
+        let surface_y = surface_y.expect("the spawn column has ground under it");
+        let chunk = ChunkPos::new(
+            SPAWN_X.div_euclid(CHUNK_SIDE as i32),
+            surface_y.div_euclid(CHUNK_SIDE as i32),
+            SPAWN_Z.div_euclid(CHUNK_SIDE as i32),
+        );
+        let tree: SparseVoxelOctree = source.build_chunk(chunk).expect("a chunk of the world");
+        let origin = chunk.origin();
+
+        // The chunk's octree, at the world's own addresses — the provider a resident
+        // set hands in, and the same addressing `Matter` takes. An address outside this
+        // chunk is air here, which is this test's declared limit: one chunk answers.
+        let matter = |world: [i32; 3], at: SubvoxelIndex| -> Option<MaterialId> {
+            let local =
+                local_from([world[0] - origin.x, world[1] - origin.y, world[2] - origin.z]).ok()?;
+            let material = tree.material_at(local, at);
+            if material.is_empty() {
+                None
+            } else {
+                Some(material)
+            }
+        };
+
+        // **A Sun 60° above the horizon, from the east.** The sampler's own input: the
+        // world's noon direction is `voxel_client::skylight::sun_direction`'s, and that
+        // function lives *above* this crate — a copy of the convention here would be a
+        // second Sun. An oblique beam is what this test needs, so the walk crosses
+        // voxels in two axes rather than sliding straight up one.
+        let sampler =
+            Sampler::new([0.5, 0.866_025_403_784_438_6, 0.0], 256.0).expect("an oblique Sun");
+
+        // **The column measured is the chunk's own centre, and the surface is the
+        // spawn's.** The one-chunk limit above is what decides that: the dome's tilted
+        // rays leave a chunk quickly from a column one metre inside its edge (the spawn
+        // column is), and an address outside the chunk answers air — so a column at the
+        // centre is where the answer is about the world rather than about the boundary.
+        // One voxel is one metre, so the cell's centre is `world + 0.5`.
+        let column = [CHUNK_SIDE as i32 / 2, CHUNK_SIDE as i32 / 2];
+        let centre = |local_y: i32| {
+            [
+                (origin.x + column[0]) as f64 + 0.5,
+                (origin.y + local_y) as f64 + 0.5,
+                (origin.z + column[1]) as f64 + 0.5,
+            ]
+        };
+        let centre_surface = {
+            let mut top = None;
+            for y in -32..128 {
+                let solid = source
+                    .material_at(origin.x + column[0], y, origin.z + column[1])
+                    .map(|material| !material.is_empty())
+                    .unwrap_or(false);
+                if solid {
+                    top = Some(y);
+                }
+            }
+            top.expect("the centre column has ground under it")
+        };
+        let buried = sampler.visibility(&matter, centre(centre_surface - origin.y - 3));
+        let open = sampler.visibility(&matter, centre(centre_surface - origin.y + 4));
+
+        println!(
+            "chunk ({}, {}, {}): the spawn column ({SPAWN_X}, {SPAWN_Z}) stands on y = {surface_y};\n  \
+             the chunk's centre column ({} , {}) stands on y = {centre_surface}\n  \
+             three metres into the rock: beam {:.4} sky {:.4}\n  \
+             four metres above it:      beam {:.4} sky {:.4}",
+            chunk.x,
+            chunk.y,
+            chunk.z,
+            origin.x + column[0],
+            origin.z + column[1],
+            buried.beam,
+            buried.sky,
+            open.beam,
+            open.sky
+        );
+        assert_eq!(buried.beam, 0.0, "a cell inside the rock saw the Sun");
+        assert_eq!(buried.sky, 0.0, "a cell inside the rock saw the sky");
+        assert!(open.beam > 0.0, "a cell in the open was shadowed");
+        assert!(open.sky > 0.0, "a cell in the open saw none of the dome");
+    }
+}

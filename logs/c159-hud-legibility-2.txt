@@ -1,0 +1,12 @@
+the shell's chrome is text and glyphs
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test hud::tests::the_shell_chrome_is_legible_over_the_worst_backdrop ... FAILED
+
+failures:
+
+failures:
+    hud::tests::the_shell_chrome_is_legible_over_the_worst_backdrop
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 374 filtered out; finished in 1.40s
+
+error: test failed, to rerun pass `-p voxel-client --lib`

@@ -19,7 +19,7 @@ window	inventory
 	content	inventory
 	lane	tab
 	extent	square-pixels
-	geometry	16 64 480 406
+	geometry	16 64 480 440
 	min-size	240 192
 	opacity	930
 	elevation	1
@@ -33,7 +33,7 @@ window	trees
 	content	trees
 	lane	tab
 	extent	square-pixels
-	geometry	80 96 480 406
+	geometry	80 96 480 440
 	min-size	240 192
 	opacity	930
 	elevation	1
@@ -47,7 +47,7 @@ window	governance
 	content	ledger
 	lane	tab
 	extent	square-pixels
-	geometry	144 128 480 406
+	geometry	144 128 480 440
 	min-size	240 192
 	opacity	930
 	elevation	1
@@ -61,7 +61,7 @@ window	mods
 	content	mods
 	lane	tab
 	extent	square-pixels
-	geometry	208 160 480 406
+	geometry	208 160 480 440
 	min-size	240 192
 	opacity	930
 	elevation	1
@@ -75,7 +75,7 @@ window	docs
 	content	ledger
 	lane	tab
 	extent	square-pixels
-	geometry	272 192 480 406
+	geometry	272 192 480 440
 	min-size	240 192
 	opacity	930
 	elevation	1
@@ -89,7 +89,7 @@ window	settings
 	content	settings
 	lane	control
 	extent	square-pixels
-	geometry	336 224 480 406
+	geometry	336 224 480 440
 	min-size	240 192
 	opacity	930
 	elevation	1
@@ -103,7 +103,7 @@ window	tools
 	content	tools
 	lane	tab
 	extent	square-pixels
-	geometry	400 256 480 406
+	geometry	400 256 480 440
 	min-size	240 192
 	opacity	930
 	elevation	1
@@ -117,7 +117,7 @@ window	map-plan
 	content	map-plan
 	lane	world
 	extent	square-pixels
-	geometry	464 288 480 406
+	geometry	464 288 480 440
 	min-size	240 192
 	opacity	930
 	elevation	1
@@ -133,7 +133,7 @@ window	console
 	content	console
 	lane	control
 	extent	square-pixels
-	geometry	16 96 640 406
+	geometry	16 96 640 440
 	min-size	320 192
 	opacity	930
 	elevation	1
@@ -149,7 +149,7 @@ window	log
 	content	log
 	lane	frame
 	extent	square-pixels
-	geometry	80 128 640 406
+	geometry	80 128 640 440
 	min-size	320 192
 	opacity	930
 	elevation	1
@@ -163,7 +163,7 @@ window	api-viewer
 	content	api-viewer
 	lane	frame
 	extent	square-pixels
-	geometry	144 160 640 406
+	geometry	144 160 640 440
 	min-size	320 192
 	opacity	930
 	elevation	1
@@ -177,7 +177,7 @@ window	notifications
 	content	notifications
 	lane	beacon
 	extent	square-pixels
-	geometry	208 192 480 406
+	geometry	208 192 480 440
 	min-size	240 192
 	opacity	930
 	elevation	1
@@ -187,33 +187,42 @@ window	notifications
 	behavior	drag,resize,maximize,minimize,close
 	record-id	window-notifications
 window	streamer
-	title	Streamer
+	title	Streamers
 	content	streamer
 	lane	motion
 	extent	square-pixels
-	geometry	928 48 336 408
-	min-size	240 192
+	geometry	500 500 500 500
+	min-size	500 500
 	opacity	930
 	elevation	0
 	theme-role	hud
 	pinnable	true
 	layout	minimize,close,title-position
-	behavior	drag
+	behavior	drag,resize,maximize,minimize,close
 	record-id	window-streamer
 # The pinned HUD subset (H-9.8): stays in the user's view while the shell is hidden.
 #
 # The four geometries below are the four corners of a 1280 × 720 window with the
 # 48 dp bar across the top, sized so the panel each window hosts fits inside it:
-# a 48 dp title bar plus the panel's own height (the tallest is 309 dp at five
-# rows). At any other window size the windows keep these declarations — a shell
-# that resized them would be choosing an arrangement, and the arrangement is a
-# package (UI-SPEC §3).
+# **the port's chrome — a 1 dp border, a 40 dp title bar and a 40 dp pane header —
+# plus the panel's own height** (the tallest is 407 dp at seven rows — the World
+# panel, which grew two rows when the player's body started reporting whether it
+# was on the ground and whether it was in water). The chrome is the port's
+# (SHELL-PORT.md §5; the reference always draws a pane header, 2670–2675) and it
+# is 34 dp taller than the derived shell's title bar alone, so **the four corners
+# no longer clear the middle of the screen**: the left column (489 + 342) is
+# taller than the 672 dp a 720 dp viewport leaves under the bar, and the bottom
+# pair is anchored to the viewport's foot as before (720 − height). Owed a
+# ruling; the declaration is kept rather than an arrangement invented here. At
+# any other window size the windows keep these declarations — a shell that
+# resized them would be choosing an arrangement, and the arrangement is a package
+# (UI-SPEC §3).
 window	world
 	title	World
 	content	world-view
 	lane	world
 	extent	square-pixels
-	geometry	16 48 336 360
+	geometry	16 48 336 489
 	min-size	240 192
 	opacity	930
 	elevation	0
@@ -227,28 +236,28 @@ window	determinism
 	content	readout
 	lane	frame
 	extent	square-pixels
-	geometry	16 408 336 312
+	geometry	16 378 336 342
 	min-size	240 192
 	opacity	930
 	elevation	0
 	theme-role	hud
 	pinnable	true
 	layout	minimize,close,title-position
-	behavior	drag
+	behavior	drag,resize,maximize,minimize,close
 	record-id	window-determinism
 window	refusals
 	title	Refusals
 	content	table
 	lane	beacon
 	extent	square-pixels
-	geometry	928 408 336 312
+	geometry	928 378 336 342
 	min-size	240 192
 	opacity	930
 	elevation	1
 	theme-role	hud
 	pinnable	true
 	layout	minimize,close,title-position
-	behavior	drag
+	behavior	drag,resize,maximize,minimize,close
 	record-id	window-refusals
 # The six tabs of the bar, in strip order (H-15.2).
 tab	inventory
@@ -269,7 +278,9 @@ filed	determinism	settings
 filed	world	map-plan
 # Pinning is a layer move, declared here and not baked into a spec (UI-SPEC §4):
 # these four stay visible while the shell is hidden.
-pin	world
+
 pin	streamer
 pin	determinism
 pin	refusals
+
+

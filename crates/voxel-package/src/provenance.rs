@@ -210,7 +210,7 @@ fn read_object_format(config: &Path) -> String {
 }
 
 /// Every covered file under a root, **sorted, and relative-path-keyed**.
-fn covered_files(root: &Path) -> Vec<PathBuf> {
+pub(crate) fn covered_files(root: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
     walk(root, &mut found);
     // **Sorted, and the sort is the determinism.** A digest of an unsorted walk is a digest of

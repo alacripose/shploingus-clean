@@ -1,0 +1,24 @@
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+   Compiling voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+   Compiling voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+   Compiling voxel-work v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-work)
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `test` profile [optimized + debuginfo] target(s) in 27.62s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-e81c39c525811ec8.exe)
+
+running 11 tests
+test pattern::tests::a_material_the_field_does_not_vary_shows_no_deviation ... ok
+test pattern::tests::a_point_addresses_to_its_own_world_subvoxel_and_lattice_cell ... ok
+test pattern::tests::below_the_resolvable_rung_movement_changes_nothing ... ok
+test pattern::tests::a_footprint_between_the_rungs_is_carried_by_a_coarser_one ... ok
+test pattern::tests::each_shaper_stretches_the_noise_along_the_axis_its_material_reads ... ok
+test pattern::tests::the_footprint_is_one_pixel_carried_out_to_the_surface ... ok
+test pattern::tests::the_ladder_s_geometry_is_the_lattice_s_own ... ok
+test pattern::tests::the_shader_recovers_the_world_cell_from_the_eye_s_two_halves ... ok
+test pattern::tests::two_points_a_block_apart_share_their_lattice_address_and_not_their_cell ... ok
+test pattern::tests::the_ladder_is_never_flat_while_a_rung_resolves ... ok
+test pattern::tests::every_deviation_stays_inside_the_range_the_model_states ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 376 filtered out; finished in 0.00s
+

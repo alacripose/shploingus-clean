@@ -19,6 +19,7 @@
 //! a private flocking implementation.
 
 use crate::spec::WorldSpec;
+use crate::{climate, weather};
 use voxel_noise::Vec3;
 
 /// A plant formation. The names are Holdridge's, shortened.
@@ -132,26 +133,27 @@ pub enum BiomeClass {
 /// identical climate different biomes, and the whole point of deriving biomes from
 /// climate is that it cannot.
 ///
-/// # This is Holdridge's *scheme* and not Holdridge's *inputs*, and it used to say otherwise
+/// # Holdridge's *inputs*, sampled from the ticked shapers
 ///
-/// The line above used to read *"Pure Holdridge: two numbers in, one formation out"*, and
-/// that was a claim the call site falsified. Holdridge classifies on **biotemperature** —
-/// the mean of twelve monthly means, with values below 0 °C clamped to 0 and above 30 °C
-/// clamped to 30 — and on **mean annual** precipitation. `column.rs:285` passes
-/// `clim.temperature_c` and `wx.precipitation_mm`, both **instantaneous at the current
-/// tick**.
+/// Holdridge classifies on **biotemperature** — the mean of twelve monthly means, with
+/// values below 0 °C clamped to 0 and above 30 °C clamped to 30 — and on **mean annual**
+/// precipitation. Those are not raw samples of the moment: [`holdridge_inputs`] reads
+/// [`crate::climate::temperature_c`] and [`crate::weather::precipitation_mm`] at twelve
+/// declared months of the tick's own world year, clamps each monthly mean, and hands the
+/// aggregates to this function.
 ///
-/// **Measured consequence** (`docs/LEDGER.md` §93.2): four of four probed columns change
-/// biome within one world year and each returns to where it started. `(0, 0)` runs
-/// `boreal_forest ↔ tundra` on days 21 and 76, because its temperature is below 0 °C for
-/// 357 days and the classifier's `3.0` arm is crossed twice a year. Holdridge's
-/// biotemperature for that column is 0 °C year-round — the clamp cancels every sub-zero
-/// month — so Holdridge places it once and never moves it.
+/// **This used to be otherwise, and the defect was measured.** The call site passed
+/// `clim.temperature_c` and `wx.precipitation_mm` *instantaneously* (`docs/LEDGER.md`
+/// §93.2): four of four probed columns changed biome within one world year and each
+/// returned — `(0, 0)` ran `boreal_forest ↔ tundra`, twice — because the classifier is
+/// Holdridge's *scheme* and was being fed one tick of a season. The ruling of 2026-10-02
+/// was to aggregate before classifying, and the stability is pinned by
+/// `column::tests::the_biome_is_the_same_at_every_tick_of_the_year`.
 ///
-/// **So the numbers are right and the label is a claim this file cannot support.** The
-/// fix — aggregate before classifying — is filed as `ECO-0001` and is blocked on the user,
-/// because the alternative (amending the citation and keeping the seasonal flicker as a
-/// feature) is equally defensible. What is *not* left standing is the false sentence.
+/// **The values are still the ticked functions'.** Nothing here re-derives a climate
+/// model: the twelve samples are tick coordinates, so the world's shapers stay sampled and
+/// ticked exactly as they were, and the instantaneous samples are untouched for every
+/// consumer that wants *this tick*.
 pub fn biome_for(temperature_c: f64, precipitation_mm: f64) -> Biome {
     // Cold is cold regardless of rain: below freezing most of the year, only the
     // driest and the hardest formations survive.
@@ -194,16 +196,83 @@ pub fn biome_for(temperature_c: f64, precipitation_mm: f64) -> Biome {
     }
 }
 
+/// Ticks in one twelfth of a world year — **read from the climate module's own clock**,
+/// so the sampling month and the year cannot drift apart.
+pub const MONTH_TICKS: u64 = climate::YEAR_TICKS / 12;
+
+/// How many ticked samples make one month's mean.
+///
+/// **Declared, and it is a resolution rather than a count.** The seasonal term is a
+/// sinusoid with a one-year period, so sampling a month at its four quarter-midpoints
+/// under-resolves it by `sinc(π/24) ≈ 0.991` — under 1 % of the seasonal swing, against
+/// the classifier's 5 °C arms. One sample a month would read the sine at a point and call
+/// it a mean; four is the least that can be defended as one.
+pub const MONTH_SAMPLES: u64 = 4;
+
+/// **Holdridge's two numbers, sampled from the ticked shapers.**
+///
+/// Twelve monthly means of [`climate::temperature_c`], each **clamped to `[0, 30]`** —
+/// the clamp is the whole reason biotemperature differs from an annual mean — then
+/// averaged; and the mean annual total of [`weather::precipitation_mm`], taken as the
+/// mean of the twelve monthly means.
+///
+/// **Every sample is a tick coordinate**, and the twelve months are the months of the
+/// world year the tick falls in. The cycle is periodic, so the aggregate does not move
+/// with the tick within a year and does not differ between years; the shapers stay
+/// sampled and ticked, and the biome becomes the regional fact Holdridge describes.
+pub fn holdridge_inputs(spec: &WorldSpec, x: f64, z: f64, y_m: f64, tick: u64) -> (f64, f64) {
+    let base = (tick / climate::YEAR_TICKS) * climate::YEAR_TICKS;
+
+    // **The x/z terms are read once, not once per sample.** Both shapers separate into a
+    // column factor and a tick scalar — `temperature_c` is `base_c + amplitude · unit(tick)`
+    // and `precipitation_mm` is `dry + gain · seasonal_gain(tick)` — so the twelve monthly
+    // means below evaluate the column's climate once and the scalars ninety-six times. The
+    // monthly mean is the same arithmetic reassociated (`mean(a + b·u) = a + b·mean(u)`),
+    // which is why the sampled rule and the sampled numbers both stand: this measured
+    // **202 µs per column** before it existed (`examples/biome-cost.rs`), and a 32×32
+    // chunk of columns is a chunk build's whole budget.
+    let temperature = climate::temperature_parts(spec, x, z, y_m);
+    let precipitation = weather::precipitation_parts(spec, x, z);
+    let mut biotemperature_sum = 0.0;
+    let mut precipitation_sum = 0.0;
+
+    for month in 0..12u64 {
+        let mut temperature_sum = 0.0;
+        let mut precipitation_month = 0.0;
+        for sample in 0..MONTH_SAMPLES {
+            // The sample sits at the middle of its sub-interval, so a month is sampled
+            // symmetrically and neither edge of it is double-counted.
+            let offset = (2 * sample + 1) * MONTH_TICKS / (2 * MONTH_SAMPLES);
+            let at = base + month * MONTH_TICKS + offset;
+            temperature_sum +=
+                temperature.base_c + temperature.seasonal_amplitude_c * climate::seasonal_unit(at);
+            precipitation_month += precipitation.dry_mm
+                + precipitation.wet_gain_mm * weather::seasonal_gain(at);
+        }
+        let monthly_mean = temperature_sum / MONTH_SAMPLES as f64;
+        // Holdridge's clamp is on the *monthly mean*, and it is why a column whose winter
+        // is far below freezing still has a biotemperature near zero rather than negative.
+        biotemperature_sum += monthly_mean.clamp(0.0, 30.0);
+        precipitation_sum += precipitation_month / MONTH_SAMPLES as f64;
+    }
+
+    (biotemperature_sum / 12.0, precipitation_sum / 12.0)
+}
+
 /// Above this height, a column is alpine regardless of its latitude's climate.
 /// Declared, because "a mountain is its own biome" is a decision.
 pub const ALPINE_HEIGHT_ABOVE_RELIEF: f64 = 0.85;
 
 /// The biome at a column, including the **altitude override**.
+///
+/// The two climate numbers are [`holdridge_inputs`]' — **biotemperature** and **mean
+/// annual precipitation** — and not an instantaneous sample; see the note on
+/// [`biome_for`].
 pub fn biome_at(
     spec: &WorldSpec,
     elevation_m: f64,
-    temperature_c: f64,
-    precipitation_mm: f64,
+    biotemperature_c: f64,
+    mean_annual_precipitation_mm: f64,
 ) -> Biome {
     let above = (elevation_m - spec.config.sea_level_m).max(0.0);
     if above > spec.config.relief_m * ALPINE_HEIGHT_ABOVE_RELIEF {
@@ -212,7 +281,127 @@ pub fn biome_at(
         // so the classifier stays a pure function of climate.
         return Biome::Alpine;
     }
-    biome_for(temperature_c, precipitation_mm)
+    biome_for(biotemperature_c, mean_annual_precipitation_mm)
+}
+
+// -------------------------------------------------------------------------------------
+// The two capacities the process roster declares and nothing produced
+// -------------------------------------------------------------------------------------
+//
+// `FieldId::CarryingCapacity` and `FieldId::SpeciesSuitability` are declared in the
+// nineteen-name roster and had **no law** (`process.rs::owed_body(Ecology)`: *"neither
+// carrying capacity nor species suitability has an admitted law here"*). The two
+// functions below admit one, from a named source, so the stage can run.
+//
+// **Sources.**
+// * Lieth, H. *Modeling the primary productivity of the world.* In: Primary
+//   Productivity of the Biosphere, Springer 1975 — the **Miami model**: annual net
+//   primary productivity from mean annual temperature and precipitation, two curves,
+//   and the **minimum** of the two is the limiting one (Liebig's law).
+// * Holdridge, L. *Determination of World Plant Formations from Simple Climatic Data.*
+//   Science 1947 — the **potential evapotranspiration** is linear in biotemperature,
+//   `PET = 58.93 · T_bio` mm/yr, and the **humidity province** is the ratio `P / PET`.
+
+/// The Miami model's saturation constant, in g/m²/yr (Lieth 1975). It is the model's
+/// own number, not a tuned dial.
+pub const MIAMI_MAX_NPP_G_M2_YR: f64 = 3000.0;
+/// Holdridge's PET coefficient: `PET_mm = 58.93 · biotemperature_C` (Holdridge 1947).
+pub const HOLDGRIDGE_PET_COEFFICIENT: f64 = 58.93;
+/// The soil depth at which soil stops limiting productivity. **Declared**: it is this
+/// tree's reading of Heimsath et al. 1997's soil-production baseline, not the paper's.
+pub const REFERENCE_SOIL_DEPTH_M: f64 = 0.5;
+
+/// Potential evapotranspiration, in mm/yr (Holdridge 1947).
+///
+/// `None` for a biotemperature that is not finite or is below zero — the coefficient is
+/// defined on Holdridge's clamped `[0, 30]` biotemperature, and a negative PET is a
+/// number somebody could divide by.
+pub fn potential_evapotranspiration_mm(biotemperature_c: f64) -> Option<f64> {
+    if !biotemperature_c.is_finite() || biotemperature_c < 0.0 {
+        return None;
+    }
+    Some(HOLDGRIDGE_PET_COEFFICIENT * biotemperature_c)
+}
+
+/// Annual net primary productivity, in g/m²/yr — **Lieth's Miami model**.
+///
+/// `NPP_T = 3000 / (1 + e^{1.315 − 0.119·T})` and
+/// `NPP_P = 3000 · (1 − e^{−0.000664·P})`, and the answer is their **minimum** because
+/// the scarcer of the two resources limits growth.
+///
+/// `None` when either input is not finite: a productivity that cannot be computed is not
+/// zero productivity, and a zero here would read as a barren province.
+pub fn miami_npp_g_m2_yr(biotemperature_c: f64, mean_annual_precipitation_mm: f64) -> Option<f64> {
+    if !biotemperature_c.is_finite() || !mean_annual_precipitation_mm.is_finite() {
+        return None;
+    }
+    if mean_annual_precipitation_mm < 0.0 {
+        return None;
+    }
+    let by_temperature = MIAMI_MAX_NPP_G_M2_YR / (1.0 + (1.315 - 0.119 * biotemperature_c).exp());
+    let by_precipitation =
+        MIAMI_MAX_NPP_G_M2_YR * (1.0 - (-0.000664 * mean_annual_precipitation_mm).exp());
+    Some(by_temperature.min(by_precipitation))
+}
+
+/// **Carrying capacity**, as the dimensionless ratio a region can stock: the Miami
+/// productivity as a fraction of the model's own maximum, limited by soil.
+///
+/// The soil term is `min(1, depth / REFERENCE_SOIL_DEPTH_M)`, so a site with less than the
+/// reference soil carries proportionally less, and one with more does not carry more
+/// than the climate allows. In `[0, 1]`.
+///
+/// `None` when the productivity cannot be computed or the soil depth is not finite/
+/// negative — the refusal [`crate::process`] turns into `NegativeCarryingCapacity`.
+pub fn carrying_capacity(
+    biotemperature_c: f64,
+    mean_annual_precipitation_mm: f64,
+    soil_depth_m: f64,
+) -> Option<f64> {
+    if !soil_depth_m.is_finite() || soil_depth_m < 0.0 {
+        return None;
+    }
+    let npp = miami_npp_g_m2_yr(biotemperature_c, mean_annual_precipitation_mm)?;
+    let soil_factor = (soil_depth_m / REFERENCE_SOIL_DEPTH_M).clamp(0.0, 1.0);
+    Some((npp / MIAMI_MAX_NPP_G_M2_YR) * soil_factor)
+}
+
+/// **Species suitability**, as the dimensionless fit of a site to its own province in
+/// `[0, 1]`: perfect when the humidity ratio is exactly 1, falling to zero in both a
+/// desert and a superhumid bog.
+///
+/// Holdridge's humidity ratio is `r = P / PET`. This reading is **this tree's declared
+/// shape over that ratio** — `fit = min(r, 1/r)`, multiplied by the same soil factor as
+/// [`carrying_capacity`] — and is named as such rather than attributed to a paper; the
+/// ratio itself is Holdridge 1947's, and no species model is claimed.
+///
+/// `None` on a non-finite input, a negative PET (impossible from
+/// [`potential_evapotranspiration_mm`]), or a negative soil depth.
+pub fn species_suitability(
+    biotemperature_c: f64,
+    mean_annual_precipitation_mm: f64,
+    soil_depth_m: f64,
+) -> Option<f64> {
+    if !soil_depth_m.is_finite() || soil_depth_m < 0.0 {
+        return None;
+    }
+    let pet = potential_evapotranspiration_mm(biotemperature_c)?;
+    if pet <= 0.0 {
+        // At a biotemperature of zero there is no evapotranspiration to divide by, so the
+        // humidity ratio is undefined rather than infinite; the site is at the cold end
+        // and its suitability is the soil-limited minimum.
+        return Some((soil_depth_m / REFERENCE_SOIL_DEPTH_M).clamp(0.0, 1.0));
+    }
+    if !mean_annual_precipitation_mm.is_finite() || mean_annual_precipitation_mm < 0.0 {
+        return None;
+    }
+    let ratio = mean_annual_precipitation_mm / pet;
+    if ratio <= 0.0 {
+        return Some(0.0);
+    }
+    let fit = ratio.min(1.0 / ratio).clamp(0.0, 1.0);
+    let soil_factor = (soil_depth_m / REFERENCE_SOIL_DEPTH_M).clamp(0.0, 1.0);
+    Some(fit * soil_factor)
 }
 
 /// A point with a velocity — a boid, or anything that wants to flock.
@@ -404,6 +593,163 @@ mod tests {
     fn a_biome_is_a_function_of_climate_and_nothing_else() {
         // Two calls, same climate, no position argument to disagree about.
         assert_eq!(biome_for(10.0, 700.0), biome_for(10.0, 700.0));
+    }
+
+    #[test]
+    fn productivity_rises_with_temperature_and_with_rain_and_is_limited_by_the_scarcer_one() {
+        // Liebig's minimum: the answer is exactly the smaller of the two curves, so a
+        // warmer world never produces less and a colder one never more.
+        assert!(miami_npp_g_m2_yr(20.0, 1000.0) > miami_npp_g_m2_yr(10.0, 1000.0));
+        assert!(miami_npp_g_m2_yr(20.0, 1500.0) > miami_npp_g_m2_yr(20.0, 500.0));
+        let rain_limited = miami_npp_g_m2_yr(30.0, 50.0).expect("finite");
+        let temperature_limited = miami_npp_g_m2_yr(30.0, 4000.0).expect("finite");
+        assert!(
+            rain_limited < temperature_limited,
+            "the scarcer resource was not the limiting one: {rain_limited} vs {temperature_limited}"
+        );
+        // The temperature curve saturates below the model's own maximum.
+        assert!(temperature_limited <= MIAMI_MAX_NPP_G_M2_YR);
+        assert!(miami_npp_g_m2_yr(25.0, 2000.0).expect("finite") <= MIAMI_MAX_NPP_G_M2_YR);
+    }
+
+    #[test]
+    fn a_non_finite_climate_gives_no_capacity_rather_than_a_zero() {
+        // Zero is a value somebody could believe; a refusal is not.
+        assert!(miami_npp_g_m2_yr(f64::NAN, 1000.0).is_none());
+        assert!(miami_npp_g_m2_yr(20.0, f64::INFINITY).is_none());
+        assert!(miami_npp_g_m2_yr(20.0, -1.0).is_none());
+        assert!(carrying_capacity(20.0, 1000.0, f64::NAN).is_none());
+        assert!(carrying_capacity(20.0, 1000.0, -1.0).is_none());
+    }
+
+    #[test]
+    fn soil_limits_capacity_but_never_raises_it_above_the_climate() {
+        let deep = carrying_capacity(22.0, 1600.0, 10.0).expect("finite");
+        let reference = carrying_capacity(22.0, 1600.0, REFERENCE_SOIL_DEPTH_M).expect("finite");
+        let thin = carrying_capacity(22.0, 1600.0, 0.05).expect("finite");
+        assert!((deep - reference).abs() < 1e-12, "extra soil raised capacity above the climate");
+        assert!(thin < reference, "thin soil did not lower capacity");
+        assert!(thin >= 0.0, "capacity went negative");
+    }
+
+    #[test]
+    fn suitability_peaks_at_the_humid_province_and_falls_away_both_ways() {
+        // The ratio `P / PET` is Holdridge's; the peak at 1 is this tree's declared shape.
+        // PET at 20 °C is 1178.6 mm, so 1178.6 mm of rain is the optimum.
+        let pet = potential_evapotranspiration_mm(20.0).expect("finite");
+        let at_optimum = species_suitability(20.0, pet, REFERENCE_SOIL_DEPTH_M).expect("finite");
+        let desert = species_suitability(20.0, pet * 0.1, REFERENCE_SOIL_DEPTH_M).expect("finite");
+        let bog = species_suitability(20.0, pet * 10.0, REFERENCE_SOIL_DEPTH_M).expect("finite");
+        assert!((at_optimum - 1.0).abs() < 1e-12, "the optimum was not 1: {at_optimum}");
+        assert!(desert < at_optimum && bog < at_optimum, "suitability did not fall away");
+        assert!(desert < 0.2 && bog < 0.2, "the tails were not small: {desert}, {bog}");
+        // A colder province has a smaller PET, so the same rain is wetter there.
+        assert!(species_suitability(5.0, 400.0, REFERENCE_SOIL_DEPTH_M).expect("finite") > 0.0);
+    }
+
+    #[test]
+    fn a_frozen_column_has_no_pet_to_divide_by_and_is_read_from_soil_alone() {
+        // At a biotemperature of zero the humidity ratio is undefined, and the honest
+        // answer is the soil-limited reading rather than an infinite province.
+        assert_eq!(potential_evapotranspiration_mm(0.0), Some(0.0));
+        let suitability = species_suitability(0.0, 1000.0, REFERENCE_SOIL_DEPTH_M).expect("finite");
+        assert!((suitability - 1.0).abs() < 1e-12, "a frozen column read {suitability}");
+        assert!(potential_evapotranspiration_mm(-1.0).is_none());
+    }
+
+    #[test]
+    fn the_biotemperature_clamps_each_monthly_mean_before_averaging_it() {
+        // Holdridge's clamp is the whole reason biotemperature differs from an annual
+        // mean: a month below freezing contributes 0, not its own negative value. So a
+        // column whose year is mostly sub-zero must have a biotemperature **above** the
+        // raw annual mean of the same ticked function — and inside Holdridge's range.
+        let s = spec();
+        let (x, z) = (0.0, 0.0);
+        let y = crate::terrain::elevation_m(&s, x, z);
+        let (biotemperature, mean_annual_precipitation) = holdridge_inputs(&s, x, z, y, 0);
+        assert!(
+            (0.0..=30.0).contains(&biotemperature),
+            "biotemperature left Holdridge's range: {biotemperature}"
+        );
+        assert!(mean_annual_precipitation >= 0.0, "precipitation was negative");
+
+        // The raw annual mean of the same ticked function, for the comparison.
+        let mut raw = 0.0;
+        let mut samples = 0u32;
+        let mut t = 0u64;
+        while t < climate::YEAR_TICKS {
+            raw += climate::temperature_c(&s, x, z, y, t);
+            samples += 1;
+            t += climate::YEAR_TICKS / 48;
+        }
+        let raw_mean = raw / samples as f64;
+        assert!(
+            biotemperature >= raw_mean - 1e-9,
+            "the clamp lowered biotemperature below the raw mean: {biotemperature} < {raw_mean}"
+        );
+    }
+
+    #[test]
+    fn the_hoisted_monthly_means_agree_with_the_unhoisted_shaper_calls() {
+        // The one difference between `holdridge_inputs` and a loop that calls the full
+        // shapers at every sample is the reassociation `a + b·u` versus the expanded
+        // expression. This measures that the difference is a few ulps and that the
+        // classification cannot move across it.
+        let s = spec();
+        let (x, z) = (1234.5, -678.5);
+        let y = crate::terrain::elevation_m(&s, x, z);
+        let tick = 17_000u64;
+        let (biotemperature, precipitation) = holdridge_inputs(&s, x, z, y, tick);
+
+        let base = (tick / climate::YEAR_TICKS) * climate::YEAR_TICKS;
+        let mut biotemperature_sum = 0.0;
+        let mut precipitation_sum = 0.0;
+        for month in 0..12u64 {
+            let mut temperature_sum = 0.0;
+            let mut precipitation_month = 0.0;
+            for sample in 0..MONTH_SAMPLES {
+                let offset = (2 * sample + 1) * MONTH_TICKS / (2 * MONTH_SAMPLES);
+                let at = base + month * MONTH_TICKS + offset;
+                temperature_sum += climate::temperature_c(&s, x, z, y, at);
+                precipitation_month += weather::precipitation_mm(&s, x, z, at);
+            }
+            biotemperature_sum += (temperature_sum / MONTH_SAMPLES as f64).clamp(0.0, 30.0);
+            precipitation_sum += precipitation_month / MONTH_SAMPLES as f64;
+        }
+        let direct = (biotemperature_sum / 12.0, precipitation_sum / 12.0);
+        assert!(
+            (biotemperature - direct.0).abs() < 1e-9,
+            "biotemperature {} vs {}",
+            biotemperature,
+            direct.0
+        );
+        assert!(
+            (precipitation - direct.1).abs() < 1e-6,
+            "precipitation {} vs {}",
+            precipitation,
+            direct.1
+        );
+        assert_eq!(
+            biome_at(&s, y, biotemperature, precipitation),
+            biome_at(&s, y, direct.0, direct.1),
+            "the reassociation moved a column's biome"
+        );
+    }
+
+    #[test]
+    fn holdridge_inputs_are_sampled_and_do_not_move_within_a_year() {
+        // The aggregate is a reading of the **ticked** shapers, so it is the same at
+        // every tick of a year and the same in a later year (the cycle is periodic) —
+        // and it still separates two different columns.
+        let s = spec();
+        let y = 0.0;
+        let a = holdridge_inputs(&s, 400.0, -300.0, y, 0);
+        let b = holdridge_inputs(&s, 400.0, -300.0, y, climate::YEAR_TICKS - 1);
+        assert_eq!(a, b, "the aggregate moved with the tick inside one year");
+        let c = holdridge_inputs(&s, 400.0, -300.0, y, climate::YEAR_TICKS * 5 + 12);
+        assert_eq!(a, c, "two different world years disagreed about one column's climate");
+        let other = holdridge_inputs(&s, -4000.0, 300.0, y, 0);
+        assert_ne!(a, other, "two different columns had the same Holdridge inputs");
     }
 
     #[test]

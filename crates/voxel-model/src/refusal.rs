@@ -134,6 +134,10 @@ pub enum RefusalKind {
     /// line is counted and reported rather than skipped.
     CorruptRecord,
 
+    /// A filed milestone or blocker missing a field its own format requires. Not
+    /// `CorruptRecord`: the bytes decode; the content is malformed.
+    MalformedRecord,
+
     // ---- tickets and governance (UI-SPEC tab 3) --------------------------
     /// A ticket's status is not one of the nine governed values. Carving a tenth
     /// is a change to the record, not to the code that reads it.
@@ -148,6 +152,84 @@ pub enum RefusalKind {
     /// claim is **unverified** — and closing unverified is required, because
     /// "cannot stall" must never be implemented as "auto-promote to success".
     ExpectationUnread,
+
+    // ---- the axis rules (AGENTS.md §19.1–19.3, binding rules 51–55) ---------
+    /// Rule 51 — two ladders compared as one. The class the whole axis module
+    /// exists to make unrepresentable.
+    AxisInterchangeRefused,
+    /// Rule 52 — a certification aggregated as a maximum instead of a threshold
+    /// over the whole vector.
+    AggregationRefused,
+    /// Rule 53 — a ladder reduced to a number. Validity is not a quantity and a
+    /// status is not a score.
+    ScalarReductionRefused,
+    /// Rule 55 — a transition without its destination: advance at the ceiling,
+    /// graduate below it, or any move on a terminal unit.
+    DestinationInvariantRefused,
+    /// The round-5 rule — a bare ladder token, either ambiguous (claimed by two
+    /// ladders) or unqualified (one). Both are bugs.
+    BareTokenRefused,
+    /// The coverage gate — a ladder with no representation is a build failure,
+    /// not a TODO.
+    UncoveredAxis,
+
+    // ---- the field plane (the cubic world core) -----------------------------
+    //
+    // Ported from the reference's `WorldError` variants of the same names
+    // (`world/fields.rs`). They are several kinds and not one because "the
+    // declaration is not admitted", "the declaration is inconsistent" and
+    // "the query found no sample" are three different facts, and a caller
+    // that cannot tell them apart will eventually treat one as another.
+    /// A field contract whose review lifecycle is not `Admitted` was asked to
+    /// be authoritative data. The reference's `UnadmittedFieldSpec`.
+    UnadmittedFieldSpec,
+    /// A field's own declaration is internally inconsistent: a non-positive or
+    /// unordered lattice step, a vertical dependence disagreeing with the
+    /// declared vertical resolution, an empty source list, a negative
+    /// tolerance. The reference's `InvalidFieldSpec`.
+    InvalidFieldSpec,
+    /// A field query found no sample its declared sampling policy covers. The
+    /// reference's `FieldDataMissing`: absent data is not a default.
+    FieldDataMissing,
+
+    // ---- the materials declaration and its gate (H-18.8 step 1) -------------
+    //
+    // The gate runs over declared rows, so its refusals are about rows rather
+    // than about the world. They are several kinds and not one, by the same
+    // rule as above: "the two sides do not balance", "nothing consumes this",
+    // "nobody declared that name" and "this is a float" are four different
+    // facts, and a caller that cannot tell them apart will fix the wrong one.
+    /// A process's inputs and outputs do not balance in grams. The detail
+    /// **quotes both totals** — `in 2995 g vs out 2990 g` is a sentence someone
+    /// can act on and "unbalanced" is not.
+    UnbalancedProcess,
+    /// A substance no process consumes and whose own row declares no reason.
+    /// A substance nothing uses is a defect, not a placeholder; unfinished work
+    /// is admitted only when its row says so.
+    OrphanSubstance,
+    /// A declaration named a substance, tier, family, tool, skill or structure
+    /// no table declares. One kind, because the fact is one fact — the name is
+    /// not declared — and the detail names the table it was looked up in.
+    UndeclaredName,
+    /// A process declared no mechanism with a number. Q37's stopping rule: at
+    /// least one of heat, time, labour or power, stated.
+    MissingMechanism,
+    /// A material's declared `fluid_capacity` is greater than its declared
+    /// `porosity`. A void that can hold more fluid than the material has is a
+    /// contradiction, so the row is refused rather than clamped.
+    FluidCapacityExceedsPorosity,
+    /// A quantity, density, unit mass or rot rate was declared as a float
+    /// rather than an exact rational. A float in the table is where a balance
+    /// stops balancing without saying so.
+    NonRationalQuantity,
+
+    // ---- the fluid state (C-152.2's filed defect, landed C-154) -------------
+    /// A hand edit targeted a fluid. **Water is not a mineable block**: a fluid
+    /// voxel is world *state* — the ocean, a lake, a flooded void — and removing
+    /// or replacing it by hand would delete a fluid the world's ledger counts,
+    /// because displacement is not modelled yet. An edit that targets a fluid
+    /// refuses; it never deletes the water.
+    FluidIsNotABlock,
 }
 
 impl RefusalKind {
@@ -183,10 +265,27 @@ impl RefusalKind {
             RefusalKind::ConcurrentWriter => "concurrent_writer",
             RefusalKind::RecordExists => "record_exists",
             RefusalKind::CorruptRecord => "corrupt_record",
+            RefusalKind::MalformedRecord => "malformed_record",
             RefusalKind::UngovernedStatus => "ungoverned_status",
             RefusalKind::UnretiredTicket => "unretired_ticket",
             RefusalKind::UnsubstantiatedEvidence => "unsubstantiated_evidence",
             RefusalKind::ExpectationUnread => "expectation_unread",
+            RefusalKind::AxisInterchangeRefused => "axis_interchange_refused",
+            RefusalKind::AggregationRefused => "aggregation_refused",
+            RefusalKind::ScalarReductionRefused => "scalar_reduction_refused",
+            RefusalKind::DestinationInvariantRefused => "destination_invariant_refused",
+            RefusalKind::BareTokenRefused => "bare_token_refused",
+            RefusalKind::UncoveredAxis => "uncovered_axis",
+            RefusalKind::UnadmittedFieldSpec => "unadmitted_field_spec",
+            RefusalKind::InvalidFieldSpec => "invalid_field_spec",
+            RefusalKind::FieldDataMissing => "field_data_missing",
+            RefusalKind::UnbalancedProcess => "unbalanced_process",
+            RefusalKind::OrphanSubstance => "orphan_substance",
+            RefusalKind::UndeclaredName => "undeclared_name",
+            RefusalKind::MissingMechanism => "missing_mechanism",
+            RefusalKind::FluidCapacityExceedsPorosity => "fluid_capacity_exceeds_porosity",
+            RefusalKind::NonRationalQuantity => "non_rational_quantity",
+            RefusalKind::FluidIsNotABlock => "fluid_is_not_a_block",
         }
     }
 }

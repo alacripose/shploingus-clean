@@ -1,0 +1,14 @@
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+    Finished `test` profile [optimized + debuginfo] target(s) in 4.53s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_package-ae0470561f476050.exe)
+
+running 6 tests
+test migration::tests::an_empty_record_is_refused_rather_than_filing_a_chain_of_nothing ... ok
+test filing::tests::growing_a_chain_that_was_never_filed_is_refused_rather_than_creating_one ... ok
+test filing::tests::reading_an_unfiled_workspace_is_empty_rather_than_a_failure ... ok
+test filing::tests::a_dangling_symlink_is_not_absent ... ok
+test filing::tests::a_first_filing_writes_and_a_second_refuses ... ok
+test filing::tests::growing_a_chain_extends_it_and_never_shortens_what_was_already_filed ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 218 filtered out; finished in 0.02s
+

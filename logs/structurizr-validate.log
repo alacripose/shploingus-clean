@@ -1,0 +1,23 @@
+Validating architecture/workspace.dsl...
+
+✓ DSL Parsing: Valid workspace: Shploingus
+  People: 2
+  Software Systems: 1
+  Relationships: 22
+  Views: 6
+
+Running workspace inspections...
+
+Issues found:
+  Errors: 0, Warnings: 0, Info: 8
+
+  [INFO] Software System 'Shploingus' has no relationships (neither incoming nor outgoing) [Shploingus]
+  [INFO] Component 'Citizens' in container 'The civilian layer' has no relationships [Citizens]
+  [INFO] Component 'Organizations' in container 'The civilian layer' has no relationships [Organizations]
+  [INFO] Component 'Contracts' in container 'The civilian layer' has no relationships [Contracts]
+  [INFO] Component 'Jobs' in container 'The civilian layer' has no relationships [Jobs]
+  [INFO] Component 'Commissions' in container 'The civilian layer' has no relationships [Commissions]
+  [INFO] Component 'Evidence and grading' in container 'The civilian layer' has no relationships [Evidence and grading]
+  [INFO] Component 'Security' in container 'The civilian layer' has no relationships [Security]
+
+✓ Validation passed (warnings and info only)

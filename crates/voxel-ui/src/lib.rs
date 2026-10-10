@@ -228,6 +228,56 @@ pub const CONSTANTS: &[Constant] = &[
                  counted as an extension — the shell narrows it toward the 48 dp target floor \
                  rather than clipping a target",
     },
+    Constant {
+        name: "TOAST_MS",
+        value: 500.0,
+        bucket: Bucket::ProjectExtension,
+        source: "this project: a toast stays 6 s = 120 ticks at the world's own 20 Hz (\
+                 `voxel_client::clock::TICK_HZ`). MD1 names no snackbar duration, and it rules \
+                 the class out for anything that must persist; the visible countdown is the \
+                 user's own requirement (2026-10-03) and 6 s is the lineage's value (its toast \
+                 was drawn while `tick - raised < 120`)",
+    },
+    Constant {
+        name: "TOAST_WIDTH_DP",
+        value: 360.0,
+        bucket: Bucket::ProjectExtension,
+        source: "this project: a toast is 360 dp wide — wide enough for the longest line the \
+                 game raises (a placement at a world-edge coordinate, 46 characters at the 14 sp \
+                 body size) with both insets, so a toast cannot clip its own message. The mount \
+                 has no text measure, so the width is declared rather than fitted, and it is an \
+                 8 dp multiple like every other width here",
+    },
+    Constant {
+        name: "TOAST_ENTRY_MS",
+        value: 200.0,
+        bucket: Bucket::Md1Example,
+        source: "MD1's motion guidance for a desktop entry is the band 150–200 ms \
+                 (material-design-1 §8: 'desktop 150–200ms'); this project takes the top of that \
+                 band for the toast's entrance. The **shape** — an opacity ramp rather than a \
+                 displacement — is this project's, because a slide would be meaningful motion and \
+                 would owe a reduced alternative; that preference is still owed (§8.2)",
+    },
+    Constant {
+        name: "POINTER_TARGET_DP",
+        value: 40.0,
+        bucket: Bucket::Md1Example,
+        source: "MD1: dense pointer layouts may use a 20 dp icon in a 40 dp target \
+                 (material-design-1 §4.5; scoped to that density). The 48 dp floor is a **touch** \
+                 target, and this shell's windows are pointer surfaces, so its chrome takes MD1's \
+                 dense-pointer target instead — the translation the user ruled on 2026-10-03 \
+                 (D-1, docs/SHELL-PORT.md §6). The reference's own chrome is denser still \
+                 (34 dp title row, 22×20 pane buttons); **the floor wins over the literal** and \
+                 the difference is recorded rather than copied",
+    },
+    Constant {
+        name: "POINTER_GLYPH_DP",
+        value: 20.0,
+        bucket: Bucket::Md1Example,
+        source: "MD1: dense pointer layouts may use a 20 dp icon in a 40 dp target \
+                 (material-design-1 §4.5). The marks are **Unicode glyphs**, by the user's ruling \
+                 of 2026-10-03 — the reference's own marks (◧ ⬓ ⇱ ×), not an icon asset",
+    },
 ];
 
 /// The project extensions, which are the bucket that can grow without anybody
@@ -295,6 +345,24 @@ pub enum UiRefusal {
     /// before anything is drawn, with the numbers.
     PaneBelowFloor { span: u32, count: u32, floor: u32, axis: Axis },
 
+    /// A seam named a splitter or boundary the tree does not hold.
+    ///
+    /// **The seam index is a fact about the layout that was drawn, and a drag can outlive
+    /// it.** A seam drag starts from the [`Layout`](crate::Layout) the frame drew, and the
+    /// tree can change under the drag (a pane closes, a window reloads); a share write that
+    /// guessed a splitter from a stale index would move a boundary nobody grabbed. Refused by
+    /// name, with both numbers, so the caller can re-resolve rather than guess.
+    UnknownSeam { seam: usize, seams: usize },
+
+    /// A slot address named a node that is not an empty slot.
+    ///
+    /// **A slot is addressed by its path in the tree, because it holds no window to be named
+    /// by** (the reference's empty `WindowPane(app=None)`, 2655–2685). The path is a fact
+    /// about the layout that was drawn, and a tree can move under a caller: a fill or a close
+    /// that found something else at that path — a pane, a splitter, nothing — refuses rather
+    /// than writing to whichever node now sits there.
+    UnknownSlot { slot: Vec<usize> },
+
     /// A declaration's `theme-role` names a string this tree has no role for.
     ///
     /// **Refused by name, never defaulted to a surface nobody chose.** The
@@ -303,6 +371,14 @@ pub enum UiRefusal {
     /// and drawing them on the nearest role would be the plausible substitution
     /// this project refuses everywhere else.
     UnknownThemeRole { theme_role: String },
+
+    /// A dock zone's name is not one of the four the reference uses (`left`, `right`, `top`,
+    /// `bottom` — `portal_simulator.py` 2742–2774).
+    ///
+    /// **Refused by name**, the same rule as `theme-role`: [`DROP_ZONE_MARKS`] is the whole
+    /// vocabulary, and a caller that invents a zone gets this rather than an arrow pointing
+    /// nowhere.
+    UnknownDropZone { zone: String },
 
     /// A panel is taller than the pane it was placed in.
     ///
@@ -384,6 +460,32 @@ impl std::fmt::Display for UiRefusal {
                     f,
                     "{span} dp of {axis} split {count} ways is {} dp each; the floor is {floor}",
                     span / count
+                )
+            }
+            UiRefusal::UnknownSeam { seam, seams } => {
+                write!(
+                    f,
+                    "seam {seam} is not in a layout holding {seams} seam(s); the tree moved \
+                     under the drag"
+                )
+            }
+            UiRefusal::UnknownSlot { slot } => {
+                let path = slot
+                    .iter()
+                    .map(|index| index.to_string())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                write!(f, "the node at {path} is not an empty slot in this arrangement")
+            }
+            UiRefusal::UnknownDropZone { zone } => {
+                write!(
+                    f,
+                    "the drop zone {zone:?} is not one of the four declared names: {}",
+                    DROP_ZONE_MARKS
+                        .iter()
+                        .map(|(name, _, _)| *name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 )
             }
             UiRefusal::UnknownThemeRole { theme_role } => {
@@ -1007,6 +1109,26 @@ pub fn panel_opacity() -> f64 {
     constant("PANEL_OPACITY")
 }
 
+/// How long a toast stays on screen once it is raised. MD1 names no snackbar
+/// duration; this is the project's value, and it is only meaningful because the
+/// countdown the toast carries is *visible* for that whole time.
+pub fn toast_ms() -> f64 {
+    constant("TOAST_MS")
+}
+
+/// The width a toast is drawn at — wide enough for the longest line the game
+/// raises, so a transient surface never truncates the record it is showing.
+pub fn toast_width_dp() -> f64 {
+    constant("TOAST_WIDTH_DP")
+}
+
+/// How long a toast's entrance lasts: MD1's desktop entry band, taken at its
+/// top. The shape is an opacity ramp rather than a movement — see the constant
+/// table — so nothing here needs a reduced alternative to be *dropped*.
+pub fn toast_entry_ms() -> f64 {
+    constant("TOAST_ENTRY_MS")
+}
+
 /// The width every HUD panel is drawn at. Fixed, so a panel does not resize
 /// when a readout's digits change — a HUD that jumps when the frame rate goes
 /// from 99 to 100 is a HUD that moves under the eye.
@@ -1030,6 +1152,20 @@ pub fn glyph_dp() -> f64 {
     constant("GLYPH_DP")
 }
 
+/// The target floor for the shell's own pointer-driven chrome. MD1's
+/// dense-pointer value: the 48 dp floor is a touch target and this shell's
+/// windows answer to a mouse, so the ported chrome takes this one. The
+/// reference's own chrome is denser still; the floor wins over the literal.
+pub fn pointer_target_dp() -> f64 {
+    constant("POINTER_TARGET_DP")
+}
+
+/// A control mark's size on a dense pointer surface — MD1's dense-pointer pair,
+/// 20 dp inside the [`pointer_target_dp`] target.
+pub fn pointer_glyph_dp() -> f64 {
+    constant("POINTER_GLYPH_DP")
+}
+
 /// How wide one bar entry is drawn, before a narrow viewport narrows it toward
 /// [`min_target_dp`].
 pub fn bar_entry_width_dp() -> f64 {
@@ -1040,6 +1176,13 @@ pub fn bar_entry_width_dp() -> f64 {
 /// themselves.
 pub fn min_target_dp() -> f64 {
     constant("MIN_TARGET_DP")
+}
+
+/// The HIG separation rule, in dp: two targets sit at least this far apart. The
+/// ported chrome lays its controls out with this gap — the reference draws its
+/// own controls adjacent, and the rule wins over the literal.
+pub fn min_gap_dp() -> f64 {
+    constant("MIN_GAP_DP")
 }
 
 /// The layout grid step a component insets its content by.
@@ -1392,6 +1535,104 @@ pub fn glyph_for(action: GlyphAction) -> &'static Glyph {
         .expect("every action in GlyphAction::ALL has a row in GLYPHS")
 }
 
+/// A pane's own controls, from the reference's `PaneHeader` (2516–2582) — **a set of its own**,
+/// because a pane splits and undocks *the pane* while a window's controls act on the window.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PaneMark {
+    /// Split the pane right; the reference's `paneSplitHButton` (2534–2542), which emits
+    /// `splitRequested(pane, Horizontal, "after")`.
+    SplitHorizontal,
+    /// Split the pane down; the reference's `paneSplitVButton` (2544–2552).
+    SplitVertical,
+    /// Undock the pane into a window of its own; the reference's `paneUndockButton`
+    /// (2554–2562).
+    Undock,
+    /// Close the pane; the reference's `paneCloseButton` (2564–2572).
+    Close,
+}
+
+impl PaneMark {
+    pub const ALL: [PaneMark; 4] = [
+        PaneMark::SplitHorizontal,
+        PaneMark::SplitVertical,
+        PaneMark::Undock,
+        PaneMark::Close,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            PaneMark::SplitHorizontal => "split-h",
+            PaneMark::SplitVertical => "split-v",
+            PaneMark::Undock => "undock",
+            PaneMark::Close => "close",
+        }
+    }
+}
+
+/// One pane mark: the control, the character, and where both came from.
+pub struct PaneGlyph {
+    pub action: PaneMark,
+    pub text: &'static str,
+    pub source: &'static str,
+}
+
+/// **The reference's own pane marks, in header order.** Unicode glyphs by the user's ruling of
+/// 2026-10-03 — the same declared-table mechanism as [`GLYPHS`], not an icon pipeline, and no
+/// file outside this repository is consulted.
+pub const PANE_MARKS: [PaneGlyph; 4] = [
+    PaneGlyph {
+        action: PaneMark::SplitHorizontal,
+        text: "\u{25E7}",
+        source: "the reference: the pane's split-right mark is ◧ (portal_simulator.py 2534–2542)",
+    },
+    PaneGlyph {
+        action: PaneMark::SplitVertical,
+        text: "\u{2B13}",
+        source: "the reference: the pane's split-down mark is ⬓ (portal_simulator.py 2544–2552)",
+    },
+    PaneGlyph {
+        action: PaneMark::Undock,
+        text: "\u{21F1}",
+        source: "the reference: the pane's undock mark is ⇱ (portal_simulator.py 2554–2562)",
+    },
+    PaneGlyph {
+        action: PaneMark::Close,
+        text: "\u{00D7}",
+        source: "the reference: the pane's close mark is × (portal_simulator.py 2564–2572)",
+    },
+];
+
+/// The mark for one pane control, out of the declared table.
+pub fn pane_mark_for(action: PaneMark) -> &'static PaneGlyph {
+    PANE_MARKS
+        .iter()
+        .find(|mark| mark.action == action)
+        .expect("every action in PaneMark::ALL has a row in PANE_MARKS")
+}
+
+/// The mark an **empty slot** draws — the reference's placeholder icon (2587–2598). It is not
+/// a control, so it is not in the pane-mark table.
+pub const PLACEHOLDER_MARK: &str = "\u{25EB}";
+
+/// The four dock zones' marks, keyed by the zone's own name — the reference's dock-preview
+/// labels (`"◧  Dock Left"`, …, 2742–2774) and its edge-trigger buttons (2857–2885).
+/// Unicode glyphs by the user's ruling of 2026-10-03, like the pane marks.
+pub const DROP_ZONE_MARKS: [(&str, &str, &str); 4] = [
+    ("left", "\u{25E7}", "the reference: the left zone's mark is ◧ (portal_simulator.py 2742–2745)"),
+    ("right", "\u{25E8}", "the reference: the right zone's mark is ◨ (portal_simulator.py 2747–2750)"),
+    ("top", "\u{2B12}", "the reference: the top zone's mark is ⬒ (portal_simulator.py 2752–2755)"),
+    ("bottom", "\u{2B13}", "the reference: the bottom zone's mark is ⬓ (portal_simulator.py 2757–2760)"),
+];
+
+/// The mark for one dock zone, **refused by name** when the name is not one of the four.
+pub fn drop_zone_mark(zone: &str) -> UiResult<&'static str> {
+    DROP_ZONE_MARKS
+        .iter()
+        .find(|(name, _, _)| *name == zone)
+        .map(|(_, text, _)| *text)
+        .ok_or_else(|| UiRefusal::UnknownDropZone { zone: zone.to_string() })
+}
+
 // ---------------------------------------------------------------------------
 // The HUD
 // ---------------------------------------------------------------------------
@@ -1742,7 +1983,9 @@ mod tests {
                 "REDUCED_CROSSFADE_MS",
                 "HUD_PANEL_WIDTH_DP",
                 "PANEL_OPACITY",
-                "BAR_ENTRY_WIDTH_DP"
+                "BAR_ENTRY_WIDTH_DP",
+                "TOAST_MS",
+                "TOAST_WIDTH_DP"
             ],
             "a project extension was added or removed; that is a decision, not a detail"
         );
@@ -2236,7 +2479,14 @@ mod tests {
         // Every number the HUD uses for geometry is a multiple of the 8 dp grid
         // or the 1 dp divider, so a panel cannot drift off-grid by half a pixel.
         let grid = constant("SPACING_DP");
-        for name in ["ROW_HEIGHT_DP", "HUD_MARGIN_DP", "BAR_HEIGHT_DP", "TITLE_BAR_DP"] {
+        for name in [
+            "ROW_HEIGHT_DP",
+            "HUD_MARGIN_DP",
+            "BAR_HEIGHT_DP",
+            "TITLE_BAR_DP",
+            "POINTER_TARGET_DP",
+            "TOAST_WIDTH_DP",
+        ] {
             let value = constant(name);
             assert_eq!(value % grid, 0.0, "{name} is off the grid");
         }
@@ -2355,6 +2605,61 @@ mod tests {
         assert!(glyph_dp() <= constant("MIN_TARGET_DP"), "a glyph cannot be its own target");
         assert_eq!(bar_height_dp(), constant("MIN_TARGET_DP"), "the bar is one row of targets");
         assert_eq!(title_bar_dp(), bar_height_dp());
+    }
+
+    #[test]
+    fn the_pointer_translation_is_md1s_dense_pointer_pair_and_narrower_than_touch() {
+        // The 48 dp floor is a *touch* target; the shell is pointer-driven, and
+        // MD1's dense-pointer pair is 20 dp inside 40 dp. The translation is
+        // narrower than touch and never below the icon grid.
+        assert_eq!(pointer_target_dp(), 40.0);
+        assert_eq!(pointer_glyph_dp(), 20.0);
+        assert!(
+            pointer_target_dp() < constant("MIN_TARGET_DP"),
+            "a translation cannot widen the touch floor"
+        );
+        assert_eq!(
+            pointer_target_dp() % constant("SPACING_DP"),
+            0.0,
+            "a target is an 8 dp multiple"
+        );
+        assert_eq!(pointer_glyph_dp() % 4.0, 0.0, "an icon sits on MD1's 4 dp grid");
+        assert!(
+            pointer_glyph_dp() <= pointer_target_dp(),
+            "a glyph cannot be its own target"
+        );
+    }
+
+    #[test]
+    fn every_pane_mark_is_declared_once_with_a_source_and_a_distinct_character() {
+        assert_eq!(PANE_MARKS.len(), PaneMark::ALL.len());
+        for mark in PaneMark::ALL {
+            let row = pane_mark_for(mark);
+            assert_eq!(row.action, mark);
+            assert!(!row.text.is_empty(), "{}", mark.name());
+            assert!(!row.source.is_empty(), "{}", mark.name());
+        }
+        let mut texts: Vec<&str> = PANE_MARKS.iter().map(|mark| mark.text).collect();
+        let before = texts.len();
+        texts.sort_unstable();
+        texts.dedup();
+        assert_eq!(before, texts.len(), "two pane marks share a character");
+        assert!(!PLACEHOLDER_MARK.is_empty());
+        assert!(
+            !PANE_MARKS.iter().any(|mark| mark.text == PLACEHOLDER_MARK),
+            "the empty slot's mark is not a control's mark"
+        );
+    }
+
+    #[test]
+    fn a_dock_zone_name_is_declared_or_refused() {
+        for (name, text, source) in DROP_ZONE_MARKS {
+            assert_eq!(drop_zone_mark(name).unwrap(), text);
+            assert!(!text.is_empty() && !source.is_empty());
+        }
+        let err = drop_zone_mark("centre").unwrap_err();
+        assert_eq!(err, UiRefusal::UnknownDropZone { zone: "centre".to_string() });
+        assert!(err.to_string().contains("left"));
     }
 
     #[test]

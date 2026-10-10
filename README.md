@@ -51,7 +51,7 @@ Start with `docs/HANDOFF.md`: current implementation, verified commands, the nex
 ## Build
 
 ```bash
-cargo test --offline
+cargo test 
 ```
 
 Two things about this repository's build that are environment facts rather than
@@ -60,26 +60,24 @@ taste, and both are recorded in `docs/LEDGER.md` (C-32):
 * **The host is MSVC.** `wgpu` needs the `windows-*` crates, which need import
   libraries that the GNU toolchain's bundled `dlltool` cannot build on a machine
   with no MinGW assembler. The compiler revision is unchanged by the switch.
-* **The build tree is `F:/shploingus-target`**, set in `.cargo/config.toml`,
-  because `C:` is the system disk. `kache`'s store lives on `F:` too, which is
-  not tidiness — same-volume cache hits restore as hardlinks instead of copies.
+* **The build tree is this repository's own `target/`**, the cargo default: there is no
+  `target-dir` override in `.cargo/config.toml` any more, and the file's comment carries the
+  measurements for why. In short, the tree used to sit on `F:` for *space*, and `F:` turned
+  out to be this machine's only mechanical disk while `F:`'s space advantage had already
+  gone. The source is on `C:`, an SSD, so the build is on `C:` with it — one volume, the
+  fast one, and `target/` is the first line of `.gitignore`, so a build leaves `git status`
+  clean. `kache`'s store lives on `C:` too, which is not tidiness — same-volume cache hits
+  restore as hardlinks instead of copies.
 
-Seven tests are ignored by default and none is a skipped test: three are
-measurements and four need a GPU adapter. Three of the four are frame
-measurements, and one of those is the one that would have caught the black screen
-a round earlier: it renders the **shipped** world from the **shipped** eye and
-requires the frame to show it (`docs/LEDGER.md` C-38, C-39).
+YOU ARE NOT AUTHORIZED TO SKIP ANY TESTS
 
-```bash
-cargo test --offline --workspace -- --ignored --nocapture
-```
 
 Run the window. `SHPLOINGUS_WORKERS` sets the worker count, which is the knob the
 on-screen determinism panel is a claim about — set it to `1` and to `15` and read
 the same resident digest out of the panel.
 
 ```bash
-cargo run --offline -p shploingus
+cargo run -p shploingus
 ```
 
 > ### **Never test the client invisibly.**

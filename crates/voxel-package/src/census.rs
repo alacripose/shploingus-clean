@@ -73,6 +73,8 @@ use std::path::Path;
 use voxel_model::{RefusalKind, RefusalSet};
 
 
+use crate::bloat;
+use crate::provenance;
 use crate::record::read_document;
 
 /// How many crates the workspace holds. **A literal**, for the reason
@@ -465,10 +467,17 @@ pub enum Axis {
     /// An axis graded against the grader's own prose is not a measurement. This one reads the
     /// spec, and a crate the spec does not name comes back `unclaimed`.
     Claimed,
+    /// **The doc stage: where this crate's rationale lives.** Measured by
+    /// [`bloat::measure_prose`] over the crate's own sources against [`PROSE_FRAME_PERCENT`].
+    /// A crate whose source is documentation wearing a `.rs` extension, with no document under
+    /// `docs/` carrying prose about it, is **refused** — the prose was written where a reader
+    /// does not look. A crate keeping an invented record beside the chain
+    /// ([`bloat::INVENTED_RECORD_EXTENSIONS`]) is refused whatever its prose share reads.
+    Documented,
 }
 
 /// How many axes. A literal, as everywhere else.
-pub const AXIS_COUNT: usize = 5;
+pub const AXIS_COUNT: usize = 6;
 
 /// Every axis, in the order the report prints them.
 pub const AXES: [Axis; AXIS_COUNT] = [
@@ -477,7 +486,17 @@ pub const AXES: [Axis; AXIS_COUNT] = [
     Axis::Tested,
     Axis::Refusing,
     Axis::Claimed,
+    Axis::Documented,
 ];
+
+/// The declared share of a crate's source that may be comment before the census calls it
+/// documentation rather than code.
+///
+/// **A declared frame, not a preference.** The tree measures 26% comment overall, so this frame
+/// sits below current practice and the stage fires. That is the intended state: the axis exists
+/// to be red until the prose is in `docs/`, and a frame set to whatever the tree already does
+/// would be a check that cannot fail.
+pub const PROSE_FRAME_PERCENT: usize = 10;
 
 /// The coverage row: one cell per axis.
 ///
@@ -592,6 +611,9 @@ pub struct CrateObservation {
     pub sources: Option<SourceFacts>,
     /// `None` when this crate was not measured against the spec at all.
     pub claim: Option<ClaimObservation>,
+    /// `None` when the crate has no readable source, so the prose share was never measured.
+    /// **Not the same as "no prose"**, which is a measured fact.
+    pub prose: Option<ProseObservation>,
 }
 
 /// What a crate's source files were read as containing.
@@ -600,6 +622,29 @@ pub struct SourceFacts {
     pub moduled: bool,
     pub tested: bool,
     pub refusing: bool,
+}/// Where a crate's rationale was found, and where it was not. Facts only; the rule lives in
+/// `crate::decision`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProseObservation {
+    /// False means the share below is not a measurement.
+    pub measured: bool,
+    /// Why there is no measurement. Present exactly when `measured` is false.
+    pub why_unmeasured: Option<String>,
+    /// Text files the share was measured over — every covered file in the crate's directory
+    /// that decoded. **The denominator is every covered file, not a chosen subset.**
+    pub files: usize,
+    /// Every covered file in the crate's directory, whether or not it carried the share.
+    pub ruled_files: usize,
+    /// Covered files in the crate's directory that did not decode as UTF-8. **Named, never
+    /// dropped** — a file that was not read is a fact the report carries, not a silence.
+    pub undecodable: Vec<std::path::PathBuf>,
+    /// Comment bytes as a whole percent of the crate's text. `None` when unmeasured.
+    pub comment_percent: Option<usize>,
+    /// A document under `docs/` that **defines** this crate — a heading whose text begins with
+    /// its name ([`heading_defines`]). A passing mention is not a definition and does not count.
+    pub document: Option<String>,
+    /// Invented records that name this crate (`bloat::invented_stores`). Reported, never narrowed.
+    pub invented: Vec<String>,
 }
 
 /// The spec's claim about a crate, as read — including the text an unclaimed crate earns, so the
@@ -625,6 +670,13 @@ pub fn observe(root: &Path) -> Result<Vec<CrateObservation>, RefusalSet> {
     // reads of a 400 KB corpus.
     let corpus = read_corpus(root, &mut refusals);
 
+    // **Walked once for the whole census**, not once per crate: the covered set, the docs corpus
+    // and the invented-record check are properties of the tree, and twelve walks would be twelve
+    // answers to one question.
+    let covered = provenance::covered_files(root);
+    let docs = read_docs(root);
+    let invented = bloat::invented_stores(root);
+
     // The spec's own declaration tables, read once. **This is the axis that can fail** — the
     // other four read the tree, and this one reads what the tree was asked for.
     let claims = match claim_against_spec(root) {
@@ -637,17 +689,43 @@ pub fn observe(root: &Path) -> Result<Vec<CrateObservation>, RefusalSet> {
 
     let observations: Vec<CrateObservation> = Crate::ALL
         .into_iter()
-        .map(|crate_| CrateObservation {
+        .map(|crate_| {
+            // Read once: a second read would be a second answer to what the crate contains, and
+            // the fields below are questions about the same bytes.
+            let sources = read_sources(&covered, crate_, root);
+            CrateObservation {
             crate_,
             named_by_record: corpus.as_ref().map(|corpus| corpus.contains(crate_.name())),
+            prose: sources.as_ref().map(|sources| {
+                let prose = bloat::measure_prose(&sources.read);
+                ProseObservation {
+                    measured: prose.measured,
+                    why_unmeasured: prose.why_unmeasured.clone(),
+                    files: prose.files,
+                    ruled_files: sources.covered.len(),
+                    undecodable: sources.undecodable.clone(),
+                    comment_percent: prose.comment_percent(),
+                    document: defined_by_document(&docs, crate_),
+                    invented: invented
+                        .iter()
+                        .filter(|store| store.path.contains(crate_.name()))
+                        .map(|store| store.path.clone())
+                        .collect(),
+                }
+            }),
             // **An empty file list is `None`, not a list of facts that are all false.** The
             // reading this replaces treated "no readable source" and "a source with no `pub mod`"
             // as different answers, and they are: one is a refusal to guess and the other is a
             // measurement.
-            sources: read_sources(crate_, root)
-                .filter(|files| !files.is_empty())
-                .map(|files| {
-                    let all = files.iter().map(|(_, text)| text.as_str()).collect::<String>();
+            sources: sources
+                .as_ref()
+                .filter(|sources| !sources.read.is_empty())
+                .map(|sources| {
+                    let all = sources
+                        .read
+                        .iter()
+                        .map(|(_, text)| text.as_str())
+                        .collect::<String>();
                     SourceFacts {
                         moduled: all.contains("pub mod "),
                         tested: all.contains("#[test]"),
@@ -660,6 +738,7 @@ pub fn observe(root: &Path) -> Result<Vec<CrateObservation>, RefusalSet> {
                 line: claim.line,
                 why_unclaimed: claim.why_unclaimed(),
             }),
+            }
         })
         .collect();
 
@@ -728,35 +807,121 @@ impl Axis {
             Axis::Tested => "tested",
             Axis::Refusing => "refusing",
             Axis::Claimed => "claimed",
+            Axis::Documented => "documented",
         }
     }
 }
 
-/// Read every `.rs` file in a crate's `src/`, plus its `build.rs` if it has one.
+/// A document under `docs/` carrying prose about a crate, or `None`.
 ///
-/// **`src/*.rs` only, not the whole tree.** Tests in `tests/` are real tests and
-/// are counted; a walk over `target/` would count the same test sixty times and
-/// make the number meaningless.
-fn read_sources(crate_: Crate, root: &Path) -> Option<Vec<(std::path::PathBuf, String)>> {
-    let mut files = Vec::new();
-    let src = root.join(crate_.path()).join("src");
-    let entries = std::fs::read_dir(&src).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-            if let Ok(text) = std::fs::read_to_string(&path) {
-                files.push((path, text));
-            }
+/// **A table row is not prose about a crate.** [`declares_in_row`] exists because a row is a
+/// *declaration*; a line naming the crate that is not a row is a sentence someone wrote about
+/// it, which is what "the rationale is documented" means here. This reuses this module's own
+/// rule rather than writing a second one, so the two cannot drift.
+fn defined_by_document(docs: &[(String, Vec<String>)], crate_: Crate) -> Option<String> {
+    let name = crate_.name();
+    docs.iter()
+        .find(|(_, lines)| lines.iter().any(|line| heading_defines(line, name)))
+        .map(|(file, _)| file.clone())
+}
+
+/// Whether one line is a heading whose text **begins** with `name`.
+///
+/// **A mention is not a definition.** This is the grammar `crate::compendium` measured for
+/// anchors (C-61): a heading defines the thing it begins with, while a heading that cites a name
+/// in its title is a *reference* to it — and reading those as definitions would have inflated
+/// that record by 82. A crate named once in a 7,000-line ledger is not documented; a crate with a
+/// section of its own is. Without this rule the axis cannot fail, which is the defect
+/// [`Axis::Claimed`] already exists to avoid.
+fn heading_defines(line: &str, name: &str) -> bool {
+    let trimmed = line.trim_start();
+    if !trimmed.starts_with('#') {
+        return false;
+    }
+    let text = trimmed.trim_start_matches('#').trim_start();
+    let Some(rest) = text.strip_prefix(name) else {
+        return false;
+    };
+    // A whole word, so `voxel-mesher` does not define `voxel-mesh`. Any whitespace separates,
+    // which is also what makes a heading with a trailing space or newline count.
+    rest.is_empty()
+        || rest.starts_with(char::is_whitespace)
+        || rest.starts_with(':')
+        || rest.starts_with('-')
+        || rest.starts_with('\u{2014}')
+        || rest.starts_with('`')
+}
+
+/// A crate's files, split by whether they could be read as text.
+///
+/// **Total, and that is the type's whole job.** A walk that returned only what it could decode
+/// would hide the files it could not, which is the silence this census exists to refuse.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CrateSources {
+    /// Every covered file in the crate's directory.
+    pub covered: Vec<std::path::PathBuf>,
+    /// The ones that decoded, with their text.
+    pub read: Vec<(std::path::PathBuf, String)>,
+    /// Covered files that did not decode. Named, never dropped.
+    pub undecodable: Vec<std::path::PathBuf>,
+}
+
+/// Every covered file in a crate's directory, split by readability.
+///
+/// **The universe is [`provenance::covered_files`], not a list chosen here.** C-71.5 decided the
+/// allowlist (`COVERED = rs/md/toml/wgsl`, `SKIPPED = target/.git`) for the working-tree digest,
+/// and a second list in this module would be a second rule about what the project is. So this
+/// walks what that module walks — a crate's `src/`, its **`tests/`**, its `build.rs`, its
+/// `Cargo.toml` — and the tests in `tests/` are read, not skipped.
+///
+/// `None` means the crate's directory holds no covered file at all, which is a fact about the
+/// tree rather than a failure to look.
+/// **`covered` is passed in, not walked here.** The walk is one property of the tree, so twelve
+/// crates must not cause twelve of it; a per-crate walk is the same answer computed twelve times.
+pub(crate) fn read_sources(
+    covered: &[std::path::PathBuf],
+    crate_: Crate,
+    root: &Path,
+) -> Option<CrateSources> {
+    let directory = root.join(crate_.path());
+    let mine: Vec<std::path::PathBuf> = covered
+        .iter()
+        .filter(|path| path.starts_with(&directory))
+        .cloned()
+        .collect();
+    if mine.is_empty() {
+        return None;
+    }
+    let mut read = Vec::new();
+    let mut undecodable = Vec::new();
+    for path in &mine {
+        match std::fs::read_to_string(path) {
+            Ok(text) => read.push((path.clone(), text)),
+            Err(_) => undecodable.push(path.clone()),
         }
     }
-    // `build.rs` is the gate. Not counting it would understate the one crate
-    // whose build *is* its program.
-    let build = root.join(crate_.path()).join("build.rs");
-    if let Ok(text) = std::fs::read_to_string(&build) {
-        files.push((build, text));
-    }
-    // A binary crate's tests live in the same `src/` tree, so nothing extra.
-    Some(files)
+    Some(CrateSources { covered: mine, read, undecodable })
+}
+
+/// Every Markdown document under `docs/`, as lines, **read once for the whole census** — twelve
+/// crates asking the same question of the same corpus is twelve reads of one corpus.
+fn read_docs(root: &Path) -> Vec<(String, Vec<String>)> {
+    let Ok(entries) = std::fs::read_dir(root.join("docs")) else {
+        return Vec::new();
+    };
+    let mut names: Vec<std::path::PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+    names.sort();
+    names
+        .into_iter()
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("md"))
+        .filter_map(|path| {
+            let text = std::fs::read_to_string(&path).ok()?;
+            Some((
+                path.file_name()?.to_str()?.to_string(),
+                text.lines().map(str::to_string).collect(),
+            ))
+        })
+        .collect()
 }
 
 /// **The runtime anti-fabrication guard.** `axis.rs`'s `check_coverage`, and the
@@ -946,10 +1111,14 @@ mod tests {
 
     #[test]
     fn the_census_finds_the_untested_crates_rather_than_this_module_asserting_it() {
-        // **The finding this module exists to produce.** `shploingus` carries no
+        // **The finding this module exists to produce.** `shploingus` carried no
         // `#[test]`, which the gate could not see before because nothing looked
-        // at it. Measured here, not hard-coded as a claim: if someone adds a test
-        // the assertion below fails and that is the correct outcome.
+        // at it. Measured here, not hard-coded as a claim.
+        //
+        // **That finding is closed (C-118).** `shploingus` gained a test — the
+        // double-click classifier's — and the census reads **no** untested crate,
+        // so the assertion below says `[]`. Should a crate lose its tests, this
+        // fails again and that is the finding, not a value to relax.
         //
         // **Corrected by measurement.** The first draft of this test asserted
         // that `voxel-ui` was also untested, on the strength of a one-line shell
@@ -966,11 +1135,10 @@ mod tests {
             .filter(|reading| reading.cell(Axis::Tested) != Establishment::Active)
             .map(|reading| reading.crate_.name())
             .collect();
-        assert_eq!(
-            untested,
-            vec!["shploingus"],
+        assert!(
+            untested.is_empty(),
             "the set of crates with no test changed. That is a finding to record in the ledger, \
-             not a failing expectation to relax"
+             not a failing expectation to relax: {untested:?}"
         );
     }
 
@@ -1103,9 +1271,24 @@ mod tests {
     }
 
     #[test]
-    fn the_axes_are_five_and_each_names_itself() {
+    fn a_heading_defines_only_what_it_begins_with() {
+        assert!(heading_defines("## voxel-noise", "voxel-noise"));
+        assert!(heading_defines("# voxel-noise — the noise", "voxel-noise"));
+        assert!(heading_defines("### voxel-noise\n", "voxel-noise"));
+        // **A prefix of a longer name is a different crate**, and counting it would let one
+        // crate's section document another.
+        assert!(!heading_defines("## voxel-mesher", "voxel-mesh"));
+        // **A heading that cites the name in its title is a reference, not a definition** —
+        // the 82 headings C-61 excluded from the record for exactly this reason.
+        assert!(!heading_defines("## What voxel-noise does", "voxel-noise"));
+        // And prose is not a heading at all.
+        assert!(!heading_defines("voxel-noise is described below.", "voxel-noise"));
+    }
+
+    #[test]
+    fn the_axes_are_six_and_each_names_itself() {
         assert_eq!(AXES.len(), AXIS_COUNT);
-        assert_eq!(AXIS_COUNT, 5, "the axis count is a ruling, not an accident");
+        assert_eq!(AXIS_COUNT, 6, "the axis count is a ruling, not an accident");
         for axis in AXES {
             assert!(!axis.name().is_empty());
         }

@@ -1,0 +1,12 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.48s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-e81c39c525811ec8.exe)
+
+running 1 test
+subvoxel rate: probe at 2 m, footprint 4.31e-2 m, compared 4096 of 4225 pixels (129 skipped on a cell edge), worst disagreement 2.7668551108583905e-7, 3226 distinct reds
+both rates: probe at 0.15 m, footprint 4.10e-4 m, compared 262144 of 262144 pixels (0 skipped on a cell edge), worst disagreement 1.1249201420371335e-6, 199427 distinct reds
+eye moved: probe at 0.15 m, footprint 4.10e-4 m, compared 262144 of 262144 pixels (0 skipped on a cell edge), worst disagreement 1.0557480257855634e-5, 205252 distinct reds
+bark shaper: probe at 0.15 m, footprint 4.10e-4 m, compared 262144 of 262144 pixels (0 skipped on a cell edge), worst disagreement 1.3683753394833076e-6, 105395 distinct reds
+test renderer::tests::the_pattern_is_drawn_where_the_greedy_mesh_has_no_geometry ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 384 filtered out; finished in 2.40s
+

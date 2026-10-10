@@ -1,0 +1,211 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libversion_check-83b85b2dd80bcad7.rmeta
+warning: function `signed_area` is never used
+   --> crates\voxel-mesh\src\mesh.rs:858:4
+    |
+858 | fn signed_area(corners: &[[i16; 2]]) -> i64 {
+    |    ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-mesh` (lib) generated 1 warning
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libvoxel_model-9a369128f8379b65.rmeta
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+   Compiling voxel-work v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-work)
+warning: unused import: `voxel_model::MaterialId`
+  --> crates\voxel-client\src\scene.rs:37:5
+   |
+37 | use voxel_model::MaterialId;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `wireframe`
+   --> crates\voxel-client\src\world.rs:896:9
+    |
+896 |         wireframe: bool,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_wireframe`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-client` (lib) generated 2 warnings (run `cargo fix --lib -p voxel-client` to apply 2 suggestions)
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+   Compiling shploingus v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\shploingus)
+warning: unused imports: `CHUNK_SIDE` and `MaterialId`
+   --> crates\voxel-client\src\scene.rs:516:23
+    |
+516 |     use voxel_model::{MaterialId, CHUNK_SIDE};
+    |                       ^^^^^^^^^^  ^^^^^^^^^^
+
+warning: function `empty_light` is never used
+   --> crates\voxel-client\src\scene.rs:520:8
+    |
+520 |     fn empty_light(_x: i32, _y: i32, _z: i32) -> Option<[f32; 6]> {
+    |        ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `mesh_at` is never used
+   --> crates\voxel-client\src\scene.rs:524:8
+    |
+524 |     fn mesh_at(x: i32, y: i32, z: i32) -> Mesh {
+    |        ^^^^^^^
+
+warning: `voxel-client` (lib test) generated 5 warnings (2 duplicates) (run `cargo fix --lib -p voxel-client --tests` to apply 1 suggestion)
+   Compiling voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+   Compiling voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+   Compiling voxel-instrument v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-instrument)
+   Compiling voxel-audio v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-audio)
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+   Compiling voxel-mesh v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-mesh)
+   Compiling voxel-light v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-light)
+warning: associated function `synthetic_for_test` is never used
+   --> crates\voxel-shapers\src\field_sampler.rs:502:19
+    |
+464 | impl FieldSpec {
+    | -------------- associated function in this implementation
+...
+502 |     pub(crate) fn synthetic_for_test(
+    |                   ^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-shapers` (lib test) generated 1 warning
+    Finished `test` profile [optimized + debuginfo] target(s) in 29.39s
+     Running unittests src\main.rs (target\debug\deps\shploingus-641f3d1d13b5842e.exe)
+
+running 1 test
+test tests::a_press_pairs_only_inside_the_interval_and_the_rectangle ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\voxel_appearance-7a6c43e2038c18b6.exe)
+
+running 106 tests
+test composition::tests::an_empty_voxel_has_no_composition_and_names_no_material ... ok
+test composition::tests::an_unadmitted_material_is_refused_rather_than_blended_as_grey ... ok
+test composition::tests::a_quarter_empty_face_reports_the_hole_rather_than_filling_it ... ok
+test detail::tests::adjacent_addresses_differ_so_the_lattice_really_resolves_its_side ... ok
+test detail::tests::the_material_the_cell_and_the_seed_all_change_the_lattice ... ok
+test composition::tests::the_whole_voxel_blends_all_sixty_four_cells ... ok
+test composition::tests::coverage_plus_holes_is_exactly_one_on_every_face_of_a_mixed_voxel ... ok
+test composition::tests::a_half_and_half_face_is_two_materials_of_equal_coverage ... ok
+test composition::tests::a_solid_voxel_s_face_is_one_material_and_no_hole ... ok
+test detail::tests::an_address_outside_the_lattice_is_refused_rather_than_wrapped ... ok
+test detail::tests::nothing_is_stored ... ok
+test composition::tests::the_order_matches_the_model_s_own_face_blend_rule ... ok
+test detail::tests::the_dense_figures_are_two_to_the_thirty_third_and_not_the_superseded_one ... ok
+test detail::tests::detail_is_a_pure_function_of_its_address ... ok
+test detail::tests::the_mean_deviation_is_zero_as_the_hash_s_symmetry_says ... ok
+test detail::tests::every_channel_of_the_lattice_is_in_range ... ok
+test detail::tests::the_two_channels_are_domain_separated ... ok
+test detail::tests::the_pattern_does_not_repeat_every_block ... ok
+test fluid::tests::a_vertical_mirror_sends_the_ray_back_along_the_view ... ok
+test fluid::tests::the_fresnel_ends_are_the_two_physical_limits ... ok
+test fluid::tests::the_reflected_ray_is_the_mirror_of_the_view ... ok
+test fluid::tests::the_surface_is_the_body_head_on_and_the_sky_at_grazing ... ok
+test npr::tests::a_bad_input_is_refused_before_any_shading_happens ... ok
+test npr::tests::a_broken_frame_is_refused_with_every_problem_named_at_once ... ok
+test npr::tests::a_hole_in_the_face_takes_sky_away_from_it ... ok
+test npr::tests::a_stated_surface_draws_all_four_terms ... ok
+test npr::tests::a_transmissive_surface_receives_more_ambient_than_a_solid_one ... ok
+test npr::tests::an_absent_input_removes_a_term_rather_than_dimming_it ... ok
+test npr::tests::emission_adds_light_that_no_lamp_supplied ... ok
+test npr::tests::every_declared_openpbr_term_changes_the_picture ... ok
+test npr::tests::half_lambert_keeps_a_back_lit_face_visible_where_lambert_gives_zero ... ok
+test npr::tests::shading_is_deterministic ... ok
+test npr::tests::the_rim_is_view_facing_so_it_survives_a_light_behind_the_surface ... ok
+test npr::tests::the_specular_warp_is_a_step_and_not_a_gradient ... ok
+test openpbr::emission_tests::a_declared_emission_reaches_the_shading_inputs ... ok
+test openpbr::emission_tests::a_material_that_declares_no_emission_still_emits_nothing ... ok
+test openpbr::emission_tests::an_emission_of_zero_is_an_empty_record_and_not_a_live_emitter ... ok
+test openpbr::tests::a_blend_of_two_stated_materials_is_weighted_by_coverage ... ok
+test openpbr::tests::a_blend_that_lacks_a_parameter_anywhere_lacks_it_everywhere ... ok
+test openpbr::tests::a_complete_set_validates_and_a_placeholder_does_not_survive_the_ranges ... ok
+test openpbr::tests::a_cells_saturation_becomes_its_coat_and_an_absent_one_does_not ... ok
+test openpbr::tests::a_material_with_no_reflectance_still_derives_no_colour ... ok
+test openpbr::tests::a_face_with_no_matter_is_refused_rather_than_shaded_as_a_hole ... ok
+test openpbr::tests::a_non_finite_detail_sample_is_refused ... ok
+test openpbr::tests::a_non_finite_value_is_refused_by_its_own_kind ... ok
+test openpbr::tests::a_registry_with_no_density_range_is_refused_rather_than_defaulted ... ok
+test openpbr::tests::a_rock_derives_exactly_seven_of_the_twelve_and_the_rest_are_named ... ok
+test openpbr::tests::a_transmissive_material_has_no_weathering_scale_to_read ... ok
+test openpbr::tests::an_emission_free_blend_stays_emission_free ... ok
+test openpbr::tests::a_two_material_face_blends_both_derivations ... ok
+test openpbr::tests::detail_moves_the_value_toward_the_edge_it_has_room_for_and_never_past_it ... ok
+test openpbr::tests::an_unadmitted_neighbour_or_material_is_refused ... ok
+test openpbr::tests::detail_cannot_invent_an_albedo_a_material_does_not_have ... ok
+test openpbr::tests::every_parameter_has_a_name_and_a_reason_and_no_two_are_the_same ... ok
+test openpbr::tests::the_luminance_of_a_grey_is_that_grey ... ok
+test openpbr::tests::roughness_comes_from_the_material_s_own_density_and_is_monotone ... FAILED
+test openpbr::tests::the_absent_parameters_are_exactly_the_ones_the_rule_calls_absent ... ok
+test openpbr::tests::transmission_is_never_on_a_solid ... ok
+test provenance::tests::every_constant_is_named_once_and_sourced ... ok
+test provenance::tests::the_luminance_weights_are_the_rec_709_triple ... ok
+test provenance::tests::the_project_s_own_extensions_are_counted_here_and_nowhere_else ... ok
+test response::tests::a_flat_rig_measures_one_band_because_nothing_varies ... ok
+test response::tests::a_rim_only_surface_is_reported_as_rim_only_however_many_bands_it_shows ... ok
+test response::tests::a_stated_surface_under_the_standard_rig_passes_the_bar ... ok
+test response::tests::a_white_factor_placeholder_measures_one_band_and_fails_the_bar ... ok
+test response::tests::an_empty_or_non_finite_measurement_is_refused ... ok
+test response::tests::the_band_count_never_exceeds_the_declared_resolution ... ok
+test response::tests::the_measurement_of_a_surface_is_reproducible ... ok
+test response::tests::two_bands_of_a_known_step_are_counted_as_two ... ok
+test response::tests::zero_views_is_refused_rather_than_defaulted ... ok
+test sky::tests::an_impossible_atmosphere_is_refused_rather_than_read_as_a_clear_sky ... ok
+test sky::tests::every_constant_is_named_once_and_finite ... ok
+test sky::tests::the_air_column_is_a_transmittance_between_a_source_and_its_ceiling ... ok
+test sky::tests::the_aureole_follows_the_sun_now_that_the_angle_is_spherical ... ok
+test sky::tests::the_moon_is_five_orders_of_magnitude_dimmer_than_the_sun ... ok
+test sky::tests::the_moon_travels_through_the_same_air_column_as_the_sun ... ok
+test sky::tests::the_phase_functions_are_the_published_ones_at_their_own_limits ... ok
+test sky::tests::the_rayleigh_coefficients_are_the_sources_and_their_ratio_is_the_sky ... ok
+test sky::tests::the_sky_is_pure_in_the_tick ... ok
+test sky::tests::the_sun_is_black_below_the_horizon_and_nothing_extrapolates_a_dusk ... ok
+test sky::tests::the_zenith_is_blue_because_of_the_scattering_ratio_and_nothing_else ... ok
+test sky::tests::the_zero_azimuth_directional_sky_is_the_elevation_summary ... ok
+test sky::tests::this_module_has_no_project_extensions_at_all ... ok
+test sky::tests::turbidity_is_a_published_input_and_more_of_it_makes_the_sky_whiter ... ok
+test tonemap::tests::a_grey_stays_grey ... ok
+test tonemap::tests::a_scene_referred_frame_loses_only_its_headroom ... ok
+test tonemap::tests::black_stays_black_and_a_negative_radiance_is_refused_as_black ... ok
+test tonemap::tests::it_can_never_brighten_a_colour ... ok
+test tonemap::tests::it_is_monotonic_so_no_two_radiances_change_order ... ok
+test tonemap::tests::it_moves_brightness_and_not_chromaticity ... ok
+test tonemap::tests::it_never_presents_more_than_one_and_never_reaches_one ... ok
+test tonemap::tests::the_world_s_measured_brightest_pixel_becomes_displayable ... ok
+test wrap::tests::a_cap_s_recess_is_the_profiles_own_outward_pattern ... ok
+test wrap::tests::a_face_coordinate_outside_the_face_is_refused_rather_than_clamped ... ok
+test wrap::tests::a_flat_face_comes_back_unchanged_bit_for_bit ... ok
+test wrap::tests::a_side_s_recess_is_half_the_face_and_the_tie_is_named ... ok
+test wrap::tests::the_bend_grows_monotonically_from_the_centre_to_the_rim ... ok
+test wrap::tests::every_normal_is_a_unit_vector_and_finite_everywhere_on_the_face ... ok
+test wrap::tests::the_bend_is_symmetric_in_u_and_v_which_a_cylinder_has_to_be ... ok
+test wrap::tests::the_centre_of_a_pillar_face_looks_straight_out ... ok
+test wrap::tests::the_inscribed_radius_is_half_a_block_because_that_is_what_inscribed_means ... ok
+test wrap::tests::the_lattice_gradient_tilts_an_already_wrapped_face_further ... ok
+test wrap::tests::the_law_here_is_the_profiles_law_and_not_a_second_copy ... ok
+test wrap::tests::the_recess_slot_order_matches_the_models_face_cells_order ... ok
+test wrap::tests::the_rim_of_a_pillar_face_turns_to_look_sideways ... ok
+test sky::tests::the_sun_reddens_rather_than_being_tinted ... ok
+
+failures:
+
+---- openpbr::tests::roughness_comes_from_the_material_s_own_density_and_is_monotone stdout ----
+
+thread 'openpbr::tests::roughness_comes_from_the_material_s_own_density_and_is_monotone' (15800) panicked at crates\voxel-appearance\src\openpbr.rs:960:9:
+assertion `left == right` failed
+  left: Some(0.9551282051282052)
+ right: Some(1.0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    openpbr::tests::roughness_comes_from_the_material_s_own_density_and_is_monotone
+
+test result: FAILED. 105 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p voxel-appearance --lib`
+EXIT=101

@@ -1,0 +1,43 @@
+id	prefix	note
+quartz	Quartz_HS32.2B	quartz, the most common rock-forming mineral
+plagioclase	Albite_HS143.1B	plagioclase feldspar (albite end member)
+alkali_feldspar	Microcline_HS103.1B	alkali feldspar (microcline)
+biotite	Biotite_HS28.3B	dark mica, the common mafic sheet silicate
+muscovite	Muscovite	GDS107	light mica
+hornblende	Hornblende_HS16	m Amphibole (hornblende)
+pyroxene	Augite_NMNH120049	clinopyroxene (augite)
+olivine	Olivine_GDS70.a_Fo89	olivine, Fo89
+calcite	Calcite_CO2004	calcite
+dolomite	Dolomite_HS102	dolomite
+chlorite	Chlorite_HS179	chlorite
+illite	Illite_GDS4_Marblehead	illite, a clay mineral
+kaolinite	Kaolinite_CM3	kaolinite, the reference clay mineral
+hematite	Hematite_FE2602	hematite, Fe2O3
+magnetite	Magnetite_HS195	magnetite, Fe3O4
+goethite	Goethite_WS219	 goethite
+garnet	Almandine_HS114	almandine garnet
+serpentine	Lizardite_NMNHR4687	serpentine (lizardite)
+talc	Talc_GDS23	talc
+gypsum	Gypsum_HS333	gypsum (selenite)
+pyrite	Pyrite_GDS483	pyrite
+carbon	Carbon_Black_GDS68	amorphous carbon (lamp black)
+epidote	Epidote_BR93-33a	epidote
+malachite	Malachite_HS254	malachite
+cassiterite	Cassiterite_HS279	cassiterite
+sphalerite	Sphalerite_S26	sphalerite
+cinnabar	Cinnabar_HS133	cinnabar
+halite	Halite_HS433	halite
+niter	Niter_GDS43	niter (K-saltpeter)
+sulfur	Sulfur_GDS94	sulfur
+beryl	Beryl_HS180	beryl
+corundum	Corundum_HS283	corundum
+topaz	Topaz_Cameron	Cone	topaz
+opal	Opal_WS732	opal
+limonite	Limonite_HS41	limonite
+chert	Chert_ANP90	chert
+volcanic_tuff	Hydrated_Volc_Tuff	hydrated volcanic tuff
+brick	Brick_GDS349	brick
+wood_beam	Wood_Beam_GDS363	sawn softwood beam
+cotton_fabric	Cotton_Fabric_GDS437	cotton fabric
+cheatgrass	Cheatgrass_ANP92	cheatgrass
+kerogen	Kerogen_BK-Cornell	kerogen

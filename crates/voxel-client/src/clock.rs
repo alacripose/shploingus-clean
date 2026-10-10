@@ -44,6 +44,15 @@ pub const fn tick_seconds() -> f64 {
     1.0 / TICK_HZ as f64
 }
 
+/// Milliseconds per tick, **derived from [`tick_seconds`]** rather than restated.
+///
+/// The unit the change view's lifetime is measured in (`shell::changes`): a 1500 ms outline is
+/// exactly thirty ticks, and deriving it here means the view cannot be described in a clock the
+/// world does not run on.
+pub fn tick_millis() -> f64 {
+    tick_seconds() * 1000.0
+}
+
 /// The most ticks one `advance` may hand the world, whatever time passed.
 ///
 /// **A declared boundary, not a performance tuning.** Four ticks is one fifth of

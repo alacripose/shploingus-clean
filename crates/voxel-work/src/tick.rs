@@ -56,7 +56,7 @@
 //! dimension: the rung decides *whether* it is asked, not *what* it answers.
 
 use voxel_mesh::octree::{SparseVoxelOctree, OCTREE_LEVELS};
-use voxel_model::{ChunkPos, Refusal, RefusalKind, Refused, CHUNK_SIDE};
+use voxel_model::{ChunkPos, Identity, Refusal, RefusalKind, Refused, CHUNK_SIDE};
 use voxel_stream::{Horizon, Horizons};
 use voxel_shapers::stages::{Declared, Stage};
 
@@ -361,6 +361,162 @@ impl Scheduler {
     }
 }
 
+// -------------------------------------------------------------------------------------
+// The driver: the production consumer the planner was missing
+// -------------------------------------------------------------------------------------
+
+/// What one driven tick owed, and the evidence for it.
+///
+/// A `Scheduler` answers a question and stores nothing, which is right for a
+/// planner and useless for a runtime: a runtime has to know whether it has
+/// already asked for a tick and must refuse to run one backwards. The receipt is
+/// the answer made checkable — the due stages, the work, and a **digest** of the
+/// whole plan so two runs of the same tick can be compared rather than trusted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TickReceipt {
+    pub tick: u64,
+    /// The stages due, in dependency order (the scheduler's own `due_at`).
+    pub due: Vec<Stage>,
+    /// Every (stage, unit) pair the tick owes, stage-major.
+    pub work: Vec<Planned>,
+    /// A digest over `(tick, due stages, every planned unit)`.
+    pub digest: Identity,
+}
+
+impl TickReceipt {
+    pub fn is_empty(&self) -> bool {
+        self.work.is_empty()
+    }
+
+    pub fn stages(&self) -> impl Iterator<Item = Stage> + '_ {
+        self.work.iter().map(|p| p.stage)
+    }
+}
+
+/// A driven scheduler: the **production consumer** of [`Scheduler`].
+///
+/// This is the missing component `C-174` measured — a thing that *asks* the
+/// scheduler, remembers which tick it last asked for, and refuses to run a tick
+/// backwards. It holds the **last tick it planned and nothing else**: the world
+/// stays a pure function of `(tick, address)`, so the driver is a cursor over the
+/// schedule and never a second record of the world.
+///
+/// The whole production use is one line per frame:
+///
+/// ```ignore
+/// let receipt = driver.step(clock.tick, &units)?;
+/// for planned in receipt.work { dispatch(planned); }
+/// ```
+#[derive(Clone, Debug)]
+pub struct TickDriver {
+    scheduler: Scheduler,
+    last_tick: Option<u64>,
+}
+
+impl TickDriver {
+    pub fn new(scheduler: Scheduler) -> Self {
+        TickDriver { scheduler, last_tick: None }
+    }
+
+    /// The full pipeline over the declared horizons.
+    pub fn full() -> Refused<Self> {
+        Ok(Self::new(Scheduler::full()?))
+    }
+
+    pub fn scheduler(&self) -> &Scheduler {
+        &self.scheduler
+    }
+
+    pub const fn last_tick(&self) -> Option<u64> {
+        self.last_tick
+    }
+
+    /// The stages due at `tick`, from the scheduler's own ladder.
+    pub fn due_at(&self, tick: u64) -> Vec<Stage> {
+        self.scheduler.due_at(tick)
+    }
+
+    /// Drive one tick: plan the work, digest it, and advance the cursor.
+    ///
+    /// **Idempotent within a tick.** The same tick asked twice returns the same
+    /// receipt and does not move the cursor — a runtime frame that asks more than
+    /// once per tick (a redraw, a probe) must not double-plan the world. An
+    /// **older** tick is refused by name, because a schedule that can run
+    /// backwards can produce two worlds from one.
+    pub fn step(&mut self, tick: u64, units: &[UnitOfWork]) -> Refused<TickReceipt> {
+        if let Some(last) = self.last_tick {
+            if tick < last {
+                return Err(Refusal::owned(
+                    RefusalKind::OutOfDeclaredRange,
+                    format!("tick {tick} is older than the last planned tick {last}"),
+                ));
+            }
+            if tick == last {
+                return Ok(self.receipt(tick, units));
+            }
+        }
+        let receipt = self.receipt(tick, units);
+        self.last_tick = Some(tick);
+        Ok(receipt)
+    }
+
+    /// Drive every whole tick in `(from, to]`, oldest first, stopping at the
+    /// first refusal. This is what a frame loop calls after a `Clock::advance`.
+    pub fn advance_to(
+        &mut self,
+        to: u64,
+        units: &[UnitOfWork],
+    ) -> Refused<Vec<TickReceipt>> {
+        let from = self.last_tick.map_or(0, |t| t.saturating_add(1));
+        let mut out = Vec::new();
+        for tick in from..=to {
+            out.push(self.step(tick, units)?);
+        }
+        Ok(out)
+    }
+
+    /// The receipt for `tick` without moving the cursor.
+    fn receipt(&self, tick: u64, units: &[UnitOfWork]) -> TickReceipt {
+        TickReceipt {
+            tick,
+            due: self.scheduler.due_at(tick),
+            work: self.scheduler.plan(tick, units),
+            digest: self.digest(tick, units),
+        }
+    }
+
+    /// A digest over exactly what the plan is: the tick, the due stages and every
+    /// planned unit. **Not** over the worker count, because the worker count is a
+    /// performance knob and never touches output (F12).
+    fn digest(&self, tick: u64, units: &[UnitOfWork]) -> Identity {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&tick.to_be_bytes());
+        let due = self.scheduler.due_at(tick);
+        payload.extend_from_slice(&(due.len() as u64).to_be_bytes());
+        for stage in &due {
+            field_str(&mut payload, stage.name());
+        }
+        payload.extend_from_slice(&(units.len() as u64).to_be_bytes());
+        for unit in units {
+            let c = unit.chunk();
+            let o = unit.origin();
+            payload.extend_from_slice(&c.x.to_be_bytes());
+            payload.extend_from_slice(&c.y.to_be_bytes());
+            payload.extend_from_slice(&c.z.to_be_bytes());
+            for a in o {
+                payload.extend_from_slice(&a.to_be_bytes());
+            }
+            payload.extend_from_slice(&unit.level().to_be_bytes());
+        }
+        Identity::of_fields("voxel-work/tick-receipt/v1", &[&payload])
+    }
+}
+
+fn field_str(payload: &mut Vec<u8>, text: &str) {
+    payload.extend_from_slice(&(text.len() as u64).to_le_bytes());
+    payload.extend_from_slice(text.as_bytes());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -563,6 +719,45 @@ mod tests {
     }
 
     #[test]
+    fn the_process_clock_and_the_work_clock_are_one_ladder() {
+        // Two layers answer "what is due at tick N": this scheduler, for work
+        // planning, and `voxel_shapers::process::ProcessScheduler`, for the process
+        // runtime. Both read `Stage::cadence()`, and this pins that they cannot
+        // drift — the due sets agree at every rung boundary, and the process plan
+        // is a linear extension of the same dependency graph `due_at` documents.
+        use std::collections::BTreeSet;
+        let processes = voxel_shapers::process::ProcessScheduler::world_defaults()
+            .expect("the process roster validates");
+        let work = scheduler();
+        let day = voxel_shapers::climate::TICKS_PER_DAY;
+        for tick in [0, 1, 3, 4, 5, 20, 40, day - 1, day, day + 1, 2 * day + 3] {
+            let from_work: BTreeSet<Stage> = work.due_at(tick).into_iter().collect();
+            let from_processes: BTreeSet<Stage> =
+                processes.due(tick).into_iter().map(|id| id.stage()).collect();
+            assert_eq!(from_work, from_processes, "tick {tick} has two due sets");
+        }
+        // The process order respects the graph it declares: every dependency that
+        // is also due appears before the process that reads it.
+        for tick in [0, 1, 4, 20, day] {
+            let due = processes.due(tick);
+            for (position, id) in due.iter().enumerate() {
+                for dependency in id.stage().depends_on() {
+                    if let Some(dep_position) =
+                        due.iter().position(|other| other.stage() == *dependency)
+                    {
+                        assert!(
+                            dep_position < position,
+                            "{:?} ran before its dependency {:?} at tick {tick}",
+                            id.stage(),
+                            dependency
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn hydrologys_rung_is_no_longer_decorative() {
         // `Stage::Hydrology` holds a ×4 rung and, until the scheduler existed,
         // nothing consulted it: the rung was a comment. The claim now is that a
@@ -657,5 +852,83 @@ mod tests {
         // And a chunk at negative coordinates does not wrap.
         let c = UnitOfWork::new(chunk_at(-1, 0), [0, 0, 0], 4);
         assert_eq!(c.world_box().min, [-(CHUNK_SIDE as i64), 0, 0]);
+    }
+
+    fn one_unit() -> [UnitOfWork; 1] {
+        [UnitOfWork::new(chunk_at(0, 0), [0, 0, 0], 4)]
+    }
+
+    #[test]
+    fn the_driver_refuses_a_tick_older_than_the_one_it_last_planned() {
+        // The whole reason a driver exists: a `Scheduler` has no memory, so it
+        // cannot tell a replay from a rewind. A backwards tick is refused by name.
+        let mut driver = TickDriver::new(scheduler());
+        let units = one_unit();
+        driver.step(8, &units).unwrap();
+        assert_eq!(driver.last_tick(), Some(8));
+        let refused = driver.step(7, &units).unwrap_err();
+        assert_eq!(refused.kind(), RefusalKind::OutOfDeclaredRange);
+        assert!(refused.detail().contains("older"), "got {refused}");
+        // And the refusal did not move the cursor.
+        assert_eq!(driver.last_tick(), Some(8));
+    }
+
+    #[test]
+    fn the_same_tick_asked_twice_is_the_same_receipt_and_does_not_move_the_cursor() {
+        // A frame that asks twice (a redraw, a probe) must not double-plan the
+        // world, and must not read as "advanced".
+        let mut driver = TickDriver::new(scheduler());
+        let units = one_unit();
+        let first = driver.step(8, &units).unwrap();
+        let again = driver.step(8, &units).unwrap();
+        assert_eq!(first, again, "the same tick produced two receipts");
+        assert_eq!(driver.last_tick(), Some(8));
+    }
+
+    #[test]
+    fn a_receipt_digests_exactly_the_plan_and_nothing_else() {
+        // The tick, the due set and the units are the digest; the worker count is
+        // not, because F12 says it never touches output. Two fresh drivers over the
+        // same tick agree; a different tick, or a different unit, does not.
+        let units = one_unit();
+        let a = TickDriver::new(scheduler()).step(4, &units).unwrap();
+        let b = TickDriver::new(scheduler()).step(4, &units).unwrap();
+        assert_eq!(a.digest, b.digest, "two runs of one tick disagreed");
+
+        let later = TickDriver::new(scheduler()).step(8, &units).unwrap();
+        assert_ne!(a.digest, later.digest, "the tick is not in the digest");
+
+        let elsewhere = [UnitOfWork::new(chunk_at(0, 0), [16, 0, 0], 4)];
+        let moved = TickDriver::new(scheduler()).step(4, &elsewhere).unwrap();
+        assert_ne!(a.digest, moved.digest, "the units are not in the digest");
+    }
+
+    #[test]
+    fn a_receipts_work_is_the_schedulers_own_plan_and_tick_zero_is_complete() {
+        // The driver adds state and evidence, never a second planner: the receipt
+        // is the scheduler's answer, and tick 0 asks every stage so a world opened
+        // for the first time is complete rather than one period stale.
+        let s = scheduler();
+        let units = one_unit();
+        let driver = TickDriver::new(s.clone());
+        let receipt = driver.receipt(4, &units);
+        assert_eq!(receipt.work, s.plan(4, &units));
+        assert_eq!(receipt.due, s.due_at(4));
+        assert_eq!(driver.due_at(0).len(), voxel_shapers::stages::STAGE_COUNT);
+    }
+
+    #[test]
+    fn the_driver_advances_every_whole_tick_and_stops_at_the_first_refusal() {
+        let mut driver = TickDriver::new(scheduler());
+        let units = one_unit();
+        let receipts = driver.advance_to(4, &units).unwrap();
+        assert_eq!(receipts.len(), 5, "ticks 0..=4 are five ticks");
+        assert_eq!(driver.last_tick(), Some(4));
+        for r in &receipts {
+            assert!(!r.is_empty(), "tick {} owed no work at all", r.tick);
+        }
+        // A second call with nothing to do yields nothing and does not move.
+        assert!(driver.advance_to(4, &units).unwrap().is_empty());
+        assert_eq!(driver.last_tick(), Some(4));
     }
 }

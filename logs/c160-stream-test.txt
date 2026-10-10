@@ -1,0 +1,49 @@
+   Compiling voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+    Finished `test` profile [optimized + debuginfo] target(s) in 9.32s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_stream-1dc0264d9cbf90ad.exe)
+
+running 35 tests
+test horizons::tests::a_field_level_coarser_than_the_horizon_itself_is_refused ... ok
+test horizons::tests::horizons_are_cubes_and_the_boundary_is_where_it_says ... ok
+test horizons::tests::an_outer_horizon_may_not_read_finer_than_an_inner_one ... ok
+test horizons::tests::the_extent_of_a_horizon_is_an_odd_number_of_chunks ... ok
+test horizons::tests::the_ladder_extents_the_horizons_read_are_the_rungs_they_say ... ok
+test horizons::tests::horizons_containing_reports_the_widest_horizons_and_only_those ... ok
+test horizons::tests::the_declared_horizons_are_valid ... ok
+test horizons::tests::every_horizon_a_chunk_is_in_contains_every_horizon_inside_it ... ok
+test resident::tests::a_resident_set_refuses_a_horizon_set_that_does_not_validate ... ok
+test horizons::tests::a_horizon_set_that_is_not_nested_is_refused_and_says_so ... ok
+test horizons::tests::the_ring_level_rises_outward_and_is_clamped ... ok
+test horizons::tests::the_tier_counts_horizons_and_falls_only_outward ... ok
+test resident::tests::measure_the_cost_of_a_meshed_world ... ignored, measurement, not an assertion: run with `cargo test <filter> -- --ignored --nocapture`
+test resident::tests::measure_the_memory_of_a_resident_world ... ignored, measurement, not an assertion: run with `cargo test <filter> -- --ignored --nocapture`
+test world_source::tests::measure_the_memo_against_the_raw_plane ... ignored, measurement, not an assertion: run with `cargo test <filter> -- --ignored --nocapture`
+test world_source::tests::the_cache_is_keyed_by_column_and_only_for_the_memoized_fields ... ok
+test world_source::tests::the_field_path_is_exactly_the_shapers_own_definition ... ok
+test world_source::tests::an_earthworks_edit_changes_the_voxel_and_the_generator_is_untouched ... ok
+test world_source::tests::the_memoized_fields_do_not_vary_with_height ... ok
+test world_source::tests::the_world_of_a_negative_local_coordinate_lands_in_the_previous_chunk ... ok
+test world_source::tests::the_world_neighbourhood_agrees_with_the_chunk_next_door ... ok
+test world_source::tests::a_chunk_high_above_the_ground_is_air_and_a_chunk_deep_under_it_is_solid ... ok
+test resident::tests::arrival_of_a_chunk_invalidates_the_neighbours_that_shared_that_boundary ... ok
+test world_source::tests::a_chunk_holds_something_and_the_same_something_twice ... ok
+test world_source::tests::the_world_is_continuous_across_a_chunk_boundary ... ok
+test resident::tests::retaining_a_horizon_drops_what_is_outside_it ... ok
+test world_source::tests::the_memoized_chunk_is_the_same_world_as_the_unmemoized_one ... ok
+test resident::tests::an_earthworks_change_invalidates_every_resident_chunk ... ok
+test resident::tests::a_generated_chunk_is_resident_and_meshes_to_something ... ok
+test resident::tests::the_neighbourhood_culls_faces_that_an_isolated_chunk_would_draw ... ok
+test resident::tests::mesh_stale_terminates_and_leaves_nothing_stale ... ok
+test resident::tests::accounting_counts_capacity_and_the_allocator_s_share ... ok
+test resident::tests::meshing_the_same_world_twice_in_the_same_order_gives_the_same_digest ... ok
+test resident::tests::the_digest_does_not_depend_on_the_order_chunks_were_built_in ... ok
+test resident::tests::a_chunk_meshed_without_its_neighbours_is_marked_provisional ... ok
+
+test result: ok. 32 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 1.69s
+
+   Doc-tests voxel_stream
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

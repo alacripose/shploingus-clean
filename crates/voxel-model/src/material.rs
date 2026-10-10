@@ -59,6 +59,30 @@ impl Ratio {
         Ratio { num: n, den: 1 }
     }
 
+    /// Build `num/den`, reduced, **for a table that was gated before this
+    /// constructor was called**.
+    ///
+    /// `const`, so a generated table's entries are compiled rather than built
+    /// at startup, and a zero denominator is a **compile-time** failure wherever
+    /// the value is a constant. Reduction is the same gcd [`Ratio::new`] uses;
+    /// overflow saturates exactly as the arithmetic above does, and the
+    /// sum-to-one tests still catch a saturated denominator. The fallible
+    /// constructor remains the boundary for every value that arrives from
+    /// anywhere but a checked-in, digest-gated table.
+    pub const fn from_parts(num: u64, den: u64) -> Self {
+        assert!(den != 0, "a ratio with a zero denominator is not a ratio");
+        let mut a = num;
+        let mut b = den;
+        while b != 0 {
+            let t = b;
+            b = a % b;
+            a = t;
+        }
+        // `den != 0` and `a` ends as the gcd; `num == 0` makes it `den`, and
+        // `0/g` is 0 over `den/g` = 1 — zero still reads as exactly zero.
+        Ratio { num: num / a, den: den / a }
+    }
+
     fn unchecked(num: u64, den: u64) -> Self {
         let g = gcd(num, den);
         if g == 0 {
@@ -138,6 +162,28 @@ impl Ratio {
     /// that do not sum to one.
     pub fn is_greater_than(self, other: Ratio) -> bool {
         self.num.saturating_mul(other.den) > other.num.saturating_mul(self.den)
+    }
+
+    /// Exact division, **refusing a zero divisor**.
+    ///
+    /// The sibling of `checked_sub`: that one refuses a negative result, and this
+    /// one refuses a zero divisor, because a ratio divided by zero is not a ratio.
+    /// A caller asking "what fraction of the pore volume is filled"
+    /// (`volume / capacity`) must get a refusal rather than a saturated
+    /// approximation. The arithmetic is exact; like the others it saturates on
+    /// overflow, and an overflowed denominator is caught by the equality tests,
+    /// never silently replaced.
+    pub fn checked_div(self, other: Ratio) -> Refused<Self> {
+        if other.is_zero() {
+            return Err(Refusal::owned(
+                RefusalKind::ZeroRatio,
+                format!("{self} / {other}: a ratio may not be divided by zero"),
+            ));
+        }
+        Ok(Ratio::unchecked(
+            self.num.saturating_mul(other.den),
+            self.den.saturating_mul(other.num),
+        ))
     }
 }
 
@@ -228,6 +274,15 @@ pub struct Component {
     pub id: ComponentId,
     pub ratio: Ratio,
     pub density_kg_m3: Ratio,
+    /// What this **substance** reflects, or its named absence.
+    ///
+    /// A component is a substance, not a slot in a sum, so its appearance is its
+    /// own (`LEDGER.md` C-141: appearance derives from composition). A row's
+    /// reflectance is then the exact rational blend of these, which is why the
+    /// value belongs here and not only on the material: `None` on any constituent
+    /// means the row cannot blend one, and a blend that quietly skipped it would
+    /// be a different material wearing the row's name.
+    pub reflectance: Option<SourcedReflectance>,
 }
 
 /// How a material interacts with light. The appearance layer reads this; the
@@ -320,6 +375,28 @@ pub struct SourcedReflectance {
     pub source: &'static str,
 }
 
+/// What a material emits, declared as a **sourced chromaticity** and a **sourced
+/// radiance**.
+///
+/// **Exact rationals, for the same reason [`SourcedReflectance`] is.** `Material` is
+/// `Eq` so a whole table of them can be compared for drift, and a float field would
+/// quietly break that. The conversion to the radiance the shader wants happens once,
+/// in `voxel_appearance::openpbr::derive`.
+///
+/// This is OpenPBR **FC-8.6**, the input a dynamic block emitter carries. `npr.rs`
+/// already shaded one and `voxel-client`'s `MaterialParams` already carried it to the
+/// GPU; what did not exist was anywhere to **declare** one, so `derive` could only
+/// ever hand back `Emission::None` and every body in the world was forced to reflect.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct SourcedEmission {
+    /// The emitted colour, as a reflectance-shaped triple.
+    pub colour: Reflectance,
+    /// Radiance in W/m²/sr, before any atmospheric transmittance — the same claim
+    /// `SOLAR_CONSTANT` makes, and for the sun the same number.
+    pub radiance: Ratio,
+    pub source: &'static str,
+}
+
 /// An admitted material.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Material {
@@ -335,6 +412,47 @@ pub struct Material {
     /// admitted without one is a material nobody has a spectrum for yet, and
     /// inventing a grey for it is the bug this field exists to fix.
     pub reflectance: Option<SourcedReflectance>,
+    /// What the material emits, or **a named absence**.
+    ///
+    /// `None` is the state for every material that only reflects, which is every
+    /// material the world had until emission became declarable. It stays a `None`
+    /// rather than a zero, because "emits nothing" and "emits nothing *as far as
+    /// anyone has measured*" are different claims, and only the second is true of
+    /// a material nobody has characterised.
+    pub emission: Option<SourcedEmission>,
+}
+
+/// The **exact rational mass-weighted blend** of constituent reflectances — the
+/// declared derivation of `LEDGER.md` C-141, and the only place a composition
+/// becomes a colour.
+///
+/// Each channel is `Σ(ratio · value)` in exact rationals, so a row's colour is a
+/// consequence of its declared composition rather than a number chosen beside it.
+/// A part with no reflectance is the caller's to refuse **before** calling this:
+/// dropping it would renormalise a material into a different one, and the value
+/// that came out would look perfectly reasonable.
+///
+/// The blend is a **declared linear mix, not a radiative-transfer model** — real
+/// granular surfaces scatter non-linearly — so it is stated as this project's
+/// rule rather than as a measurement, and the row's own source string says so.
+///
+/// **Refuses an empty blend**: no constituents is no reflectance, not a black one.
+/// The sum of the ratios is not checked here because a gated row's ratios already
+/// sum to exactly one (`MaterialRegistry::admit_material`).
+pub fn blend_reflectance(parts: &[(Ratio, SourcedReflectance)]) -> Refused<Reflectance> {
+    if parts.is_empty() {
+        return Err(Refusal::owned(
+            RefusalKind::RatiosDoNotSumToOne,
+            "a blend of no constituents is not a reflectance",
+        ));
+    }
+    let mut channels = [Ratio::ZERO; 3];
+    for (ratio, sourced) in parts {
+        channels[0] += *ratio * sourced.value.r;
+        channels[1] += *ratio * sourced.value.g;
+        channels[2] += *ratio * sourced.value.b;
+    }
+    Reflectance::new(channels[0], channels[1], channels[2])
 }
 
 impl Material {
@@ -472,6 +590,18 @@ mod tests {
     }
 
     #[test]
+    fn division_is_exact_and_a_zero_divisor_is_refused() {
+        let half = Ratio::new(1, 2).unwrap();
+        let quarter = half.checked_div(Ratio::new(2, 1).unwrap()).unwrap();
+        assert_eq!(quarter, Ratio::new(1, 4).unwrap());
+        // 1/3 divided by 1/3 is exactly one, where the float form can drift.
+        let third = Ratio::new(1, 3).unwrap();
+        assert!(third.checked_div(third).unwrap().is_one());
+        let refusal = half.checked_div(Ratio::ZERO).unwrap_err();
+        assert_eq!(refusal.kind(), RefusalKind::ZeroRatio);
+    }
+
+    #[test]
     fn a_ratio_with_a_zero_denominator_is_refused() {
         let r = Ratio::new(1, 0).unwrap_err();
         assert_eq!(r.kind(), RefusalKind::RatiosDoNotSumToOne);
@@ -488,15 +618,18 @@ mod tests {
                     id: ComponentId(1),
                     ratio: Ratio::new(2, 3).unwrap(),
                     density_kg_m3: Ratio::from_u64(2650),
+                    reflectance: None,
                 },
                 Component {
                     id: ComponentId(2),
                     ratio: Ratio::new(1, 3).unwrap(),
                     density_kg_m3: Ratio::from_u64(2550),
+                    reflectance: None,
                 },
             ],
             optical_class: OpticalClass::Opaque,
             reflectance: None,
+            emission: None,
         };
         // Bulk density = (2/3)*2650 + (1/3)*2550 = 2616 + 2/3 = 7850/3.
         let density = m.bulk_density_kg_m3();
@@ -516,9 +649,11 @@ mod tests {
                 id: ComponentId(1),
                 ratio: Ratio::new(1, 2).unwrap(),
                 density_kg_m3: Ratio::from_u64(2000),
+                reflectance: None,
             }],
             optical_class: OpticalClass::Opaque,
             reflectance: None,
+            emission: None,
         };
         let err = r.admit_material(m).unwrap_err();
         assert_eq!(err.len(), 1);
@@ -537,15 +672,18 @@ mod tests {
                     id: ComponentId(99), // not admitted
                     ratio: Ratio::ZERO,  // zero ratio
                     density_kg_m3: Ratio::from_u64(1),
+                    reflectance: None,
                 },
                 Component {
                     id: ComponentId(1),
                     ratio: Ratio::new(1, 2).unwrap(),
                     density_kg_m3: Ratio::from_u64(1),
+                    reflectance: None,
                 },
             ],
             optical_class: OpticalClass::Opaque,
             reflectance: None,
+            emission: None,
         };
         let err = r.admit_material(m).unwrap_err();
         // zero ratio, unknown component, and a sum that is not one.
@@ -560,6 +698,48 @@ mod tests {
     }
 
     #[test]
+    fn a_composition_blend_is_exact_and_weights_each_channel() {
+        // **The C-141 rule, measured.** A row's reflectance is its constituents'
+        // exact rational mass-weighted blend, so the arithmetic is the claim: two
+        // parts at 1/2 of 1/5 and 3/5 is exactly 2/5, where a float blend would
+        // land somewhere near it and be indistinguishable from a wrong number.
+        let fifth = Reflectance::broadband(Ratio::new(1, 5).unwrap()).unwrap();
+        let three_fifths = Reflectance::broadband(Ratio::new(3, 5).unwrap()).unwrap();
+        let left = SourcedReflectance { value: fifth, source: "a fixture" };
+        let right = SourcedReflectance { value: three_fifths, source: "a fixture" };
+        let blended = blend_reflectance(&[
+            (Ratio::new(1, 2).unwrap(), left),
+            (Ratio::new(1, 2).unwrap(), right),
+        ])
+        .expect("a blend of two parts");
+        assert_eq!(blended, Reflectance::broadband(Ratio::new(2, 5).unwrap()).unwrap());
+
+        // The channels are weighted independently, which is what makes a blend a
+        // composition rather than an average of three numbers that moved together.
+        let warm = SourcedReflectance {
+            value: Reflectance::new(
+                Ratio::new(3, 5).unwrap(),
+                Ratio::new(1, 2).unwrap(),
+                Ratio::new(2, 5).unwrap(),
+            )
+            .unwrap(),
+            source: "a fixture",
+        };
+        let quarter = blend_reflectance(&[(Ratio::new(1, 4).unwrap(), warm)]).expect("a blend");
+        assert_eq!(quarter.r, Ratio::new(3, 20).unwrap());
+        assert_eq!(quarter.g, Ratio::new(1, 8).unwrap());
+        assert_eq!(quarter.b, Ratio::new(1, 10).unwrap());
+    }
+
+    #[test]
+    fn a_blend_of_nothing_is_refused_rather_than_black() {
+        // An empty blend is an absent composition, and returning a reflectance of
+        // zero would hand back a colour nobody measured for a row nobody composed.
+        let refusal = blend_reflectance(&[]).unwrap_err();
+        assert_eq!(refusal.kind(), RefusalKind::RatiosDoNotSumToOne);
+    }
+
+    #[test]
     fn material_id_zero_is_empty_and_never_admitted() {
         assert!(MaterialId::EMPTY.is_empty());
         let mut r = registry();
@@ -570,9 +750,11 @@ mod tests {
                 id: ComponentId(1),
                 ratio: Ratio::ONE,
                 density_kg_m3: Ratio::from_u64(1),
+                reflectance: None,
             }],
             optical_class: OpticalClass::Opaque,
             reflectance: None,
+            emission: None,
         };
         assert!(r.admit_material(m).is_err());
     }

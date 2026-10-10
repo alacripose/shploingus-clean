@@ -29,6 +29,14 @@ pub struct Camera {
     /// Positive looks up. Clamped to just under a right angle so the up vector
     /// never collapses.
     pub pitch_rad: f64,
+    /// Rotation about the view direction, in radians. `0.0` is upright.
+    ///
+    /// **Positive banks the camera to the left** — `up` tilts toward `-right`. It is
+    /// the convention [`crate::camera_overhaul`]'s roll offsets are added in, and it
+    /// is the one place those effects attach to geometry. The player's own look never
+    /// writes it: the stored camera is upright and only the **drawn** camera carries a
+    /// roll.
+    pub roll_rad: f64,
     /// Vertical field of view.
     pub fov_y_rad: f64,
     pub aspect: f64,
@@ -43,6 +51,27 @@ pub struct Camera {
 /// rule's sake.
 pub const MAX_PITCH_RAD: f64 = 1.569_051_2;
 
+/// **The far clip plane, metres — the clouds' own declared reach, read rather than retyped.**
+///
+/// It was `1024`, and that number was chosen for a frame whose **only** geometry was terrain: the
+/// widest horizon in the tree is `voxel_stream::horizons`' `Horizon::Field` at 96 chunks = 3,072 m,
+/// and the render horizon the window actually streams is 8 chunks = **256 m**, so nothing on screen
+/// was ever within sight of a 1 km plane.
+///
+/// **A cloud is not inside a horizon, and it is above the viewer.** The cloud slab's base is around
+/// 120 m and its top around 1,800 m ([`crate::cloud_field`]'s own layers: fog 120, stratus 500,
+/// cumulus 1,800), on a field spanning 8,192 m and following the eye — so a cumulus directly
+/// overhead is 1.8 km of view distance and one at the field's corner is over 5 km. Every one of
+/// those was clipped away by a 1,024 m plane, which is the cloud layer disappearing as the camera
+/// pitches up rather than a cloud that was never drawn.
+///
+/// The number is therefore **derived**, not chosen twice: it is `cloud_field`'s own reach, the same
+/// one the light sampler walks, so the plane cannot be narrower than the field it is meant to show.
+/// A test holds the two together, and the depth cost of the wider range is nil — the depth
+/// derivative at a given distance is `near / d²` to first order and does not read `far` at all, so
+/// a 32 m chunk is resolved to millimetres at 256 m exactly as it was at `1024`.
+pub const FAR_M: f64 = crate::cloud_field::CLOUD_MAX_DISTANCE_M as f64;
+
 impl Camera {
     /// The first-person camera a client starts with.
     pub fn standard(position_m: [f64; 3], aspect: f64) -> Self {
@@ -50,10 +79,11 @@ impl Camera {
             position_m,
             yaw_rad: 0.0,
             pitch_rad: 0.0,
+            roll_rad: 0.0,
             fov_y_rad: 70f64.to_radians(),
             aspect,
             near_m: 0.1,
-            far_m: 1024.0,
+            far_m: FAR_M,
         }
     }
 
@@ -83,7 +113,9 @@ impl Camera {
         let right = cross([0.0, 1.0, 0.0], forward);
         let right = normalise(right).unwrap_or([1.0, 0.0, 0.0]);
         let up = cross(forward, right);
-        (right, normalise(up).unwrap_or([0.0, 1.0, 0.0]), forward)
+        let up = normalise(up).unwrap_or([0.0, 1.0, 0.0]);
+        let (right, up) = rolled(right, up, self.roll_rad);
+        (right, up, forward)
     }
 
     /// Camera-relative world point → clip space, ready for WGSL as `mat4x4<f32>`.
@@ -114,6 +146,24 @@ impl Camera {
 
         multiply(projection, view)
     }
+}
+
+/// Rotate the camera's `(right, up)` pair about the view direction.
+///
+/// Positive `roll_rad` tilts `up` toward `-right`: the camera **banks left**, and the
+/// world therefore appears to rotate clockwise. See [`Camera::roll_rad`].
+fn rolled(right: [f64; 3], up: [f64; 3], roll_rad: f64) -> ([f64; 3], [f64; 3]) {
+    if roll_rad == 0.0 {
+        return (right, up);
+    }
+    let (sin, cos) = roll_rad.sin_cos();
+    let mut rotated_right = [0.0; 3];
+    let mut rotated_up = [0.0; 3];
+    for axis in 0..3 {
+        rotated_right[axis] = right[axis] * cos + up[axis] * sin;
+        rotated_up[axis] = up[axis] * cos - right[axis] * sin;
+    }
+    (rotated_right, rotated_up)
 }
 
 /// Column-major `a · b`.
@@ -180,9 +230,10 @@ mod tests {
     #[test]
     fn the_basis_is_orthonormal_and_right_handed() {
         let mut cam = Camera::standard([0.0, 0.0, 0.0], 1.0);
-        for (yaw, pitch) in [(0.3, 0.2), (-1.1, -0.4), (2.7, 0.9)] {
+        for (yaw, pitch, roll) in [(0.3, 0.2, 0.0), (-1.1, -0.4, 0.5), (2.7, 0.9, -1.2)] {
             cam.yaw_rad = yaw;
             cam.pitch_rad = pitch;
+            cam.roll_rad = roll;
             let (r, u, f) = cam.basis();
             let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
             for v in [r, u, f] {
@@ -197,6 +248,24 @@ mod tests {
                 assert!((c[i] - f[i]).abs() < 1e-12, "not right-handed");
             }
         }
+    }
+
+    /// **The roll convention, pinned**: positive roll banks the camera left, so the
+    /// up vector tilts toward `-right` and the right vector tilts up. The camera
+    /// effects are added in this convention, and they cannot be read back from a
+    /// screenshot in a test, so the sign is fixed here.
+    #[test]
+    fn a_positive_roll_banks_the_camera_to_the_left() {
+        let mut cam = Camera::standard([0.0, 0.0, 0.0], 1.0);
+        cam.roll_rad = 0.3;
+        let (right, up, forward) = cam.basis();
+        assert!(up[0] < 0.0, "up tilted toward {:.3} on X, not left", up[0]);
+        assert!(right[1] > 0.0, "right tilted toward {:.3} on Y, not up", right[1]);
+        // Rolling about the view direction does not move the view direction.
+        assert_eq!(forward, [0.0, 0.0, 1.0]);
+        // And a zero roll is exactly the unrolled basis.
+        let upright = Camera::standard([0.0, 0.0, 0.0], 1.0);
+        assert_eq!(upright.basis(), ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]));
     }
 
     #[test]
@@ -221,6 +290,55 @@ mod tests {
         let mid = project(&cam, [0.0, 0.0, 5.0]);
         let z_mid = mid[2] / mid[3];
         assert!(z_near < z_mid && z_mid < z_far);
+    }
+
+    /// **The far plane reaches the clouds, measured on the shipped field.** The plane's own
+    /// comment says why it is not `1024` any more; this is the check that it stays wide enough,
+    /// on the field the game actually samples: the furthest cell the frame can draw is a corner of
+    /// the slab, and it has to be in front of the plane or the cloud layer simply ends as the
+    /// camera pitches up.
+    #[test]
+    fn the_far_plane_reaches_the_cloud_fields_own_corner() {
+        use crate::cloud_field::{CloudField, CLOUD_SPAN_M};
+        use voxel_shapers::{Config, WorldSpec};
+
+        let cam = Camera::standard([0.0, 0.0, 0.0], 1.6);
+        let spec = WorldSpec::new(crate::GAME_SEED, Config::default());
+        let half = CLOUD_SPAN_M / 2.0;
+        // Centred on the eye, so the corner is `half` away on both horizontal axes — the furthest
+        // a drawn cell can be — with the field's own measured slab top above it.
+        let field = CloudField::sample(&spec, crate::GAME_TICK, [0.0, 0.0]);
+        assert!(field.cloudy > 0, "the shipped field is clear, so this proves nothing");
+        let top = field.slab_top_m.max(0.0);
+        let reach = (half * half + top * top + half * half).sqrt();
+        println!(
+            "far plane {:.0} m; the shipped field's slab top is {top:.0} m, its far corner \
+             {reach:.0} m from the eye",
+            cam.far_m
+        );
+        // **The claim is about clipping, so it is made on the projection** and not on two lengths:
+        // the corner has to be in front of the eye and inside the far plane, or the pipeline
+        // discards it whatever the distance arithmetic says.
+        let clip = project(&cam, [half, top, half]);
+        assert!(clip[3] > 0.0, "the field's far corner is behind the eye");
+        let z = clip[2] / clip[3];
+        assert!(
+            z < 1.0,
+            "the field's far corner is past the far plane: z {z} with a {reach:.0} m reach and a \
+             {:.0} m plane",
+            cam.far_m
+        );
+        assert!(
+            cam.far_m >= reach,
+            "the far plane is {:.0} m and the field's far corner is {reach:.0} m away",
+            cam.far_m
+        );
+        // And the plane this replaced was inside that reach — which is the defect: a cumulus
+        // overhead is 2 km of view distance against a 1,024 m plane.
+        assert!(
+            1024.0 < reach,
+            "the shipped field reaches {reach:.0} m, so the old plane would have held it"
+        );
     }
 
     #[test]

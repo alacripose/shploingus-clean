@@ -1,0 +1,4 @@
+===== CONTROL: clamp reverted, expect the clamp test to FAIL =====
+STATUS=101
+===== CONTROL: gate reverted, expect the boolean flips back in the instrument =====
+STATUS=0

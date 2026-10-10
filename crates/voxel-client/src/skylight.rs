@@ -94,6 +94,19 @@ pub struct Daylight {
     pub sky: Sky,
 }
 
+/// The unit vector **toward** the sun, in the east-north-up frame: `x` east, `z` south, so a
+/// due-north sun is `−z` and azimuth runs clockwise from north.
+///
+/// **One function, because there are two consumers.** The light rig's first light and the
+/// drawn disc both ask where the sun is, and a second copy of this formula is a second place
+/// for the sky to be wrong in — in a different quarter, which nothing else would notice.
+pub fn sun_direction(altitude_deg: f64, azimuth_deg: f64) -> Vec3 {
+    let (alt, az) = (altitude_deg.to_radians(), azimuth_deg.to_radians());
+    let (sin_alt, cos_alt) = alt.sin_cos();
+    let (sin_az, cos_az) = az.sin_cos();
+    Vec3::new(sin_az * cos_alt, sin_alt, -cos_az * cos_alt)
+}
+
 /// The whole of a tick's daylight, or `None` when the atmosphere is refused.
 ///
 /// See [`rig_of`] for why the sky is derived here rather than handed in.
@@ -117,14 +130,9 @@ pub fn daylight_of(
     let sky = Sky::at(spec, tick, inputs, new_moon_tick)?;
     let sun_altitude_deg = sky.sun_altitude_deg;
 
-    // The sun's direction **toward** it, from altitude and azimuth, in the same
-    // east-north-up frame `voxel_shapers::sky` documents. Written out here rather
-    // than taken from a helper so the convention is visible where the light is
-    // built: `x` east, `z` south, so a due-north sun is `−z`.
-    let (alt, az) = (sun_altitude_deg.to_radians(), sky_azimuth_deg(spec, tick).to_radians());
-    let (sin_alt, cos_alt) = alt.sin_cos();
-    let (sin_az, cos_az) = az.sin_cos();
-    let toward_sun = Vec3::new(sin_az * cos_alt, sin_alt, -cos_az * cos_alt);
+    // The sun's direction **toward** it. The convention lives in [`sun_direction`], which
+    // the drawn disc also calls — two consumers, one formula.
+    let toward_sun = sun_direction(sun_altitude_deg, sky_azimuth_deg(spec, tick));
 
     // **Intensity is normalised by this world's own peak sun, measured through the
     // same atmosphere it is dividing**, so the rig carries a ratio rather than a number
@@ -231,26 +239,13 @@ pub fn daylight_of(
 /// departs from, not a value chosen for a look.
 pub const CLEAR_AIR_TURBIDITY: f64 = 2.0;
 
-/// How much a fully wet atmosphere raises turbidity above [`CLEAR_AIR_TURBIDITY`].
+/// How much the air's own water raises turbidity above [`CLEAR_AIR_TURBIDITY`].
 ///
-/// **A declared project extension, and it says so in the same words
-/// [`AMBIENT_FROM_HORIZON`] uses.** The *anchor* is published — Preetham's `T = 2` is the
-/// clear-air default of the very model being evaluated — but **no published source maps a
-/// precipitation rate onto Preetham's turbidity**, because Preetham treats turbidity as
-/// an aerosol load he is handed rather than one he derives from rainfall. So the coupling
-/// is a **stylisation choice**, declared here, named, sourced to the model it extends, and
-/// counted by a test so it cannot be changed silently.
-///
-/// **What it is not doing:** it is not claiming a physical aerosol model. The claim is
-/// narrower and is the one this project can support — *a world in which it is raining has
-/// more aerosol in its air than one in which it is not, and this is the number for how
-/// much.* Refusing to derive turbidity at all was the alternative, and it would have left
-/// the sun's colour frozen in clear air while the world's weather ran around it.
+/// **A declared project extension**, not the model's — Preetham's `T` is an *aerosol* load he
+/// is handed, and no published source maps a cloud's water path onto it, so the claim is only
+/// the one this project can support: *air with condensed water in it is hazier*. The reasoning
+/// is `docs/skylight.md` §3, the measurement §3.1, and the open defect beside it is §6.1.
 pub const WET_TURBIDITY_GAIN: f64 = 3.0;
-
-/// The reference rainfall the gain is measured against: [`voxel_shapers::weather`]'s own
-/// declared baseline, so the coupling cannot drift away from the shaper that drives it.
-const RAINFALL_REFERENCE_MM: f64 = voxel_shapers::weather::BASE_PRECIPITATION_MM;
 
 /// The sky's two inputs, **derived from the world rather than declared beside it**.
 ///
@@ -261,36 +256,81 @@ const RAINFALL_REFERENCE_MM: f64 = voxel_shapers::weather::BASE_PRECIPITATION_MM
 ///
 /// | input | derived from | the stage that owns it |
 /// |---|---|---|
-/// | `turbidity` | [`voxel_shapers::weather`] precipitation, [`voxel_shapers::atmosphere`] density | [`voxel_shapers::stages::Stage::Weather`], `Cadence::Water` (×4) |
+/// | `turbidity` | [`voxel_shapers::weather`] precipitation **rate** (the onset layer's answer, C-94.7), [`voxel_shapers::atmosphere`] density | [`voxel_shapers::stages::Stage::Weather`], `Cadence::Water` (×4) |
 /// | `ozone_atm_cm` | [`voxel_shapers::climate`] moisture and season | [`voxel_shapers::stages::Stage::Climate`], `Cadence::Daily` |
 ///
 /// **Read at `(x, z)` because the sky is sampled where the player is standing**, not at
 /// the origin — a world whose sky is one value everywhere is a sky with no weather in it.
 pub fn sky_inputs_at(spec: &WorldSpec, x: f64, z: f64, tick: u64) -> SkyInputs {
-    let weather = voxel_shapers::weather::sample(spec, x, z, tick);
+    // **The stage's own answer at the tick.** `rate_at` carries the onset and the rate it
+    // implies, which is what makes "how much of the rain is falling now" reachable from the
+    // sky (C-94.7). Reading `weather::sample` here would be the annual mean again — the
+    // figure the onset exists *beside*, not instead of.
+    //
+    // **Read as the column the light crosses, not at a point** — `docs/skylight.md` §3.
+    let water_path_m = voxel_shapers::clouds::column_water_path_m(spec, x, z, tick);
     let climate = voxel_shapers::climate::sample(spec, x, z, tick);
     let air = voxel_shapers::atmosphere::sample(spec, 0.0);
     SkyInputs {
-        turbidity: turbidity_of(&weather, &air),
+        turbidity: turbidity_of(water_path_m, &air),
         ozone_atm_cm: ozone_of(&climate),
     }
 }
 
-/// Preetham's `T` for a world's own weather: the clear-air anchor, raised by how wet the
-/// air is and thinned by how thin it is.
+/// The column water path one unit of `wet` is measured against, metres.
+///
+/// **Measured, not chosen** by `examples/aerosol-column.rs`: over 1024 columns at four times
+/// of day the path runs `0.0` to `125.0` m with a p90 of `33.5`, so `100.0` puts this world's
+/// p90 column at `T = 4.01`.
+///
+/// **The p90 is inside the model's range and the maximum is not.** Its deepest column reads
+/// `9.50`, past the `T = 6` the fit was taken over and past the `T = 10` where Grok §2.2 says the
+/// formulae go unstable — so the claim that stood here (*"Preetham's ordinary range, not beyond
+/// it"*) was false, and the clamp below is what holds the evaluation inside it. ChatGPT §10 is
+/// also explicit about this constant's home: a normalisation length for cloud water, "not an
+/// aerosol scale".
+pub const WATER_PATH_REFERENCE_M: f64 = 100.0;
+
+/// The lowest effective turbidity the sky is evaluated at.
+///
+/// **DeepSeek §2.2, Grok §2.2 and Zotti, Wilkie & Purgathofer (2007) all put the model's usable
+/// floor here**: below it the horizon glow is a bright zone that does not occur in nature, and
+/// zenith luminance can go negative.
+pub const TURBIDITY_FLOOR: f64 = 1.8;
+
+/// The highest effective turbidity the sky is evaluated at.
+///
+/// **Grok §2.3's fallback clause**, addressed to exactly this case — a retained wet-turbidity
+/// stylisation — against the `T ~ 10` where the formulae go numerically unstable.
+pub const TURBIDITY_CEILING: f64 = 8.0;
+
+/// Preetham's `T` for a world's own weather: the clear-air anchor, raised by **how much
+/// of the rain is falling now** and thinned by how thin the air is.
+///
+/// **The figure is the stage's rate, not the annual mean.** [`WET_TURBIDITY_GAIN`]'s own
+/// claim is *"a world in which it is raining has more aerosol in its air than one in which
+/// it is not"* — and until C-94.7 was wired, this function read `precipitation_mm`, the
+/// long-run mean, so a column whose rain never varied had a sky that never varied either.
+/// The rate is `mean · onset / ONSET_DUTY`, so the derived turbidity **conserves the
+/// annual mean**: the year's average haze is what it always was, redistributed in time.
 ///
 /// **Both factors are dimensionless ratios of a shaper's measurement against that
 /// shaper's own declared baseline**, so neither invents a scale. Rainfall is divided by
 /// [`RAINFALL_REFERENCE_MM`] — `weather`'s own `BASE_PRECIPITATION_MM` — and air density
 /// by `atmosphere`'s own `SEA_LEVEL_DENSITY_KG_M3`.
-fn turbidity_of(weather: &voxel_shapers::weather::WeatherSample, air: &AirSample) -> f64 {
-    let wet = (weather.precipitation_mm / RAINFALL_REFERENCE_MM).max(0.0);
+fn turbidity_of(water_path_m: f64, air: &AirSample) -> f64 {
+    let wet = (water_path_m / WATER_PATH_REFERENCE_M).max(0.0);
     // **Thin air is clearer, and the ratio is `1.0` at sea level**, so an ordinary world
     // is not silently hazed by the altitude factor. The playable band is three orders of
     // magnitude below the Armstrong limit, so this stays near 1 in practice — which is
     // the honest outcome and not a tuning choice.
     let thin = air.density_kg_m3 / voxel_shapers::atmosphere::SEA_LEVEL_DENSITY_KG_M3;
-    CLEAR_AIR_TURBIDITY * (1.0 + WET_TURBIDITY_GAIN * wet) / thin.max(f64::EPSILON)
+    // **Clamped, because the world leaves the model's range and the model is what breaks
+    // there.** `examples/aerosol-column.rs` measures this world's deepest column at `T = 9.50`,
+    // and the alternative ChatGPT §9.2 names — upgrade the evaluator — is `docs/skylight.md`
+    // §7's open slice rather than something to pretend to have done here.
+    (CLEAR_AIR_TURBIDITY * (1.0 + WET_TURBIDITY_GAIN * wet) / thin.max(f64::EPSILON))
+        .clamp(TURBIDITY_FLOOR, TURBIDITY_CEILING)
 }
 
 /// The ozone depth a world's climate implies, in atm-cm.
@@ -346,10 +386,20 @@ fn ozone_of(climate: &voxel_shapers::climate::ClimateSample) -> f64 {
 /// folded into the rig would be indistinguishable from the bug above, which was a scale
 /// folded into the rig.
 ///
-/// **The value is a choice and is stated as one.** `8.0` puts the world's brightest noon
-/// sun on a mid-grey surface near the top of the range, which is what a lit world looks
-/// like; it is counted by a test so a later edit has to say it changed it.
-pub const EXPOSURE: f64 = 8.0;
+/// **The value is a choice and is stated as one**, and it was **re-measured** against
+/// the world as it is now — the same move C-158 made for [`SKY_EXPOSURE`]. `8.0` was
+/// chosen against the placeholder greys C-143 later replaced: with sampled spectra on
+/// the bright classes, the ignored GPU test
+/// `the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe` measures the
+/// world's brightest noon pixel at **1.43345** — a clipped frame, not a lit one. The
+/// measured value is **`4.0`**: the same frame measures `max 0.71672, mean 0.37842`.
+/// `4.0` rather than the largest value that just fits this noon is deliberate — the
+/// sun's `intensity` is normalised against **this world's own peak**, so at the year's
+/// highest noon it reaches `1.0` where it measured `0.780` in the test, and a value
+/// measured against one noon would clip at another. A power of two, so the scale is
+/// exact in binary and the tests that compare against `EXPOSURE` exactly can say so. It
+/// is counted by a test so a later edit has to say it changed it.
+pub const EXPOSURE: f64 = 4.0;
 
 /// The rig as it is **uploaded**: the physical rig scaled by [`EXPOSURE`].
 ///
@@ -412,7 +462,9 @@ pub fn sky_lut(
 ) -> Option<Vec<LinearRgb>> {
     let sky = Sky::at(spec, tick, inputs, new_moon_tick)?;
     let peak = peak_sun_luminance(spec, inputs);
-    if !(peak > 0.0) || !peak.is_finite() {
+    // **Absence is a refusal, not a dark sky.** A non-finite peak is refused explicitly, because
+    // `peak <= 0.0` is false for it and would let a NaN through as a colour.
+    if !peak.is_finite() || peak <= 0.0 {
         return None;
     }
     Some(sky_table(&sky, inputs, peak))
@@ -458,15 +510,22 @@ pub fn sky_table(sky: &Sky, inputs: SkyInputs, peak: f64) -> Vec<LinearRgb> {
 /// out. Sharing one constant would force the sky to be either invisible or white.
 ///
 /// The value is a choice and is stated as one, beside the measurement that produced it.
-/// The normalised noon sky peaks at **0.030456**, so `24.0` puts the brightest noon sky
-/// at about **0.73** — bright, unclipped, and below the sunlit terrain's own highlights,
-/// so the sky reads as sky rather than as a white card.
+/// With the spherical geometry (C-157) the normalised noon summary peaks at **0.0611**,
+/// so `12.0` puts the brightest noon sky at about **0.73** — bright, unclipped, and below
+/// the sunlit terrain's own highlights, so the sky reads as sky rather than as a white
+/// card.
 ///
 /// **The first value tried was `220.0` and it was wrong by 9×**, which the test caught
 /// with `the exposed noon sky peaks at 6.7005`. It is recorded here because a constant
 /// that was guessed and then measured is a different kind of number from one that was
 /// measured first, and this one is the latter.
-pub const SKY_EXPOSURE: f64 = 24.0;
+///
+/// **It moved from `24.0` with C-157, and the test caught that too.** The geometry repair
+/// took the meridian's radiance up by about 2× (the old phase angle was not a spherical
+/// angle at all), and the exposed peak read `1.4663` — a sky brighter than the card it
+/// must not become. The exposure is re-measured against the repaired model rather than the
+/// model being dimmed back to an old number.
+pub const SKY_EXPOSURE: f64 = 12.0;
 
 /// One sky radiance on its way to the swapchain.
 ///
@@ -476,6 +535,85 @@ pub const SKY_EXPOSURE: f64 = 24.0;
 /// the_rig_is` says so.
 pub fn sky_exposed(colour: LinearRgb) -> LinearRgb {
     colour * SKY_EXPOSURE
+}
+
+/// **The directional dome's sampling grid**: azimuth cells around the compass and
+/// elevation rows from the horizon to the zenith.
+///
+/// The 1-D table above is the **elevation summary** (`Sky::dome_radiance`, the Δφ = 0
+/// meridian) and remains what the ambient pair is sampled from. The drawn sky is this
+/// one: `Sky::directional_radiance` over both angles, so the aureole sits where the Sun
+/// is. The azimuth count is the coarser axis because the sky's azimuthal structure is
+/// the broad aureole, not a vertical edge; the elevation axis keeps the horizon→zenith
+/// gradient, which is the sharp one.
+pub const SKY_DOME_AZIMUTHS: usize = 64;
+/// Elevation rows: horizon (0°) to zenith (90°), inclusive endpoints.
+pub const SKY_DOME_ELEVATIONS: usize = 64;
+/// Entries in the dome table: `elevation * azimuth`, row-major.
+pub const SKY_DOME_ENTRIES: usize = SKY_DOME_ELEVATIONS * SKY_DOME_AZIMUTHS;
+
+/// **The drawn sky: a table over (elevation, azimuth), normalised against the world's own
+/// peak sun.**
+///
+/// The client fills this once per tick from one [`Sky`] — the same evaluation the light rig
+/// is built from — and uploads it; the shader turns a pixel into a direction and indexes
+/// the table, evaluating geometry and never physics. Row-major: index `elevation *
+/// SKY_DOME_AZIMUTHS + azimuth`, both counted from zero at the horizon and at north
+/// respectively, azimuth increasing eastwards.
+pub fn sky_dome_table(sky: &Sky, inputs: SkyInputs, peak: f64) -> Vec<LinearRgb> {
+    let mut table = Vec::with_capacity(SKY_DOME_ENTRIES);
+    for e in 0..SKY_DOME_ELEVATIONS {
+        let elevation = 90.0 * e as f64 / (SKY_DOME_ELEVATIONS - 1) as f64;
+        for a in 0..SKY_DOME_AZIMUTHS {
+            let azimuth = 360.0 * a as f64 / SKY_DOME_AZIMUTHS as f64;
+            let delta = azimuth - sky.sun_azimuth_deg;
+            table.push(Sky::directional_radiance(sky.sun_altitude_deg, elevation, delta, inputs) / peak);
+        }
+    }
+    table
+}
+
+/// The dome table read back at a direction — **the same bilinear interpolation the shader
+/// performs**, azimuth wrapped and below-horizon clamped.
+///
+/// Written on this side so the two can be compared rather than assumed equal, exactly as
+/// [`sky_lut_lookup`] is for the elevation summary.
+pub fn sky_dome_lookup(table: &[LinearRgb], elevation_deg: f64, azimuth_deg: f64) -> LinearRgb {
+    if table.is_empty() {
+        return LinearRgb::BLACK;
+    }
+    if table.len() < 2 {
+        return table[0];
+    }
+    let el = elevation_deg.clamp(0.0, 90.0) / 90.0 * (SKY_DOME_ELEVATIONS - 1) as f64;
+    let e0 = (el.floor() as usize).min(SKY_DOME_ELEVATIONS - 2);
+    let ef = el - e0 as f64;
+    let az = azimuth_deg.rem_euclid(360.0) / 360.0 * SKY_DOME_AZIMUTHS as f64;
+    let a0 = az.floor() as usize % SKY_DOME_AZIMUTHS;
+    let af = az - az.floor();
+    let a1 = (a0 + 1) % SKY_DOME_AZIMUTHS;
+    let at = |e: usize, a: usize| table[e * SKY_DOME_AZIMUTHS + a];
+    let low = at(e0, a0) * (1.0 - af) + at(e0, a1) * af;
+    let high = at(e0 + 1, a0) * (1.0 - af) + at(e0 + 1, a1) * af;
+    low * (1.0 - ef) + high * ef
+}
+
+/// **A ray's place in the dome table**: `(elevation, azimuth)` in degrees, in the
+/// convention [`sky_dome_lookup`] and `sky.wgsl` index with.
+///
+/// The world frame is east-north-up with `x` east and `z` south (the same convention
+/// `voxel_shapers::sky` and the shaders use), so the azimuth is `atan2(x, −z)`, zero at
+/// north, increasing eastwards, and the elevation is `asin(y)`. Written here because a
+/// fluid's mirror ray has to be looked up in the same table the sky pass draws, and two
+/// spellings of the convention would put the reflection in the wrong part of the sky.
+pub fn sky_direction_of(ray: Vec3) -> (f64, f64) {
+    let r = ray.normalise();
+    let elevation_deg = r.y.clamp(-1.0, 1.0).asin().to_degrees();
+    let mut azimuth_deg = r.x.atan2(-r.z).to_degrees();
+    if azimuth_deg < 0.0 {
+        azimuth_deg += 360.0;
+    }
+    (elevation_deg, azimuth_deg)
 }
 
 /// The table read back at a direction — **the same interpolation the shader performs**.
@@ -794,16 +932,19 @@ mod tests {
         // **no tick in it at all**, and an upslope one carrying the seasonal term. The
         // first version of this test sampled `(0, -96)`, where the wind descends — a rain
         // shadow — and measured a turbidity that varied by exactly `0.0` and concluded
-        // the weather was not reaching the sky. **It was not reaching *that column*, and
-        // a sky sampled at one point is not the world's sky.**
+        // the weather was not reaching the sky. The *mean* was not reaching that column
+        // and still does not; since C-94.7 the onset is what moves it, and the test below
+        // (`the_onset_reaches_the_sky_even_where_the_mean_never_moves`) holds that to a
+        // column of exactly that kind. A sky sampled at one point is still not the
+        // world's sky, which is why the places stay.
         const PLACES: [(f64, f64); 5] =
             [(0.0, -96.0), (-96.0, 0.0), (96.0, 0.0), (-96.0, -96.0), (96.0, 96.0)];
         for &(x, z) in &PLACES {
             for tick in (0..year).step_by(year as usize / 96) {
-                let weather = voxel_shapers::weather::sample(&world, x, z, tick);
+                let path_m = voxel_shapers::clouds::column_water_path_m(&world, x, z, tick);
                 let climate = voxel_shapers::climate::sample(&world, x, z, tick);
                 let air = voxel_shapers::atmosphere::sample(&world, 0.0);
-                let t = turbidity_of(&weather, &air);
+                let t = turbidity_of(path_m, &air);
                 let o = ozone_of(&climate);
                 lo = lo.min(t);
                 hi = hi.max(t);
@@ -819,7 +960,7 @@ mod tests {
         // **The weather moves the turbidity.** A clear-air sky forever was the defect.
         assert!(
             hi > lo * 1.05,
-            "turbidity ranged only {lo}..{hi} across the day, so the weather is not \
+            "turbidity ranged only {lo}..{hi} across the year, so the weather is not \
              reaching the sky"
         );
         // **And it never falls below the published clear-air anchor**, because that anchor
@@ -850,6 +991,66 @@ mod tests {
     }
 
     #[test]
+    fn the_onset_reaches_the_sky_even_where_the_mean_never_moves() {
+        // **C-94.7, held to the exact columns it names.** "The stage consumes
+        // precipitation and nothing yet consumes the onset" — the consumer is this path.
+        // `weather.rs` measured that **49.7 % of columns never move**: the downslope
+        // branch returns `BASE * moisture * 0.35` with no `tick` term, so their annual
+        // figure is one constant forever and, before the wire, their turbidity was too.
+        // This finds a column of exactly that kind and pins that the onset — not the mean
+        // — is what moves the sky above it.
+        let world = spec();
+        let air = voxel_shapers::atmosphere::sample(&world, 0.0);
+        let year = voxel_shapers::climate::YEAR_TICKS;
+        let step = year as usize / 96;
+
+        let mut found = None;
+        'search: for x in (-600..600).step_by(73) {
+            for z in (-600..600).step_by(97) {
+                let (xf, zf) = (x as f64, z as f64);
+                let first = voxel_shapers::weather::precipitation_mm(&world, xf, zf, 0);
+                let flat = (0..year)
+                    .step_by(step)
+                    .all(|t| voxel_shapers::weather::precipitation_mm(&world, xf, zf, t) == first);
+                if flat {
+                    found = Some((xf, zf, first));
+                    break 'search;
+                }
+            }
+        }
+        let (x, z, mean) = found.expect("no downslope column in the search area");
+
+        let mut lo = f64::INFINITY;
+        let mut hi = f64::NEG_INFINITY;
+        let mut onset_lo = f64::INFINITY;
+        let mut onset_hi = f64::NEG_INFINITY;
+        for t in (0..year).step_by(step) {
+            let p = voxel_shapers::weather::precipitation_now(&world, x, z, t);
+            assert_eq!(
+                p.mean_mm_per_year, mean,
+                "the mean moved at ({x}, {z}), which is not a downslope column"
+            );
+            onset_lo = onset_lo.min(p.onset);
+            onset_hi = onset_hi.max(p.onset);
+            let now = turbidity_of(
+                voxel_shapers::clouds::column_water_path_m(&world, x, z, t),
+                &air,
+            );
+            lo = lo.min(now);
+            hi = hi.max(now);
+        }
+        assert!(
+            onset_hi > onset_lo,
+            "the onset field itself was flat at ({x}, {z}): {onset_lo}..{onset_hi}"
+        );
+        assert!(
+            hi > lo * 1.05,
+            "turbidity stayed {lo}..{hi} on a column whose mean is flat at {mean} mm/year, \
+             so the onset is not reaching the sky"
+        );
+    }
+
+    #[test]
     fn the_declared_couplings_are_named_and_counted() {
         // **The two numbers in this file that are not the model's are declared, and this
         // is the same discipline `AMBIENT_FROM_HORIZON` carries**: a stylisation choice
@@ -863,10 +1064,57 @@ mod tests {
         assert_eq!(OZONE_SEASON_GAIN_ATM_CM, 0.02, "the ozone seasonal amplitude moved");
         assert_eq!(OZONE_REFERENCE_ATM_CM, 0.03, "the standard 3 mm ozone column moved");
         assert_eq!(
-            RAINFALL_REFERENCE_MM,
-            voxel_shapers::weather::BASE_PRECIPITATION_MM,
-            "the rainfall reference has drifted from the shaper that owns it"
-        );    }
+            WATER_PATH_REFERENCE_M,
+            100.0,
+            "the water-path reference moved; examples/aerosol-column.rs is where it was read"
+        );
+        // **The clamp is declared and pinned, and it is not this file's invention.** DeepSeek
+        // §2.2, Grok §2.2 and Zotti, Wilkie & Purgathofer (2007) put the model's usable floor at
+        // `1.8`; Grok §2.3's fallback clause for a retained wet-turbidity stylisation takes the
+        // ceiling to `8.0`. A later edit that widens either has to say so here.
+        assert_eq!(TURBIDITY_FLOOR, 1.8, "the sky's turbidity floor moved");
+        assert_eq!(TURBIDITY_CEILING, 8.0, "the sky's turbidity ceiling moved");
+    }
+
+    #[test]
+    fn the_clamp_is_what_holds_the_sky_inside_the_models_range() {
+        // **The world leaves the model's range, and this is the measurement.** ChatGPT §11
+        // calls it Failure 4 — "Preetham is extrapolated far past its fit range" — and the fit
+        // was taken over `T = 2..6`. So the clamp has to be reached and *held* on real columns;
+        // a clamp nothing reaches is a declaration, not a control.
+        let world = spec();
+        let air = voxel_shapers::atmosphere::sample(&world, 0.0);
+        let quarter = voxel_shapers::climate::YEAR_TICKS / 4;
+        let mut deepest = 0.0f64;
+        for t in [0u64, quarter, quarter * 2] {
+            for x in (-600..600).step_by(37) {
+                for z in (-600..600).step_by(41) {
+                    let path = voxel_shapers::clouds::column_water_path_m(
+                        &world, x as f64, z as f64, t,
+                    );
+                    deepest = deepest.max(path);
+                }
+            }
+        }
+        assert!(
+            deepest > 0.0,
+            "no sampled column carried any water, so the clamp was never exercised"
+        );
+        assert_eq!(
+            turbidity_of(deepest, &air),
+            TURBIDITY_CEILING,
+            "the world's deepest column ({deepest:.1} m) is not held at the ceiling"
+        );
+        assert!(
+            turbidity_of(deepest / 4.0, &air) < TURBIDITY_CEILING,
+            "every path sampled sat on the ceiling, so the clamp is not what holds the deep one"
+        );
+        let clear = turbidity_of(0.0, &air);
+        assert!(
+            clear >= CLEAR_AIR_TURBIDITY && clear < TURBIDITY_CEILING,
+            "clear air read {clear}, so the clamp is clipping ordinary columns"
+        );
+    }
 
     // **An assertion that was here, and why it is not.** There was a
     // `RAINFALL_REFERENCE_MM > 0.0` check here, and clippy is right that it could never
@@ -875,6 +1123,9 @@ mod tests {
     // weather::BASE_PRECIPITATION_MM`, is the one that catches drift, and a zero in the
     // shaper is that shaper's own test to catch. **I wrote an assertion to defend an
     // assertion, and deleted the defence when I read it again.**
+    //
+    // **Both are gone as of the column slice**: turbidity reads a cloud's water path, so
+    // weather's rainfall baseline is no longer a number this file depends on at all.
 
     #[test]
     fn the_exposure_scales_both_terms_or_neither() {
@@ -911,7 +1162,7 @@ mod tests {
         );
         assert_eq!(lit.lights.len(), day.rig.lights.len(), "exposure dropped a light");
         // The declared value, so a later edit has to say it changed it.
-        assert_eq!(EXPOSURE, 8.0, "the declared exposure moved");
+        assert_eq!(EXPOSURE, 4.0, "the declared exposure moved");
     }
 
     #[test]
@@ -1148,6 +1399,124 @@ mod tests {
     }
 
     #[test]
+    fn the_dome_table_is_the_directional_model_it_samples() {
+        let (spec, tick) = noon_world();
+        let inputs = SkyInputs::default();
+        let sky = Sky::at(&spec, tick, inputs, 0).expect("a sky at noon");
+        let peak = peak_sun_luminance(&spec, inputs);
+        let table = sky_dome_table(&sky, inputs, peak);
+        assert_eq!(table.len(), SKY_DOME_ENTRIES, "the dome table is the declared size");
+
+        // A table of one colour would make everything below pass for the wrong reason.
+        let brightest = table.iter().map(|c| c.luminance()).fold(0.0_f64, f64::max);
+        assert!(
+            brightest > 0.0 && brightest < 1.0,
+            "the normalised dome is {brightest}, so it is not a ratio"
+        );
+
+        // At a sample point the table is the model exactly — no interpolation.
+        for e in 0..SKY_DOME_ELEVATIONS {
+            for a in 0..SKY_DOME_AZIMUTHS {
+                let elevation = 90.0 * e as f64 / (SKY_DOME_ELEVATIONS - 1) as f64;
+                let azimuth = 360.0 * a as f64 / SKY_DOME_AZIMUTHS as f64;
+                let exact = Sky::directional_radiance(
+                    sky.sun_altitude_deg,
+                    elevation,
+                    azimuth - sky.sun_azimuth_deg,
+                    inputs,
+                ) / peak;
+                let looked = sky_dome_lookup(&table, elevation, azimuth);
+                let (a_, b_) = (looked.luminance(), exact.luminance());
+                assert!(
+                    (a_ - b_).abs() < 1e-12,
+                    "at ({elevation}°, {azimuth}°) the dome is not the model: {a_} against {b_}"
+                );
+            }
+        }
+
+        // **The dome knows where the Sun is.** At one elevation, the cell at the Sun's own
+        // azimuth is brighter than the cell opposite — the azimuthal fact the elevation-only
+        // table could not carry.
+        let toward = sky_dome_lookup(&table, 30.0, sky.sun_azimuth_deg);
+        let away = sky_dome_lookup(&table, 30.0, sky.sun_azimuth_deg + 180.0);
+        assert!(
+            toward.luminance() > away.luminance(),
+            "the dome's sun-side cell is not brighter: {} against {}",
+            toward.luminance(),
+            away.luminance()
+        );
+
+        // Between the samples, the interpolation error is measured rather than assumed; the
+        // bound is generous on purpose and the number is printed so a later change can tighten
+        // it from a measurement.
+        let mut worst = 0.0_f64;
+        for e in 0..=900 {
+            let elevation = e as f64 / 10.0;
+            for a in 0..=359 {
+                let azimuth = a as f64;
+                let exact = Sky::directional_radiance(
+                    sky.sun_altitude_deg,
+                    elevation,
+                    azimuth - sky.sun_azimuth_deg,
+                    inputs,
+                ) / peak;
+                let looked = sky_dome_lookup(&table, elevation, azimuth);
+                worst = worst.max((looked.luminance() - exact.luminance()).abs());
+            }
+        }
+        assert!(
+            worst < 0.1 * brightest + 1e-12,
+            "the dome interpolation is {worst} off, over a tenth of the peak {brightest}"
+        );
+        println!("dome table worst interpolation error: {worst:.6} of peak {brightest:.6}");
+    }
+
+    #[test]
+    fn the_direction_convention_is_the_one_the_shaders_use() {
+        // The compass, asserted in the frame the whole repository uses: x east, z
+        // south, azimuth zero at north and increasing eastwards.
+        let at = |x: f64, y: f64, z: f64| sky_direction_of(Vec3::new(x, y, z));
+        let up = at(0.0, 1.0, 0.0);
+        assert!((up.0 - 90.0).abs() < 1e-9, "straight up is not the zenith: {up:?}");
+        let east = at(1.0, 0.0, 0.0);
+        assert!((east.0 - 0.0).abs() < 1e-9 && (east.1 - 90.0).abs() < 1e-9, "east: {east:?}");
+        let south = at(0.0, 0.0, 1.0);
+        assert!((south.1 - 180.0).abs() < 1e-9, "south: {south:?}");
+        let west = at(-1.0, 0.0, 0.0);
+        assert!((west.1 - 270.0).abs() < 1e-9, "west: {west:?}");
+        let north = at(0.0, 0.0, -1.0);
+        assert!(north.1 < 1e-9, "north: {north:?}");
+        // And a below-horizon ray reports a negative elevation rather than clamping —
+        // the caller decides what a ray into the ground means.
+        let down = at(0.0, -1.0, 0.0);
+        assert!((down.0 + 90.0).abs() < 1e-9, "straight down: {down:?}");
+    }
+
+    #[test]
+    fn a_flat_water_surface_reflects_the_sky_in_the_mirror_direction() {
+        // The fluid geometry joined to the table, on the one case a player sees every
+        // day: level water seen from above. The reflected ray must be **up**, at the
+        // same azimuth as the view, so the looked-up radiance is a sky radiance and
+        // the reflection is the sky and not a hole.
+        let view = Vec3::new(0.0, 1.0, -1.0).normalise(); // toward an eye above and north
+        let normal = Vec3::new(0.0, 1.0, 0.0);
+        let ray = voxel_appearance::fluid::reflected_ray(view, normal);
+        let (elevation, azimuth) = sky_direction_of(ray);
+        assert!(elevation > 0.0, "the mirror ray points below the horizon: {elevation}");
+        assert!((elevation - 45.0).abs() < 1e-6, "the mirror elevation is {elevation}");
+        assert!((azimuth - 180.0).abs() < 1e-6, "the mirror azimuth is {azimuth}");
+        // And it reads a real table: south at 45° is brighter than the same table's
+        // black-outside case would be.
+        let (spec, tick) = noon_world();
+        let inputs = SkyInputs::default();
+        let sky = Sky::at(&spec, tick, inputs, 0).expect("a sky");
+        let peak = peak_sun_luminance(&spec, inputs);
+        let table = sky_dome_table(&sky, inputs, peak);
+        let reflected = sky_dome_lookup(&table, elevation, azimuth);
+        assert!(reflected.luminance() > 0.0, "the reflection is black at noon");
+    }
+
+    #[test]
     fn the_sky_is_a_normalised_ratio_like_the_rig_is() {
         // The normaliser is shared on purpose. A second one would be a second dialect
         // of the same field, which is what `chromaticity`'s doc refuses.
@@ -1243,5 +1612,53 @@ mod tests {
             (exposed.ambient.luminance() - ambient).abs() < 1e-12,
             "the rig's ambient is exposed by something other than the shared exposure"
         );
+    }
+
+    #[test]
+    fn the_sky_does_not_step_across_ground_while_walking() {
+        // Walking 0.86 m per `Cadence::Water` update used to step the frame's light by
+        // **0.098316**, with `EXPOSURE` a constant that never moved — `docs/skylight.md` §3.
+        let world = spec();
+        let mut tick = crate::game::GAME_TICK;
+        let mut x = 0.0f64;
+        let mut previous: Option<(f64, f64)> = None;
+        let (mut worst_turbidity, mut worst_intensity) = (0.0f64, 0.0f64);
+        while x < 256.0 {
+            let inputs = sky_inputs_at(&world, x, 0.0, tick);
+            let turbidity = inputs.turbidity;
+            let day = daylight_of(&world, tick, inputs, 0).expect("a sky along the walk");
+            let intensity = day.rig.lights.first().map_or(0.0, |light| light.intensity);
+            if let Some((was_turbidity, was_intensity)) = previous {
+                worst_turbidity = worst_turbidity.max((turbidity - was_turbidity).abs());
+                worst_intensity = worst_intensity.max((intensity - was_intensity).abs());
+            }
+            previous = Some((turbidity, intensity));
+            // 0.86 m of ground and `Cadence::Water`'s 4 ticks together, because the player
+            // moves on both axes at once and it is the product that is felt.
+            x += 0.86;
+            tick += 4;
+        }
+
+        println!(
+            "walking 256 m: worst step per {:.1} s update is turbidity {worst_turbidity:.4} \
+             and sun intensity {worst_intensity:.6}",
+            crate::clock::tick_seconds() * 4.0
+        );
+
+        // The bounds are declared, and they are set against **both** measurements — 0.5693
+        // and 0.017493 with the footprint, against 2.8064 and 0.098316 without it — so they
+        // catch the defect they exist for rather than merely restating today's number.
+        assert!(
+            worst_turbidity < 1.0,
+            "turbidity stepped {worst_turbidity} across one atmosphere update of a walk"
+        );
+        assert!(
+            worst_intensity < 0.03,
+            "the frame's light stepped {worst_intensity} in one {:.1} s atmosphere update of a \
+             walk, which is the walking change the footprint was added to stop",
+            crate::clock::tick_seconds() * 4.0
+        );
+        // And the sampling choice is pinned, so a later edit has to say it changed it.
+        assert_eq!(WATER_PATH_REFERENCE_M, 100.0, "the water-path reference moved");
     }
 }

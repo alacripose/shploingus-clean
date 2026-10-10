@@ -88,12 +88,17 @@ pub const MIE_ASYMMETRY_G: f64 = 0.80;
 /// its sky through a **published** relation rather than through a paint.
 pub const DEFAULT_TURBIDITY: f64 = 2.0;
 pub const DEFAULT_OZONE_ATM_CM: f64 = 0.35;
-/// The Sun's angular **radius**, radians. `0.533° / 2 = 0.00465 rad`… which the
-/// paper rounds to the 0.0093 figure for the full angular *diameter* used in its
-/// `s` term. Carried as the paper's own number, with its meaning named, because a
-/// factor-of-two here is exactly the kind of error that only shows up as a sun
-/// twice the size it should be.
-pub const SUN_ANGULAR_RADIUS_RAD: f64 = 0.0093;
+/// The Sun's angular **diameter**, radians: `0.533°`.
+///
+/// **It was called `SUN_ANGULAR_RADIUS_RAD` and was wrong by a factor of two.** The
+/// comment under it already said the number is the paper's full angular *diameter* used in
+/// its `s` term — so the name and the note disagreed, and the name won every time somebody
+/// read it. A reader who took it as a radius got a penumbra twice the real width, which is
+/// precisely the error this comment was written to prevent. It is now named for what it is.
+///
+/// The **radius** is half of this, and `voxel_light`'s `SUN_DILUTION` gives it independently:
+/// `sqrt(2.1615e-5) = 0.004649 rad`, which agrees with `0.0093 / 2`.
+pub const SUN_ANGULAR_DIAMETER_RAD: f64 = 0.0093;
 
 /// The **Rayleigh scale height**, metres: the e-folding height of the molecular
 /// atmosphere, which is what makes the exponential atmosphere's integral `β · H`.
@@ -137,7 +142,7 @@ pub const PROVENANCE: &[(&str, f64, SkyProvenance)] = &[
     ("mie_asymmetry_g", MIE_ASYMMETRY_G, SkyProvenance::Paper("Preetham, Shirley & Smits 1999, clean rural aerosol")),
     ("default_turbidity", DEFAULT_TURBIDITY, SkyProvenance::Default("Preetham 1999, clear atmosphere T = 2")),
     ("default_ozone_atm_cm", DEFAULT_OZONE_ATM_CM, SkyProvenance::Paper("Preetham 1999, ozone depth")),
-    ("sun_angular_radius_rad", SUN_ANGULAR_RADIUS_RAD, SkyProvenance::Paper("Preetham 1999, solar angular diameter term")),
+    ("sun_angular_diameter_rad", SUN_ANGULAR_DIAMETER_RAD, SkyProvenance::Paper("Preetham 1999, solar angular diameter term")),
     ("rayleigh_phase_scale", RAYLEIGH_PHASE_SCALE, SkyProvenance::Paper("Rayleigh 1899, 3/16 pi")),
     ("rayleigh_scale_height_m", RAYLEIGH_SCALE_HEIGHT_M, SkyProvenance::Paper("Preetham 1999 / US Standard Atmosphere 1976, exponential atmosphere integral")),
     ("mie_scale_height_m", MIE_SCALE_HEIGHT_M, SkyProvenance::Paper("Preetham 1999, aerosol layer scale height")),
@@ -240,7 +245,7 @@ fn rayleigh_phase(cos_theta: f64) -> f64 {
 /// **This is Preetham, Shirley & Smits (1999) §3**, in the form the paper gives
 /// it: the Rayleigh and Mie coefficients scaled by turbidity, the ozone term's
 /// transmittance, and the two phase functions.
-fn solution(view_cos_theta: f64, sun_cos_theta: f64, inputs: SkyInputs) -> ScatteringSolution {
+fn solution(sun_cos_theta: f64, cos_gamma: f64, inputs: SkyInputs) -> ScatteringSolution {
     let turbidity = inputs.turbidity;
 
     // **Preetham's turbidity scaling**: Mie grows with turbidity, Rayleigh does
@@ -249,8 +254,12 @@ fn solution(view_cos_theta: f64, sun_cos_theta: f64, inputs: SkyInputs) -> Scatt
     let beta_r = RAYLEIGH_BETA_PER_M;
     let beta_m = MIE_BETA_PER_M * turbidity;
 
-    // The angle between the view ray and the sun, from the two cosines.
-    let cos_gamma = (view_cos_theta * sun_cos_theta).clamp(-1.0, 1.0);
+    // The angle between the view ray and the sun. **Passed in, not derived from two
+    // zenith cosines**: an earlier version multiplied them, which is not the spherical
+    // angle in any general case (it is only the view's zenith projection of the sun),
+    // so the aureole sat in the wrong part of the sky. The one place the angle is
+    // formed now is [`cos_view_sun`], from two altitudes and an azimuth difference.
+    let cos_gamma = cos_gamma.clamp(-1.0, 1.0);
 
     // **Optical depths along the sun's own path**, from Kasten & Young as
     // `voxel_shapers::sky` computes them. One function for the air column: a
@@ -322,6 +331,11 @@ pub struct Sky {
     /// The Sun's altitude in degrees, carried because every one of the above is a
     /// function of it and a caller measuring a frame will want to say which.
     pub sun_altitude_deg: f64,
+    /// The Sun's azimuth in degrees — east-north-up, measured from north — carried
+    /// because a **directional** sky needs to know where the Sun is and not merely how
+    /// high, and a caller that re-derived it from `(spec, tick)` would be a second path
+    /// to one position.
+    pub sun_azimuth_deg: f64,
 }
 
 /// **The air column** — the transmittance of the atmosphere along one path at one
@@ -406,6 +420,7 @@ impl Sky {
             horizon: Sky::dome_radiance(position.altitude_deg, 0.0, inputs),
             phase,
             sun_altitude_deg: position.altitude_deg,
+            sun_azimuth_deg: position.azimuth_deg,
         })
     }
 
@@ -510,9 +525,39 @@ impl Sky {
     /// refuses to *store* a climate field (*"two records drift"*). So the model
     /// stays here, on the CPU, and the shader receives a table of its output.
     /// What the GPU evaluates is geometry, never physics.
+    /// **The elevation-only summary**: the radiance in the Sun's own meridian at
+    /// this elevation — the [`directional_radiance`](Self::directional_radiance)
+    /// with an azimuth difference of zero.
+    ///
+    /// It is what the zenith/horizon pair and the one-dimensional client table are
+    /// sampled from, and it is **not** what a drawn sky should use: it carries no
+    /// azimuth, so two directions at the same elevation draw the same colour even
+    /// when one faces the Sun and the other faces away. The drawn sky uses
+    /// [`directional_radiance`](Self::directional_radiance).
     pub fn dome_radiance(
         sun_altitude_deg: f64,
         view_cos_theta: f64,
+        inputs: SkyInputs,
+    ) -> LinearRgb {
+        let view_altitude_deg = view_cos_theta.clamp(0.0, 1.0).asin().to_degrees();
+        Self::directional_radiance(sun_altitude_deg, view_altitude_deg, 0.0, inputs)
+    }
+
+    /// **The sky in the direction asked, with the Sun where it actually is.**
+    ///
+    /// `view_altitude_deg` is the view ray's elevation above the horizon and
+    /// `view_minus_sun_azimuth_deg` is the view's azimuth **relative to the Sun's**
+    /// — zero looks straight at the Sun, 180 looks directly away. The angle between
+    /// the two directions is formed once, in [`cos_view_sun`], and everything else
+    /// is [`solution`].
+    ///
+    /// This is the function a directional sky dome samples; the client fills a table
+    /// of its output per (elevation, azimuth) so the shader still evaluates geometry
+    /// and never physics.
+    pub fn directional_radiance(
+        sun_altitude_deg: f64,
+        view_altitude_deg: f64,
+        view_minus_sun_azimuth_deg: f64,
         inputs: SkyInputs,
     ) -> LinearRgb {
         if !celestial::SkyPhase::sun_is_up(sun_altitude_deg) {
@@ -524,7 +569,8 @@ impl Sky {
             return LinearRgb::BLACK;
         }
         let sun_cos_theta = sun_altitude_deg.to_radians().cos();
-        let sol = solution(view_cos_theta, sun_cos_theta, inputs);
+        let cos_gamma = cos_view_sun(sun_altitude_deg, view_altitude_deg, view_minus_sun_azimuth_deg);
+        let sol = solution(sun_cos_theta, cos_gamma, inputs);
         let total = Sky::total_direct_normal_w_m2();
         let mut out = [0.0f64; 3];
         for (i, channel) in out.iter_mut().enumerate() {
@@ -536,6 +582,27 @@ impl Sky {
         }
         LinearRgb::new(out[0], out[1], out[2])
     }
+}
+
+/// The cosine of the angle between the view ray and the Sun.
+///
+/// ```text
+/// cos γ = sin(v)·sin(s) + cos(v)·cos(s)·cos(Δφ)
+/// ```
+///
+/// with `v` the view elevation, `s` the Sun's altitude and `Δφ` the view's azimuth
+/// relative to the Sun's. **This is the one place the angle is formed** — the phase
+/// functions, and therefore the aureole, are functions of it, so a second spelling
+/// would be a second sky.
+pub fn cos_view_sun(
+    sun_altitude_deg: f64,
+    view_altitude_deg: f64,
+    view_minus_sun_azimuth_deg: f64,
+) -> f64 {
+    let (sin_v, cos_v) = view_altitude_deg.to_radians().sin_cos();
+    let (sin_s, cos_s) = sun_altitude_deg.to_radians().sin_cos();
+    let cos_delta = view_minus_sun_azimuth_deg.to_radians().cos();
+    (sin_v * sin_s + cos_v * cos_s * cos_delta).clamp(-1.0, 1.0)
 }
 
 #[cfg(test)]
@@ -816,6 +883,68 @@ mod tests {
         assert!(SkyInputs { turbidity: 5.0, ozone_atm_cm: 0.0 }.validate().is_ok());
         // And `Sky::at` refuses rather than producing a default sky.
         assert!(Sky::at(&spec(), 0, SkyInputs { turbidity: -1.0, ..SkyInputs::default() }, 0).is_none());
+    }
+
+    #[test]
+    fn the_aureole_follows_the_sun_now_that_the_angle_is_spherical() {
+        // At **one elevation**, looking at the Sun must be brighter than looking
+        // across it, which must be brighter than looking away. The elevation-only dome
+        // could not show this: it had no azimuth at all, so all three drew the same
+        // colour. This is the measurement that says the angle is real.
+        let inputs = SkyInputs::default();
+        let toward = Sky::directional_radiance(30.0, 30.0, 0.0, inputs);
+        let across = Sky::directional_radiance(30.0, 30.0, 90.0, inputs);
+        let away = Sky::directional_radiance(30.0, 30.0, 180.0, inputs);
+        assert!(
+            toward.luminance() > across.luminance(),
+            "across ({}) was not dimmer than toward ({})",
+            across.luminance(),
+            toward.luminance()
+        );
+        // **Across is not asserted dimmer than away, and that is physics, not
+        // caution.** Rayleigh's phase function is `1 + cos²`, so it peaks at both
+        // 0° and 180° and is *minimum* at 90°; with low aerosol the backscatter lobe
+        // legitimately outshines the side. The forward claim is the Mie aureole, and
+        // it is the one the old elevation-only dome could not make at all.
+        assert!(
+            toward.luminance() > away.luminance(),
+            "the sun-side sky was dimmer than the anti-sun sky: toward {} against away {}",
+            toward.luminance(),
+            away.luminance()
+        );
+    }
+
+    #[test]
+    fn the_zero_azimuth_directional_sky_is_the_elevation_summary() {
+        // **The reduction the one-dimensional table relies on, asserted exactly.**
+        // At Δφ = 0 the directional model and the elevation summary must be the same
+        // function, so the legacy pair cannot drift from the drawn sky.
+        let inputs = SkyInputs::default();
+        for view in [0.0, 15.0, 45.0, 75.0] {
+            let directional = Sky::directional_radiance(40.0, view, 0.0, inputs);
+            let summary = Sky::dome_radiance(40.0, view.to_radians().sin(), inputs);
+            // A tolerance, not an identity: the summary path round-trips the elevation
+            // through `asin`, which costs ulps of the same arithmetic.
+            for (a, b) in [
+                (directional.r, summary.r),
+                (directional.g, summary.g),
+                (directional.b, summary.b),
+            ] {
+                assert!(
+                    (a - b).abs() < 1e-12,
+                    "at view elevation {view}: {a} against {b}"
+                );
+            }
+        }
+        // And the spherical angle itself at its own identities, from one place.
+        assert!((cos_view_sun(30.0, 30.0, 0.0) - 1.0).abs() < 1e-12);
+        // **Two directions at the same elevation and opposite azimuths are not
+        // antipodal**: at 30° elevation they close 120°, so `cos γ = −0.5`. The truly
+        // opposite direction is 30° *below* the horizon, which is not a sky direction
+        // at all — an earlier version of this assertion demanded −1 and was wrong.
+        assert!((cos_view_sun(30.0, 30.0, 180.0) + 0.5).abs() < 1e-12);
+        assert!((cos_view_sun(30.0, 0.0, 0.0) - 30f64.to_radians().cos()).abs() < 1e-12);
+        assert!((cos_view_sun(90.0, 0.0, 90.0)).abs() < 1e-12);
     }
 
     #[test]

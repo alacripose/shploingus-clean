@@ -57,7 +57,7 @@ pub mod source;
 pub const SUBVOXEL_CHUNK_SIDE: i32 = voxel_model::CHUNK_SIDE * voxel_model::SUBVOXEL_SIDE as i32;
 
 pub use chunk::Chunk;
-pub use mesh::{Mesh, MeshConfig, MeshStats, Mesher, Quad};
+pub use mesh::{Loop, Mesh, MeshConfig, MeshStats, Mesher, Quad};
 pub use octree::{Node, SparseVoxelOctree, OCTREE_LEVELS};
 pub use refine::{refine, RefineConfig, RefineStats, RefinedFace, Triangle, Vertex};
 pub use raycast::{Crossing, Crossings, Hit, Ray};

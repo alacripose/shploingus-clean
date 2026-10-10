@@ -5,7 +5,13 @@
 //!
 //! ```text
 //! cargo run -p voxel-shapers --example relief-profile
+//! cargo run -p voxel-shapers --example relief-profile -- 9418646105956113635
 //! ```
+//!
+//! **The seed is an argument, and it is printed in the first line.** A measurement
+//! of a world it does not name is worse than no measurement, because it looks like
+//! one (C-46.1: this example's numbers once described seed 31337 while the client
+//! streamed 2468). The default stays 2468 so the documented run is unchanged.
 //!
 //! `GAME_SEED` is 2468 and `GAME_SPAWN_XZ` is `(0.5, -95.5)`; both are read from
 //! the client rather than restated here, so this cannot measure a different world
@@ -22,9 +28,26 @@ const SEED: u64 = 2468;
 const SPAWN: (f64, f64) = (0.5, -95.5);
 
 fn main() {
-    let spec = WorldSpec::new(SEED, Config::default());
+    // A seed may be written either way round — `-9028097967753437981` or its
+    // two's-complement `u64` image — and they are the **same 64 bits**, so they
+    // are the same world. `parse::<u64>()` refuses a leading minus, so parsing as
+    // `u64` alone would have quietly fallen back to the default seed and measured
+    // a world nobody asked about. `i64` is tried first for exactly that reason,
+    // and both forms are printed so the report names which world it is of.
+    let raw = std::env::args().nth(1);
+    let (seed, as_written) = match raw.as_deref() {
+        None => (SEED, format!("{SEED} (default)")),
+        Some(a) => match a.parse::<i64>() {
+            Ok(v) => (v as u64, v.to_string()),
+            Err(_) => match a.parse::<u64>() {
+                Ok(v) => (v, v.to_string()),
+                Err(e) => panic!("seed {a:?} is neither an i64 nor a u64: {e}"),
+            },
+        },
+    };
+    let spec = WorldSpec::new(seed, Config::default());
     println!(
-        "seed {SEED}, spawn {SPAWN:?}\nconfig: sea {} m, base {} m, relief {} m, continent freq {}\n",
+        "seed {seed} (written {as_written}), spawn {SPAWN:?}\nconfig: sea {} m, base {} m, relief {} m, continent freq {}\n",
         spec.config.sea_level_m,
         spec.config.base_elevation_m,
         spec.config.relief_m,
@@ -143,5 +166,53 @@ fn main() {
         let e = terrain::elevation_m(&spec, x, z);
         let biome = ecology::biome_at(&spec, e, 8.0, 900.0);
         println!("  {label:<6} ({x:>7.0}, {z:>7.0}) elevation {e:>7.2} m -> biome {biome:?}");
+    }
+    println!();
+
+    // ---- 6. is there dry land at the spawn, and how far is the nearest? ----
+    //
+    // This is the question a **colliding** camera asks and a floating one never
+    // did. `column::is_solid` already refuses water, so a walking body falls
+    // through the sea and rests on the sea floor: a spawn whose surface is below
+    // sea level puts the player's head underwater, whatever the eye is set to.
+    // So the number that decides the spawn is the elevation at the spawn, and the
+    // distance to the first column above sea level — not the eye height.
+    let sea = spec.config.sea_level_m;
+    let spawn_e = terrain::elevation_m(&spec, SPAWN.0, SPAWN.1);
+    println!("dry land from the spawn (sea level {sea:.2} m):");
+    println!(
+        "  spawn surface {spawn_e:.2} m -> {}",
+        if spawn_e > sea {
+            format!("{:.2} m ABOVE sea, a dry spawn", spawn_e - sea)
+        } else {
+            format!("{:.2} m BELOW sea, a standing body would be submerged", sea - spawn_e)
+        }
+    );
+    // Outward rings: 1 m out to 64 m, then 8 m out to 4 km. Fine near the spawn,
+    // coarse far out, so the reported distance is exact where it is small and
+    // honest to within 8 m where it is not. The first ring that finds dry land
+    // wins, so the answer is the nearest dry column, not merely a dry one.
+    let mut nearest_dry: Option<(f64, f64, f64, f64)> = None;
+    let mut r: i32 = 1;
+    'search: while r <= 4096 {
+        let step = if r < 64 { 1 } else { 8 };
+        for i in -r..=r {
+            for (dx, dz) in [(i, -r), (i, r), (-r, i), (r, i)] {
+                let (x, z) = (SPAWN.0 + dx as f64, SPAWN.1 + dz as f64);
+                let e = terrain::elevation_m(&spec, x, z);
+                if e > sea {
+                    nearest_dry = Some((x, z, e, ((dx * dx + dz * dz) as f64).sqrt()));
+                    break 'search;
+                }
+            }
+        }
+        r += step;
+    }
+    match nearest_dry {
+        Some((x, z, e, d)) => println!(
+            "  nearest dry column ({x:.1}, {z:.1}) at {d:.1} m, surface {e:.2} m ({:.2} m above sea)",
+            e - sea
+        ),
+        None => println!("  no dry column within 4 km of the spawn"),
     }
 }

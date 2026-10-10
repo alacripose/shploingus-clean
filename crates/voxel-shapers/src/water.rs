@@ -64,7 +64,7 @@
 //! * O'Callaghan & Mark 1984 — D8 routing; Barnes, Lehman & Mulla 2014 —
 //!   priority-flood. Both are already cited and used by [`crate::hydrology`], and
 //!   this module borrows nothing from them but the *shape* of their algorithms.
-//! * SUTRA 2.0 (Zheng & Wu) — the phase densities used by [`Phase::density_kg_m3`].
+//! * SUTRA 2.0 (Zheng & Wu) — the phase densities used by [`phase_density_kg_m3`].
 //!   **Reference, never rules** (C-48/C-49): the numbers are declared here and
 //!   cited, and nothing in this tree is obliged to agree with them.
 //!
@@ -165,27 +165,30 @@ pub enum Salinity {
     Saline,
 }
 
-/// The physical phase a reservoir's water is in.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub enum Phase {
-    Liquid,
-    /// Ice. This world has no snowpack, so solid water can only appear as lake or
-    /// sea ice — and nothing in the tree computes it yet, which is why
-    /// [`Storage::phase`] is **declared on the storage rather than derived**, and
-    /// why the ledger's closure is over volume and not over mass.
-    Solid,
-}
+/// The physical phase a reservoir's water is in - **one roster, not two**.
+///
+/// This used to be a second `enum Phase { Liquid, Solid }` beside
+/// [`voxel_model::matter::Phase`], which already carried `Gas` and already declared
+/// `FluidSpecies::Steam` valid in it. Two vocabularies for one physical fact is the
+/// drift this tree refuses elsewhere, and it is why atmospheric vapour looked like a new
+/// concept when it was already admitted.
+pub use voxel_model::matter::Phase;
 
-impl Phase {
-    /// Bulk density, in kg/m³.
-    ///
-    /// Liquid **1000** at 4 °C; solid **917** at 0 °C — the SUTRA pair. Declared
-    /// here and cited, and *reference rather than rules* (C-48/C-49).
-    pub const fn density_kg_m3(self) -> f64 {
-        match self {
-            Phase::Liquid => 1_000.0,
-            Phase::Solid => 917.0,
-        }
+/// Bulk density, in kg/m3, **refused for [`Phase::Gas`]**.
+///
+/// Liquid **1000** at 4 C; solid **917** at 0 C - the SUTRA pair, declared here and
+/// cited, and *reference rather than rules* (C-48/C-49). Vapour has no entry because its
+/// density is a function of temperature and pressure rather than a constant, and the
+/// honest answer until the atmosphere derives one is a refusal.
+pub fn phase_density_kg_m3(phase: Phase) -> Refused<f64> {
+    match phase {
+        Phase::Liquid => Ok(1_000.0),
+        Phase::Solid => Ok(917.0),
+        Phase::Gas => Err(Refusal::owned(
+            RefusalKind::MissingStage,
+            "water vapour's density is a function of its temperature and pressure, not a \
+             constant; no value is declared until the atmosphere derives one",
+        )),
     }
 }
 
@@ -916,8 +919,14 @@ mod tests {
     fn the_phase_densities_are_the_sutra_pair_and_are_declared_here() {
         // Reference, never rules (C-48/C-49): the numbers are cited and declared,
         // and nothing in the tree is obliged to agree with them.
-        assert_eq!(Phase::Liquid.density_kg_m3(), 1_000.0);
-        assert_eq!(Phase::Solid.density_kg_m3(), 917.0);
+        assert_eq!(phase_density_kg_m3(Phase::Liquid).expect("liquid has a density"), 1_000.0);
+        assert_eq!(phase_density_kg_m3(Phase::Solid).expect("solid has a density"), 917.0);
+        // **Vapour refuses rather than carrying a stated constant**, because its density is a
+        // function of temperature and pressure. This is the roster's own record of that.
+        assert!(
+            phase_density_kg_m3(Phase::Gas).is_err(),
+            "water vapour must not acquire a constant density"
+        );
         // And the ledger closes over **volume**, not mass — which is why the phase
         // is declared rather than derived, and why nothing above depends on it.
         let l = ledger(500.0, -300.0, 4);

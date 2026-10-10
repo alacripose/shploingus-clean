@@ -1,0 +1,22 @@
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 3.68s
+     Running `F:/shploingus-target\debug\examples\aerosol-column.exe`
+1024 columns, seed 2468
+  water path m:  min 0.0  mean 11.3  p90 33.5  p99 71.4  max 125.0
+  cloudy columns: 955 of 1024 (93.3 %) — the rest read the clear-air anchor
+
+  turbidity each reference would give (clear 2.0, gain 3.0):
+      ref m    median       p90       max
+         25      3.18     10.05     31.99
+         50      2.59      6.02     17.00
+        100      2.29      4.01      9.50
+        200      2.15      3.01      5.75
+        400      2.07      2.50      3.87
+
+  the origin's five largest water-path steps in a day:
+     tick     step m   onset a   onset b    rain a    rain b
+    15796       3.57    0.0979    0.0980     false     false
+     8208       0.76    0.0610    0.0606     false     false
+     3924       0.47    0.1120    0.1107     false     false
+     3920       0.46    0.1133    0.1120     false     false
+     3916       0.45    0.1146    0.1133     false     false

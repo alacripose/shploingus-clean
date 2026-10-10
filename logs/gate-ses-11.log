@@ -1,0 +1,21 @@
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+    Finished `test` profile [optimized + debuginfo] target(s) in 10.53s
+     Running tests\file_work.rs (F:/shploingus-target\debug\deps\file_work-2932d38f8efeec16.exe)
+
+running 1 test
+test file_the_session_tickets_onto_the_record has been running for over 60 seconds
+on the record: BLD-0194 — SES-01
+on the record: BLD-0195 — SES-02
+on the record: BLD-0196 — SES-03
+on the record: BLD-0197 — SES-04
+on the record: BLD-0198 — SES-05
+on the record: BLD-0199 — SES-06
+on the record: BLD-0200 — SES-07
+on the record: BLD-0201 — SES-08
+on the record: BLD-0202 — SES-09
+on the record: BLD-0203 — SES-10
+on the record: BLD-0204 — SES-11
+test file_the_session_tickets_onto_the_record ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 779.57s
+

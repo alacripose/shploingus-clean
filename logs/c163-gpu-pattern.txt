@@ -1,0 +1,19 @@
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+   Compiling voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+   Compiling voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+   Compiling voxel-work v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-work)
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `test` profile [optimized + debuginfo] target(s) in 32.03s
+     Running unittests src\lib.rs (F:/shploingus-target\debug\deps\voxel_client-e81c39c525811ec8.exe)
+
+running 1 test
+coarse rungs: probe at 2 m, footprint 5.47e-3 m, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 4.713207931383856e-6, 175602 distinct reds
+fine rungs: probe at 0.15 m, footprint 4.10e-4 m, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 9.289892044517245e-8, 108024 distinct reds
+mid rungs: probe at 2 m, footprint 4.31e-2 m, compared 4096 of 4225 pixels (129 skipped on a cell edge), worst disagreement 4.847504084859455e-6, 3254 distinct reds
+eye moved: probe at 0.15 m, footprint 4.10e-4 m, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 4.818699577413543e-7, 109876 distinct reds
+bark shaper: probe at 0.15 m, footprint 4.10e-4 m, compared 260100 of 262144 pixels (2044 skipped on a cell edge), worst disagreement 9.527696409605824e-8, 55922 distinct reds
+test renderer::tests::the_pattern_is_drawn_where_the_greedy_mesh_has_no_geometry ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 385 filtered out; finished in 4.46s
+

@@ -1,0 +1,10 @@
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+    Finished `test` profile [optimized + debuginfo] target(s) in 5.65s
+     Running tests\file_work.rs (F:/shploingus-target\debug\deps\file_work-21d63ce6cc6fa032.exe)
+
+running 1 test
+test file_the_governance_stack_repair_ticket_onto_the_record has been running for over 60 seconds
+test file_the_governance_stack_repair_ticket_onto_the_record ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 115.43s
+

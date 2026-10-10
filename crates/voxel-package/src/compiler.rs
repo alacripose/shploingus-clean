@@ -56,9 +56,17 @@
 //!
 //! **It is derived, never authored.** [`Solution::for_ticket`] reads the ticket's objective and
 //! gate off the chain and names the windows from them. The naming is deliberately strict — a
-//! window id the ticket does not mention is **refused**, not guessed, because a compiler that
-//! invents a window is a compiler that can put a window on a player's screen that nobody asked
-//! for.
+//! window id the ticket does not mention is **never declared**, because a compiler that invents a
+//! window is a compiler that can put a window on a player's screen that nobody asked for.
+//!
+//! **And a solution needs no UI surface, so a ticket that names no window compiles.** This
+//! module used to refuse such a ticket outright, and that refusal was a misreading rather than a
+//! rule: the user's own words are *"the solutions themselves don't need a UI surface so we're not
+//! just magically conjuring new UI elements up, it was a different reading"* (2026-10-01). The
+//! strictness is in the **reading** — ordinary words are never promoted into ids — and not in a
+//! demand that a solution carry a window it was never asked for. A prose ticket now compiles to a
+//! solution whose `windows` is empty, and what the client does with a package that declares no
+//! console window is the client's own, separately-stated refusal (`shell::mount::Mount::reload`).
 //!
 //! # The bloat discipline, carried from `envelope.rs`
 //!
@@ -288,6 +296,17 @@ pub struct Solution {
     pub ticket: TicketId,
     /// The arrangement name. From the ticket's own objective, never invented.
     pub name: String,
+    /// **The rows of the record this solution implements** — the work, as distinct from the
+    /// arrangement below. One row today: the ticket's own chain event, carrying the player's
+    /// words verbatim. **A ticket that names no window still compiles to a recipe that says what
+    /// the work is**, which is the difference between a package the agent can implement from and
+    /// a package that declares only a name.
+    ///
+    /// **The shape is `shploingus-game`'s**: there a compile produces a package and a slice spec,
+    /// and the slice spec's `implemented_rows` is what the package implements. The rows live in
+    /// the record (`Record { id, title, text }` — *"this is the recipe the oracle judges code
+    /// against"*), which is why they are derived here rather than written by hand.
+    pub rows: Vec<recipe::Row>,
     /// The windows, in declaration order.
     pub windows: Vec<DeclaredWindow>,
     /// The chain events this was derived from — **so the derivation is traceable**.
@@ -303,10 +322,17 @@ pub struct Solution {
 impl Solution {
     /// **Back-compile a solution from a ticket, or refuse.**
     ///
-    /// The naming is strict on purpose. A window is derived from the ticket's own text, and
-    /// **an id the ticket does not mention is refused rather than guessed** — because a
-    /// compiler that invents a window can put a window on a player's screen that nobody asked
-    /// for, and that is the failure the whole audit chain exists to make impossible.
+    /// The naming is strict on purpose: a window is derived from the ticket's own text, and **an id
+    /// the ticket does not mention is never declared** — because a compiler that invents a window
+    /// can put a window on a player's screen that nobody asked for, and that is the failure the
+    /// whole audit chain exists to make impossible.
+    ///
+    /// **A ticket that names no window is not refused, because a solution needs no UI surface.**
+    /// It compiles to a solution that declares no windows: the derivation reads the record and
+    /// generates nothing, so an empty window set is what the ticket actually asked for rather than
+    /// a gap in it. The refusal that used to stand here demanded a window id to satisfy the
+    /// compiler, which is the compiler conjuring up a requirement nobody filed — corrected
+    /// 2026-10-01 at the user's ruling, and pinned by [`tests::a_ticket_naming_no_window_compiles_to_a_solution_with_none`].
     pub fn for_ticket(ticket: &Ticket) -> Result<Self, RefusalSet> {
         let mut refusals = RefusalSet::new();
 
@@ -354,21 +380,11 @@ impl Solution {
         }
 
         // The window ids the ticket's own text names. **Only ids the ticket mentions**, so the
-        // derivation is a reading of the record rather than a generation.
+        // derivation is a reading of the record rather than a generation — and a ticket that
+        // mentions none yields **no windows**, which is a solution and not a failure. Nothing is
+        // conjured to fill the set: an empty `windows` is the honest answer to a ticket that asks
+        // for no surface (ruled 2026-10-01).
         let mentioned = mentioned_window_ids(&ticket.objective);
-        if mentioned.is_empty() {
-            refusals.refuse(
-                RefusalKind::NoReading,
-                format!(
-                    "ticket {} names no window, so back-compiling a solution from it would mean \
-                     inventing one. Refused: {}\n  ticket text: {}",
-                    ticket.id.as_str(),
-                    "an arrangement window is declared by id, and this ticket declares none",
-                    ticket.objective
-                ),
-            );
-            return Err(refusals);
-        }
         if mentioned.len() > recipe::MAX_WINDOWS {
             refusals.refuse(
                 RefusalKind::OutOfDeclaredRange,
@@ -415,6 +431,15 @@ impl Solution {
         refusals.into_result(Solution {
             ticket: ticket.id.clone(),
             name: ticket.id.as_str().to_string(),
+            // **The row is the record's, and its text is the player's own words.** The id is the
+            // ticket's own (`BLD-0207`), which is the record's id shape the recipe grammar
+            // checks, and the text is the objective verbatim — the same rule the window titles
+            // follow below, for the same reason: a paraphrase here is a second thing that can
+            // differ from the record.
+            rows: vec![recipe::Row {
+                id: ticket.id.as_str().to_string(),
+                text: ticket.objective.clone(),
+            }],
             windows,
             record_ids: vec![format!("event-{:04}", ticket.event_index)],
             expectation: ticket.gate.expectation.clone(),
@@ -552,6 +577,37 @@ pub fn render(solution: &Solution) -> Result<Vec<u8>, RefusalSet> {
     check_value("package", PACKAGE_NAME, &mut refusals);
     check_value("package-version", version, &mut refusals);
     out.push_str(&format!("package\t{PACKAGE_NAME}\t{version}\n"));
+
+    // **The rows are written before the windows, because the work is what a package is for.**
+    // Each row is the record's id and the record's own words, and the two refusals here are the
+    // grammar's: a text past its own declared ceiling, and a text carrying a tab — which would
+    // split one value into two and leave the second unread by anything (the parser reads the
+    // third field as the whole text and refuses a tab in it).
+    for row in &solution.rows {
+        if row.text.len() > recipe::MAX_ROW_TEXT_BYTES {
+            refusals.refuse(
+                RefusalKind::OutOfDeclaredRange,
+                format!(
+                    "row {} carries {} bytes and a row holds {}. Refused rather than truncated: \
+                     a row whose text was cut is a decision whose reason was cut",
+                    row.id,
+                    row.text.len(),
+                    recipe::MAX_ROW_TEXT_BYTES
+                ),
+            );
+        }
+        if row.text.contains('\t') {
+            refusals.refuse(
+                RefusalKind::MalformedIdentity,
+                format!(
+                    "row {} carries a tab in its text. A tab is the grammar's separator, so the \
+                     text would arrive as a second value nothing reads",
+                    row.id
+                ),
+            );
+        }
+        out.push_str(&format!("row\t{}\t{}\n", row.id, row.text));
+    }
 
     for window in &solution.windows {
         out.push_str(&format!("window\t{}\n", window.id));
@@ -821,6 +877,120 @@ pub fn read_back(path: &Path) -> Result<ChainRead, RefusalSet> {
         })?;
 
     fold_bytes(&bytes)
+}
+
+/// **The frames that fold, and only those, in one pass.**
+///
+/// # What this is for, and the measurement that made it necessary
+///
+/// A chain can hold records that do not link. The doubling defect wrote the file's own history
+/// again — and in the live record it did so **more than once**, which the first repair attempt
+/// discovered by refusing: cutting the file at the outermost repeat left inner repeats behind and
+/// the result would not fold, with **166,406 records refused**. A single cut cannot repair a file
+/// that has been doubled twice, and the arithmetic says how it got there: 105,323,302 → 842,609,979
+/// → 1,685,220,970 is ×8 and then ×2 of a chain that kept gaining records.
+///
+/// So the repair is not a cut. It is: **keep every frame that linked and drop every frame that did
+/// not**, decided by [`append_event`] — the same function the reader uses to decide it. There is no
+/// second opinion about linkage here, and that is the point: a repair that had its own rule could
+/// disagree with the reader, and the disagreement would be discovered by whoever read the record
+/// next.
+///
+/// # Why the surviving frames are kept byte for byte
+///
+/// A surviving frame is written out exactly as it was read, so its own digest — and therefore the
+/// `previous` of the record after it — is unchanged. Re-rendering the events would be a new
+/// encoding of a record that already has a digest, and the chain's linkage is computed over the
+/// bytes that are on disk.
+///
+/// # What it does not do
+///
+/// It does not write anything, it does not decide whether a repair should happen, and it does not
+/// treat "dropped something" as success. A chain that is already sound compacts to itself with
+/// `dropped == 0`, and the caller is the one that must refuse in that case rather than rewriting a
+/// sound record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChainCompaction {
+    /// The chain as it should have been: the frames that folded, concatenated in order.
+    pub bytes: Vec<u8>,
+    pub kept: usize,
+    pub dropped: usize,
+    /// Why each dropped frame was dropped, verbatim. **A count alone cannot be fixed** — the same
+    /// rule `ChainRead::corrupt_detail` follows.
+    pub dropped_detail: Vec<String>,
+}
+
+pub fn compact(bytes: &[u8]) -> Result<ChainCompaction, RefusalSet> {
+    let mut chain = Chain::new();
+    let mut out: Vec<u8> = Vec::new();
+    let mut kept = 0usize;
+    let mut dropped = 0usize;
+    let mut dropped_detail: Vec<String> = Vec::new();
+    let mut at = 0usize;
+
+    while at < bytes.len() {
+        let Some(frame) = frame_at(bytes, at) else {
+            dropped += 1;
+            dropped_detail.push(format!(
+                "at byte {at}: no record boundary could be found, so the walk stopped here rather \
+                 than scanning forward for something that looked like a record"
+            ));
+            break;
+        };
+        let mut refused: Vec<String> = Vec::new();
+        match CanonicalCodec.decode(frame) {
+            Ok(projection) => {
+                let schema = chain_event_schema();
+                let validation = projection.validate(&schema);
+                if validation.is_empty() {
+                    // **The first surviving frame seeds the head**, exactly as it does in the fold.
+                    if chain.is_empty() {
+                        if let Some(word) = projection.get("previous").and_then(Value::as_text) {
+                            match voxel_model::chain::Linkage::parse(word) {
+                                Ok(linkage) => chain = voxel_model::chain::Chain::with_head(linkage),
+                                Err(_) => {
+                                    chain = voxel_model::chain::Chain::with_head(
+                                        voxel_model::chain::Linkage::NotEvaluable,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    if let Err(found) = append_event(&mut chain, &projection) {
+                        refused.extend(found.all().iter().map(|r| r.detail().to_string()));
+                    }
+                } else {
+                    refused.extend(
+                        validation
+                            .all()
+                            .iter()
+                            .map(|r| format!("at byte {at}: {}", r.detail())),
+                    );
+                }
+            }
+            Err(found) => refused.extend(
+                found
+                    .all()
+                    .iter()
+                    .map(|r| format!("at byte {at}: {}", r.detail())),
+            ),
+        }
+        if refused.is_empty() {
+            out.extend_from_slice(frame);
+            kept += 1;
+        } else {
+            dropped += 1;
+            dropped_detail.extend(refused);
+        }
+        at += frame.len();
+    }
+
+    Ok(ChainCompaction {
+        bytes: out,
+        kept,
+        dropped,
+        dropped_detail,
+    })
 }
 
 /// Fold records that are **already in memory**, or refuse.
@@ -1502,25 +1672,37 @@ mod tests {
     }
 
     #[test]
-    fn a_ticket_naming_no_window_is_refused_rather_than_given_an_invented_one() {
-        // The refusal that matters: a compiler that invents a window can put a window on a
-        // player's screen that nobody asked for.
-        let error = Solution::for_ticket(&ticket("please make the shell nicer"))
-            .expect_err("no window named, nothing to declare");
-        assert_eq!(error.all()[0].kind(), Kind::NoReading);
+    fn a_ticket_naming_no_window_compiles_to_a_solution_with_none() {
+        // **The correction.** This used to be the refusal that mattered — "a compiler that invents
+        // a window can put a window on a player's screen that nobody asked for" — and the refusal
+        // was the misreading: a solution needs no UI surface, so a ticket that asks for none gets
+        // none. What must never happen is the *other* thing: a window appearing because the ticket
+        // was prose. So the assertion is that the solution compiles and declares **nothing**.
+        let solution = Solution::for_ticket(&ticket("please make the shell nicer"))
+            .expect("a solution needs no UI surface, so this compiles");
         assert!(
-            error.all()[0].detail().contains("inventing one"),
-            "the refusal must say why: {error}"
+            solution.windows.is_empty(),
+            "no window was named, so none is declared — not one invented to satisfy the compiler: {:?}",
+            solution.windows.iter().map(|w| &w.id).collect::<Vec<_>>()
         );
+        // And it is still a real solution: the ticket and its event are carried, so the record id
+        // points at the chain event that declared it.
+        assert_eq!(solution.ticket.as_str(), "BLD-0000");
+        assert_eq!(solution.record_ids, vec!["event-0000".to_string()]);
     }
 
     #[test]
     fn prose_does_not_become_windows() {
         // A compiler that picked up ordinary nouns would emit a window per word, and nobody
-        // could review that.
-        let error = Solution::for_ticket(&ticket("the console should log the ledger"))
-            .expect_err("ordinary words are not window ids");
-        assert_eq!(error.all()[0].kind(), Kind::NoReading);
+        // could review that. **The reading is where the strictness lives**, and it is unchanged by
+        // the correction above: ordinary words are not ids, so they yield no windows at all.
+        let solution = Solution::for_ticket(&ticket("the console should log the ledger"))
+            .expect("prose compiles to a solution with nothing in it");
+        assert!(
+            solution.windows.is_empty(),
+            "ordinary words are not window ids: {:?}",
+            solution.windows.iter().map(|w| &w.id).collect::<Vec<_>>()
+        );
     }
 
     // ---- the bare form, which is the ruling C-67.7 was owed ----------------
@@ -1553,17 +1735,18 @@ mod tests {
     }
 
     #[test]
-    fn a_prose_line_naming_a_window_in_words_is_still_refused() {
-        // **The exact line C-67.7 named as the thing to be ruled on.** Six tokens, so it is
-        // prose, so it declares nothing and is refused exactly as a ticket that named nothing
-        // at all. This is the test that would go red if the bare form were widened to "any bare
-        // token in the line" — `named` and `refusals` would each become a window.
-        let error = Solution::for_ticket(&ticket("add a window named refusals"))
-            .expect_err("six tokens is prose, whatever the words are");
-        assert_eq!(error.all()[0].kind(), Kind::NoReading);
+    fn a_prose_line_naming_a_window_in_words_declares_nothing() {
+        // **The exact line C-67.7 named as the thing to be ruled on.** Six tokens, so it is prose,
+        // so it declares nothing — and it compiles, because nothing was named and a solution needs
+        // no UI surface. This is the test that would go red if the bare form were widened to "any
+        // bare token in the line": `named` and `refusals` would each become a window, and the
+        // solution would stop being empty.
+        let solution = Solution::for_ticket(&ticket("add a window named refusals"))
+            .expect("six tokens is prose, and prose compiles to no windows");
         assert!(
-            error.all()[0].detail().contains("inventing one"),
-            "the refusal must still say why: {error}"
+            solution.windows.is_empty(),
+            "six tokens is prose, whatever the words are: {:?}",
+            solution.windows.iter().map(|w| &w.id).collect::<Vec<_>>()
         );
     }
 
@@ -1609,6 +1792,32 @@ mod tests {
         assert_eq!(loaded.source, source, "the package carries its exact source");
         assert_eq!(loaded.recipe.windows.len(), 1);
         assert_eq!(loaded.recipe.windows[0].id, "console");
+    }
+
+    #[test]
+    fn a_prose_ticket_renders_and_compiles_to_a_package_with_no_window() {
+        // **The whole path, for the person who filed it.** A plain-prose ticket has to file and
+        // compile: a solution needs no UI surface, so there is nothing here to refuse. The
+        // refusal this replaces ("names no window") demanded a window id, and a demand nobody
+        // filed is the compiler conjuring up a requirement — the exact failure A10 corrects.
+        //
+        // **And the other half is pinned with it**: what comes out declares **no** window, so
+        // the correction did not smuggle a window onto a player's screen instead. Nothing was
+        // conjured in either direction.
+        let solution = Solution::for_ticket(&ticket("the console should log the ledger"))
+            .expect("plain prose compiles");
+        let source = render(&solution).expect("a rendering");
+        let package = recipe::compile(&source).expect("the package compiles");
+        let loaded = recipe::load(&package).expect("and loads back");
+        assert_eq!(loaded.source, source, "the package carries its exact source");
+        assert!(
+            loaded.recipe.windows.is_empty(),
+            "no window was named, so the package declares none: {}",
+            loaded.recipe.windows.len()
+        );
+        // Provenance is unaffected by the arrangement being empty: the two files still have to
+        // agree, which is the check a package with nothing in it is most likely to skip.
+        verify_provenance(&source, &package, &solution).expect("provenance verifies");
     }
 
     #[test]

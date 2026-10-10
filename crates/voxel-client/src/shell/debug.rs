@@ -140,12 +140,98 @@ pub fn ui_lane_elements(set: &LaneSet, palette: &voxel_ui::Palette) -> voxel_ui:
     }))
 }
 
+/// **What the drawn elements say about hierarchy — measured, not eyeballed.**
+///
+/// This shell has been reported twice for one defect: *"window text overlaps without respecting
+/// hierarchy"* (`BLD-099`, `BLD-184`, `BLD-185`). An agent cannot see the window, so the defect has
+/// to become a number, and these two are computable from the element list alone:
+///
+/// * **ink with no host** — a `Text` or `Rule` that no surface drawn before it contains. That is
+///   ink outside every window, which is what a glyph bleeding off the edge of the shell is;
+/// * **ink a later surface covers** — ink a surface drawn *after* it fully covers, which is a
+///   window's own text painted under a panel that came after it. That is the hierarchy defect:
+///   the drawing order is the hierarchy, so ink under a later surface was drawn in the wrong place
+///   in the order.
+///
+/// **Zero is the only acceptable value for both**, and a change that moves neither number has
+/// changed nothing about the reported defect. The reading names its first instance as well as
+/// counting, because a count alone cannot be acted on.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Drawing {
+    pub surfaces: usize,
+    pub ink: usize,
+    pub ink_with_no_host: usize,
+    pub ink_covered_later: usize,
+    pub first_spill: Option<(String, Rect)>,
+}
+
+impl Drawing {
+    pub fn describe(&self) -> String {
+        let spill = match &self.first_spill {
+            Some((text, rect)) => format!(
+                "; first unhosted: {:?} at {:.0},{:.0} {:.0}x{:.0}",
+                text, rect.x, rect.y, rect.width_dp, rect.height_dp
+            ),
+            None => String::new(),
+        };
+        format!(
+            "shell drawing: {} surface(s), {} ink, {} with no host, {} covered by a later surface{}",
+            self.surfaces, self.ink, self.ink_with_no_host, self.ink_covered_later, spill
+        )
+    }
+}
+
+/// Whether `outer` contains all of `inner`, on both axes.
+fn covers(outer: Rect, inner: Rect) -> bool {
+    inner.x >= outer.x
+        && inner.y >= outer.y
+        && inner.x + inner.width_dp <= outer.x + outer.width_dp
+        && inner.y + inner.height_dp <= outer.y + outer.height_dp
+}
+
+/// Measure a drawn element list. See [`Drawing`] for what each number means.
+pub fn drawing(elements: &[voxel_ui::Element]) -> Drawing {
+    use voxel_ui::Element;
+    let mut reading = Drawing::default();
+    for (index, element) in elements.iter().enumerate() {
+        let rect = match element {
+            Element::Surface { .. } => {
+                reading.surfaces += 1;
+                continue;
+            }
+            Element::Text { rect, .. } | Element::Rule { rect, .. } => *rect,
+        };
+        reading.ink += 1;
+        let hosted = elements[..index].iter().any(|earlier| match earlier {
+            Element::Surface { rect: host, .. } => covers(*host, rect),
+            _ => false,
+        });
+        if !hosted {
+            reading.ink_with_no_host += 1;
+            if reading.first_spill.is_none() {
+                reading.first_spill = Some((
+                    element.text().unwrap_or("a rule").to_string(),
+                    rect,
+                ));
+            }
+        }
+        let covered = elements[index + 1..].iter().any(|later| match later {
+            Element::Surface { rect: cover, .. } => covers(*cover, rect),
+            _ => false,
+        });
+        if covered {
+            reading.ink_covered_later += 1;
+        }
+    }
+    reading
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::debug::{vocabulary_class, LaneRefusal, LaneUnit};
     use voxel_package::recipe;
-    use voxel_ui::{bar_entry_width_dp, min_target_dp, Palette};
+    use voxel_ui::{bar_entry_width_dp, pointer_target_dp, Palette};
 
     const LANE_RECIPE: &str = "shploingus.recipe/3\n\
 package\tlane-test\tv0\n\
@@ -278,9 +364,14 @@ pin\tworld\n";
         for control in &controls {
             assert!(lanes.contains(control), "{control:?} is hit but not claimed");
             assert!(mount.hit((control.x + control.width_dp / 2.0, control.y + control.height_dp / 2.0)));
+            // **A dense-pointer target, not a touch one**: D-1 makes the ported controls
+            // `POINTER_TARGET_DP` (40 dp); `min_target_dp` is the touch floor the shell's own
+            // chrome took before the port, and holding a mouse-driven control to it would fail
+            // a lane that is exactly the size the ruling gave it.
             assert!(
-                control.width_dp >= min_target_dp() && control.height_dp >= min_target_dp(),
-                "a claimed control is also a target: {control:?}"
+                control.width_dp >= pointer_target_dp()
+                    && control.height_dp >= pointer_target_dp(),
+                "a claimed control is also a pointer target: {control:?}"
             );
         }
     }
@@ -351,16 +442,22 @@ pin\tworld\n";
     }
 
     #[test]
-    fn the_palette_is_not_consulted_and_no_lane_declares_a_theme_hue() {
-        // Both halves of the current state, asserted: lanes draw in ink over the backdrop they
-        // land on, and **no class carries a hue**, because no theme in this tree declares a lane row
-        // (H-16.1). The moment one does, this test is where the change is made.
+    fn every_lane_is_drawn_in_its_class_hue_and_the_palette_is_not_asked_for_one() {
+        // The user's ruling, 2026-10-03: *"the hues per lane was nice."* Every outline and label
+        // is drawn in the lane's own class hue, and the palette is consulted for a **backdrop to
+        // measure against**, never for the lane's colour.
         let mount = mount();
         let elements = ui_lane_elements(&ui_lanes(&mount, true), &Palette::declared())
             .expect("the palette names both surfaces");
         assert!(!elements.is_empty(), "lanes draw over the shell's own surfaces");
-        for class in LaneClass::ALL {
-            assert_eq!(class.hue(), None, "{} grew a hue with no theme row", class.slug());
+        let hues: Vec<voxel_ui::Rgb> = LaneClass::ALL.iter().map(|class| class.hue()).collect();
+        for element in &elements {
+            let paint = match element {
+                voxel_ui::Element::Rule { paint, .. } => *paint,
+                voxel_ui::Element::Text { paint, .. } => *paint,
+                voxel_ui::Element::Surface { .. } => continue,
+            };
+            assert!(hues.contains(&paint.rgb), "a lane was drawn in {:?}", paint);
         }
         let _ = Palette::declared();
     }

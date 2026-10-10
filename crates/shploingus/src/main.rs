@@ -52,18 +52,44 @@
 //! — which is what makes an edit safe under the concurrency the module above
 //! describes.
 //!
+//! # The pointer is locked, and look is a device event
+//!
+//! The pointer's **owner** is decided where the shell's other decisions are: the
+//! windows own it while the shell is shown, the world owns it while the shell is
+//! hidden. [`App::sync_pointer_grab`] is the one function that reads that decision
+//! and applies **both halves of it** — the grab and the cursor's visibility —
+//! because the two set in two places is how they drift apart.
+//!
+//! Look reads [`DeviceEvent::MouseMotion`], the platform's raw relative motion, and
+//! **not** `WindowEvent::CursorMoved`. On this platform (winit 0.30.13, Windows)
+//! `CursorGrabMode::Locked` clips the cursor to a 1×1 rectangle at its present
+//! position, so its reported position stops changing the instant the lock lands —
+//! a look that read those positions would freeze exactly when it is needed. Raw
+//! motion keeps arriving while the cursor is pinned, and it arrives whether or not
+//! the shell is up, so the same ownership rule gates it. `CursorMoved` still feeds
+//! the shell's own pointer — hover, drag, hit-testing — so both sources exist and
+//! exactly one of them is the camera's.
+//!
+//! **The clip lands where the cursor already is**, so the lock alone does not put
+//! the pointer at the centre of the screen — measured, not assumed: winit's Windows
+//! backend builds the clip rectangle from the cursor's present position. The grab
+//! therefore moves the cursor to the window's centre **first**, and the 1×1 clip
+//! then pins it there. Without that step the pointer is locked to whichever edge it
+//! was last dragged to, which is a lock, but not the one the camera is aimed with.
+//!
 //! # What is honestly missing
 //!
 //! * **No physics.** Moving is free flight, so the camera can pass through
 //!   terrain. There is no gravity and no collision. **The tick does advance** — it is
 //!   `voxel_client::clock`'s `Clock`, advanced by the frame's elapsed seconds and
 //!   bounded by `MAX_CATCH_UP` — and it drives the sun, so the light on the world is a
-//!   function of it. What the tick does **not** yet drive is the terrain: the shapers
-//!   are still tick-independent (C-92.0 item 3 admits that scope and has not landed
-//!   it), so a world is still the same voxels at every tick.
-//! * **No pointer lock.** Look is driven by `CursorMoved` deltas, so the cursor
-//!   stays visible and can leave the window. Pointer grab is a platform detail
-//!   worth doing properly rather than approximately.
+//!   function of it. What the tick does **not** drive is the terrain, and not because the
+//!   generator ignores it: `WorldSpec::stage_seed` mixes the tick and terrain/caves/geology
+//!   read it (measured — `voxel-shapers/examples/tick-over-world.rs`, LEDGER C-117), but
+//!   the streamer's world is `World::shipped()` — the (seed, tick 0) world — and nothing
+//!   moves its tick, so the voxels are the same at every tick of the client's clock.
+//!   Whether the world should age with the clock, and how (a naive tick move *reshuffles*
+//!   it), is C-92.0 item 3.
 //! * **No interactive control in the HUD.** Every element is a readout. The
 //!   design system's target floor and separation rule are enforced by
 //!   `voxel-ui`'s own tests and have no drawn consumer yet, which is recorded as
@@ -75,32 +101,68 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Instant;
 
-use voxel_appearance::sky::SkyInputs;
+use voxel_appearance::{sky::SkyInputs, DetailLattice};
+use voxel_client::shell::notifications::{write_the_gate_queue, NotificationStream};
 use voxel_client::shell::{
-    console::Key as ShellKey, debug as shell_debug, hud as shell_hud, Button as ShellButton,
+    changes as shell_changes,
+    console::{Key as ShellKey, Level as ConsoleLevel},
+    debug as shell_debug,
+    hud as shell_hud,
+    Button as ShellButton,
     Mount as ShellMount,
+    WheelDelta as ShellWheel,
 };
 use voxel_client::{
-    Camera, Clock, GpuRig, HudRenderer, HudState, Scene, ShadingReport, WorldPipeline, DEPTH_FORMAT,
+    Camera, CameraOverhaul, Clock, GpuRig, HudRenderer, HudState, Scene, ShadingReport,
+    WorldPipeline, DEPTH_FORMAT,
 };
 use voxel_model::coord::CHUNK_SIDE;
 use voxel_model::{ChunkPos, Face, MaterialId};
 use voxel_mesh::raycast::Ray;
 use voxel_shapers::column::materials;
 use voxel_shapers::stages::Stage;
-use voxel_shapers::{Config, WorldSpec};
+use voxel_shapers::WorldSpec;
 use voxel_stream::WorldSource;
 use voxel_work::Streamer;
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::dpi::{LogicalSize, PhysicalPosition};
+use winit::event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{Window, WindowId};
+use winit::window::{CursorGrabMode, Window, WindowId};
 
 /// How fast the camera flies, in metres a second.
 const FLY_M_PER_S: f64 = 18.0;
-const LOOK_RAD_PER_PIXEL: f64 = 0.0022;
+
+/// Radians of camera turn per **unit of pointer motion**, as the device reports it.
+///
+/// The unit is the platform's own — one raw device count here, which at the platform's
+/// default pointer speed moves the cursor by one pixel, so the number did not have to
+/// move when the source did. It is a **project value** (the sensitivity a mouse should
+/// have in this game) rather than a design-system constant, exactly as it was when the
+/// source was cursor pixels.
+const LOOK_RAD_PER_MOTION_UNIT: f64 = 0.0022;
+
+/// The platform's double-click **interval**, in milliseconds — the most time that may pass
+/// between the first click and the second.
+///
+/// The port needs a click *count* (the title bar's maximize verdict is the double-click's)
+/// and winit reports presses with no count, so the count is made here. The number is the
+/// platform's own: Windows' `GetDoubleClickTime`, whose default its `SetDoubleClickTime`
+/// documentation names as **500 ms**. It is a **platform translation** rather than a project
+/// taste — the reference is a Qt app, and a Qt double-click interval is likewise the
+/// platform's value — and it is declared rather than read because this program carries no
+/// `winapi` dependency and cannot ask the operator's live mouse settings.
+const DOUBLE_CLICK_INTERVAL_MS: u128 = 500;
+
+/// The platform's double-click **rectangle**, in pixels — how far the second click may land
+/// from the first and still be a pair.
+///
+/// Windows' `SM_CXDOUBLECLK`/`SM_CYDOUBLECLK`, whose factory value is **4** (`HKCU\Control
+/// Panel\Mouse\DoubleClickWidth`/`DoubleClickHeight`). **Pixels, not dp**: the rectangle is
+/// input classification rather than layout, and pixels are the unit the platform reports
+/// pointer positions in — [`App::cursor`] holds winit's physical position unconverted.
+const DOUBLE_CLICK_SLOP_PX: f64 = 4.0;
 
 /// How far the player can reach to break or build, in metres.
 const REACH_M: f64 = 6.0;
@@ -141,13 +203,36 @@ fn outward_step(face: Face) -> [i32; 3] {
     [v[0] as i32, v[1] as i32, v[2] as i32]
 }
 
+/// Whether a press is the second of the platform's **double-click pair**: the same button,
+/// within [`DOUBLE_CLICK_INTERVAL_MS`], inside [`DOUBLE_CLICK_SLOP_PX`] — the platform's two
+/// numbers, checked against the raw cursor position they are measured in.
+///
+/// Time and the previous press are parameters rather than `Instant::now()` and a field, so
+/// the running program ([`App::count_shell_click`]) and the test at the end of this file hold
+/// the rule to one function.
+fn is_double_click(
+    button: ShellButton,
+    at: (f64, f64),
+    now: Instant,
+    previous: Option<(Instant, (f64, f64), ShellButton)>,
+) -> bool {
+    previous.is_some_and(|(then, there, pressed)| {
+        pressed == button
+            && now.saturating_duration_since(then).as_millis() <= DOUBLE_CLICK_INTERVAL_MS
+            && (at.0 - there.0).abs() <= DOUBLE_CLICK_SLOP_PX
+            && (at.1 - there.1).abs() <= DOUBLE_CLICK_SLOP_PX
+    })
+}
+
 // The world's window, ceiling, seed and tick are `voxel-client::game`'s now, not
 // this file's. That is not tidiness: an ignored test in `voxel-client` renders
 // the shipped view from those constants and measures whether the world actually
 // reaches the screen, and it cannot do that against numbers that live inside a
 // binary crate. See `docs/LEDGER.md` C-36.
-use voxel_client::game::{spawn_eye, GAME_CEILING_BYTES as CEILING_BYTES, GAME_PITCH_RAD};
-use voxel_client::game::{GAME_SEED as SEED, GAME_TICK as TICK, GAME_WINDOW as WINDOW};
+use voxel_client::game::{spawn_eye, spawn_feet, World, GAME_CEILING_BYTES as CEILING_BYTES, GAME_PITCH_RAD};
+use voxel_client::motion::Player;
+use voxel_shapers::earthworks::Earthworks;
+use voxel_client::game::{GAME_TICK as TICK, GAME_WINDOW as WINDOW};
 
 const SHELL_PACKAGE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/alpha-shell.shpkg"));
 const PACKAGE_GATE: &str = include_str!(concat!(env!("OUT_DIR"), "/alpha-shell.gate"));
@@ -167,7 +252,11 @@ fn main() {
     // The loaded package, **mounted**. The gate above already printed every window's
     // evaluation; this constructs the shell's window manager from the same declarations, so
     // what is reported here is what the client can actually draw and move.
-    let mount = match ShellMount::new(&shell) {
+    // **The workspace root, found before the shell mounts**, because two things need it now:
+    // the console's `file` verb (as before) and the judgement the game asks for below.
+    let found_root =
+        voxel_package::features::workspace_root(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
+    let mut mount = match ShellMount::new(&shell) {
         Ok(mut mount) => {
             // **The workspace root, found rather than assumed** — the same call the build
             // script makes, and the same reason: every path in the record is relative to it,
@@ -175,13 +264,12 @@ fn main() {
             // the console's `file` verb reach `chains/workspace.chain`, and **it is not
             // forced**: a binary run from outside a Cargo workspace has no root, and the verb
             // refuses by name rather than filing somewhere nobody named.
-            match voxel_package::features::workspace_root(std::path::Path::new(env!(
-                "CARGO_MANIFEST_DIR"
-            ))) {
-                Some(root) => mount.set_workspace(root),
+            match &found_root {
+                Some(root) => mount.set_workspace(root.clone()),
                 None => eprintln!(
                     "shploingus: no workspace root above this crate, so the console's `file` \
-                     verb will refuse; the rest of the shell is unaffected"
+                     verb will refuse and there is no project for the judge to open; the rest \
+                     of the shell is unaffected"
                 ),
             }
             // **The gate's pass, onto the console — the client's own second reader**
@@ -193,6 +281,45 @@ fn main() {
             if let Err(why) = mount.read_gate(PACKAGE_GATE, Some(TICK)) {
                 eprintln!("shploingus: the gate report could not be read onto the console: {why}");
             }
+            // ---- the recipes the record already holds -----------------------------
+            //
+            // DSL: `queue -> agent "the recipes the game derived from the solutions"`. **The agent
+            // authors nothing and the game gives it the recipes it needs** — and the chain already
+            // holds work nobody has handed over: filings made before the inbox existed. So the
+            // world-open pass reads the board, and for **every open ticket on it** — the ledger's
+            // `CSE` cases filed in another world included, which the old world filter left out
+            // (C-105) — hands the recipe over: the package on disk if the ticket already emitted
+            // one, and a back-compiled one if it did not. New filings are handed over by `file` as
+            // they are made.
+            //
+            // **It runs before the window opens and it is idempotent**: a filing already in the
+            // inbox is skipped, because the inbox is work the agent owes and re-emitting it would
+            // rewrite the package and the record under the agent's feet. The counts are printed
+            // here as well as logged, because this is the line that says whether anything was
+            // owed at all.
+            if found_root.is_some() {
+                let (handed, skipped, refused) =
+                    mount.hand_the_boards_tickets_to_the_agent(Some(TICK));
+                println!(
+                    "shploingus: the agent's inbox: {handed} recipe(s) handed over, {skipped} \
+                     already there, {refused} refused"
+                );
+            }
+            // ---- the board, read back ---------------------------------------------
+            //
+            // DSL: `chain -> board "tickets read back"`. The evaluator pass above takes the whole
+            // board — every open ticket is back-compiled into a solution, emitted as a package
+            // and handed to the agent's inbox. This read is the naming half: one console line per
+            // ticket, in chain order, and the counts printed here — the ledger's `CSE` cases
+            // among them, which is what *"the game and laya should fucking catch the goddamn
+            // tickets"* means written down.
+            if found_root.is_some() {
+                let (tickets, here, elsewhere) = mount.read_the_board(Some(TICK));
+                println!(
+                    "shploingus: the board: {tickets} ticket(s) on the record — {here} filed in \
+                     this console's world, {elsewhere} filed elsewhere and caught too"
+                );
+            }
             mount
         }
         Err(refusal) => {
@@ -200,6 +327,54 @@ fn main() {
             std::process::exit(1);
         }
     };
+    // ---- the judgement, on the game's own clock -----------------------------
+    //
+    // **The queue's production writer, and it is the game.** Before this the only callers of
+    // `Evaluation::write_queue` were tests, so `logs/laya-decisions/` was test residue and the
+    // record's `game -> decision` and `decision -> queue` arrows had no writer in production.
+    // The pass runs once, when the world opens, at the tick the world opens at; the frame loop
+    // below then hands the window one record per tick (H-12.2).
+    //
+    // **A game with no workspace root does not judge**, which is the same refusal the console's
+    // `file` verb makes: a binary started outside a Cargo workspace has no project to open, and
+    // inventing a subject set for it would be a second judge. It says so rather than pretending
+    // the queue is empty — an empty window reads as a clean pass.
+    let (notifications, workspace) = match found_root {
+        Some(root) => match write_the_gate_queue(&root) {
+            Ok(evaluation) => {
+                let written = evaluation.decisions.len();
+                let cleared = evaluation.decisions.iter().filter(|d| d.cleared()).count();
+                let calibration = if evaluation.calibration.calibration.is_quotable() {
+                    "quotable"
+                } else {
+                    "NOT quotable, so no verdict from this run clears anything"
+                };
+                mount.log(
+                    ConsoleLevel::Event,
+                    "laya",
+                    format!(
+                        "the game asked for this run's judgement at tick {TICK}: {written} \
+                         decision(s) written to {}, {cleared} cleared, the judge is {calibration}",
+                        voxel_model::laya::queue_dir(&root).display()
+                    ),
+                    Some(TICK),
+                );
+                match NotificationStream::open(&root) {
+                    Ok(stream) => (Some(stream), Some(root)),
+                    Err(why) => {
+                        eprintln!("shploingus: the queue cannot be streamed: {why}");
+                        (None, Some(root))
+                    }
+                }
+            }
+            Err(why) => {
+                eprintln!("shploingus: the judgement was refused: {why}");
+                (None, Some(root))
+            }
+        },
+        None => (None, None),
+    };
+
     let tabs: Vec<&str> = mount
         .bar()
         .iter()
@@ -229,6 +404,9 @@ fn main() {
     }
     println!("  Escape or F1 hides and shows the shell; a pinned window stays (H-9.8)");
     println!("  F3 draws the debug lanes over the shell, and works with the shell closed (H-7.25, H-7.9)");
+    println!("  F4 outlines the world meshes' greedy quads over the world (the mesh wireframe)");
+    println!("  W/A/S/D walks, Space jumps — hold it to bunnyhop — Shift sprints, Ctrl sneaks");
+    println!("  moving is the Squake model; jumping while sneaking with speed trumps — trimping, and it stays on");
 
     let event_loop = match EventLoop::new() {
         Ok(loop_) => loop_,
@@ -241,7 +419,7 @@ fn main() {
     // whatever the input does, so a frame that only wakes on events would show a
     // world that stops arriving whenever the player stops moving.
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = App::new(mount);
+    let mut app = App::new(mount, notifications, workspace);
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("shploingus: {e}");
         std::process::exit(1);
@@ -297,6 +475,11 @@ impl Graphics {
             ..Default::default()
         }))
         .map_err(|e| format!("no device: {e}"))?;
+        // The device's own errors, printed with wgpu's text. Without this the window only says
+        // "a validation error" and the cause is invisible.
+        device.on_uncaptured_error(Arc::new(|e: wgpu::Error| {
+            eprintln!("shploingus: wgpu: {e}");
+        }));
 
         let caps = surface.get_capabilities(&adapter);
         // An sRGB surface is what makes a linear shaded value arrive on screen
@@ -308,6 +491,19 @@ impl Graphics {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(caps.formats[0]);
+        // **The presented image is opaque.** Alpha in this program is a
+        // *measurement* channel — the sky writes 0 so "geometry is here" stays
+        // true (`sky.wgsl`) — and not window transparency. Compositing the
+        // surface with any other mode lets a capture read the sky as
+        // see-through: measured in OBS, where the sky was invisible until
+        // premultiplied alpha was enabled by hand. The offscreen convention is
+        // untouched; this is the swapchain's own setting.
+        let alpha_mode = caps
+            .alpha_modes
+            .iter()
+            .copied()
+            .find(|m| *m == wgpu::CompositeAlphaMode::Opaque)
+            .unwrap_or(caps.alpha_modes[0]);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
@@ -315,7 +511,7 @@ impl Graphics {
             width,
             height,
             present_mode: wgpu::PresentMode::AutoVsync,
-            alpha_mode: caps.alpha_modes[0],
+            alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
@@ -327,7 +523,9 @@ impl Graphics {
         // window shades exactly what the offscreen test shades. A registry that
         // cannot be described refuses here rather than shading grey.
         let registry = materials::registry().map_err(|e| format!("the material registry: {e}"))?;
-        let table = voxel_client::table(&registry)
+        let field = materials::shading_field()
+            .map_err(|e| format!("the world's shading field: {e}"))?;
+        let table = voxel_client::table(&registry, &field)
             .map_err(|e| format!("a material the appearance layer cannot derive: {e}"))?;
         let world = WorldPipeline::new(&device, &queue, format, &table, boot)
             .map_err(|e| format!("the world pipeline: {e}"))?;
@@ -404,10 +602,48 @@ struct App {
     /// to draw over the world.
     shell: ShellMount,
     camera: Camera,
+    /// The camera effects ported from CameraOverhaul: the smoothing, the sway and the
+    /// velocity tilts. **They shape the frame and never the movement** — their offsets
+    /// go onto [`App::render_camera`], a copy, while the look the body reads is
+    /// [`App::camera`].
+    overhaul: CameraOverhaul,
+    /// The camera the frame is drawn with: the player's camera plus this frame's
+    /// effect offsets. A second camera rather than a mutation, so nothing that reads
+    /// the player's look — the movement, the pick's source angles — can see a
+    /// smoothed value.
+    render_camera: Camera,
+    /// The player's body, which **owns** the camera's position.
+    ///
+    /// The camera's `position_m` is derived from this every frame rather than moved
+    /// independently, so the eye can never be somewhere the body is not — which is
+    /// the whole defect the floating observer had, stated as a type.
+    player: Player,
+    /// The world: **a seed, a tick and a configuration held together** (H-7.6), so
+    /// the thing a save names is a value rather than three loose fields.
+    ///
+    /// **Held rather than rebuilt per frame**, which is the whole of the reason this
+    /// field is a [`World`] and not a `GAME_SEED` constant: the tick, the sun, the
+    /// sky table, the streamed terrain and the body the player is standing on must
+    /// all describe **the same world**, and a spec rebuilt from a constant is a
+    /// second source of truth waiting to disagree with the first. Its inner spec is
+    /// borrowed through [`App::spec`] rather than duplicated, for the same reason.
+    world: World,
+    /// The record of changes layered over the generated world. The collision queries
+    /// it alongside [`App::world`], because a body must stand on the world as
+    /// *changed*, not as generated. Empty, because every edit goes through the
+    /// streamer's own record instead.
+    earthworks: Earthworks,
     held: BTreeSet<KeyCode>,
     /// Which of [`PLACEABLE`] the next build places.
     selected: usize,
     cursor: Option<(f64, f64)>,
+    /// The previous press the shell claimed — when, where and with which button — so the next
+    /// press can be classified as a double-click. **The one piece of click state the port does
+    /// not hold**: the port's `press_at` takes `double` from its caller, and the platform's
+    /// interval and rectangle are the constants declared above. A double ends the sequence,
+    /// and so does a press the shell does not claim (`App::window_event` clears it), so a dig
+    /// can never pair with a window click.
+    last_shell_click: Option<(Instant, (f64, f64), ShellButton)>,
     last: Instant,
     frames: u32,
     /// When the current reporting interval started, so a rate is measured over a
@@ -422,6 +658,21 @@ struct App {
     /// Whether the debug lanes are drawn. **Off until asked for**: a test surface nobody turned on
     /// is not a default, and the lanes are claims about the client rather than part of it.
     lanes: bool,
+    /// Whether the world meshes are outlined as a wireframe over the shaded world — the greedy
+    /// merge's own rectangles, read from [`Scene::quad_edge_bytes`]. **Off until asked for**,
+    /// like the lanes: it is a diagnostic view of how the meshes are made, not part of the
+    /// frame the game draws.
+    wireframe: bool,
+    /// **The live change regions the vector view draws, read from the world's record.**
+    ///
+    /// Not remembered at the edit sites: feature `change_view` is *a view over the chain, not a
+    /// second record* (C-56), so the regions are rebuilt from the streamer's modification record.
+    /// `change_generation` is the record's generation the regions were read at — a frame with no
+    /// edit does not copy the record — and `changes_seen` says how many of its entries the regions
+    /// cover (the record is append-only, so the new ones are the ones past it).
+    changes: Vec<shell_changes::ChangeRegion>,
+    change_generation: u64,
+    changes_seen: usize,
     /// The world's clock, **advanced by the frame loop** rather than held at a constant.
     ///
     /// It was [`TICK`] — a `const 0` — for as long as nothing simulated. The reason
@@ -430,11 +681,27 @@ struct App {
     /// the way `voxel_client::clock`'s own module doc predicted: the tick drives the
     /// sun, so the simulation this build has is a **lighting** one.
     clock: Clock,
-    /// The world the sky is derived from. Held rather than rebuilt per frame because the
-    /// tick, the sun and the streamed terrain must all describe **the same world**, and a
-    /// spec rebuilt from a constant each frame is a second source of truth waiting to
-    /// disagree with the first.
-    spec: WorldSpec,
+    /// **The cadence cursor**: the production consumer of `voxel_work::Scheduler`.
+    ///
+    /// The clock says *when* a tick happens; this says **what is due on it**, from the
+    /// one place the ladder is declared. Before it existed the client restated the
+    /// ladder per site (`Stage::Atmosphere.is_due_at(tick)` in the frame loop), which is
+    /// a second copy of the schedule — and a second copy is the thing that drifts.
+    tick_driver: voxel_work::TickDriver,
+    /// **The process roster, driven from the running world.**
+    ///
+    /// `voxel_shapers::process::ProcessScheduler` planned by cadence and had **no caller
+    /// outside an example** (`docs/MISSING-SYSTEMS.md` §1). This is that caller: the roster
+    /// is stepped once per tick at the eye's own unit and neighbourhood, which is what turns
+    /// it from a library into a consumer the running program drives.
+    process: voxel_shapers::process::ProcessScheduler,
+    /// The tick the roster last stepped, so it runs **once per tick** rather than once per
+    /// frame. [`voxel_shapers::process::ProcessScheduler::step`] is idempotent within a tick
+    /// and refuses a rewind, so a second call is a no-op and an older one is a refusal — but
+    /// a frame-rate call would still be a report about the client rather than the world.
+    process_at: Option<u64>,
+    /// The last ran/refused summary printed, so a set that has not changed is not a report.
+    process_refusals: Option<String>,
     /// The tick the light was last derived at, **or `None` before the first frame**.
     ///
     /// This exists to honour [`voxel_shapers::stages::Stage::Atmosphere`]'s declared
@@ -445,8 +712,29 @@ struct App {
     /// `Sky::at` per frame, and it made the world's light a function of the frame rate
     /// rather than of the tick.
     rig_at_tick: Option<u64>,
+    /// **The cloud field, held between atmosphere cadences** (C-179).
+    ///
+    /// The model is the expensive half — a terrain, climate, weather and solar evaluation per
+    /// asked column — so it is refreshed on the same `Cadence::Water` the atmosphere is and
+    /// held in between, exactly as the rig and the sky table are. `None` until the first due
+    /// tick, which is why a first frame draws no cloud rather than an invented one.
+    clouds: Option<voxel_client::CloudField>,
+    /// **The cloud's own tree, held between the frames that can change it.**
+    ///
+    /// The tree is a function of the held field, of the eye **snapped to the cloud domain's own
+    /// sample lattice** ([`voxel_client::CLOUD_SAMPLE_M`]) and of the pixel angle — not of the
+    /// frame. Rebuilding it per frame is what made the first octree version the cost it was: a
+    /// measured **1,658 ms** of the frame's own time, for a picture whose rectangles were already
+    /// cheaper than the lattice it replaced. So it is held the way the field, the rig and the sky
+    /// table are held, and rebuilt only when something it is a function of actually moves.
+    cloud_tree: Option<voxel_client::CloudCubes>,
+    /// What the held tree was built from: the field's own tick, the eye snapped to
+    /// [`voxel_client::CLOUD_SAMPLE_M`] on each axis, and the pixel angle's own bits.
+    cloud_tree_key: Option<(u64, [i64; 3], u32)>,
     /// The sky's **turbidity**, sampled on [`voxel_shapers::stages::Stage::Weather`]'s
-    /// cadence — `Cadence::Water`, every 4 ticks.
+    /// cadence — `Cadence::Water`, every 4 ticks — and read from **the stage's rate**:
+    /// the onset layer's answer, so a rain spell hazes the air it is falling through
+    /// rather than only a climatologically wet world being hazier forever (C-94.7).
     ///
     /// **Held separately from the ozone below because the two stages are not in step.**
     /// Weather runs ×4 and climate runs `Cadence::Daily`, so a single "recompute the sky
@@ -461,6 +749,31 @@ struct App {
     ozone_at: Option<u64>,
     /// The last sampled ozone depth, held between climate cadences.
     ozone_atm_cm: f64,
+    /// **The judgement this run asked for, streamed at the world's tick rate.**
+    ///
+    /// `None` when there was no workspace root to judge, or when the pass or the queue was
+    /// refused — never an empty stream standing in for a pass, because a window with no records
+    /// and a window whose records were all refused are different facts.
+    notifications: Option<NotificationStream>,
+    /// Where the queue was written, so each record's artifact can be re-hashed before it is
+    /// shown: a decision is shown against the bytes it was made from or not at all.
+    workspace: Option<std::path::PathBuf>,
+    /// The tick the last notification was shown at, so the stream advances **once per tick**
+    /// rather than once per frame (H-12.2: one rendering per record, one at a time).
+    notified_at: Option<u64>,
+    /// How many decisions this run has shown.
+    notifications_shown: usize,
+    /// How many of the console's records have already been printed to this process's output.
+    ///
+    /// The console is the api layer's record surface (C-54.3) and it is the player's window; this
+    /// counter is how the agent reads the same records without opening the window, so the live-edit
+    /// loop has a read as well as a write.
+    console_at: usize,
+    /// How many records the console had dropped when this read last re-anchored.
+    console_dropped: usize,
+    /// The last shell-drawing reading logged, so it is a record **when it changes** rather than
+    /// once per frame: a number that is the same every frame is a noise floor, not a report.
+    drawing: Option<String>,
 }
 
 /// **The sky the same frame's rig was built from**, as a table the shader can read.
@@ -480,30 +793,72 @@ struct App {
 /// so deriving the table from it makes disagreement between the two **impossible rather
 /// than unlikely** — which is the only kind of consistency worth having when both are
 /// recomputed on a cadence.
+///
+/// # And why the peak travels out beside the table
+///
+/// Because the Sun's own body is normalised by it too (C-176). The table is
+/// `radiance / peak`, and the drawn disc is `irradiance / (peak · its own solid angle)`, so a
+/// caller that drew the body against a differently measured peak would be exposing one pass
+/// twice. Returning the number that was used, rather than letting each caller find its own, is
+/// the same rule that made this function take a `Daylight` in the first place.
+/// **The eye snapped to the cloud's own sample lattice**, one cell index per axis.
+///
+/// The tree's domain corner is snapped to [`voxel_client::CLOUD_SAMPLE_M`], so two eyes inside
+/// one cell build the *identical* tree: this is what makes the held tree a function of the cell
+/// rather than of the frame, and it is why a key is a legitimate cache key and not a tolerance.
+fn snap_to_sample_lattice(eye_m: [f64; 3]) -> [i64; 3] {
+    let cell = voxel_client::CLOUD_SAMPLE_M;
+    [
+        (eye_m[0] / cell).floor() as i64,
+        (eye_m[1] / cell).floor() as i64,
+        (eye_m[2] / cell).floor() as i64,
+    ]
+}
+
 fn sky_at(
     spec: &WorldSpec,
     daylight: &voxel_client::skylight::Daylight,
     inputs: SkyInputs,
-) -> Option<Vec<voxel_appearance::LinearRgb>> {
+) -> Option<(Vec<voxel_appearance::LinearRgb>, f64)> {
     let peak = voxel_client::skylight::peak_sun_luminance(spec, inputs);
-    if !(peak > 0.0) || !peak.is_finite() {
+    // **Absence is a refusal, not a dark sky.** The non-finite case is refused explicitly, because
+    // `peak <= 0.0` is false for a NaN and one would otherwise reach the table as a colour.
+    if !peak.is_finite() || peak <= 0.0 {
         return None;
     }
-    Some(voxel_client::skylight::sky_table(&daylight.sky, inputs, peak))
+    // The **directional dome** (C-157): elevation × azimuth, so the aureole lands where
+    // the Sun is rather than in the camera's own column. The 1-D summary remains for the
+    // ambient pair; the drawn sky is this table.
+    Some((voxel_client::skylight::sky_dome_table(&daylight.sky, inputs, peak), peak))
 }
 
 impl App {
-    fn new(shell: ShellMount) -> Self {
-        let mut camera = Camera::standard(spawn_eye(), 16.0 / 9.0);
+    /// **The shell, plus the judgement the game asked for on its own clock.**
+    ///
+    /// `notifications` is the queue's stream, and `workspace` is where that queue lives, so
+    /// each record's artifact can be re-hashed before the record is shown.
+    fn new(
+        shell: ShellMount,
+        notifications: Option<NotificationStream>,
+        workspace: Option<std::path::PathBuf>,
+    ) -> Self {
+        let world = World::shipped();
+        let mut camera = Camera::standard(spawn_eye(&world), 16.0 / 9.0);
         camera.pitch_rad = GAME_PITCH_RAD;
         App {
             graphics: None,
             streamer: None,
             shell,
             camera,
+            overhaul: CameraOverhaul::new(),
+            render_camera: camera,
+            player: Player::new(spawn_feet(&world)),
+            world,
+            earthworks: Earthworks::new(),
             held: BTreeSet::new(),
             selected: 0,
             cursor: None,
+            last_shell_click: None,
             last: Instant::now(),
             frames: 0,
             title_at: Instant::now(),
@@ -511,9 +866,28 @@ impl App {
             workers: 0,
             shell_refusal: None,
             lanes: false,
-            clock: Clock::at(TICK),
-            spec: WorldSpec::new(SEED, Config::default()),
-            rig_at_tick: None,
+            wireframe: false,
+            changes: Vec::new(),
+            change_generation: 0,
+            changes_seen: 0,
+        clock: Clock::at(TICK),
+        tick_driver: voxel_work::TickDriver::full()
+            .expect("the default pipeline and its horizons validate"),
+        process: voxel_shapers::process::ProcessScheduler::world_defaults()
+            .expect("the built-in process roster validates"),
+        process_at: None,
+        process_refusals: None,
+        notifications,
+        workspace,
+        notified_at: None,
+        notifications_shown: 0,
+        console_at: 0,
+        console_dropped: 0,
+        drawing: None,
+        rig_at_tick: None,
+            clouds: None,
+            cloud_tree: None,
+            cloud_tree_key: None,
             turbidity_at: None,
             turbidity: voxel_appearance::sky::SkyInputs::default().turbidity,
             ozone_at: None,
@@ -553,13 +927,20 @@ impl App {
         // world that opens on clear air because `TICKS_PER_DAY` is not a multiple of
         // anything would be a world whose sky is wrong until tomorrow.
         let first = self.turbidity_at.is_none() || self.ozone_at.is_none();
+        // **The stage's own due-check**, not the ladder restated here: `weather::is_due_at`
+        // exists as the one seam so the ×4 rung is reachable from the stage it governs
+        // (C-94.7). The sample below reads the same stage's rate.
         let weather_due =
-            first || (Some(tick) != self.turbidity_at && Stage::Weather.is_due_at(tick));
-        let climate_due = first || (Some(tick) != self.ozone_at && Stage::Climate.is_due_at(tick));
+            first || (Some(tick) != self.turbidity_at && voxel_shapers::weather::is_due_at(tick));
+        // **The driver's due set, not the ladder restated here.** `TickDriver::due_at`
+        // reads `Stage::cadence()`, so the ×1 rung's clone (`Stage::Climate` is daily)
+        // cannot come to disagree with the schedule the world is planned on.
+        let due_now = self.tick_driver.due_at(tick);
+        let climate_due = first || (Some(tick) != self.ozone_at && due_now.contains(&Stage::Climate));
         if weather_due || climate_due {
             // **One sample, two fields** — the two stages are read from the same world at
             // the same place, so asking twice would be the same answer twice.
-            let sampled = voxel_client::skylight::sky_inputs_at(&self.spec, x, z, tick);
+            let sampled = voxel_client::skylight::sky_inputs_at(self.spec(), x, z, tick);
             if weather_due {
                 self.turbidity = sampled.turbidity;
                 self.turbidity_at = Some(tick);
@@ -571,6 +952,98 @@ impl App {
         }
         SkyInputs { turbidity: self.turbidity, ozone_atm_cm: self.ozone_atm_cm }
     }
+
+    /// **Drive the process roster at the eye's own unit, once per tick.**
+    ///
+    /// The unit is the 16³ octree-level-4 box centred on the eye and the region is that
+    /// box's four cardinal columns, each at its true distance — the two region forms the
+    /// structural and neighbour-reading bodies were owed. It changes **no voxel**: every
+    /// body is a pure read of a shaper, which is why `the_runtime_changes_nothing_about_the_world`
+    /// can pin that the world spec is bit-identical after a step. What it does give the
+    /// running program is the roster's own answer — which stages ran and which refused —
+    /// reported **when that answer changes**, so a stage that owes a body is visible here
+    /// rather than only in a test.
+    ///
+    /// **A fresh roster opens at the pipeline's own tick 0.** The clock starts mid-day
+    /// (`GAME_TICK`), and `ProcessScheduler` refuses a stage whose dependency has *never run*
+    /// at a nonzero tick — so a fresh roster's first step at `GAME_TICK` would report
+    /// `DependencyUnavailable` for the daily stages until the next day boundary. Stepping
+    /// tick 0 once is exactly what that clause anticipates: the pipeline's first tick is the
+    /// whole chain, and the live tick follows it.
+    fn drive_processes(&mut self, tick: u64) {
+        if self.process_at == Some(tick) {
+            return;
+        }
+        use voxel_shapers::process::{ProcessRequest, RegionSample, Site, UnitBox};
+        let site = Site::new(
+            self.camera.position_m[0].floor() as i32,
+            self.camera.position_m[1].floor() as i32,
+            self.camera.position_m[2].floor() as i32,
+        );
+        const HALF: i32 = 8;
+        let unit = UnitBox::new(
+            [site.x - HALF, site.y - HALF, site.z - HALF],
+            [site.x + HALF, site.y + HALF, site.z + HALF],
+            4,
+        );
+        let region = [
+            RegionSample { site: Site::new(site.x + 4, site.y, site.z), distance_m: 4.0 },
+            RegionSample { site: Site::new(site.x - 4, site.y, site.z), distance_m: 4.0 },
+            RegionSample { site: Site::new(site.x, site.y, site.z + 4), distance_m: 4.0 },
+            RegionSample { site: Site::new(site.x, site.y, site.z - 4), distance_m: 4.0 },
+        ];
+        let spec = *self.spec();
+        let mut ticks: Vec<u64> = Vec::new();
+        if self.process.last_tick().is_none() && tick != 0 {
+            ticks.push(0);
+        }
+        ticks.push(tick);
+        for at in ticks {
+            let request = ProcessRequest {
+                site,
+                tick: at,
+                hydro_radius: voxel_shapers::process::FIELD_PLANE_HYDRO_RADIUS,
+                region: &region,
+                unit: Some(unit),
+            };
+            match self.process.step(&spec, &request) {
+                Ok(evidence) => {
+                    self.process_at = Some(at);
+                    let summary = summarise_processes(&evidence);
+                    if self.process_refusals.as_deref() != Some(summary.as_str()) {
+                        println!("process\tt{at}\t{summary}");
+                        self.process_refusals = Some(summary);
+                    }
+                }
+                Err(refusal) => {
+                    // A refused step is named once and **not retried every frame**: the tick
+                    // is recorded so a persistent refusal is one line, not sixty a second.
+                    self.process_at = Some(at);
+                    eprintln!(
+                        "shploingus: the process roster refused tick {at}: {}",
+                        refusal.detail()
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The roster's answer as one line: how many stages ran, and every refusal **by name**.
+fn summarise_processes(evidence: &[voxel_shapers::process::ProcessEvidence]) -> String {
+    let ran = evidence.iter().filter(|e| e.ran()).count();
+    let refused: Vec<String> = evidence
+        .iter()
+        .filter(|e| !e.ran())
+        .map(|e| {
+            format!(
+                "{}:{}",
+                e.process.stage().name(),
+                e.refusal.map(|condition| condition.name()).unwrap_or("unknown")
+            )
+        })
+        .collect();
+    format!("{ran} of {} ran; refused [{}]", evidence.len(), refused.join(", "))
 }
 
 impl ApplicationHandler for App {
@@ -595,7 +1068,7 @@ impl ApplicationHandler for App {
         // `Daylight`, so the first frame cannot be lit by one sky and backed by
         // another. `rig_at` remains for callers that want only the rig.
         let boot_daylight = match voxel_client::skylight::daylight_of(
-            &self.spec,
+            self.spec(),
             self.clock.tick,
             boot_inputs,
             0,
@@ -627,7 +1100,7 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        let graphics = match Graphics::new(window, &boot_rig) {
+        let mut graphics = match Graphics::new(window, &boot_rig) {
             Ok(g) => g,
             Err(e) => {
                 eprintln!("shploingus: {e}");
@@ -638,8 +1111,17 @@ impl ApplicationHandler for App {
         // The sky, from the same `Daylight` the boot rig came from. Before the sky pass
         // existed this line had nothing to write to and every uncovered pixel was the
         // render pass's clear value.
-        if let Some(table) = sky_at(&self.spec, &boot_daylight, boot_inputs) {
+        //
+        // **Both the background and the Sun's body come from this one evaluation**, exactly
+        // as the frame loop's own tick does, so the first frame cannot be lit by one sky and
+        // backed by another — nor draw a body normalised against a peak the table was not.
+        if let Some((table, peak)) = sky_at(self.spec(), &boot_daylight, boot_inputs) {
             graphics.world.write_sky(&table);
+            graphics.world.write_sun(voxel_client::sun::DrawnSun::of(
+                &boot_daylight.sky,
+                peak,
+                self.render_camera.position_m,
+            ));
         }
 
         // The streamer, with one fewer worker than the machine has, because the
@@ -667,7 +1149,7 @@ impl ApplicationHandler for App {
                 .map(|n| n.get().saturating_sub(1).max(1))
                 .unwrap_or(1),
         };
-        let spec = self.spec;
+        let spec = *self.spec();
         let source = WorldSource::new(spec);
         let registry = match materials::registry() {
             Ok(r) => r,
@@ -707,6 +1189,41 @@ impl ApplicationHandler for App {
         self.workers = workers;
         self.last = Instant::now();
         self.title_at = Instant::now();
+        // **Apply the pointer's owner as soon as a window exists to apply it to.** The
+        // focus event that would otherwise do it can arrive before `graphics` does — and
+        // is then a no-op — so a world view whose pointer was never grabbed would read as
+        // "the mouse is not locked" with nothing on the path to fix it.
+        self.sync_pointer_grab();
+    }
+
+    /// **The camera's motion source, and it is the device rather than the cursor.**
+    ///
+    /// [`DeviceEvent::MouseMotion`] is the platform's raw, relative motion. It is what
+    /// makes a first-person look work at all here: while the pointer is locked the
+    /// cursor is pinned (this platform's `Locked` clips it to a 1×1 rectangle at its
+    /// present position), so [`WindowEvent::CursorMoved`] stops carrying anything a
+    /// camera could read. Raw motion keeps arriving while the cursor is pinned.
+    ///
+    /// It also arrives while the shell is up, where it must do nothing — the pointer
+    /// belongs to the windows then — so this reads the **same ownership rule**
+    /// [`App::sync_pointer_grab`] applies to the grab. One decision, two consumers.
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: DeviceId,
+        event: DeviceEvent,
+    ) {
+        if self.shell.shell_shown() {
+            return;
+        }
+        let DeviceEvent::MouseMotion { delta: (dx, dy) } = event else {
+            return;
+        };
+        self.camera.yaw_rad += dx * LOOK_RAD_PER_MOTION_UNIT;
+        self.camera.pitch_rad = (self.camera.pitch_rad - dy * LOOK_RAD_PER_MOTION_UNIT).clamp(
+            -voxel_client::camera::MAX_PITCH_RAD,
+            voxel_client::camera::MAX_PITCH_RAD,
+        );
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -739,9 +1256,23 @@ impl ApplicationHandler for App {
                     && matches!(code, KeyCode::Escape | KeyCode::F1)
                 {
                     self.shell.toggle_shell();
+                    // The pointer follows the shell, and it has to: the pointer is the
+                    // shell's while the windows are up (a click that lands on a window
+                    // is that window's, not a dig), so locking it then would steal
+                    // every click and make the UI unusable.
+                    let shown = self.shell.shell_shown();
+                    self.sync_pointer_grab();
+                    // Which way the pointer went is printed with it, because "the camera
+                    // does not turn" and "the pointer is not the world's" look the same
+                    // from inside the window.
                     println!(
-                        "shploingus: shell {}",
-                        if self.shell.shell_shown() { "shown" } else { "hidden" }
+                        "shploingus: shell {} — the pointer is {}",
+                        if shown { "shown" } else { "hidden" },
+                        if shown {
+                            "the shell's (free and visible)"
+                        } else {
+                            "the world's (locked, cursor hidden)"
+                        }
                     );
                     return;
                 }
@@ -777,6 +1308,20 @@ impl ApplicationHandler for App {
                     );
                     return;
                 }
+                // **F4 outlines the world meshes themselves** — the greedy merge's own quads,
+                // which is how a person sees how the meshes are made (the request that arrived
+                // with the wireframe ask, 2026-10-04). It is not the edit lanes: the lanes are
+                // the change view, this is the geometry. While it is on the world's own
+                // materials are withheld and the lines are graded by depth in a rainbow, on
+                // the user's own call — white read poorly against the world.
+                if event.state == ElementState::Pressed && code == KeyCode::F4 {
+                    self.wireframe = !self.wireframe;
+                    println!(
+                        "shploingus: mesh wireframe {}",
+                        if self.wireframe { "on" } else { "off" }
+                    );
+                    return;
+                }
                 if event.state == ElementState::Pressed {
                     if let Some(choice) = selection_of(code) {
                         self.selected = choice;
@@ -791,25 +1336,30 @@ impl ApplicationHandler for App {
             WindowEvent::MouseInput { state, button, .. } => {
                 let at = self.shell_point();
                 if state == ElementState::Pressed {
-                    // Look is already active; the click exists so that a window
-                    // that has lost focus can be brought back without the camera
-                    // jumping, since the delta is measured from the last seen
-                    // position.
-                    self.cursor = None;
                     // **The shell gets the click first when it is drawn there.** A click that
                     // lands on the bar or a window is the shell's; only a click that lands on
                     // the world is the world's, because digging through a window is a mis-click
                     // rather than a feature.
                     if self.shell.shell_shown() && self.shell.hit(at) {
-                        self.shell.pointer_pressed(
-                            match button {
-                                MouseButton::Right => ShellButton::Right,
-                                _ => ShellButton::Left,
-                            },
-                            at,
-                        );
+                        let button = match button {
+                            MouseButton::Right => ShellButton::Right,
+                            _ => ShellButton::Left,
+                        };
+                        // **The second press of a pair is answered as the double-click it is.**
+                        // The platform reports presses and no counts, so the count is made here
+                        // against the two declared platform numbers above, on the raw cursor
+                        // position they are measured in; the port's `press_at` takes the
+                        // verdict as its `double` flag.
+                        let raw = self.cursor.unwrap_or((-1.0, -1.0));
+                        if self.count_shell_click(button, raw) {
+                            self.shell.pointer_double_clicked(button, at);
+                        } else {
+                            self.shell.pointer_pressed(button, at);
+                        }
                         return;
                     }
+                    // A press the shell did not claim cannot be half of a pair with one it did.
+                    self.last_shell_click = None;
                     match button {
                         MouseButton::Left => self.break_at_target(),
                         MouseButton::Right => self.build_at_target(),
@@ -819,26 +1369,36 @@ impl ApplicationHandler for App {
                     self.shell.pointer_released(at);
                 }
             }
+            // **The wheel belongs to the windows, and only to the windows.** A gesture that
+            // landed on the world would be a camera control this shell has not been given; the
+            // first surface that asked for one is the console's scrollback. Claimed only when
+            // the shell is up and the point is on its chrome, exactly like a click.
+            WindowEvent::MouseWheel { delta, .. } => {
+                let at = self.shell_point();
+                if self.shell.shell_shown() && self.shell.hit(at) {
+                    let scale = self.graphics.as_ref().map(|g| g.scale as f64).unwrap_or(1.0);
+                    let delta = match delta {
+                        // A notched wheel reports lines; positive is away from the operator.
+                        MouseScrollDelta::LineDelta(_, lines) => ShellWheel::Lines(lines as f64),
+                        // A trackpad reports physical pixels, and every layout in this program is
+                        // in device-independent pixels — converted here, the one place that
+                        // knows the window's scale factor.
+                        MouseScrollDelta::PixelDelta(position) => {
+                            ShellWheel::Pixels(position.y / scale.max(1e-6))
+                        }
+                    };
+                    self.shell.wheel(at, delta);
+                }
+            }
             WindowEvent::CursorMoved { position, .. } => {
+                // The pointer's **position** is the shell's business — hover, drag and
+                // hit-testing — and it cannot be the camera's: a locked pointer stops
+                // reporting position changes (`device_event` says why), so the camera reads
+                // the device's raw motion instead. One source each, so a platform that
+                // reports both can never double-turn the view.
                 let now = (position.x, position.y);
                 let scale = self.graphics.as_ref().map(|g| g.scale as f64).unwrap_or(1.0);
                 self.shell.pointer_moved((now.0 / scale.max(1e-6), now.1 / scale.max(1e-6)));
-                // The camera looks only while the shell is hidden. With the shell up the pointer
-                // belongs to the windows — dragging one is not a camera move — and when the
-                // shell goes down the delta is measured from the last seen position, so the
-                // world does not jump.
-                if !self.shell.shell_shown() {
-                    if let Some((lx, ly)) = self.cursor {
-                        let dx = now.0 - lx;
-                        let dy = now.1 - ly;
-                        self.camera.yaw_rad += dx * LOOK_RAD_PER_PIXEL;
-                        self.camera.pitch_rad = (self.camera.pitch_rad - dy * LOOK_RAD_PER_PIXEL)
-                            .clamp(
-                                -voxel_client::camera::MAX_PITCH_RAD,
-                                voxel_client::camera::MAX_PITCH_RAD,
-                            );
-                    }
-                }
                 self.cursor = Some(now);
             }
             WindowEvent::CursorLeft { .. } => {
@@ -846,6 +1406,12 @@ impl ApplicationHandler for App {
                 self.shell.pointer_left();
             }
             WindowEvent::RedrawRequested => self.redraw(event_loop),
+            // **Regain the grab on focus.** The platform releases it when the window
+            // loses focus — correctly, so the player can reach another window — but it
+            // does not always hand it back, and a first-person camera whose pointer
+            // is free again cannot be turned past the screen edge. Re-asserting the
+            // decision we already made is cheaper than detecting the loss.
+            WindowEvent::Focused(true) => self.sync_pointer_grab(),
             _ => {}
         }
     }
@@ -867,6 +1433,81 @@ impl App {
         match self.cursor {
             Some((x, y)) => (x / scale.max(1e-6), y / scale.max(1e-6)),
             None => (-1.0, -1.0),
+        }
+    }
+
+    /// **The platform's own double-click test**, made here because winit reports presses and
+    /// no counts: two presses of the same button, within [`DOUBLE_CLICK_INTERVAL_MS`] and
+    /// inside [`DOUBLE_CLICK_SLOP_PX`] of each other, are one double-click — and the check
+    /// runs against the **raw cursor** (pixels), not the dp point the shell is handed.
+    ///
+    /// A double **ends the sequence**: the click after a pair starts a new one, as the
+    /// platform's own sequence does.
+    fn count_shell_click(&mut self, button: ShellButton, at: (f64, f64)) -> bool {
+        let now = Instant::now();
+        let double = is_double_click(button, at, now, self.last_shell_click);
+        self.last_shell_click = if double { None } else { Some((now, at, button)) };
+        double
+    }
+
+    /// **Show the next decision the game's own pass wrote** — at most one per tick (H-12.2).
+    ///
+    /// The record is decoded whole and its artifact re-hashed before it is shown; a record whose
+    /// artifact no longer hashes to what was judged is **refused by name** and the stream stops,
+    /// because a decision shown against bytes it was not made from is worse than no decision.
+    /// A drained queue says so once and stops asking, rather than printing the same line every
+    /// tick for the life of the run.
+    fn show_next_notification(&mut self, tick: u64) {
+        let Some(root) = self.workspace.clone() else {
+            return;
+        };
+        let Some(stream) = self.notifications.as_mut() else {
+            return;
+        };
+        let next = stream.next_verified(&root);
+        match next {
+            Ok(Some(notification)) => {
+                self.notifications_shown += 1;
+                let decision = &notification.decision;
+                let state = if decision.cleared() { "cleared" } else { "refused" };
+                let finding = decision.findings.first().cloned().unwrap_or_else(|| {
+                    "no finding: the artifact carries its proof of work".to_string()
+                });
+                // **A refused decision is a refusal, and refusals are persistent** (UI-SPEC §7):
+                // the level is what puts it in the notifications window and keeps it out of the
+                // toast queue. A cleared decision is an event — logged, not loud (C-64.2's
+                // predicate is the split, and this is one more place it applies).
+                let level = if decision.cleared() {
+                    ConsoleLevel::Event
+                } else {
+                    ConsoleLevel::Warn
+                };
+                self.shell.log(
+                    level,
+                    "laya",
+                    format!(
+                        "{} {state} {} [{}] at tick {tick}: {finding}",
+                        notification.notification, decision.path, decision.verdict
+                    ),
+                    Some(tick),
+                );
+            }
+            Ok(None) => {
+                self.notifications = None;
+                self.shell.log(
+                    ConsoleLevel::Event,
+                    "laya",
+                    format!(
+                        "the queue is drained: {} decision(s) shown by tick {tick}",
+                        self.notifications_shown
+                    ),
+                    Some(tick),
+                );
+            }
+            Err(refused) => {
+                self.notifications = None;
+                self.shell.log(ConsoleLevel::Warn, "laya", refused, Some(tick));
+            }
         }
     }
 
@@ -905,37 +1546,135 @@ impl App {
         // the tick moves — without the inequality the stage would be "due" sixty times
         // a second and the cadence would be decorative.
         let tick = self.clock.tick;
+        // **The shell's clock, once per frame and idempotent within a tick.** The toast queue is
+        // the first transient surface to read it (H-12.2: one at a time, at the world's rate),
+        // and a tick that changed nothing changes nothing here either.
+        self.shell.set_tick(tick);
+        // **The process roster, at the world's own tick.** It runs once per tick (guarded
+        // in the method) and reports only when its answer changes; it mutates nothing.
+        self.drive_processes(tick);
         let due = Some(tick) != self.rig_at_tick
-            && voxel_shapers::stages::Stage::Atmosphere.is_due_at(tick);
+            && self
+                .tick_driver
+                .due_at(tick)
+                .contains(&voxel_shapers::stages::Stage::Atmosphere);
         if due {
             self.rig_at_tick = Some(tick);
             // **`None` keeps the previous rig**, which is `WorldPipeline::write_rig`'s own
             // refusal semantics too, so a refused atmosphere costs a held frame rather
             // than a black one.
             let inputs = self.atmosphere();
-            // **One `Sky`, uploaded twice.** The rig and the background are written
-            // from the same `Daylight`, so the light and the sky it is seen against
-            // cannot describe different atmospheres. Before the sky pass there was
+            // The three things the derivation needs, read **before** the graphics borrow: the
+            // spec is behind `&self`, and a `&mut self.graphics` held across a `&self` call is
+            // the borrow checker's problem rather than the renderer's.
+            let spec = *self.spec();
+            let eye = self.render_camera.position_m;
+            // **The cloud field, on the same cadence as the rig.** It is asked once per
+            // column on its own sample lattice, so it belongs to the atmosphere's clock and
+            // not the frame's — and it is sampled where the player stands, because a cloud
+            // field centred on the origin would be a field the player walks out of.
+            self.clouds = Some(voxel_client::CloudField::sample(
+                &spec,
+                tick,
+                [eye[0], eye[2]],
+            ));
+            // **One `Sky`, uploaded three times.** The rig, the background and the Sun's body
+            // are written from the same `Daylight`, so the light, the sky it is seen against and
+            // the body in it cannot describe different atmospheres. Before the sky pass there was
             // only the rig here and nothing to keep in step with it.
-            if let Some(daylight) = voxel_client::skylight::daylight_of(&self.spec, tick, inputs, 0)
-            {
-                if let Some(graphics) = self.graphics.as_ref() {
+            if let Some(daylight) = voxel_client::skylight::daylight_of(&spec, tick, inputs, 0) {
+                if let Some(graphics) = self.graphics.as_mut() {
                     if let Some(gpu) =
                         GpuRig::from_rig(&voxel_client::skylight::exposed(&daylight.rig))
                     {
                         graphics.world.write_rig(&gpu);
                     }
-                    if let Some(table) = sky_at(&self.spec, &daylight, inputs) {
+                    if let Some((table, peak)) = sky_at(&spec, &daylight, inputs) {
                         let _ = graphics.world.write_sky(&table);
+                        // **The Sun's body** (C-176), from the same `Sky` and the same
+                        // normaliser the background was drawn against. `None` when there is no
+                        // sun to draw, which is the rig's own condition rather than a second
+                        // one: `Sky::sun_light` is black exactly when the Sun is not up.
+                        graphics.world.write_sun(voxel_client::sun::DrawnSun::of(
+                            &daylight.sky,
+                            peak,
+                            eye,
+                        ));
                     }
                 }
             }
         }
         let _ = moved;
 
+        // ---- the judgement, at the world's rate ----------------------------
+        // H-12.2: **one rendering per record, one at a time.** The stream advances once per
+        // tick rather than once per frame, so a decision is shown at the rate the world runs
+        // at rather than the rate the terminal can print. Every record is verified before it
+        // is shown — `sha256(artifact)` against the artifact's own bytes — and a record that
+        // does not verify stops the stream **by name** rather than being shown against bytes
+        // the decision was not made from.
+        if Some(tick) != self.notified_at {
+            self.notified_at = Some(tick);
+            self.show_next_notification(tick);
+        }
+
+        // ---- the live-reload watch -----------------------------------------
+        // **The compiler's output root is the loader's search path** (`packages -> game`), so a
+        // package emitted while the game runs is adopted here rather than after a restart: that
+        // is the loop the UI is fixed in, and a rebuild would throw the running world — the thing
+        // the UI is being fixed against — away on every iteration. The watch reads the directory
+        // once per tick, adopts only a package whose digest it has not handled, and says on the
+        // console what it adopted or refused.
+        if let Some(root) = self.workspace.clone() {
+            self.shell.watch_packages(&root.join("packages"), Some(tick));
+        }
+
+        // ---- the api layer, read back out of the game ----------------------
+        // C-54.3: the console, the task viewer, the toast queue and the panel are **one api** — and
+        // the console *is* that api's record surface. It lived only in the window, which left the
+        // agent's half of the live-edit loop without a read: the shell would adopt an edited
+        // prototype and the only trace would be a line on a screen nobody else can open. So every
+        // record the console has taken since the last frame is printed with the tick it landed at,
+        // in order and verbatim — the same bytes the player sees, never a summary of them.
+        //
+        // **Once per tick, and guarded by the length**, so a frame at 100 fps does not copy a
+        // console that has not changed.
+        let console_len = self.shell.console().len();
+        if console_len > self.console_at {
+            let lines = self.shell.console().lines();
+            // **A console that has dropped records has shifted its own indices**, so a counter
+            // carried across that shift would print the wrong line — or skip one — silently. The
+            // drop is reported and the read re-anchored to the end, which loses the old lines
+            // loudly rather than mislabelling the new ones (D107: a gap says it is a gap).
+            if self.shell.console().dropped() != self.console_dropped {
+                self.console_dropped = self.shell.console().dropped();
+                println!(
+                    "console\tt- api: the console dropped {} record(s); this read is re-anchored",
+                    self.console_dropped
+                );
+                if lines.len() < self.console_at {
+                    self.console_at = lines.len();
+                }
+            } else if lines.len() < self.console_at {
+                // The same shift with no drop reported: refuse to guess rather than index into a
+                // buffer that moved, and say which state made the read stop.
+                println!(
+                    "console\tt- api: the console holds {} record(s) and this read was at {}; the \
+                     read stops rather than printing lines it cannot place",
+                    lines.len(),
+                    self.console_at
+                );
+            } else {
+                while self.console_at < lines.len() {
+                    println!("console\t{}", lines[self.console_at]);
+                    self.console_at += 1;
+                }
+            }
+        }
+
 
         // ---- move -------------------------------------------------------
-        self.fly(dt);
+        self.walk_player(dt);
 
         // ---- drive the world --------------------------------------------
         // Every frame, so the shapers are continuous rather than a load step.
@@ -957,10 +1696,98 @@ impl App {
         // Rebuilt each frame because the residency changes each frame. The
         // vertex buffers are re-uploaded per frame inside the pipeline — a named
         // cost, see `voxel_client::world`.
-        let scene = Scene::build(
+        // **And the cloud's own cells, appended after the world's** (C-179). They are the
+        // world's own rectangles, so they travel in the same buffers and are drawn by the same
+        // fragment shader; what the draw splits on is `Scene::cloud_records`. The rung the cells
+        // are cut at is the eye's own pixel angle, so the ladder coarsens as the player walks
+        // away from the cloud — which is the whole reason it is measured here and not in the
+        // field.
+        let pixel_angle_rad = self
+            .graphics
+            .as_ref()
+            .map(|g| voxel_client::pixel_angle_rad(self.camera.fov_y_rad, g.config.height.max(1)))
+            .unwrap_or(1.7e-3);
+        let scene = Scene::build_with_detail(
             self.streamer.as_ref().expect("checked above").meshes(),
             self.camera.position_m,
+            &DetailLattice::new(0),
         );
+        // **The tree is rebuilt only when something it is a function of moves.** The key is the
+        // field's own tick, the eye snapped to the domain's sample lattice, and the pixel angle —
+        // so walking inside one 128 m cell costs no tree at all, and the frame pays the fill on the
+        // cell boundary rather than on every frame. The eye's snap is not an approximation of where
+        // the geometry sits: the domain's own corner is snapped to that lattice, so two eyes in one
+        // cell build the same tree.
+        let ladder_key = (
+            self.rig_at_tick.unwrap_or(0),
+            snap_to_sample_lattice(self.camera.position_m),
+            pixel_angle_rad.to_bits(),
+        );
+        if self.clouds.is_some() && self.cloud_tree_key != Some(ladder_key) {
+            if let Some(field) = self.clouds.as_ref() {
+                self.cloud_tree = Some(voxel_client::CloudCubes::build(
+                    field,
+                    self.camera.position_m,
+                    pixel_angle_rad as f64,
+                ));
+                self.cloud_tree_key = Some(ladder_key);
+            }
+        }
+        let scene = match self.cloud_tree.as_ref() {
+            Some(tree) => scene.with_clouds(tree),
+            None => scene,
+        };
+
+        // Asked here, **before** `self.graphics` is borrowed mutably below and held
+        // across the panel: the water query reads the world, and the draw borrows the
+        // renderer, and the two cannot overlap inside one expression.
+        let in_water = self.eye_is_in_water();
+
+        // ---- the vector change view ----------------------------------------
+        // **Read from the world's record and projected through the camera the world is drawn
+        // with**, and asked *before* the renderer is borrowed mutably below and held across the
+        // draw: the projection reads the record and the camera, and the draw borrows the
+        // renderer, and the two cannot overlap in one borrow. Collected every frame, so an
+        // outline expires on the record's own clock; drawn only while the debug lanes are on —
+        // **with the shell closed as well** (H-7.9).
+        let viewport_dp = {
+            let g = self.graphics.as_ref().expect("checked above");
+            // **The camera's aspect follows the surface, every frame.** The
+            // projection was built once with 16:9, so a resized window drew
+            // through the old shape and the world stretched with it. Deriving
+            // the aspect here — from the same numbers the viewport uses — means
+            // no path (Resized, a re-configure after Outdated/Lost, or a
+            // ScaleFactorChanged) can leave the projection behind.
+            if g.config.height > 0 {
+                self.camera.aspect = g.config.width as f64 / g.config.height as f64;
+            }
+            voxel_ui::Rect::new(
+                0.0,
+                0.0,
+                g.config.width as f64 / g.scale as f64,
+                g.config.height as f64 / g.scale as f64,
+            )
+        };
+        // ---- the camera effects, once per frame -----------------------------
+        // **The frame is drawn with a copy of the camera plus this frame's offsets.**
+        // The player's own camera is what the movement reads next frame, so a smoothed
+        // look can never become a physics input that varies with the frame rate.
+        let sprinting = self.held.contains(&KeyCode::ShiftLeft)
+            || self.held.contains(&KeyCode::ShiftRight);
+        let offsets = self.overhaul.update(
+            &self.camera,
+            self.player.motion.velocity,
+            sprinting,
+            dt,
+        );
+        self.render_camera = offsets.applied_to(&self.camera);
+        let render_camera = self.render_camera;
+        // The viewport is the shell's, not the frame loop's: a maximized window is sized
+        // against it, and a resize is a state change rather than a per-frame argument.
+        self.shell.set_viewport(viewport_dp);
+        let projected = self.change_strokes(&render_camera, viewport_dp);
+        let strokes: Vec<voxel_client::hud::Stroke> =
+            if self.lanes { projected } else { Vec::new() };
 
         let graphics = self.graphics.as_mut().expect("checked above");
 
@@ -997,20 +1824,28 @@ impl App {
         // A refusal from the design system is a refusal: the world is not drawn with half a
         // shell over it, and the reason is printed once.
         let elements = {
-            let scale = graphics.scale;
-            let (pw, ph) = (graphics.config.width as f64, graphics.config.height as f64);
-            let viewport_dp = voxel_ui::Rect::new(0.0, 0.0, pw / scale as f64, ph / scale as f64);
-            // The viewport is the shell's, not the frame loop's: a maximized window is sized
-            // against it, and a resize is a state change rather than a per-frame argument.
-            self.shell.set_viewport(viewport_dp);
+            // Asked before the literal, not inside it: the panel borrows `self` for
+            // several other fields at once, and a query in the middle of that is a
+            // second borrow of the same thing in the same expression.
             let state = HudState {
                 frame: &frame,
                 adapter: &graphics.adapter,
                 workers: self.workers,
                 fps: self.fps,
                 position_m: self.camera.position_m,
+                // **The body's own state.** A position alone cannot say whether the
+                // player is standing on the ground or falling past it — the two print
+                // the same three numbers — and a water readout is the only way to see
+                // the sea the body is standing in.
+                grounded: self.player.motion.grounded,
+                vertical_m_s: self.player.motion.velocity[1],
+                in_water,
                 quads: scene.quads,
-                seed: SEED,
+                // **The world's seed, not the constant.** The panel's claim is that
+                // the world is a function of `(seed, tick)`, and holding a literal
+                // here would make it a claim about a constant rather than about the
+                // world actually on screen.
+                seed: self.world.seed(),
                 // **The live tick, not the constant it started from.** The HUD's claim
                 // is that the world is a function of `(seed, tick)`; a readout holding a
                 // literal `0` was a claim the client could not support.
@@ -1041,6 +1876,21 @@ impl App {
                             }
                         }
                     }
+                    // **The reading, not an opinion.** The elements this frame drew are measured for
+                    // the two hierarchy defects this shell has been reported for — ink no surface
+                    // hosts, and ink a later surface covers — and the reading goes onto the console,
+                    // which is the api's record surface. So a UI change is a number that has to
+                    // move, and the agent editing the shell can read it without seeing the window.
+                    let reading = shell_debug::drawing(&elements).describe();
+                    if self.drawing.as_deref() != Some(reading.as_str()) {
+                        self.shell.log(
+                            ConsoleLevel::Event,
+                            "shell",
+                            reading.clone(),
+                            Some(self.clock.tick),
+                        );
+                        self.drawing = Some(reading);
+                    }
                     // **The windows that laid out are on screen whatever the ones that did not.**
                     // A refusal names the window it belongs to, and it is printed when it changes
                     // rather than sixty times a second.
@@ -1063,13 +1913,14 @@ impl App {
                 }
             }
         };
-        if let Some(elements) = &elements {
+        if elements.is_some() || !strokes.is_empty() {
             if let Err(e) = graphics.hud.prepare(
                 &graphics.device,
                 &graphics.queue,
                 (graphics.config.width, graphics.config.height),
                 graphics.scale,
-                elements,
+                elements.as_deref().unwrap_or(&[]),
+                &strokes,
             ) {
                 eprintln!("shploingus: the HUD could not be prepared: {e}");
                 event_loop.exit();
@@ -1081,10 +1932,31 @@ impl App {
         let mut encoder = graphics
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
-        graphics
-            .world
-            .draw(&mut encoder, &view, &graphics.depth_view, &scene, &self.camera);
-        if elements.is_some() {
+        // One pixel's angular size for the swapchain's own height — the pattern
+        // ladder's footprint scale, which the shader cannot derive for itself
+        // (C-163).
+        let pixel_angle =
+            voxel_client::pattern::pixel_angle_rad(render_camera.fov_y_rad, graphics.config.height);
+        if self.wireframe {
+            graphics.world.draw_wireframe(
+                &mut encoder,
+                &view,
+                &graphics.depth_view,
+                &scene,
+                &render_camera,
+                pixel_angle,
+            );
+        } else {
+            graphics.world.draw(
+                &mut encoder,
+                &view,
+                &graphics.depth_view,
+                &scene,
+                &render_camera,
+                pixel_angle,
+            );
+        }
+        if elements.is_some() || !strokes.is_empty() {
             // A second pass, loading what the world drew: no depth, no clear.
             graphics.hud.draw(&mut encoder, &view);
         }
@@ -1125,6 +1997,60 @@ impl App {
         }
     }
 
+    /// **The vector change view, read from the record and projected for this frame**
+    /// (H-7.1/H-7.9, feature `change_view`).
+    ///
+    /// Collection happens whether or not the lanes are on: a change expires on the record's own
+    /// clock, and a region first built at observation time while the view was off would draw as
+    /// though it had just happened. The read is guarded by the record's generation, so a frame
+    /// with no edit does not copy the record.
+    fn change_strokes(
+        &mut self,
+        camera: &Camera,
+        viewport: voxel_ui::Rect,
+    ) -> Vec<voxel_client::hud::Stroke> {
+        let generation = self.streamer.as_ref().map(|streamer| streamer.world_generation());
+        if let Some(generation) = generation {
+            if generation != self.change_generation {
+                let entries = self
+                    .streamer
+                    .as_ref()
+                    .expect("the generation came from the streamer")
+                    .modifications();
+                let total = entries.len();
+                let start = self.changes_seen.min(total);
+                // The instant is the tick the read lands on: the record carries no wall time, and
+                // inventing one per entry would be a second clock. Two edits in one tick share
+                // the instant, and the view keeps both of them.
+                let now_ms = self.clock.tick as f64 * voxel_client::clock::tick_millis();
+                for entry in entries.into_iter().skip(start) {
+                    // **The record's own reason and material**, so the outline says what changed
+                    // and not merely where.
+                    match shell_changes::ChangeRegion::of(
+                        [[entry.x as i64, entry.y as i64, entry.z as i64]],
+                        entry.reason,
+                        Some(entry.to),
+                        now_ms,
+                    ) {
+                        Ok(region) => self.changes.push(region),
+                        Err(refusal) => self.shell.log(
+                            ConsoleLevel::Warn,
+                            "world",
+                            format!("the change view refused a recorded edit: {refusal}"),
+                            Some(self.clock.tick),
+                        ),
+                    }
+                }
+                self.changes_seen = total;
+                self.change_generation = generation;
+            }
+        }
+        let now_ms = self.clock.tick as f64 * voxel_client::clock::tick_millis();
+        self.changes.retain(|region| region.is_live(now_ms));
+        let projection = shell_changes::Projection::of(camera, viewport);
+        shell_changes::outline_strokes(&self.changes, &projection, now_ms)
+    }
+
     /// The voxel the player is looking at, within [`REACH_M`].
     ///
     /// The ray starts at the **eye**, so a camera buried in terrain targets the
@@ -1132,7 +2058,11 @@ impl App {
     /// is skipped rather than guessed at).
     fn target(&self) -> Option<voxel_work::Pick> {
         let streamer = self.streamer.as_ref()?;
-        let ray = Ray::new(self.camera.position_m, self.camera.forward());
+        // **The ray starts at the drawn eye and follows the drawn look**, so the pick
+        // agrees with the crosshair the player is actually looking through — the
+        // effect offsets are small, but a pick that disagreed with the crosshair
+        // would be a bug at any size.
+        let ray = Ray::new(self.render_camera.position_m, self.render_camera.forward());
         match streamer.pick(&ray, REACH_M) {
             Ok(found) => found,
             Err(refusal) => {
@@ -1149,27 +2079,58 @@ impl App {
             return;
         };
         let streamer = self.streamer.as_mut().expect("the target came from the streamer");
-        match streamer.edit(pick.voxel[0], pick.voxel[1], pick.voxel[2], MaterialId::EMPTY, "the player broke it") {
-            Ok(m) => println!(
-                "shploingus: broke material {} at ({}, {}, {})",
-                m.from.0, pick.voxel[0], pick.voxel[1], pick.voxel[2]
+        match streamer.edit(voxel_work::pool::Edit {
+            x: pick.voxel[0],
+            y: pick.voxel[1],
+            z: pick.voxel[2],
+            to: MaterialId::EMPTY,
+            reason: "the player broke it".into(),
+            actor: voxel_model::world::ActorId::player(),
+            verb: voxel_model::world::PhysicalVerb::Break,
+        }) {
+            // **A transient result goes through `announce`, and a refusal stays a record.**
+            // `broke material 4 at (…)` is MD1's snackbar class (UI-SPEC §7), so it is one call
+            // that writes the console record *and* raises the toast; the refusal is a `Warn`,
+            // which the same call logs and deliberately does not toast.
+            Ok(m) => self.shell.announce(
+                ConsoleLevel::Event,
+                "world",
+                format!(
+                    "broke material {} at ({}, {}, {})",
+                    m.from.0, pick.voxel[0], pick.voxel[1], pick.voxel[2]
+                ),
+                Some(self.clock.tick),
             ),
-            Err(refusal) => eprintln!("shploingus: {refusal}"),
+            Err(refusal) => self.shell.announce(
+                ConsoleLevel::Warn,
+                "world",
+                format!("{refusal}"),
+                Some(self.clock.tick),
+            ),
         }
     }
 
     /// Right button: put the selected material into the empty voxel the ray
     /// entered through.
     ///
-    /// Building into **water** is allowed — that is how a floor is laid — and
-    /// building into anything else is refused with the material's name, because
-    /// silently replacing rock with rock is an edit the player did not ask for.
+    /// Building into **air** is the path. Water is *attempted* and the world's edit
+    /// path refuses it — a fluid is not a block and displacement is not modelled
+    /// (C-154), so the refusal is announced rather than a water voxel silently
+    /// deleted, and the rule lives in one place instead of being spelled again
+    /// here. Building into anything else is refused with the material's name,
+    /// because silently replacing rock with rock is an edit the player did not ask
+    /// for.
     fn build_at_target(&mut self) {
         let Some(pick) = self.target() else {
             return;
         };
         let Some(face) = pick.entry_face else {
-            println!("shploingus: the eye is inside a voxel; nothing to build against");
+            self.shell.announce(
+                ConsoleLevel::Warn,
+                "world",
+                "the eye is inside a voxel; nothing to build against",
+                Some(self.clock.tick),
+            );
             return;
         };
         let step = outward_step(face);
@@ -1181,23 +2142,175 @@ impl App {
         let (material, name) = PLACEABLE[self.selected];
         let streamer = self.streamer.as_mut().expect("the target came from the streamer");
         match streamer.material_at(at[0], at[1], at[2]) {
-            Err(refusal) => eprintln!("shploingus: {refusal}"),
+            Err(refusal) => self.shell.announce(
+                ConsoleLevel::Warn,
+                "world",
+                format!("{refusal}"),
+                Some(self.clock.tick),
+            ),
+            // Water goes through the same door as air, so the edit path is the one
+            // place the fluid rule lives and its refusal is what the player reads.
             Ok(existing) if existing.is_empty() || existing == materials::WATER => {
-                match streamer.edit(at[0], at[1], at[2], material, "the player built here") {
-                    Ok(_) => println!("shploingus: placed {name} at ({}, {}, {})", at[0], at[1], at[2]),
-                    Err(refusal) => eprintln!("shploingus: {refusal}"),
+                match streamer.edit(voxel_work::pool::Edit {
+                    x: at[0],
+                    y: at[1],
+                    z: at[2],
+                    to: material,
+                    reason: "the player built here".into(),
+                    actor: voxel_model::world::ActorId::player(),
+                    verb: voxel_model::world::PhysicalVerb::Place,
+                }) {
+                    Ok(_) => self.shell.announce(
+                        ConsoleLevel::Event,
+                        "world",
+                        format!("placed {name} at ({}, {}, {})", at[0], at[1], at[2]),
+                        Some(self.clock.tick),
+                    ),
+                    Err(refusal) => self.shell.announce(
+                        ConsoleLevel::Warn,
+                        "world",
+                        format!("{refusal}"),
+                        Some(self.clock.tick),
+                    ),
                 }
             }
-            Ok(existing) => println!(
-                "shploingus: {name} cannot go there — material {} is in the way",
-                existing.0
+            Ok(existing) => self.shell.announce(
+                ConsoleLevel::Warn,
+                "world",
+                format!("{name} cannot go there — material {} is in the way", existing.0),
+                Some(self.clock.tick),
             ),
         }
     }
 
-    /// Free flight. No gravity, no collision — said plainly in the module
-    /// comment rather than left for the player to discover.
-    fn fly(&mut self, dt: f64) {
+    /// The player's body, and the camera placed from it.
+    ///
+    /// One call to [`Player::advance`], which banks the frame delta and spends it in
+    /// whole 1/20 s steps — one tick of the Squake model, the world's own clock rate
+    /// — against the world's own voxels, so the trajectory is a function of how many
+    /// steps have run and not of how the frames arrived. The eye is then *read off*
+    /// the body, never written to — and read **between the last two steps**, because
+    /// physics at 20 Hz drawn at frame rates above it would otherwise stutter.
+    ///
+    /// Whether the eye is inside a water voxel — one query, asked about the eye
+    /// rather than inferred from the body's motion, because a body can be in water
+    /// and perfectly still (standing on the sea floor) and can be moving and not be
+    /// in it (falling past a fall).
+    fn eye_is_in_water(&self) -> bool {
+        let eye = self.camera.position_m;
+        self.world
+            .voxels(self.streamer.as_ref(), &self.earthworks)
+            .is_water(
+                eye[0].floor() as i32,
+                eye[1].floor() as i32,
+                eye[2].floor() as i32,
+            )
+    }
+
+    /// The world's spec, borrowed. Every shaper call takes `&WorldSpec`, and this is
+    /// the one place the App turns its [`App::world`] into one — so there is exactly
+    /// one world in this program rather than one per call site.
+    fn spec(&self) -> &voxel_shapers::WorldSpec {
+        self.world.spec()
+    }
+
+    /// **Apply the pointer's owner: the shell while it is shown, the world while it is
+    /// hidden — grab *and* visibility, from one place.**
+    ///
+    /// The owner is already decided elsewhere in this file, and this is the one function
+    /// that reads the decision, so the two cannot drift — the alternative is a grab set
+    /// in one place and released in another, which is how a player ends up locked in a
+    /// window they cannot click.
+    ///
+    /// `Locked` rather than `Confined` because confining still lets the cursor reach the
+    /// edge of a window it has already escaped, and because `Locked` is the mode that
+    /// matches the camera: this platform implements it by clipping the cursor to a 1×1
+    /// rectangle at its **present** position, which is why the camera's motion source is
+    /// [`DeviceEvent::MouseMotion`] rather than cursor positions. That same platform
+    /// behaviour is why the centre comes first — a 1×1 clip at the edge the pointer was
+    /// last dragged to is a lock the player experiences as "the mouse is not locked".
+    /// And it makes the visibility half **load-bearing rather than cosmetic** — winit
+    /// does not promise `Locked` hides the cursor, and an unhidden one leaves an arrow
+    /// pinned on screen while the player looks around.
+    ///
+    /// A no-op before the window exists, because there is nothing to grab; re-applied on
+    /// focus because the platform drops the grab when the window loses it.
+    fn sync_pointer_grab(&mut self) {
+        let Some(g) = self.graphics.as_ref() else {
+            return;
+        };
+        let locked = !self.shell.shell_shown();
+        let mode = if locked {
+            CursorGrabMode::Locked
+        } else {
+            CursorGrabMode::None
+        };
+        if locked {
+            // **The cursor is moved before the clip is built.** winit's Windows backend
+            // clips to a 1×1 rectangle around the cursor's position *at the moment the
+            // grab is set*, so the grab alone pins the pointer where it already was — a
+            // window edge, most of the time. Centring first makes that rectangle land at
+            // the middle of the screen, which is what "the mouse is locked" means to a
+            // player. It is harmless on platforms whose `Locked` already recentres.
+            let size = g.window.inner_size();
+            let centre = PhysicalPosition::new((size.width / 2) as i32, (size.height / 2) as i32);
+            if let Err(e) = g.window.set_cursor_position(centre) {
+                eprintln!("shploingus: cannot centre the pointer before locking it: {e}");
+            }
+        }
+        if let Err(e) = g.window.set_cursor_grab(mode) {
+            // Named rather than swallowed: a grab that silently fails is a camera
+            // that cannot be turned, and the player would be told the mouse is
+            // broken with no reason given.
+            eprintln!("shploingus: cannot set the pointer grab to {mode:?}: {e}");
+        }
+        // The cursor is visible exactly when the pointer is the shell's.
+        g.window.set_cursor_visible(!locked);
+    }
+
+    /// The collision asks the **streamer's live record** first, through [`Voxels`],
+    /// and the generator only as a fallback. The order is load-bearing: the record a
+    /// dig or a placement is written into belongs to the `WorldSource` inside the
+    /// streamer, so an adapter holding the App's own empty `Earthworks` asks about a
+    /// world that stopped being true the moment the player touched it — walking
+    /// through blocks just placed, standing on air just dug. The generator is still
+    /// the right fallback, and the reason the player cannot fall through the world at
+    /// the edge of the streamed window: the terrain is a pure function of
+    /// `(seed, tick)`, so a body can stand on a column that has not been meshed yet.
+    fn walk_player(&mut self, dt: f64) {
+        let wish = {
+            let key = |k: KeyCode| if self.held.contains(&k) { 1.0 } else { 0.0 };
+            voxel_client::motion::Wish {
+                forward: key(KeyCode::KeyW) - key(KeyCode::KeyS),
+                strafe: key(KeyCode::KeyD) - key(KeyCode::KeyA),
+                // Ctrl is the sneak key — the reference's sneak, at 2.2 m/s, and
+                // the key a trimp is taken from.
+                sneak: self.held.contains(&KeyCode::ControlLeft)
+                    || self.held.contains(&KeyCode::ControlRight),
+                sprint: self.held.contains(&KeyCode::ShiftLeft)
+                    || self.held.contains(&KeyCode::ShiftRight),
+                jump: self.held.contains(&KeyCode::Space),
+            }
+        };
+        let world = self.world.voxels(self.streamer.as_ref(), &self.earthworks);
+        self.player.advance(&wish, self.camera.yaw_rad, dt, &world);
+        self.camera.position_m = self.player.interpolated_eye();
+    }
+
+    /// **The floating observer, kept for the Laya god and no longer the player's.**
+    ///
+    /// The user's ruling: the free camera does not become a player *mode*, it becomes
+    /// the god-agent's vantage. So it is not deleted — deleting it would throw away
+    /// the one camera a god-agent wants, a thing that can be anywhere and touch
+    /// nothing — and it is not bound to the player's keys, which are the body's now.
+    ///
+    /// **Nothing calls this, and that is deliberate rather than forgotten.** Laya's
+    /// runtime is its own piece of work: the model decider H-14.2 records is built
+    /// (`build.rs` measures `oracle-is-laya` from the pass's own decider), and Laya in
+    /// this tree is the *build-time* decision layer, not an inhabitant of the world, so
+    /// there is nothing yet to fly this camera on behalf of.
+    #[allow(dead_code)]
+    fn laya_observation(&mut self, dt: f64) {
         let forward = self.camera.forward();
         let (right, up, _) = self.camera.basis();
         let mut delta = [0.0f64; 3];
@@ -1237,5 +2350,76 @@ impl App {
             (self.camera.position_m[1] / side).floor() as i32,
             (self.camera.position_m[2] / side).floor() as i32,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// **The pair rule is the platform's two numbers and nothing else.** Each bound is checked
+    /// at it and past it, because a `<=` written as a `<` is invisible in a running window and
+    /// obvious here.
+    #[test]
+    fn a_press_pairs_only_inside_the_interval_and_the_rectangle() {
+        let now = Instant::now();
+        let previous = |millis: u64, at: (f64, f64), button: ShellButton| {
+            Some((now - Duration::from_millis(millis), at, button))
+        };
+
+        // Inside both bounds is a pair.
+        assert!(is_double_click(
+            ShellButton::Left,
+            (102.0, 102.0),
+            now,
+            previous(200, (100.0, 100.0), ShellButton::Left)
+        ));
+        // The interval is inclusive at the bound and not one millisecond past it.
+        assert!(is_double_click(
+            ShellButton::Left,
+            (100.0, 100.0),
+            now,
+            previous(500, (100.0, 100.0), ShellButton::Left)
+        ));
+        assert!(!is_double_click(
+            ShellButton::Left,
+            (100.0, 100.0),
+            now,
+            previous(501, (100.0, 100.0), ShellButton::Left)
+        ));
+        // The rectangle is inclusive on both axes, and outside it is not a pair.
+        let edge = DOUBLE_CLICK_SLOP_PX;
+        assert!(is_double_click(
+            ShellButton::Left,
+            (100.0 + edge, 100.0 - edge),
+            now,
+            previous(100, (100.0, 100.0), ShellButton::Left)
+        ));
+        assert!(!is_double_click(
+            ShellButton::Left,
+            (100.0 + edge + 0.5, 100.0),
+            now,
+            previous(100, (100.0, 100.0), ShellButton::Left)
+        ));
+        assert!(!is_double_click(
+            ShellButton::Left,
+            (100.0, 100.0 - edge - 0.5),
+            now,
+            previous(100, (100.0, 100.0), ShellButton::Left)
+        ));
+        // A different button is never a pair, and neither is a first press.
+        assert!(!is_double_click(
+            ShellButton::Right,
+            (100.0, 100.0),
+            now,
+            previous(100, (100.0, 100.0), ShellButton::Left)
+        ));
+        assert!(!is_double_click(
+            ShellButton::Left,
+            (100.0, 100.0),
+            now,
+            None
+        ));
     }
 }
