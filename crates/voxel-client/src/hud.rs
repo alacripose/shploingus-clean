@@ -666,7 +666,13 @@ fn push_segment(bytes: &mut Vec<u8>, stroke: &Stroke, scale: f32, width: u32, he
             .chain(half)
             .chain([half_width])
         {
-            bytes.extend_from_slice(&value.to_le_bytes());
+            let bits = value.to_bits();
+            bytes.extend_from_slice(&[
+                bits as u8,
+                (bits >> 8) as u8,
+                (bits >> 16) as u8,
+                (bits >> 24) as u8,
+            ]);
         }
     }
 }
@@ -706,7 +712,13 @@ fn push_rect(
             .chain(half)
             .chain([radius])
         {
-            bytes.extend_from_slice(&value.to_le_bytes());
+            let bits = value.to_bits();
+            bytes.extend_from_slice(&[
+                bits as u8,
+                (bits >> 8) as u8,
+                (bits >> 16) as u8,
+                (bits >> 24) as u8,
+            ]);
         }
     }
 }
@@ -765,7 +777,12 @@ mod tests {
             .as_chunks::<4>()
             .0
             .iter()
-            .map(|b| f32::from_le_bytes(*b))
+            .map(|b| f32::from_bits(
+                b[0] as u32
+                    | ((b[1] as u32) << 8)
+                    | ((b[2] as u32) << 16)
+                    | ((b[3] as u32) << 24),
+            ))
             .collect();
         let at = |vertex: usize, field: usize| floats[vertex * SOLID_FLOATS + field];
         // Position: the quad's ends are the segment's ends, so x spans 0..10 dp.

@@ -1,0 +1,22 @@
+   Compiling shploingus-clean-room v0.1.0 (C:\Users\ala\Documents\shploingus-clean\clean-room)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.83s
+     Running unittests src\lib.rs (target\debug\deps\shploingus_clean_room-4324855fbab52049.exe)
+
+running 1 test
+test being::tests::an_unsouled_being_is_refused_with_the_reading_layer_s_own_word ... FAILED
+
+failures:
+
+---- being::tests::an_unsouled_being_is_refused_with_the_reading_layer_s_own_word stdout ----
+
+thread 'being::tests::an_unsouled_being_is_refused_with_the_reading_layer_s_own_word' (23236) panicked at src\being.rs:815:14:
+a being with an empty claim is refused: Being { name: "the first mob", organisation: Organisation { name: "the undertow congregation", charter: "docs/CIVILIAN-PORT.md", office: "tidewarden", scopes: ["record"], floor: "verified-internal" }, chain: Chain { events: [] }, dir: "C:\\Users\\ala\\AppData\\Local\\Temp\\shploingus-clean-u12-soul-22552\\drafts", reach: 4, born_at: None }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    being::tests::an_unsouled_being_is_refused_with_the_reading_layer_s_own_word
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 299 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

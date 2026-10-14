@@ -1,0 +1,88 @@
+== the law's own rain
+   subject: src/automaton.rs :: let own = column.water_um + RAIN_UM_PER_TICK;
+   bit: thread 'automaton::tests::one_tick_is_one_synchronous_hop_by_the_declared_arithmetic_over_the_cells' (23948) panicked at src\automaton.rs:471:13:
+   bit: assertion `left == right` failed: column 0
+   bit: error: test failed, to rerun pass `--lib`
+== the pit's declared fraction
+   subject: src/automaton.rs :: poured[cell] += own - own * (100 - PIT_KEEP_PERCENT) / 100;
+   bit: thread 'automaton::tests::rain_wets_a_dry_pit_and_the_plane_comes_to_rest_at_the_laws_own_fixed_point' (9520) panicked at src\automaton.rs:532:9:
+   bit: assertion `left == right` failed: the holding settles within the first hundred ticks and stays put: 20000 µm
+   bit: error: test failed, to rerun pass `--lib`
+== one synchronous pass (a hop keeps nothing of its own)
+   subject: src/automaton.rs :: Some(to) => poured[to] += own,
+   bit: thread 'automaton::tests::one_tick_is_one_synchronous_hop_by_the_declared_arithmetic_over_the_cells' (24548) panicked at src\automaton.rs:471:13:
+   bit: assertion `left == right` failed: column 26
+   bit: error: test failed, to rerun pass `--lib`
+== the state's identity is the cells' (not the count)
+   subject: src/automaton.rs ::     pub fn digest(&self) -> Digest {
+        self.world.digest()
+    }
+   bit: thread 'automaton::tests::the_plane_comes_to_rest_and_the_settled_world_is_not_the_transient' (18492) panicked at src\automaton.rs:598:9:
+   bit: assertion `left == right` failed: and the world's own identity stops moving with it
+   bit: error: test failed, to rerun pass `--lib`
+== the graph is the cells' own surfaces
+   subject: src/automaton.rs :: let elevation: Vec<f64> = columns.iter().map(|column| column.surface_z as f64).collect();
+   bit: thread 'automaton::tests::the_law_steps_the_cells_and_not_the_generator' (6272) panicked at src\automaton.rs:776:13:
+   bit: assertion `left == right` failed: column 26: the tick must be the cells' own graph's arithmetic
+   bit: error: test failed, to rerun pass `--lib`
+== the law's own tick count
+   subject: src/automaton.rs :: self.ticks += 1;
+   bit: thread 'automaton::tests::the_law_is_a_pure_function_of_the_cells_and_the_tick_count' (11588) panicked at src\automaton.rs:620:9:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--lib`
+== the pour never writes a column's ground
+   subject: src/chunk.rs :: if z <= grounds[index] {
+                    continue;
+                }
+   bit: thread 'chunk::tests::the_pour_round_trips_the_water_it_is_handed' (22336) panicked at src\chunk.rs:1011:17:
+   bit: assertion `left == right` failed: column 0: the pour wrote 1000000 µm at or below the ground, at z 75
+   bit: error: test failed, to rerun pass `--lib`
+== the cell's own cap (CELL_HOLD_UM)
+   subject: src/chunk.rs :: cell.water_um = (water_um[index] - offset * CELL_HOLD_UM).clamp(0, CELL_HOLD_UM);
+   bit: thread 'chunk::tests::a_depth_past_one_voxels_worth_spills_into_the_next_cell' (16872) panicked at src\chunk.rs:937:9:
+   bit: assertion `left == right` failed: the first cell holds one voxel's worth and no more
+   bit: error: test failed, to rerun pass `--lib`
+== a cell outside the patch is not one of its columns
+   subject: src/chunk.rs :: if x < origin.x || y < origin.y || x >= origin.x + side || y >= origin.y + side {
+        return None;
+    }
+   bit: thread 'chunk::tests::the_pour_round_trips_the_water_it_is_handed' (17036) panicked at src\chunk.rs:631:32:
+   bit: error: test failed, to rerun pass `--lib`
+== the reading is the declared voxel
+   subject: src/chunk.rs :: let surface_z = elevation[cell].floor() as i32;
+   bit: thread 'automaton::tests::every_route_difference_is_the_voxel_and_none_is_unexplained' (23256) panicked at src\automaton.rs:696:9:
+   bit: assertion `left == right` failed: the cells' ground must be the voxel that holds the generator's elevation at every column — this is what a defect in the reading would look like: RouteAttribution { columns: 2304, quantised: 0, not_the_voxel: 2304, agrees: 271, swallowed: 1970, inside_the_voxel: 0, tied_at_the_top: 63, wrong_way: 0, unexplained: 0 }
+   bit: error: test failed, to rerun pass `--lib`
+== the walk's own water
+   subject: src/being.rs :: if world.water_stands(at) {
+            return Some((step, at));
+        }
+   bit: thread 'a_rained_on_column_changes_the_beings_next_step' (26404) panicked at tests\u12_stepping.rs:175:50:
+   bit: error: test failed, to rerun pass `--test u12_stepping`
+== the walk counts its own hops
+   subject: src/being.rs :: for step in 1..=reach {
+   bit: thread 'a_rained_on_column_changes_the_beings_next_step' (18848) panicked at tests\u12_stepping.rs:280:5:
+   bit: assertion `left == right` failed: column 26: and on the settled plane the same being takes the walk's own answer — its count and its column
+   bit: error: test failed, to rerun pass `--test u12_stepping`
+
+== the rebuilt binary, against the run's own start
+   exit: 0
+   its stdout and stderr are the start-of-run bytes byte for byte
+   770f1ef693b89834b0430255d273a5926a4312d2dff3892ae9eb111a48fad24b */tmp/tmp.K5w9GWWn7X/rebuilt-stdout.txt
+   (the dated capture final-stdout.txt describes older bytes: a later pass moved a printed line —
+    that is the capture's business, not this check's)
+
+every guard bit by name, and every touched file came back byte-exact:
+beb30cc2bcf41088d67d5d7b6ea66a43c9f76915d7b61b53ea4dddcab9bd468a *src/automaton.rs
+ac376be7a96f1d8c01742ca6a1bf3af2e593f16428ad8c0c5d399e20e3feef74 *src/chunk.rs
+8b0b6e3759c86e3325044f9f1728d78fd8dbb80f1ae22b4cdd461458a5f6a2f0 *src/being.rs
+2e5e5aeaf5bf2ea907a1bc9a8cf1301b5bcaed650d47820cbf2c076c8882fa50 *src/evidence.rs
+97e992331f28ae5b04e9b4cefaba29c6df0b6cce1a4d9b7768f35137a0f56b03 *src/surface.rs
+c75c861251a728833f8fcc70452b33e7b419b8f9e43a1476a4332933be2e3d43 *src/systems.rs
+350a154b9359d09aecce1d1e05cea74fa279d48497a3e3cf53f76b38032071e5 *src/lib.rs
+87fcbf25e203f8aecb0f8889f30f895c7224d682ef90aca45210b3a5c044dd5f *src/main.rs
+7e8cc2e8994ad079e758e7fb40ea06f20d5947fb410ccc4d42a18fe20299daaa *tests/u12_stepping.rs
+212e73f9907fa4b23ff9490da47a3abdc866f18173efb7f907dddecb20a22c8a *tests/u12_being.rs
+602d971dd5ed61e7e0c5a7c218918f5771e1ab6727fabda32206a53719a153d0 *tests/u1_surface.rs
+case logs kept in the scratch directory (not copied into the tree): tmp.K5w9GWWn7X
+exit=0

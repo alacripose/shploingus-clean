@@ -16,8 +16,9 @@
 //!
 //! # One vocabulary, and it is reused rather than invented
 //!
-//! The answer to a decision is [`Establishment`] — `Active`, `Inactive`, `Unchecked`, `Refused`,
-//! which `features.rs` already defines and `census.rs` already reuses *for the stated reason*:
+//! The answer to a decision is [`Establishment`] — `Active`, `Inactive`, `Stale`, `Unchecked`,
+//! `Refused`, which `features.rs` already defines and `census.rs` already reuses *for the stated
+//! reason*:
 //! *"a second vocabulary for 'we did not look' is how a gate comes to read as greener than it
 //! is."* So a subject that was never measured is `Unchecked` and **not** a pass, and a subject
 //! that failed is `Refused` **with its reason attached**, because a refusal that names nothing is
@@ -111,9 +112,15 @@ pub const CIVILIAN_SUBJECT_COUNT: usize = voxel_model::axis::AXIS_COUNT;
 /// or a number without deciding how it is asked is caught here rather than at the end of a
 /// report.
 ///
-/// **80 → 86 → 98 → 105 → 128: `+ CLAIM_COUNT`, then the sixth census axis, then the civilian
-/// ladders, then the bridge's surface.** The value is meaningless; the **type** is the assertion,
-/// and it is what stopped each arm from being added without the rows that go with it.
+/// **80 → 86 → 98 → 105 → 128 → 152: `+ CLAIM_COUNT`, then the sixth census axis, then the civilian
+/// ladders, then the bridge's surface, then the four crates the census table was not measuring.**
+/// The value is meaningless; the **type** is the assertion, and it is what stopped each arm from
+/// being added without the rows that go with it.
+///
+/// **The last step is the one that happened on its own, and that is the point of deriving it.**
+/// `voxel-light`, `voxel-audio`, `voxel-von` and `voxel-mcp` joined the workspace and this
+/// vocabulary grew by 4×6 subjects with no edit here, because the grid is the crate table's rather
+/// than a second list. A literal would have gone stale silently; a derived count cannot.
 ///
 /// **The bridge's rows are counted from `bridge::TOOLS.len()` rather than written as a literal,
 /// and the two cannot be made to disagree**: that table's length *is* `Action::COUNT`, pinned by
@@ -436,7 +443,11 @@ pub fn rule_for_axis(
                         )),
                     );
                 }
-                let Some(percent) = prose.comment_percent else {
+                // **The frame's own share: plain comment only.** Rustdoc is not counted against the
+                // frame, because the ruling of 2026-10-10 is that documentation belongs in it. The
+                // count below is what decides this axis; the share is carried into the reason and
+                // refuses only by being **unmeasured**, because a cell with no reading is not a pass.
+                let Some(percent) = prose.plain_percent else {
                     return (
                         Establishment::Refused,
                         Some(format!(
@@ -446,40 +457,138 @@ pub fn rule_for_axis(
                         )),
                     );
                 };
-                match &prose.document {
-                    None => (
+                // **The compiler's own count** (since 2026-10-10): the axis is named for what it
+                // now reads. Each crate root enables `missing_docs`, so the number the compiler
+                // reports is a count of the documentation itself — it falls when docs are written
+                // and rises when public items are added without them.
+                //
+                // **What this replaces, and why.** The arm asked whether the entry file opened with
+                // a `//!` block, and every crate had one, so the axis was `active` for all sixteen
+                // and could only have turned false if somebody deleted a line at the top of a file.
+                // That is a check on the *presence of a claim*, not on the documentation: a header
+                // saying a crate documents itself is exactly the kind of evidence this tree refuses
+                // everywhere else, and the `//!` blocks were written from the same prose the headers
+                // already carried. The user's ruling stands — *the reason for a value belongs beside
+                // the value*, where `cargo doc` renders it and a hover shows it — and the count is
+                // what says whether that happened, item by item.
+                let Some(reading) = &prose.missing_docs else {
+                    return (
                         Establishment::Refused,
                         Some(format!(
-                            "{percent}% of {}'s source over {} of {} covered file(s) is comment, and \
-                             no document under docs/ defines it — no heading there begins with its \
-                             name. The documentation was not created: prose in a code artifact is \
-                             documentation written where a reader does not look for it",
+                            "{} has no line in {}: no instrument asked the compiler about it, so \
+                             this crate is unmeasured on the axis it is named for. A crate nobody \
+                             counted is not a documented one — the reading is taken by the recipe \
+                             in that file's header",
                             observation.crate_.name(),
-                            prose.files,
-                            prose.ruled_files
+                            census::MISSING_DOCS_PATH
                         )),
-                    ),
-                    Some(document) if percent > census::PROSE_FRAME_PERCENT => (
-                        Establishment::Inactive,
+                    );
+                };
+                // **A pin over part of a crate is not a pin.** A covered file that did not decode is
+                // not hashed, so the digest would describe a subset of the crate while reading as
+                // though it described the crate — and a reading pinned to some of the bytes cannot
+                // say whether it still holds. Refused rather than hashed partially, the same rule
+                // `provenance` applies one level up.
+                if !prose.undecodable.is_empty() {
+                    return (
+                        Establishment::Refused,
                         Some(format!(
-                            "{} is documented at {document} and {percent}% of its source is \
-                             still comment (frame {}%). Reported every build rather than refused: \
-                             the rationale has a home, and the copy in the code is the remainder",
+                            "{} has {} covered file(s) that did not decode as text ({}), so the pin \
+                             over its sources would cover a subset of them and could not say whether \
+                             the count still holds",
                             observation.crate_.name(),
-                            census::PROSE_FRAME_PERCENT
+                            prose.undecodable.len(),
+                            prose.undecodable
+                                .iter()
+                                .map(|path| path.display().to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ")
                         )),
-                    ),
-                    Some(_) => (Establishment::Active, None),
+                    );
                 }
+                // **The pin is checked before the count is read**, and it is the one part of this
+                // axis the gate re-derives itself: the count needs a compiler it cannot run from
+                // inside its own build script, but hashing the bytes it was taken over needs nothing
+                // but a walk. When those bytes have moved, the number is not this build's answer, so
+                // `stale` says exactly that instead of `inactive` repeating a figure about a tree
+                // this one is not. Neither a pass nor a failure — the repair is a command, so this
+                // does not refuse the door (see `conformance::of`, which reports it beside the
+                // refusals it does not gate on).
+                if reading.declared != reading.measured {
+                    return (
+                        Establishment::Stale,
+                        Some(format!(
+                            "{}'s documentation reading in {} was taken under pin {} and its sources \
+                             now digest to {}: the count of {} undocumented public item(s) is about a \
+                             tree this one is not, so it is reported as stale rather than repeated as \
+                             a measurement. Re-run the recipe in that file's header — the count and \
+                             the pin are taken together — and the axis reads the new one",
+                            observation.crate_.name(),
+                            census::MISSING_DOCS_PATH,
+                            pin_short(&reading.declared),
+                            pin_short(&reading.measured),
+                            reading.missing
+                        )),
+                    );
+                }
+                let missing = reading.missing;
+                if missing == 0 {
+                    return (
+                        Establishment::Active,
+                        Some(format!(
+                            "the compiler reports no undocumented public item in {}: `missing_docs` \
+                             is enabled in its crate root, the reading in {} records 0, and its pin \
+                             still matches the files on disk. Rustdoc beside the items is what \
+                             `cargo doc` renders as this crate's pages and a hover shows on the item \
+                             itself",
+                            observation.crate_.name(),
+                            census::MISSING_DOCS_PATH
+                        )),
+                    );
+                }
+                (
+                    Establishment::Inactive,
+                    Some(format!(
+                        "the compiler reports {missing} undocumented public item(s) in {}: \
+                         `missing_docs` is enabled in its crate root, the reading in {} records \
+                         {missing}, and its pin matches the files on disk. {percent}% of its source is \
+                         plain comment beside that (frame {} %), so the rationale is written where a \
+                         reader has to stand in the file to find it; the count falls as the rustdoc \
+                         that belongs beside each item is written",
+                        observation.crate_.name(),
+                        census::MISSING_DOCS_PATH,
+                        census::PROSE_FRAME_PERCENT
+                    )),
+                )
             }
         },
     }
+}
+
+/// A pin in a reason, short enough to read beside another one.
+///
+/// **Sixteen hex digits, the same shortening [`voxel_model::identity`] uses in its refusals.** A
+/// reason that quotes two 71-character digests is a reason nobody reads, and the full pins are still
+/// on the reading — the report's job here is to make it possible to see *that* they differ and *which*
+/// moved, and the repair is stated in the same line.
+fn pin_short(pin: &voxel_model::identity::Identity) -> String {
+    pin.to_string().chars().take("sha256:".len() + 16).collect()
 }
 
 impl Assessment {
     /// Whether this assessment says the decision was checked and holds.
     pub fn holds(&self) -> bool {
         self.state == Establishment::Active
+    }
+
+    /// Whether this assessment says the reading **was checked and is about this tree**.
+    ///
+    /// The distinction a caller needs when it is about to act on a number rather than display it:
+    /// [`holds`](Self::holds) is `active`, and a `stale` cell is not active either — but the two are
+    /// not the same fact, and a caller that cannot tell them apart will either ignore a reading it
+    /// could re-derive or trust one that is about a tree that no longer exists.
+    pub fn is_stale(&self) -> bool {
+        self.state == Establishment::Stale
     }
 }
 
@@ -1064,9 +1173,14 @@ impl Pass {
         out.push_str("\n# the decision layer\n");
         out.push_str(&format!("decider\t{}\n", self.decider));
         out.push_str(&format!("subjects\t{}\n", self.assessments.len()));
+        // **Every state, including `stale`.** A subject whose reading is about another tree is a
+        // fact this section has to carry: the client reads these numbers as the gate's answer, and a
+        // state the writer omitted would make the counts fail to sum to `subjects` — which the
+        // reader refuses, correctly, rather than rendering two numbers that disagree.
         for state in [
             Establishment::Active,
             Establishment::Inactive,
+            Establishment::Stale,
             Establishment::Unchecked,
             Establishment::Refused,
         ] {
@@ -1127,6 +1241,10 @@ pub struct ReportedPass {
     pub subjects: usize,
     pub active: usize,
     pub inactive: usize,
+    /// Readings the report says are **about a tree that has moved**. Carried for the same reason the
+    /// others are: the sum below has to close, and a state the reader dropped would be a subject the
+    /// panel renders as something else.
+    pub stale: usize,
     pub unchecked: usize,
     pub refused: usize,
     /// **Every subject the report printed with a reason** — C-83.5's rule, carried: *"which
@@ -1204,6 +1322,7 @@ pub fn read_report(text: &str) -> Result<(ReportedPass, ReportedTwo), RefusalSet
         subjects: 0,
         active: 0,
         inactive: 0,
+        stale: 0,
         unchecked: 0,
         refused: 0,
         pending: Vec::new(),
@@ -1231,6 +1350,7 @@ pub fn read_report(text: &str) -> Result<(ReportedPass, ReportedTwo), RefusalSet
             "subjects" => pass.subjects = number(&mut refusals, &cells, 1, line),
             "subject-active" => pass.active = number(&mut refusals, &cells, 1, line),
             "subject-inactive" => pass.inactive = number(&mut refusals, &cells, 1, line),
+            "subject-stale" => pass.stale = number(&mut refusals, &cells, 1, line),
             "subject-unchecked" => pass.unchecked = number(&mut refusals, &cells, 1, line),
             "subject-refused" => pass.refused = number(&mut refusals, &cells, 1, line),
             "subject" => {
@@ -1238,7 +1358,7 @@ pub fn read_report(text: &str) -> Result<(ReportedPass, ReportedTwo), RefusalSet
                     refusals.refuse(
                         RefusalKind::NoReading,
                         format!(
-                            "subject {:?} carries state {:?}, which is not one of the four the \
+                            "subject {:?} carries state {:?}, which is not one of the five the \
                              decision layer reports",
                             cells.get(1).copied().unwrap_or(""),
                             cells.get(2).copied().unwrap_or("")
@@ -1329,12 +1449,12 @@ pub fn read_report(text: &str) -> Result<(ReportedPass, ReportedTwo), RefusalSet
     // **The counts must add up to what they count.** Four numbers beside a fifth that does not
     // contain them is a report that cannot be rendered without two of them disagreeing, and the
     // anti-fabrication guard is the same one `features::check_features` runs on the table.
-    let summed = pass.active + pass.inactive + pass.unchecked + pass.refused;
+    let summed = pass.active + pass.inactive + pass.stale + pass.unchecked + pass.refused;
     if summed != pass.subjects {
         refusals.refuse(
             RefusalKind::DigestMismatch,
             format!(
-                "the report counts {} subject(s) and its four states sum to {summed}, so the \
+                "the report counts {} subject(s) and its five states sum to {summed}, so the \
                  numbers cannot both be true",
                 pass.subjects
             ),
@@ -1376,11 +1496,12 @@ pub fn read_report(text: &str) -> Result<(ReportedPass, ReportedTwo), RefusalSet
     refusals.into_result((pass, two))
 }
 
-/// The state a report word names, and `None` for a word the four states do not cover.
+/// The state a report word names, and `None` for a word the five states do not cover.
 fn state_of(word: &str) -> Option<Establishment> {
     match word {
         "active" => Some(Establishment::Active),
         "inactive" => Some(Establishment::Inactive),
+        "stale" => Some(Establishment::Stale),
         "unchecked" => Some(Establishment::Unchecked),
         "refused" => Some(Establishment::Refused),
         _ => None,
@@ -1430,6 +1551,7 @@ fn next_section(text: &str, start: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use voxel_model::identity::Identity;
 
     fn root() -> std::path::PathBuf {
         features::workspace_root(Path::new(env!("CARGO_MANIFEST_DIR")))
@@ -1473,6 +1595,7 @@ mod tests {
         );
         assert_eq!(read_pass.active, two.system.in_state(Establishment::Active).len());
         assert_eq!(read_pass.inactive, two.system.in_state(Establishment::Inactive).len());
+        assert_eq!(read_pass.stale, two.system.in_state(Establishment::Stale).len());
         assert_eq!(read_pass.unchecked, two.system.in_state(Establishment::Unchecked).len());
         assert_eq!(read_pass.refused, two.system.in_state(Establishment::Refused).len());
         assert_eq!(read_pass.holding(), two.system.holding());
@@ -1847,14 +1970,15 @@ divergences\t0
     fn the_subject_vocabulary_is_closed_and_counted() {
         // A literal, checked against the vocabulary it counts — the same mutation test the axis gate
         // relies on. Change a crate to add an axis and this is the compile error that says so.
-        assert_eq!(AXIS_SUBJECT_COUNT, 72, "12 crates x 6 axes");
-        // **80 → 86 → 98 → 105 → 128.** The six declared numbers join the vocabulary, then the doc
-        // stage adds a sixth axis, then the civilian ladders, and now the bridge's surface: each is
-        // decided by the seam and printed by the gate rather than living in a module nothing calls.
-        // A literal, so an arm added without its rows does not compile.
+        assert_eq!(AXIS_SUBJECT_COUNT, 96, "16 crates x 6 axes");
+        // **80 → 86 → 98 → 105 → 128 → 152.** The six declared numbers join the vocabulary, then
+        // the doc stage adds a sixth axis, then the civilian ladders, then the bridge's surface,
+        // and then the four crates the census was not measuring: each is decided by the seam and
+        // printed by the gate rather than living in a module nothing calls. A literal, so an arm
+        // added without its rows does not compile.
         assert_eq!(
-            SUBJECT_COUNT, 128,
-            "72 axis subjects + 19 features + the recipe + 6 declared numbers + 7 civilian \
+            SUBJECT_COUNT, 152,
+            "96 axis subjects + 19 features + the recipe + 6 declared numbers + 7 civilian \
              ladders + 23 tool rows — the bridge's surface, so a capability is a decided subject \
              rather than a table beside the seam"
         );
@@ -1921,5 +2045,71 @@ divergences\t0
             forbidden.class().slug(),
             assessment.reason
         );
+    }
+
+    #[test]
+    fn a_documentation_reading_pinned_to_other_bytes_is_stale_and_never_a_pass() {
+        // **The state this rule exists for, and the one it must not be folded into.** The count comes
+        // from a command a person runs, so it is true of the bytes it was taken over; when those bytes
+        // have moved it is not evidence about this tree. Read as `inactive` it prints an old number as
+        // today's gap; read as `active` it is worse — and a stale **zero** is the most dangerous of the
+        // three, because zero is the one count that reads as a pass. So the three cases below are the
+        // boundary, and the third is why the pin is checked before the count is.
+        let observation = |missing: usize, declared: Identity, measured: Identity| {
+            census::CrateObservation {
+                crate_: Crate::Model,
+                named_by_record: Some(true),
+                sources: None,
+                claim: None,
+                prose: Some(census::ProseObservation {
+                    measured: true,
+                    why_unmeasured: None,
+                    files: 1,
+                    ruled_files: 1,
+                    undecodable: Vec::new(),
+                    comment_percent: Some(20),
+                    plain_percent: Some(5),
+                    missing_docs: Some(census::MissingDocsReading { missing, declared, measured }),
+                    document: None,
+                    invented: Vec::new(),
+                }),
+            }
+        };
+        let pin = Identity::of(b"the tree the count was taken over");
+        let moved = Identity::of(b"the tree as it stands now");
+
+        let (state, _) = rule_for_axis(&observation(0, pin, pin), Axis::Documented);
+        assert_eq!(state, Establishment::Active, "a matching pin and a zero count hold");
+
+        let (state, why) = rule_for_axis(&observation(907, pin, pin), Axis::Documented);
+        assert_eq!(state, Establishment::Inactive, "a matching pin and a count is owed work");
+        assert!(
+            why.expect("a reason").contains("907"),
+            "and the count is named, because it is the thing to lower"
+        );
+
+        let (state, why) = rule_for_axis(&observation(0, pin, moved), Axis::Documented);
+        assert_eq!(state, Establishment::Stale, "a zero about another tree is not a pass");
+        let why = why.expect("a stale reading carries its reason");
+        assert!(
+            why.contains(&pin_short(&pin)) && why.contains(&pin_short(&moved)),
+            "both pins are named, so a reader can see which one moved: {why}"
+        );
+        assert!(
+            why.contains("Re-run the recipe"),
+            "and the repair is stated, because the fix is a command and not an edit: {why}"
+        );
+
+        // The state is about the pin, not about the size of the count: a stale 907 is stale too, and
+        // reporting it as `inactive` would present a figure from another tree as this tree's debt.
+        let (state, _) = rule_for_axis(&observation(907, pin, moved), Axis::Documented);
+        assert_eq!(state, Establishment::Stale);
+        assert_ne!(state, Establishment::Active, "and it is not a pass either");
+
+        // **A crate with no reading at all is refused, not stale** — there is no pin to have moved.
+        let mut readingless = observation(0, pin, pin);
+        readingless.prose.as_mut().expect("prose").missing_docs = None;
+        let (state, _) = rule_for_axis(&readingless, Axis::Documented);
+        assert_eq!(state, Establishment::Refused, "no reading is not a moved reading");
     }
 }

@@ -43,7 +43,7 @@ use crate::geology::{self, Lithology, OreDials, OreKind};
 use crate::spec::WorldSpec;
 
 /// The first material id the corpus claims. Ids 1..=13 are the world's own
-/// materials in [`crate::column::materials`]; the corpus is additive, so the
+/// materials in [`crate::materials`]; the corpus is additive, so the
 /// world's ids do not move when content lands.
 pub const FIRST_MATERIAL_ID: u16 = 14;
 
@@ -719,7 +719,7 @@ pub fn name_of(id: MaterialId) -> Option<&'static str> {
 /// resolve, and a class whose set were empty refuses rather than return a rock it lacks.
 pub fn rock_of(spec: &WorldSpec, lithology: Lithology, x: f64, z: f64) -> Refused<MaterialId> {
     let Some((_, kinds)) = ROCK_KINDS.iter().find(|(class, _)| *class == lithology) else {
-        return Ok(crate::column::materials::for_lithology(lithology));
+        return Ok(crate::materials::for_lithology(lithology));
     };
     let seed = spec.stationary_stage_seed("corpus");
     let region_x = (x / ROCK_REGION_M).floor() as i64 as u64;
@@ -761,10 +761,10 @@ pub const ORE_DRAW_CUTOFF: f64 = 0.9;
 /// The material a **rock voxel** holds: an ore where the vein field's core puts one, else
 /// the region's declared rock.
 ///
-/// Both material paths — [`crate::column::ColumnProfile::material_at`] and
-/// [`crate::chunk_fields::material_of`] — call this one function, so they cannot draw two
+/// Every material path calls this one function — [`crate::chunk_fields::material_of`] for
+/// the world and the rock branch of the surface law alike — so no two readers can draw two
 /// different rocks at the same voxel. The ore field is read at the voxel's own depth with
-/// the world's dials, exactly as [`crate::column::ore_at`] exposes them; no surface rule
+/// the world's dials, exactly as [`crate::geology::ore_at`] exposes them; no surface rule
 /// and no exposure rule is consulted (S-22).
 pub fn rock_voxel(
     spec: &WorldSpec,
@@ -1017,11 +1017,11 @@ mod tests {
         // own rows rather than borrowing a rock that is not them.
         assert_eq!(
             rock_of(&spec, Lithology::Regolith, 0.0, 0.0).expect("a rock"),
-            crate::column::materials::REGOLITH
+            crate::materials::REGOLITH
         );
         assert_eq!(
             rock_of(&spec, Lithology::Bedrock, 0.0, 0.0).expect("a rock"),
-            crate::column::materials::BEDROCK
+            crate::materials::BEDROCK
         );
     }
 

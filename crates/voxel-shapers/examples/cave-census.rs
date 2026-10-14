@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 use voxel_shapers::caves::{self, CaveParams};
 use voxel_shapers::chunk_fields;
-use voxel_shapers::column::{self, materials};
+use voxel_shapers::materials;
 use voxel_shapers::geology::{self, Lithology};
 use voxel_shapers::spec::{Config, WorldSpec};
 use voxel_shapers::terrain;
@@ -33,7 +33,7 @@ fn main() {
 
     // ---- the ceiling each rock class can reach, threshold-independent ---------------
     let spec = WorldSpec::new(2468, base);
-    let params = column::cave_params(&spec);
+    let params = caves::CaveParams::for_spec(&spec);
     let mut ceiling: BTreeMap<&'static str, f64> = BTreeMap::new();
     for lith in Lithology::ALL {
         ceiling.insert(lith.name(), f64::MIN);

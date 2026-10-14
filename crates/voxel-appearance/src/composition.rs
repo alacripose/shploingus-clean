@@ -123,7 +123,7 @@ impl VoxelComposition {
 mod tests {
     use super::*;
     use voxel_model::{MaterialId, RefusalKind, SubvoxelIndex};
-    use voxel_shapers::column::materials::{self, IGNEOUS, REGOLITH};
+    use voxel_shapers::materials::{self, IGNEOUS, REGOLITH};
 
     fn registry() -> MaterialRegistry {
         materials::registry().unwrap()

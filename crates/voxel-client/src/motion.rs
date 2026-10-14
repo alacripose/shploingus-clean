@@ -1581,9 +1581,9 @@ mod tests {
 
     #[test]
     fn a_one_voxel_ledge_still_needs_a_jump() {
-        // The measured consequence of the user's 0.55 m: in a world of 1 m cubes it
-        // cannot climb a block, so ledges are a jump. Stated as a test because it is
-        // a fact about the world, not a preference.
+        /// The measured consequence of the user's 0.55 m: in a world of 1 m cubes it
+        /// cannot climb a block, so ledges are a jump. Stated as a test because it is
+        /// a fact about the world, not a preference.
         struct Block;
         impl Solidity for Block {
             fn is_solid(&self, _x: i32, y: i32, z: i32) -> bool {

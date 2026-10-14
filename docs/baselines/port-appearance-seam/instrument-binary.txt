@@ -1,0 +1,4 @@
+a78acac8a303c28c2dbc775f06554c2ca211ccb47aa9efd5a6d62bb98f0cf869 *target/release/examples/pattern-flicker.exe
+-rwxr-xr-x 2 ala 197121 7585280 2026-10-13 14:07 target/release/examples/pattern-flicker.exe
+pinned_at=2026-10-13T20:09:30Z
+instrument_command=cargo run --offline --release -p voxel-client --example pattern-flicker

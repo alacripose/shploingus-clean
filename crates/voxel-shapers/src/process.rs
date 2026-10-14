@@ -34,9 +34,8 @@
 //! * `Weather` reads [`weather::sample`];
 //! * `Substrate` reads [`geology::stratum_at`] **at the site's own depth**,
 //!   [`terrain::sample`], [`climate::moisture`] and [`substrate::soil_depth_m`],
-//!   exactly as the field plane's soil law and `ColumnProfile::material_at` read it;
-//!   a single below-the-regolith depth is `column::derive`'s column summary, not the
-//!   material truth.
+//!   exactly as the field plane's soil law reads it; a single below-the-regolith
+//!   depth is a column summary, not the material truth.
 //!
 //! Eight more bodies were admitted since: `Delta` reads the shaper's own deposition law
 //! over the substrate baseline (its long-term `DeltaState` remains owed and is named),
@@ -67,6 +66,7 @@
 //! conservation and refusals declared) and no longer demands non-emptiness. The
 //! emptiness is carried visibly in the spec and in the evidence instead of being
 //! padded with a placeholder field.
+use voxel_model::endian::LeBytes;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -392,19 +392,23 @@ pub fn process_specs() -> Refused<Vec<ProcessSpec>> {
     Ok(specs)
 }
 
+/// The seven declarations one stage's spec is assembled from, in the order the tuple below is
+/// destructured — named so that the match arms and the reader agree on what position means what.
+type StageDeclarations = (
+    ProcessScope,
+    SimulationClass,
+    Vec<ConservationObligation>,
+    ResidencyPolicy,
+    Vec<FieldId>,
+    Vec<FieldId>,
+    Vec<FieldId>,
+);
+
 fn spec_for_stage(stage: Stage) -> Refused<ProcessSpec> {
     use ConservationObligation::*;
     use FieldId::*;
     let process = ProcessId::of(stage);
-    let (scope, class, conservation, residency, inputs, outputs, replay): (
-        ProcessScope,
-        SimulationClass,
-        Vec<ConservationObligation>,
-        ResidencyPolicy,
-        Vec<FieldId>,
-        Vec<FieldId>,
-        Vec<FieldId>,
-    ) = match stage {
+    let (scope, class, conservation, residency, inputs, outputs, replay): StageDeclarations = match stage {
         Stage::Tectonics => (
             ProcessScope::RegionalField,
             SimulationClass::Structural,
@@ -777,7 +781,7 @@ fn geology_body(world: &WorldSpec, request: &ProcessRequest) -> Refused<Vec<Proc
     Ok(vec![ProcessReading::integer(
         FieldId::Geology,
         Unit::Dimensionless,
-        crate::chunk_fields::lithology_code(stratum.lithology) as i128,
+        crate::chunk_fields::lithology_code(stratum.lithology),
     )])
 }
 
@@ -839,10 +843,9 @@ fn substrate_body(world: &WorldSpec, request: &ProcessRequest) -> Refused<Vec<Pr
     let site = request.site;
     let surface = terrain::elevation_m(world, site.fx(), site.fz());
     // The stratum is sampled at **the site's own depth**, exactly as the field
-    // plane's soil law and `ColumnProfile::material_at` read it: a column whose rock
-    // changes with depth changes its soil with depth too. The below-the-regolith
-    // reference depth belongs to `column::derive`'s column summary, not to the
-    // material truth this process produces.
+    // plane's soil law reads it: a column whose rock changes with depth changes its
+    // soil with depth too. A below-the-regolith reference depth would be a column
+    // summary, not the material truth this process produces.
     let stratum = geology::stratum_at(world, site.fx(), site.fz(), surface, site.fy());
     let slope = terrain::sample(world, site.fx(), site.fz()).slope;
     let moisture = climate::moisture(world, site.fx(), site.fz());
@@ -1627,23 +1630,23 @@ fn append_value(payload: &mut Vec<u8>, value: FieldValue) {
     match value {
         FieldValue::Integer(n) => {
             field_u8(payload, 0);
-            payload.extend_from_slice(&(n as i64).to_be_bytes());
+            payload.extend_from_slice(&(n as i64).into_le_bytes());
         }
         FieldValue::Fixed(fixed) => {
             field_u8(payload, 1);
-            payload.extend_from_slice(&fixed.raw().to_be_bytes());
-            payload.extend_from_slice(&fixed.scale().to_be_bytes());
+            payload.extend_from_slice(&fixed.raw().into_le_bytes());
+            payload.extend_from_slice(&fixed.scale().into_le_bytes());
         }
         FieldValue::Rational(ratio) => {
             field_u8(payload, 2);
-            payload.extend_from_slice(&ratio.numerator().to_be_bytes());
-            payload.extend_from_slice(&ratio.denominator().to_be_bytes());
+            payload.extend_from_slice(&ratio.numerator().into_le_bytes());
+            payload.extend_from_slice(&ratio.denominator().into_le_bytes());
         }
     }
 }
 
 fn field(payload: &mut Vec<u8>, bytes: &[u8]) {
-    payload.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+    payload.extend_from_slice(&(bytes.len() as u64).into_le_bytes());
     payload.extend_from_slice(bytes);
 }
 
@@ -1656,11 +1659,11 @@ fn field_u8(payload: &mut Vec<u8>, value: u8) {
 }
 
 fn field_u64(payload: &mut Vec<u8>, value: u64) {
-    payload.extend_from_slice(&value.to_be_bytes());
+    payload.extend_from_slice(&value.into_le_bytes());
 }
 
 fn field_i32(payload: &mut Vec<u8>, value: i32) {
-    payload.extend_from_slice(&value.to_be_bytes());
+    payload.extend_from_slice(&value.into_le_bytes());
 }
 
 fn field_list<'a>(payload: &mut Vec<u8>, items: impl Iterator<Item = &'a str>) {

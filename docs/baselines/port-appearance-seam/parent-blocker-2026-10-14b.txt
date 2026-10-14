@@ -1,0 +1,42 @@
+The parent's residency, quoted rather than described — 2026-10-14b
+==============================================================
+
+The question this pass had to answer plainly: can the parent's own residency now be driven from
+per-chunk requests? It cannot — and the blocking signature is the parent's own type, not this world's
+shape, which now answers a chunk key one at a time (see provider-gate-2026-10-14b.txt).
+
+command: grep -n 'pub fn new' -A 2 crates/voxel-stream/src/resident.rs   (repository root, read-only)
+  (the command's own output, unedited)
+  96:pub struct Resident {
+  97-    source: WorldSource,
+  98-    horizons: Horizons,
+  99-    config: MeshConfig,
+  100-    chunks: BTreeMap<ChunkPos, Chunk>,
+  101-    meshes: BTreeMap<ChunkPos, Mesh>,
+  102-    provisional: BTreeSet<ChunkPos>,
+  112:    pub fn new(source: WorldSource) -> Refused<Self> {
+  113-        let registry = materials::registry()?;
+  114-        let config = MeshConfig::from_registry(&registry)?;
+  and the type that door takes:
+  107:pub struct WorldSource {
+  108-    spec: WorldSpec,
+  109-    earthworks: Earthworks,
+  117:    pub fn new(spec: WorldSpec) -> Self {
+  118-        WorldSource {
+
+So Resident::new(source: WorldSource) takes a voxel_shapers::WorldSpec generator. There is no trait, no
+generic parameter and no injection point between the resident set and that generator, so no value this
+clean room can build is accepted without editing a parent byte (forbidden here) or adopting U3's seam.
+What changed this pass is the *other* half of the same mismatch: Resident::ensure_horizon asks for a cube
+of chunk keys and generates any of them on demand, and this world now answers exactly that question one
+key at a time.
+
+No parent byte was edited, and the pin is re-verified on the final bytes:
+command: sha256sum -c docs/baselines/port-appearance-seam/pinned-parent-bytes.txt
+  every line prints OK — lines OK: 87 of 87
+command: find crates -newermt '-300 minutes' -type f
+  files written under crates/ in the last 300 minutes: 0
+
+Nothing was appended to pinned-parent-bytes.txt: the only parent bytes this pass read are
+crates/voxel-stream/src/resident.rs and crates/voxel-stream/src/world_source.rs, both already pinned there
+(sha256 e6ea0844… and 6aa73281…), so an append would duplicate a path and add no coverage.

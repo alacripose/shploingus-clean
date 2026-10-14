@@ -1,0 +1,93 @@
+== the rectangle's corners are its four vertices
+   subject: src/drawn.rs ::         at(span_u, span_v),
+   bit: thread 'drawn::tests::a_rectangles_four_corners_are_the_vertices_and_its_two_triangles_the_indices' (4932) panicked at src\drawn.rs:827:9:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--lib`
+== a rectangle's normal is the way it looks
+   subject: src/drawn.rs :: ] = if quad.facing >= 0 { 1.0 } else { -1.0 };
+   bit: thread 'drawn::tests::a_rectangles_normal_is_its_axis_and_the_way_it_looks' (4932) panicked at src\drawn.rs:845:9:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--lib`
+== the eye's distance is radius over sin(fov over 2)
+   subject: src/drawn.rs ::         let distance = radius / (fov_deg / 2.0).to_radians().sin();
+   bit: thread 'drawn::tests::a_camera_stands_off_so_the_extents_own_sphere_subtends_its_own_field_of_view' (25928) panicked at src\drawn.rs:860:9:
+   bit: error: test failed, to rerun pass `--lib`
+== a field of view that is not one is refused
+   subject: src/drawn.rs ::         if !(0.0 < fov_deg && fov_deg < 180.0) {
+   bit: thread 'drawn::tests::a_camera_refuses_an_angle_that_is_not_one_a_view_with_no_direction_and_no_extent' (26004) panicked at src\drawn.rs:874:22:
+   bit: error: test failed, to rerun pass `--lib`
+== a point at or behind the near plane is not projected
+   subject: src/drawn.rs ::         if depth < self.near || !depth.is_finite() {
+   bit: thread 'drawn::tests::the_projection_puts_the_target_at_the_frames_own_centre' (15600) panicked at src\drawn.rs:913:9:
+   bit: error: test failed, to rerun pass `--lib`
+== the transfer function's low end is the standard's own
+   subject: src/presentation.rs ::             12.92 * lit
+   bit: thread 'presentation::tests::a_flat_colour_encodes_to_the_byte_the_screen_is_handed' (16152) panicked at src\presentation.rs:382:9:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--lib`
+== the depth is the perspective-correct one
+   subject: src/drawn.rs ::             let z = 1.0 / (w0 / a.2 + w1 / b.2 + w2 / c.2);
+   bit: thread 'every_drawn_pixel_is_the_nearest_rectangle_the_mesh_holds' (8768) panicked at tests\u4_drawn.rs:367:21:
+   bit: error: test failed, to rerun pass `--test u4_drawn`
+== the depth test is what keeps a pixel
+   subject: src/drawn.rs ::             if z < depth[at] {
+   bit: thread 'the_drawn_frame_is_the_meshes_own_rectangles_to_pixels' (2760) panicked at tests\u4_drawn.rs:98:5:
+   bit: error: test failed, to rerun pass `--test u4_drawn`
+== the frame carries the mesh's own state
+   subject: src/drawn.rs ::         mesh_state: mesh.key().state,
+   bit: thread 'the_drawn_frame_is_the_meshes_own_rectangles_to_pixels' (26256) panicked at tests\u4_drawn.rs:118:5:
+   bit: assertion `left == right` failed: the frame's mesh is keyed by the state the law is in
+   bit: error: test failed, to rerun pass `--test u4_drawn`
+== the camera stands off along the view's own direction
+   subject: src/surface.rs ::     let camera = drawn::Camera::over(&mesh, view().toward, drawn::DRAWN_FOV_DEG)?;
+   bit: thread 'the_camera_stands_the_regions_own_extent_in_front_of_its_own_frustum' (10820) panicked at tests\u4_drawn.rs:202:5:
+   bit: assertion `left == right` failed: the frame's own camera is the client's declared one: eye (16.00, 51.29, 120.89) m looking at (16.00, 16.00, 70.50) m, 45° of view, radius 23.54 m, distance 61.52 m, near 0.62 m, far 615.20 m
+   bit: error: test failed, to rerun pass `--test u4_drawn`
+== the frame and the recount encode at one exposure
+   subject: src/surface.rs ::             exposure: EXPOSURE,
+   bit: thread 'every_drawn_pixel_is_the_nearest_rectangle_the_mesh_holds' (22780) panicked at tests\u4_drawn.rs:371:21:
+   bit: assertion `left == right` failed: at (88, 104) the frame's pixel is not the nearest rectangle's own colour
+   bit: error: test failed, to rerun pass `--test u4_drawn`
+== the drawn frame is the client's declared size
+   subject: src/drawn.rs :: pub const DRAWN_SIZE: u32 = 576;
+   bit: thread 'the_presented_frame_reaches_the_window_s_own_pixels' (23608) panicked at tests\u1_surface.rs:385:5:
+   bit: assertion `left == right` failed: the drawn frame is the client's declared size, so one window shows either reading
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the loop's own counts are the mesh's own
+   subject: src/drawn.rs ::         vertices += 1;
+   bit: U4 drawn: the drawn reading's own bars: the loop's own counts are the mesh's own = false; every rectangle is inside the camera's own frustum = true; the picture is not a 
+   exit: 1
+== every rectangle is inside the camera's own frustum
+   subject: src/drawn.rs :: pub const NEAR_FRACTION: f64 = 0.01;
+   bit: U4 drawn: the drawn reading's own bars: the loop's own counts are the mesh's own = true; every rectangle is inside the camera's own frustum = false; the picture is not a 
+   exit: 1
+== the picture is not a flat fill
+   subject: src/drawn.rs ::         let colour = encode(shaded, look.exposure);
+   bit: U4 drawn: the drawn reading's own bars: the loop's own counts are the mesh's own = true; every rectangle is inside the camera's own frustum = true; the picture is not a f
+   exit: 1
+== the frame's mesh state is the law's own state
+   subject: src/drawn.rs ::         mesh_state: mesh.key().state,
+   bit: U4 drawn: the drawn reading's own bars: the loop's own counts are the mesh's own = true; every rectangle is inside the camera's own frustum = true; the picture is not a f
+   exit: 1
+== the window's own bars are its own exit status
+   subject: src/drawn.rs ::         mesh_state: mesh.key().state,
+   bit: U4 window drawn: the drawn reading's own bars: the loop's own counts are the mesh's own = true; every rectangle is inside the camera's own frustum = true; the picture is 
+   exit: 1 (the window's own exit status)
+
+== the rebuilt binary, against the run's own start
+   exit: 0
+   its stdout and stderr are the start-of-run bytes byte for byte
+   25eb01eadbf45378bedead9d20f7e57e3e7d968f325dfb9aa1cdd4bc881546a1 */tmp/tmp.4zGDXZXuaI/rebuilt-stdout.txt
+   and the dated capture final-stdout.txt still describes these bytes exactly
+
+every guard bit by name, and every touched file came back byte-exact:
+f913e756a76c84e4f1e3c09f33861bc873413b212e65358f174089f6ee8b8852 *src/drawn.rs
+6850410258a362e49857b72bfda82f3d98ce86c1ff96163d88e2aad7dab89ead *src/presentation.rs
+bac16ceebec9f772d09532d256c912b5cf9b3eced637c5b1f1ec102d5e3d606e *src/surface.rs
+7aa5cdda9095cec50d21afc72e2d8dfb297ea5a530a775f392ffc54fe322046e *src/main.rs
+31479a13f1cbed6de42bdc395ebe527f9ff30010f31876f768e36ad7b53de7c0 *src/evidence.rs
+5db9acec1105998642f325b348388cbbc79fa8d79eee06a3a56252600fca7373 *src/systems.rs
+a05824ddb8b67edc3e7cf584d25c50566b784d73d9691cdca61c2d59c4c2aa6a *src/lib.rs
+b0372c689f7ca0dddcd5a29c555b546e6b96374b86c0a7e0ed37c1169ce61f50 *tests/u4_drawn.rs
+3da9ac07205a0fb1809425f7601a9d56cdb2e8911989afdddcab87c4421532bf *tests/u1_surface.rs
+case logs kept in the scratch directory (not copied into the tree): tmp.4zGDXZXuaI

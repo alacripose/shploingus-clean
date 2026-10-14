@@ -1254,7 +1254,7 @@ impl GovernedWorld {
             return Err(AgencyError::PlanNotCancellable(id));
         }
         for reservation in &plan.reservations {
-            self.store.cancel_reservation(&reservation)?;
+            self.store.cancel_reservation(reservation)?;
         }
         self.plans.get_mut(&id).unwrap().state = PlanState::Cancelled;
         self.clear_plan_targets(id, &plan);

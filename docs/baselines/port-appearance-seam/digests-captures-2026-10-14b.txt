@@ -1,0 +1,30 @@
+58f0600679a756e09fd5ea69ecedaf8bce789ebc5424b9ee18c7dfb23c67dced *README.txt
+e217af2e112df0065a1b3282184105963e516e54a3bc5bc562dba822339d63d5 *port-mesh-2026-10-14b.txt
+aa500d19af34e5b72a010882c98fe35aa3a9a67fb1783f29635f908d5e303cea *run-before-the-keyed-door-2026-10-14b.txt
+aa500d19af34e5b72a010882c98fe35aa3a9a67fb1783f29635f908d5e303cea *run-after-the-keyed-door-2026-10-14b.txt
+8112bb576a59c73b4609af3e5801a735cb23d1b74f79f0ada2483c05725e4311 *provider-gate-2026-10-14b.txt
+8a5951aa50de547a886cc067322bb3b572c77cee857d56cf8e1c0906c532bbed *keyed-door-guard-bites-2026-10-14b.txt
+e9eed4465fdbc599cef0b3c5d06b0c00bbc511391dbb2ac629efcfc86f96ff5f *parent-blocker-2026-10-14b.txt
+29716e142eb27e3b40fdabae95642d0ad1aa0544c0c2f67bd26c76b1c244502e *digests-2026-10-14b.txt
+# dated addendum, 2026-10-14b+1 — the same correction as digests-2026-10-14b.txt, plus one capture that joined
+# the record with it. The lines above are the bytes as first measured; after this addendum two of them no
+# longer verify and both are named — `README.txt` (the correction's own subject) and
+# `digests-2026-10-14b.txt` (its own addendum) — while the other six still do. The corrected and added bytes:
+691e3e586ec6db7d03bc041cffc8c83d6c5129696476f1fdda179356d52ffe71 *README.txt
+eb9f6414eed7ce5f62469fadbd139105074d35be1c3028002010cffd6d9ae82f *block-identity-2026-10-14b.txt
+# 2026-10-14b+2 — the addendum above was itself extended before this line was written: a third item joined the
+# correction (the stdout line count, disclosed as 9 738 + 9 739 across two runs rather than corrected, because
+# §7.6 says the figure moves). Three lines in this file therefore no longer verify, and all three are named:
+# the head's `README.txt`, the +1 addendum's `README.txt` (superseded by this line) and
+# `digests-2026-10-14b.txt` (its own addendum). The live digest of each is the **last** line naming it, and
+# the six captures that no correction touched verify from the head unchanged. README.txt as it now stands:
+7f5315beb94aa87b7dcee083ff1d6b1f53095c35164d77b88090ce764f0d2d5f *README.txt
+# 2026-10-14b+3 — the one item this pass had left undone by decision has been done instead: its read-set is
+# appended to `pinned-parent-bytes.txt` as a dated comment (the 87 digest lines above it untouched, comments
+# are not checksums, the pin still verifies 87 of 87), and §9's sentence saying nothing had been appended is
+# replaced by what is now true. Four lines in this file are therefore superseded — the head's README.txt and
+# the +1, +2 and +3 README.txt lines, each replaced by the next, and digests-2026-10-14b.txt, which carries its
+# own addendum — so a reader takes the **last** line naming a file as its live digest. Both files as they now
+# stand:
+ca03288e84c8bde907e0f0b778eef31d9758b61fb4ee47c1317cd7dd1845e7cd *README.txt
+c8b8aea4e6515b19fb23a1f05b8641842681695900cc2e37329d4900d5393888 *pinned-parent-bytes.txt

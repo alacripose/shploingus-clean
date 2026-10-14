@@ -1,0 +1,25 @@
+   Compiling shploingus-clean-room v0.1.0 (C:\Users\ala\Documents\shploingus-clean\clean-room)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.99s
+     Running tests\u12_stepping.rs (target\debug\deps\u12_stepping-873ae90fd0e25781.exe)
+
+running 4 tests
+test the_reads_carry_one_water_truth ... FAILED
+test the_plane_carries_state_from_tick_to_tick ... ok
+test a_rained_on_column_changes_the_beings_next_step ... ok
+test two_states_from_one_read_are_one_digest ... ok
+
+failures:
+
+---- the_reads_carry_one_water_truth stdout ----
+
+thread 'the_reads_carry_one_water_truth' (19072) panicked at tests\u12_stepping.rs:195:9:
+the stepped read's surface is its depth with the ground added, column 0: 0 against 0.004147
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_reads_carry_one_water_truth
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+error: test failed, to rerun pass `--test u12_stepping`

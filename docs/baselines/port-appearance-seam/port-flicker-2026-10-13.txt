@@ -1,0 +1,58 @@
+The appearance port's own gate, run against the ported path — captured 2026-10-13.
+Instrument: clean-room/tests/u1_port_flicker.rs (cargo test --offline --test u1_port_flicker -- --nocapture)
+world: surface::client_world(), 2 x 2 chunks of the declared 32^3, stepped SETTLE_TICKS; frame 576 x 576 px, 1333 rectangles;
+appearance: presentation::shade -> voxel_appearance::npr::shade (the port), pinned in pinned-parent-bytes.txt
+
+380 |     pub control: Control,
+658 |     pub gate: Gate,
+221 | |         coarse_horizontal: i32,
+222 | |         fine_horizontal: i32,
+237 |     pub const fn coarse_horizontal(self) -> i32 {
+241 |     pub const fn fine_horizontal(self) -> i32 {
+249 |     pub const fn horizontal(self, level: ResolutionLevel) -> i32 {
+port-flicker: 331776 px frames of the client's own region, drawn through the ported `shade` (`voxel_appearance`, pinned in docs/baselines/port-appearance-seam/pinned-parent-bytes.txt)
+  camera-held control: 0 of 331776 px changed, total 0.0, worst 0.0000
+  0.05 m: vertical (+y)   1837 of 331776 px (0.6 %), total 607369.0, mean 1.830660, worst 255.0000
+          horizontal (+x) 1280 of 331776 px (0.4 %), total 379819.0, mean 1.144806, worst 255.0000   -> 1.44x by pixels, 1.60x by magnitude
+          the parent's own instrument, same step: vertical 4.8 %, horizontal 1.7 % -> 2.82x / 2.38x  (the excess this port must not reproduce)
+          appearance response, over the mesh's own 1333 rectangle(s): vertical 0.0, horizontal 0.2 -> 0.07x
+          gate: 1.44x <= 2.26x and 1.60x <= 1.90x  (0.80 × the parent's own excess) — passed
+  0.25 m: vertical (+y)   7459 of 331776 px (2.2 %), total 2236077.0, mean 6.739719, worst 255.0000
+          horizontal (+x) 6153 of 331776 px (1.9 %), total 1862720.0, mean 5.614390, worst 255.0000   -> 1.21x by pixels, 1.20x by magnitude
+          the parent's own instrument, same step: vertical 14.9 %, horizontal 6.4 % -> 2.34x / 2.27x  (the excess this port must not reproduce)
+          appearance response, over the mesh's own 1333 rectangle(s): vertical 0.0, horizontal 0.9 -> 0.05x
+          gate: 1.21x <= 2.34x and 1.20x <= 2.27x  (1.00 × the parent's own excess) — passed
+  1.00 m: vertical (+y)   27759 of 331776 px (8.4 %), total 8382929.0, mean 25.266834, worst 255.0000
+          horizontal (+x) 22726 of 331776 px (6.8 %), total 6933634.0, mean 20.898540, worst 255.0000   -> 1.22x by pixels, 1.21x by magnitude
+          the parent's own instrument, same step: vertical 30.2 %, horizontal 20.0 % -> 1.51x / 1.94x  (the excess this port must not reproduce)
+          appearance response, over the mesh's own 1333 rectangle(s): vertical 0.2, horizontal 3.7 -> 0.04x
+          gate: 1.22x <= 1.51x and 1.21x <= 1.94x  (1.00 × the parent's own excess) — passed
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.09s
+
+The parent's own instrument, for comparison (README.txt section 3, its own capture of 2026-10-13):
+  rebuilt bytes: 0.05 m vertical 10966 of 230400 px (4.8 %) vs horizontal 3893 (1.7 %) -> 2.82x / 2.38x;
+                 0.25 m 34318 (14.9 %) vs 14658 (6.4 %) -> 2.34x / 2.27x; 1.00 m 69689 (30.2 %) vs 46048 (20.0 %) -> 1.51x / 1.94x;
+                 both camera-held controls 0 of 230400 px, total 0.0
+  prebuilt binary: 0.05 m -> 3.35x / 2.48x
+
+The guard-bite experiment (perturbing the instrument's own subject), same 2026-10-13:
+  a view-dependent gain (up to a half) injected into the ported colour, both frames, then removed:
+    changed pixels: 1837 / 1280 at 0.05 m -- IDENTICAL to the digit to the unperturbed run
+    appearance response: 0.2 / 0.2 at 0.05 m -> 0.96x, i.e. ABOVE the 0.50x ceiling -> the gate fails by name
+    (0.25 m 1.2 / 1.2 -> 1.00x; 1.00 m 4.7 / 4.9 -> 0.96x, from the first version of the instrument)
+    the ported bytes were restored: presentation.rs sha256 7b673a9e6193b8696e8ea7c5b6a2fefed56344e14275204fb76036fb059094ab
+
+The pin, verified after the port:
+  sha256sum -c docs/baselines/port-appearance-seam/pinned-parent-bytes.txt -> exit 0, 71 of 71 OK
+
+The clean room's final bytes, same day:
+  cargo test --offline -> 427 passed, 0 failed, exit 0 (18 'test result: ok' lines)
+  cargo clippy --offline --all-targets -- -D warnings -> exit 0
+
+The touched files, by sha256:
+d30848ebaf94ce36686ea157bb8fdeee9b23e1e21f271c8d25d0069b56de3cc9 *clean-room/Cargo.toml
+7b673a9e6193b8696e8ea7c5b6a2fefed56344e14275204fb76036fb059094ab *clean-room/src/presentation.rs
+97f1c7d035f4f471680896f91c7bc1146d3987c7e07bfa2d5b35e7b620f7c179 *clean-room/src/surface.rs
+9c1c043d32da1ffbde99717f5f384260bd048e995e224473df8a04b2ab7ea9bb *clean-room/src/drawn.rs
+ff4e85bf4b71805d6b8c4166cb804f828f421645a09a450076186d293a208813 *clean-room/src/systems.rs
+fb90db03e6c80cb0cc6cc1c54f9f042d98ddeafcf062820dc80e9be4c7545474 *clean-room/tests/u1_port_flicker.rs

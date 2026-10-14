@@ -1,0 +1,188 @@
+The changed guards, each proven to bite by perturbing its own subject — 2026-10-14e
+==================================================================================
+
+Each perturbation was applied to the clean room's own bytes **as this pass left them** (the digests below
+are the pass's own, `digests-2026-10-14e.txt`), its subject was **run** — the library test or the
+integration gate that carries the guard, or the built binary — the failure was captured, and the file was
+restored **byte-exact** from a copy taken before the first bite (`sha256sum` against that copy -> OK after
+every bite, and again at the end: all ten files OK, with the same ten digests `digests-2026-10-14e.txt`
+records). No parent byte under `crates/` was touched; no perturbation was left in place. The harness is
+deterministic: the perturbation string must occur exactly once, and a count other than 1 aborts the run.
+The subjects are run with `bash -o pipefail`, so a line filtered through the run's own output still reports
+the tested command's own status.
+
+The six bites, in order, with what each one proves:
+  e-1  the wish's own tilt stops tilting (src/viewpoint.rs: `self.tilt_deg(wish.tilt * TURN_DEG_PER_FRAME);`
+       -> `let _ = wish.tilt;`, so a held tilt never moves the pitch)
+       -> the viewpoint's own guard fails: `viewpoint::tests::the_pitch_stops_at_the_pole_and_the_heading_survives`
+          panics at src/viewpoint.rs:598 with *"300 tilts left the pitch at -75.00000000000001, not 89.9"* —
+          the clamp the parent's `MAX_PITCH_RAD` is read for is measured only if the tilt is applied.
+  e-2  the residency's anchor stops being the chunk the person's eye stands in (src/surface.rs:
+       `let anchor = viewpoint.chunk(world)?;` -> `let anchor = home_anchor(world)?;`, i.e. the declared
+       constant the pass replaced)
+       -> the step's own guard fails:
+          `viewpoint::tests::every_step_observes_the_residency_at_the_chunk_the_eye_now_stands_in`
+          panics at src/viewpoint.rs:806 — `left: ChunkKey { x: 1, y: 1, z: 2 }`, `right: ChunkKey { x: 0,
+          y: 1, z: 2 }` — so the anchor is the eye's own chunk and not a constant that happens to equal it.
+  e-3  the frame is drawn from a look that is not the person's own (src/surface.rs: `viewpoint.look()` ->
+       `[0.0, 0.0, -1.0]` in the one `Camera::standing` call)
+       -> the drawn gate fails:
+          `tests/u4_drawn.rs::the_camera_stands_the_regions_own_extent_in_front_of_its_own_frustum` panics
+          at tests/u4_drawn.rs:205 with the camera's own refusal — *"the declared view runs along the world's
+          own up: there is no right direction, and inventing a roll would be inventing a camera"* — which is
+          the refusal the guard requires the drawn path to be able to name.
+  e-4  an unseen rectangle no longer costs exactly its own two triangles (src/drawn.rs: `unseen += 1;` ->
+       `unseen += 2;`, so `clipped == 2 x unseen` is satisfied twice over)
+       -> the inside-the-region guard fails:
+          `viewpoint::tests::an_eye_inside_the_region_counts_every_rectangle_it_does_not_see` panics at
+          src/viewpoint.rs:774 — *"an unseen rectangle cost more or fewer than its own two triangles: 70
+          against 140"* — the count of what a camera **inside** the world cannot see is measured, not
+          asserted.
+  e-5  the window invents a key nobody held (src/surface.rs's `Window::wish`: `forward: held(VK_W) -
+       held(VK_S)` -> `forward: 1.0`, so every frame of a run nobody touched is driven forward)
+       -> the **run's own input line** catches it. On the untouched bytes (`window 3`): *"the person's own
+          input: 0 of 3 frame(s) carried a held key; the eye travelled 0.00 m and its look turned 0.0 deg"*;
+          with the bite: *"3 of 3 frame(s) carried a held key; the eye travelled 1.80 m"* (3 x the declared
+          0.60 m a frame), while the drawn reading's own bars stay `true`. This is the pass's one bite whose
+          subject is the run rather than a test, and it says what it is: **the window's own key table has no
+          unit guard**, because `Window::wish` is only reachable through a real window's message loop — a
+          key can only be held by a person at a real window — so the check is the `U1 window: the person's
+          own input:` line against `window-stdout-2026-10-14e.txt`, and this bite proves that line is
+          sensitive to a wish nobody asked for.
+  e-6  the controller's own round trip is not the round trip (src/controller.rs:
+       `let frame_returned = back_frame.digest() == home_frame.digest()` -> `!=`, so the bar is inverted)
+       -> **the built binary**, which is where this pass's own run-level bar lives, exits **1** and its
+          stderr names the bar: *"U1 controller: the controller is not driven — frames changed 8 of 8, eye
+          returned true, look returned true, anchor returned true, frame returned false, the world held whole
+          true, every step observed at the eye's own chunk true"*, then *"Clean room FAILED: a measured bar
+          is not met (U1=true, U1 client=true, **U1 controller=false**, U2 world=true, ...)"*. The round
+          trip's own stdout line moves with it — *"the declared view's own frame again = false"* — which is
+          the run's own movement below (528 -> 531 stdout lines under the bite: one line fewer than the
+          passing run, because the passing run's last line is `Clean room OK`).
+
+the files under test, before the first bite (and after the last one, byte-exact):
+  156df62ec5f1bcca5c6ba1cb30ccf1a54f833892032a34023c8d8bd8626a7fac *src/viewpoint.rs
+  2cb56cc04e4b7e7d6966a04933ae7c890bf6712e8c5c87a3495860bcfb3b905b *src/surface.rs
+  7180ddde2e0992bc2a8d41ccf27d9b0e1e418ea19058a8531fbd009da1ea027d *src/drawn.rs
+  f9932fbbaa2de3efbea741170a6d39ac6854e2f913886b759698b1087d1c582a *src/controller.rs
+  93a0e042473cb71678ae8493e0af2474cd01b52593b62a34b45831502bfbe11e *src/evidence.rs
+  8c3f3c93cdf9ddd3d57e91900e3588e6dad0fb849dda13045fba715eedd5111c *src/systems.rs
+  63626eaeb45f33344a888d10cc4f91380f78ba673d3b505d32db27686b64e9bb *src/lib.rs
+  82cc2c54092b33b52f49b52a3c9be3500a948457533af73968c39d714a28fef9 *src/mesh.rs
+  53aed2023a904c5eab10f00ddde0e0cc28aa8688d0bfbcc5f2969d9fa8ffe52e *tests/u4_drawn.rs
+  3684ac5afc7b15fcaeb46c023ce485e591c281ecf5a0af00151d22802559e22b *tests/u1_port_flicker.rs
+
+The harness's own log, unedited, follows — the five bites that share one run (`/tmp/bite-e.log`), then the
+sixth bite's own log (`/tmp/bite-e6.log`); `...` marks the dependency mirror's build warnings, which are
+the only lines elided.
+
+=== the subject of e-5 read BEFORE any bite (the untouched bytes) ===
+U1 window: the person's own input: 0 of 3 frame(s) carried a held key; the eye travelled 0.00 m and its look turned 0.0°; the last step stood over chunk (1, 1, 2) with its frame a picture of the region (0, 0, 0); the residency derived 12 chunk(s) and released 12 because the law's own state moved one tick a frame — a resident set keyed by that state can never serve the next one
+
+--- e-1 the wish's own tilt stops tilting (src/viewpoint.rs: the pitch never moves)
+file: src/viewpoint.rs (was 156df62ec5f1bcca5c6ba1cb30ccf1a54f833892032a34023c8d8bd8626a7fac)
+subject: cargo test --offline -j 2 --lib viewpoint::tests::the_pitch_stops_at_the_pole_and_the_heading_survives 2>&1
+subject exit: 101
+     Running unittests src\lib.rs (target\debug\deps\shploingus_clean_room-42f5a9a8aec6227c.exe)
+running 1 test
+test viewpoint::tests::the_pitch_stops_at_the_pole_and_the_heading_survives ... FAILED
+failures:
+---- viewpoint::tests::the_pitch_stops_at_the_pole_and_the_heading_survives stdout ----
+thread 'viewpoint::tests::the_pitch_stops_at_the_pole_and_the_heading_survives' (24412) panicked at src\viewpoint.rs:598:9:
+300 tilts left the pitch at -75.00000000000001, not 89.9
+failures:
+    viewpoint::tests::the_pitch_stops_at_the_pole_and_the_heading_survives
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 362 filtered out; finished in 3.10s
+error: test failed, to rerun pass `--lib`
+restored byte-exact: 156df62ec5f1bcca5c6ba1cb30ccf1a54f833892032a34023c8d8bd8626a7fac *src/viewpoint.rs
+
+--- e-2 the residency's anchor stops being the chunk the person's eye stands in (src/surface.rs)
+file: src/surface.rs (was 2cb56cc04e4b7e7d6966a04933ae7c890bf6712e8c5c87a3495860bcfb3b905b)
+subject: cargo test --offline -j 2 --lib viewpoint::tests::every_step_observes_the_residency_at_the_chunk_the_eye_now_stands_in 2>&1
+subject exit: 101
+     Running unittests src\lib.rs (target\debug\deps\shploingus_clean_room-42f5a9a8aec6227c.exe)
+running 1 test
+test viewpoint::tests::every_step_observes_the_residency_at_the_chunk_the_eye_now_stands_in ... FAILED
+failures:
+---- viewpoint::tests::every_step_observes_the_residency_at_the_chunk_the_eye_now_stands_in stdout ----
+thread 'viewpoint::tests::every_step_observes_the_residency_at_the_chunk_the_eye_now_stands_in' (17536) panicked at src\viewpoint.rs:806:13:
+assertion `left == right` failed
+  left: ChunkKey { x: 1, y: 1, z: 2 }
+ right: ChunkKey { x: 0, y: 1, z: 2 }
+failures:
+    viewpoint::tests::every_step_observes_the_residency_at_the_chunk_the_eye_now_stands_in
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 362 filtered out; finished in 3.56s
+error: test failed, to rerun pass `--lib`
+restored byte-exact: 2cb56cc04e4b7e7d6966a04933ae7c890bf6712e8c5c87a3495860bcfb3b905b *src/surface.rs
+
+--- e-3 the frame is drawn from a look that is not the person's own (src/surface.rs)
+file: src/surface.rs (was 2cb56cc04e4b7e7d6966a04933ae7c890bf6712e8c5c87a3495860bcfb3b905b)
+subject: cargo test --offline -j 2 --test u4_drawn the_camera_stands_the_regions_own_extent_in_front_of_its_own_frustum 2>&1
+subject exit: 101
+     Running tests\u4_drawn.rs (target\debug\deps\u4_drawn-7cbaf22587fe2c0c.exe)
+running 1 test
+test the_camera_stands_the_regions_own_extent_in_front_of_its_own_frustum ... FAILED
+failures:
+---- the_camera_stands_the_regions_own_extent_in_front_of_its_own_frustum stdout ----
+thread 'the_camera_stands_the_regions_own_extent_in_front_of_its_own_frustum' (11172) panicked at tests\u4_drawn.rs:205:34:
+the client's own region draws: Refusal { kind: ParameterOutOfRange, detail: "the declared view runs along the world's own up: there is no right direction, and inventing a roll would be inventing a camera" }
+failures:
+    the_camera_stands_the_regions_own_extent_in_front_of_its_own_frustum
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 3.63s
+error: test failed, to rerun pass `--test u4_drawn`
+restored byte-exact: 2cb56cc04e4b7e7d6966a04933ae7c890bf6712e8c5c87a3495860bcfb3b905b *src/surface.rs
+
+--- e-4 an unseen rectangle no longer costs exactly its own two triangles (src/drawn.rs)
+file: src/drawn.rs (was 7180ddde2e0992bc2a8d41ccf27d9b0e1e418ea19058a8531fbd009da1ea027d)
+subject: cargo test --offline -j 2 --lib viewpoint::tests::an_eye_inside_the_region_counts_every_rectangle_it_does_not_see 2>&1
+subject exit: 101
+     Running unittests src\lib.rs (target\debug\deps\shploingus_clean_room-42f5a9a8aec6227c.exe)
+running 1 test
+test viewpoint::tests::an_eye_inside_the_region_counts_every_rectangle_it_does_not_see ... FAILED
+failures:
+---- viewpoint::tests::an_eye_inside_the_region_counts_every_rectangle_it_does_not_see stdout ----
+thread 'viewpoint::tests::an_eye_inside_the_region_counts_every_rectangle_it_does_not_see' (4860) panicked at src\viewpoint.rs:774:9:
+assertion `left == right` failed: an unseen rectangle cost more or fewer than its own two triangles: 70 against 140
+  left: 70
+ right: 140
+failures:
+    viewpoint::tests::an_eye_inside_the_region_counts_every_rectangle_it_does_not_see
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 362 filtered out; finished in 3.30s
+error: test failed, to rerun pass `--lib`
+restored byte-exact: 7180ddde2e0992bc2a8d41ccf27d9b0e1e418ea19058a8531fbd009da1ea027d *src/drawn.rs
+
+--- e-5 the window invents a key nobody held (src/surface.rs: the run's own input line catches it)
+file: src/surface.rs (was 2cb56cc04e4b7e7d6966a04933ae7c890bf6712e8c5c87a3495860bcfb3b905b)
+subject: cargo run --offline -j 2 --quiet -- window 3 2>/dev/null | grep -E "the person's own input|the frame is drawn from the eye"
+subject exit: 0
+U4 window drawn: the drawn reading's own bars: the loop's own counts are the mesh's own = true; the frame is drawn from the eye the person stands at = true; the rectangles the eye does not see are counted: nothing is dropped between the eye and the picture = true; the picture is not a flat fill = true; the frame's own mesh state is the cells the residency holds = true; the headless drawn frame of this run's own state is this run's last frame = true
+U1 window: the person's own input: 3 of 3 frame(s) carried a held key; the eye travelled 1.80 m and its look turned 0.0°; the last step stood over chunk (1, 1, 2) with its frame a picture of the region (0, 0, 0); the residency derived 12 chunk(s) and released 12 because the law's own state moved one tick a frame — a resident set keyed by that state can never serve the next one
+restored byte-exact: 2cb56cc04e4b7e7d6966a04933ae7c890bf6712e8c5c87a3495860bcfb3b905b *src/surface.rs
+
+=== the files after every bite ===
+all restored byte-exact: True
+156df62ec5f1bcca5c6ba1cb30ccf1a54f833892032a34023c8d8bd8626a7fac *src/viewpoint.rs
+2cb56cc04e4b7e7d6966a04933ae7c890bf6712e8c5c87a3495860bcfb3b905b *src/surface.rs
+7180ddde2e0992bc2a8d41ccf27d9b0e1e418ea19058a8531fbd009da1ea027d *src/drawn.rs
+f9932fbbaa2de3efbea741170a6d39ac6854e2f913886b759698b1087d1c582a *src/controller.rs
+93a0e042473cb71678ae8493e0af2474cd01b52593b62a34b45831502bfbe11e *src/evidence.rs
+8c3f3c93cdf9ddd3d57e91900e3588e6dad0fb849dda13045fba715eedd5111c *src/systems.rs
+63626eaeb45f33344a888d10cc4f91380f78ba673d3b505d32db27686b64e9bb *src/lib.rs
+82cc2c54092b33b52f49b52a3c9be3500a948457533af73968c39d714a28fef9 *src/mesh.rs
+53aed2023a904c5eab10f00ddde0e0cc28aa8688d0bfbcc5f2969d9fa8ffe52e *tests/u4_drawn.rs
+3684ac5afc7b15fcaeb46c023ce485e591c281ecf5a0af00151d22802559e22b *tests/u1_port_flicker.rs
+
+=== e-6 (its own harness, /tmp/bite-e6.log) ===
+file: src/controller.rs (was f9932fbbaa2de3efbea741170a6d39ac6854e2f913886b759698b1087d1c582a)
+subject: the built binary (cargo run --offline -j 2 --quiet), exit status kept
+subject exit: 1
+101:U1 controller: a person's own eye stands at (32.00, 62.92, 185.90) m, yaw 180.0°, pitch -75.0° — the client's own **declared view** — and the frame that eye draws is 1333 rectangle(s), 147808 of 331776 pixel(s), digest 7816bf6a07dada5a3b7522c8ecf58fd933ecd37ace31662fc10b3c8d617dce69, mesh state 7675fd9242bf42abef714cd1f5aafe4debbce2447871b17cbf42a2a00bd9aace (the residency's own identity = true)
+102:U1 controller the walk: 8 step(s) west at 0.60 m a step take the eye 4.80 m — from the person's own eye (32.00, 62.92, 185.90) m, yaw 180.0°, pitch -75.0° to the person's own eye (27.20, 62.92, 185.90) m, yaw 180.0°, pitch -75.0° — and the person's own chunk with it, from (1, 1, 2) to (0, 1, 2); the residency was observed at **the person's own anchor** and held 4 of this world's 4 chunk(s) at every step (derived 0, evicted 0: the declared horizon is 256 m and this world's own diagonal is only 45.2548 m, so no camera anywhere in it can make a chunk leave the horizon — and a residency holding a part of the region is refused by the region's own name, so the drawn path's floor is t
+103:U1 controller the round trip: 8 step(s) east put the eye back at the person's own eye (32.00, 62.92, 185.90) m, yaw 180.0°, pitch -75.0° — the same eye bit for bit = true, the same look bit for bit = true, over the same chunk (1, 1, 2) = true — and the frame it draws is 1333 rectangle(s), 147808 of 331776 pixel(s), digest 7816bf6a07dada5a3b7522c8ecf58fd933ecd37ace31662fc10b3c8d617dce69: the declared view's own frame again = false
+104:U1 controller the session's own totals: 16 frame(s) drawn, 21328 rectangle(s), 2365118 shaded; the person's own input: 16 step(s), 9.60 m moved; the residency: derived 0, evicted 0 over 16 step(s)
+Clean room FAILED lines: 0
+stderr, the bar's own two lines:
+U1 controller: the controller is not driven — frames changed 8 of 8, eye returned true, look returned true, anchor returned true, frame returned false, the world held whole true, every step observed at the eye's own chunk true
+serve: 7 request(s): 5 answered, 2 refused by name
+Clean room FAILED: a measured bar is not met (U1=true, U1 client=true, U1 controller=false, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=true, U5=true, U6=true, U7=true, U8=true, U9=true, U10=true, U12=true, U12 stepping=true).
+restored byte-exact: f9932fbbaa2de3efbea741170a6d39ac6854e2f913886b759698b1087d1c582a

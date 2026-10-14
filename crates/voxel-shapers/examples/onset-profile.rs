@@ -180,7 +180,7 @@ fn main() {
         for t in (0..YEAR_TICKS).step_by(37) {
             sum_rate += weather::precipitation_now(&spec, px, pz, t).rate_mm_per_year;
         }
-        let year = sum_rate / ((YEAR_TICKS + 36) / 37) as f64;
+        let year = sum_rate / YEAR_TICKS.div_ceil(37) as f64;
         println!(
             "  ({px:>6.0}, {pz:>6.0})  annual {mean:>8.1} -> time-averaged rate {year:>8.1} mm  \
              ({:+.2}%)",
@@ -205,7 +205,7 @@ fn main() {
             for t in (0..YEAR_TICKS).step_by(211) {
                 sum += onset_at(&spec, gx, gz, t);
             }
-            locals.push(sum / ((YEAR_TICKS + 210) / 211) as f64);
+            locals.push(sum / YEAR_TICKS.div_ceil(211) as f64);
             gz += 1500.0;
         }
         gx += 1500.0;

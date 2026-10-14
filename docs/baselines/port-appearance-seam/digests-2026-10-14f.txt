@@ -1,0 +1,19 @@
+5f21bd29f41e24a2e6e8a0e7c17414b0620d0f57fa29d946fcd13b02639ccee8 *src/chunk.rs
+82cc2c54092b33b52f49b52a3c9be3500a948457533af73968c39d714a28fef9 *src/mesh.rs
+61776235353b9a422c53e99498c7a8ced165f590f2df0d8a31c44333ede98365 *src/surface.rs
+fd07eb0aecde022252fe1d1339529eb54215c1af188c26a0d2a08fa4817fc5da *src/presentation.rs
+861cecab732183f0b15f1c1b44a95d1fd9ce9228b2b43b77e615a1937c3a65f3 *tests/u1_surface.rs
+d0ba8e1e5e2652e42f5949e15bc9172227d8ef2fd33769f94522ad16efd1fede *tests/u4_drawn.rs
+58da21a4e1c12e9ef6f19852e04af7dcb57b313a3d135568a9efe4760a92590a *README.md
+# 2026-10-14f — the seven files this pass touched in the clean room, verified from `clean-room/` with
+# `sha256sum -c`. The cell's material has one owner after this pass: `src/chunk.rs` gained the one write door
+# (`CubicWorld::place_material`) beside the one read door (`material_at`/`column`); `src/mesh.rs`'s sweep
+# carries the cell's material into the rectangle it emits; `src/surface.rs`'s plan reading takes the cells
+# themselves and reads each column's material through them, refusing a patch that is not the cells' own and a
+# read that disagrees about water; `src/presentation.rs` (the one conversion) and the three guards the two
+# suites hold moved with it (`tests/u1_surface.rs`, `tests/u4_drawn.rs` — the drawn path's own one-cell
+# differential lives in the second). `README.md` carries this pass's §43f entry and the material-ownership rows
+# of the structure table. Files this pass did **not** move are absent by design: `src/lib.rs`, `src/drawn.rs`,
+# `src/stream.rs`, `src/stage.rs`, `src/shaper.rs`, `src/world.rs`, `src/evidence.rs` and `tests/u4_geometry.rs`
+# are byte-identical to §11's record (their §11 digests still verify), and nothing under `crates/` was read or
+# written at all.

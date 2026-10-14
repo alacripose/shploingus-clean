@@ -25,7 +25,7 @@ const CHUNKS_UP: i32 = 3;
 fn main() {
     let spec = WorldSpec::new(voxel_client::GAME_SEED, Config::default());
     let source = WorldSource::new(spec);
-    let registry = voxel_shapers::column::materials::registry().expect("the registry");
+    let registry = voxel_shapers::materials::registry().expect("the registry");
     let config = MeshConfig::from_registry(&registry).expect("a mesh config");
 
     let mut mesher = Mesher::new();

@@ -1,0 +1,22 @@
+# §39's own capture and the sources it was measured from (2026-10-13).
+# Verify with: (cd clean-room && sha256sum -c ../docs/baselines/u4-faces-over-the-cells/digests.txt)
+c4c36924776a2d5f3f89c82c5da9a7c9b082c16915cf31c2f7f80949842a16b0 *src/mesh.rs
+fa904afa8cfdac8e5b6c4f939f85448098c98cb76134743fb1c7fb5f6db41dab *src/refusal.rs
+2e5e5aeaf5bf2ea907a1bc9a8cf1301b5bcaed650d47820cbf2c076c8882fa50 *src/evidence.rs
+b790639382ccc76799926c437527eed5a7b027068d7c42c7c41dee6a0cdf5b30 *src/shell.rs
+098d05758b1e1b78bfedd6dd596df0bd7e7bb492d7cbe4ca3762c692fda947c2 *src/world.rs
+63c4a614037f4156a685a23b63151c2c2866f7e67dbad6befa389f6e4e7ab803 *src/gameplay.rs
+5aca217ce8fc47cc022d595f97c08f161c247a2ec507e7d5770fb80aa72823e8 *src/bridge/gate.rs
+419f45fc765bada8dae17d1f7d94c2cece76235ed7a90b3c043b97bc59f2fc3c *src/bridge/receipt.rs
+6a1523645487493568c3c6e6137bff22d8c5ffebff64d4d44168af7a1ffb68e3 *src/bridge/wire.rs
+b84f1e50f52230a6a2af32e089c982cbd528c695db0d6a87e76e88264385a814 *src/transport.rs
+575a1cb7f0b520e5b5e2d0ff652df135d5d60f63f07aa708d4729075c502148a *tests/u4_geometry.rs
+9b1528d1dd48a7220153835302ed1a3496c4942cb19575971a3a99e000e97f5d *tests/u5_measure.rs
+49963be7ad9443fe91a57d7ef56d102f2be99ca743442e6a47d965cbb8478786 *tests/u6_bridge.rs
+# The one **document** whose bytes moved and whose digest the tree declares by name: U10's rows read it in
+# place (`gameplay.rs`'s U4_QUICKSTART_DIGEST moved with it — the guard that refused this pass's own edit,
+# plan §39 / C-191 §191.8). The other documents §39's dated notes moved (the 004 spec/checklist/tasks, the
+# 005 quickstart/checklist/tasks, the 006 seams/research, the 007 quickstart and the 010 spec/quickstart/
+# checklist/tasks) are not declared by digest anywhere in the tree, so they are named rather than pinned:
+# their movement is the §39 note each of them carries.
+b2bad61036a1af843110f88c154d34eb7269d1519f58eb4a8b1a77a9a47a41cb *specs/004-u4-mesh-stream-work/quickstart.md

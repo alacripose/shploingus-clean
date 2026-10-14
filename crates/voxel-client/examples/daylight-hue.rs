@@ -30,7 +30,12 @@ use voxel_shapers::{Config, WorldSpec};
 /// The grass surface material's measured albedo, from `--example surface-colours`.
 /// Hard-coded here as a *comparison value* rather than derived, so this probe keeps
 /// working if the registry changes and the difference is visible.
-const GRASS: LinearRgb = LinearRgb { r: 0.2086, g: 0.1393, b: 0.0654 };
+///
+/// **The red channel is 0.1492 since the red window was narrowed to the visible
+/// band (it was 0.2086 while the window ran to 0.75 µm and caught the red edge).**
+/// Read beside `r/g`: 1.50 then, 1.07 now, and the `r/g` column below shows what
+/// the shipped daylight does to that material over a year.
+const GRASS: LinearRgb = LinearRgb { r: 0.1492, g: 0.1393, b: 0.0654 };
 
 /// The shipped time of day: `GAME_TICK = TICKS_PER_DAY * 3 / 8`.
 const TOD: u64 = TICKS_PER_DAY * 3 / 8;

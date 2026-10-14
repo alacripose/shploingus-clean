@@ -6597,6 +6597,7 @@ decider\tdeterministic
 subjects\t3
 subject-active\t1
 subject-inactive\t0
+subject-stale\t0
 subject-unchecked\t2
 subject-refused\t0
 subject\tfeature/pinned_hud\tunchecked\tno witness at crates/voxel-client/src/shell/hud.rs

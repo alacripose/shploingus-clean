@@ -15,6 +15,8 @@ members = [
     "crates/shploingus",
     "crates/voxel-ui",
     "crates/voxel-package",
+    "crates/voxel-mcp",
+    "crates/voxel-von",
 ]
 
 # shploingus-clean — a fresh implementation of the Shploingus voxel world.
@@ -43,6 +45,26 @@ license = "Apache-2.0"
 # generator over the same seed must produce the same digests, and this is the
 # one hash function the project accepts for that.
 sha2 = "0.10"
+
+# The wire format an MCP client speaks. Named once here and used by `voxel-mcp`
+# alone: the gate's other crates still carry no external dependency, which is the
+# property the package API boundary exists to keep.
+serde_json = "1"
+
+# **The classifier.** `jigor` is the library the sibling tree measured: `VonBackend` answers our
+# own question shapes (`choice` / `noul` / `score`) about a state, on CPU, from a cached ONNX
+# export. `default-features = false` drops the `cuda` default, because this is the CPU path
+# upstream measured (`F:/planet-models` holds `models--Zatsepin--von-onnx-fp16`).
+#
+# It is named here and used by `voxel-von` alone: the gate crates still carry no external
+# dependency, and a judgment that needs a model is a crate you have to ask for.
+jigor = { version = "0.1.10", default-features = false }
+
+# `esaxx-rs` ships /MT objects that cannot link with jigor's prebuilt ONNX Runtime (/MD).
+# `vendor/esaxx-rs` is upstream 0.1.10 with that single line changed — the same fix, and the
+# same reason, as the sibling tree's root manifest.
+[patch.crates-io]
+esaxx-rs = { path = "vendor/esaxx-rs" }
 
 [profile.dev]
 opt-level = 1

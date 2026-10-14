@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 use voxel_model::MaterialId;
 use voxel_shapers::chunk_fields;
-use voxel_shapers::column::materials;
+use voxel_shapers::materials;
 use voxel_shapers::corpus;
 use voxel_shapers::spec::{Config, WorldSpec};
 use voxel_shapers::terrain;

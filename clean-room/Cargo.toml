@@ -1,0 +1,65 @@
+[package]
+name = "shploingus-clean-room"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "Apache-2.0"
+description = "The clean-room regeneration of the Shploingus unified systems."
+
+# Its **own** workspace root, so the legacy workspace at the repository root does not claim it and
+# cannot be built by, or coupled to, this project. The clean room sits beside the old tree
+# (Constitution P7): it declares no `path` dependency on any crate under `../crates/`.
+[workspace]
+
+# `docs/CLEAN-ROOM-PLAN-2026-10-11.md` §2 says a dependency must name, beside its line, what it
+# does that we need and that it is actually used.
+#
+# `sha2` — U2's world identity is reproduced **by digest** (`docs/DESIGN-SPEC.md` §1.3), and `sha2`
+# is the one hash this project accepts for content identity. It is actually used: `digest::Digest`
+# and `MaterialRegistry::digest` both call it. `--offline` resolves it from the local cache.
+[dependencies]
+sha2 = "0.10"
+
+# ---- The port (Constitution P7 as amended to v2.0.0, 2026-10-13) ----
+#
+# These two lines are **one** addition: the seam the appearance port is made of. No third-party crate
+# is added, and nothing under `crates/` is copied — a `path` dependency is the port's form, and the
+# **bytes the ported call reads are pinned by path + sha256** in
+# `docs/baselines/port-appearance-seam/pinned-parent-bytes.txt`, verified with
+# `sha256sum -c docs/baselines/port-appearance-seam/pinned-parent-bytes.txt`.
+#
+# `voxel-appearance` — the appearance and frame code itself: `OpenPbrInputs`, `SurfaceFrame`,
+# `LightRig`, `Shaded`, `Terms` and `shade`. It is actually used: `presentation::shade` composes its
+# inputs from this clean room's reduced `Surface`/`Light`/`View` and returns the colour **that** crate
+# computes, so the rendered appearance is the parent's shader rather than an approximation of it. Its
+# own terms (half-Lambert wrap, rim, specular warp, ambient) are therefore implemented once, there.
+#
+# `voxel-noise` — `Vec3`, the one vector type the ported `SurfaceFrame` and `Light` are handed their
+# directions in, and the same type the parent's own `npr` module uses (`crates/voxel-appearance/src/
+# npr.rs` imports `voxel_noise::Vec3`). It is actually used: three `Vec3::new` calls at that one seam.
+# The repository keeps one vector type rather than two that can drift.
+voxel-appearance = { path = "../crates/voxel-appearance" }
+voxel-noise = { path = "../crates/voxel-noise" }
+
+# ---- The second port: the mesher (2026-10-13, same P7 v2.0.0 rule) ----
+#
+# Same rule as above: the `path` dependency is the port's form, the bytes it reads are pinned by path +
+# sha256 in `docs/baselines/port-appearance-seam/pinned-parent-bytes.txt` (section 7, appended rather than
+# rewritten), and no third-party crate is added.
+#
+# **The stream half of this seam is not here, and that is a finding rather than an omission.** The parent's
+# residency (`crates/voxel-stream`) is *not* declared, because it cannot be this clean room's: its
+# `Resident::new(source: WorldSource)` is concretely typed to the parent's own generator (`WorldSpec`), so a
+# `voxel-stream` dependency would be a dependency on `voxel-shapers` — U3's seam, not U4's. Its five bytes are
+# pinned all the same (they are what establishes the blocker), and the measurement and the smallest next step
+# that would remove it are in `docs/baselines/port-appearance-seam/README.txt` §7.4.
+#
+# `voxel-mesh` — the parent's own mesher: `Mesher::build`/`visible_faces`, the `MeshConfig` face-visibility
+# law, `Chunk`, the padded 128³ raster and the greedy merge. It is actually used: `src/port/` hands this
+# clean room's own cells to it through the parent's own `VoxelSource` trait (`port/adapter.rs`) and
+# measures the result against this crate's derivation (`port/differential.rs`).
+#
+# `voxel-model` — the types that seam is spoken in (`ChunkPos`, `LocalPos`, `VoxelShape`, `MaterialId`,
+# `Refusal`). A direct dependency rather than a re-export, because `voxel-mesh` does not re-export them.
+voxel-mesh = { path = "../crates/voxel-mesh" }
+voxel-model = { path = "../crates/voxel-model" }

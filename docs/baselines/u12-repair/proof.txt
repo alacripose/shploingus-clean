@@ -1,0 +1,130 @@
+# U12's guard proof, as it stands — the re-run on the repaired bytes (2026-10-13, plan §33).
+#
+# Usage: `bash docs/baselines/u12-first-mob/run-guards.sh` from anywhere; exit 0 only when every case bit by
+# name and every file came back byte-exact. All nine bit by name on this pass's bytes, and every perturbed
+# source returned byte-exact (the five restored digests are printed below). The nine .test.log files beside
+# §32's own proof are the **re-run's** captures — a re-run rewrites them, so §32's original nine bytes are
+# unrecoverable and their digests are recorded in `digests.txt` beside this file.
+#
+# §32's own run's output follows the re-run below, kept dated: its panic line numbers describe §32's bytes
+# (being.rs was 907 lines then; the repaired file is 928).
+
+== the world's own water read
+   subject: src/being.rs :: (surface - ground).max(0.0)
+   bit: thread 'being::tests::the_world_s_own_law_stands_water_and_names_the_being_s_step' (25368) panicked at src\being.rs:839:43:
+   bit: error: test failed, to rerun pass `--lib`
+== the game's own flow step
+   subject: src/being.rs :: Some(next) => Act::Walk { from: cell, to: next },
+   bit: thread 'being::tests::the_first_mob_walks_the_world_s_own_flow_law_to_water_and_drinks' (23956) panicked at src\being.rs:884:13:
+   bit: error: test failed, to rerun pass `--lib`
+== the being's own reach
+   subject: src/being.rs :: } else if self.steps() >= self.reach {
+   bit: thread 'the_world_and_the_record_refuse_the_being_by_name' (19292) panicked at tests\u12_being.rs:163:58:
+   bit: error: test failed, to rerun pass `--test u12_being`
+== the refusal's own name (water_unreachable)
+   subject: src/being.rs :: RefusalKind::WaterUnreachable,
+                format!(
+                    "the being walked its whole reach
+   bit: thread 'the_world_and_the_record_refuse_the_being_by_name' (21376) panicked at tests\u12_being.rs:164:5:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--test u12_being`
+== the refusal's own name (stage_below_floor)
+   subject: src/being.rs :: RefusalKind::StageBelowFloor,
+   bit: thread 'the_world_and_the_record_refuse_the_being_by_name' (18168) panicked at tests\u12_being.rs:193:5:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--test u12_being`
+== the charter's declared floor
+   subject: src/being.rs :: pub const ACT_FLOOR: &str = "verified-internal";
+   bit: thread 'the_organisations_vocabulary_stays_owed_by_name' (9768) panicked at tests\u12_being.rs:229:5:
+   bit: assertion `left == right` failed
+   bit: thread 'a_member_acts_and_an_act_it_may_not_do_is_refused_by_name_and_recorded' (21264) panicked at tests\u12_being.rs:92:52:
+== the stage comparison
+   subject: src/being.rs :: if reading != self.organisation.floor() {
+   bit: thread 'the_world_and_the_record_refuse_the_being_by_name' (20168) panicked at tests\u12_being.rs:192:58:
+   bit: error: test failed, to rerun pass `--test u12_being`
+== the denial recorded
+   subject: src/being.rs :: Namespace::Record, EventKind::RefusalRecorded, payload
+   bit: thread 'a_member_acts_and_an_act_it_may_not_do_is_refused_by_name_and_recorded' (24344) panicked at tests\u12_being.rs:119:5:
+   bit: assertion `left == right` failed: the denial is recorded on the one chain
+   bit: thread 'the_world_and_the_record_refuse_the_being_by_name' (6356) panicked at tests\u12_being.rs:150:5:
+== the unsouled refusal
+   subject: src/being.rs :: if body.trim().is_empty() {
+   bit: thread 'being::tests::an_unsouled_being_is_refused_with_the_reading_layer_s_own_word' (23236) panicked at src\being.rs:815:14:
+   bit: error: test failed, to rerun pass `--lib`
+
+every guard bit by name, and every touched file came back byte-exact:
+613b1229891989762b301529e3398cfc07957fdcffc7d896920d3ed66d262814 *src/being.rs
+25984677f415acf7e2ba0670ff22bfa0834db5b1f0f85de9f3ff9b9ad6afa155 *src/refusal.rs
+60d56a24e30d2fd9f0bce6d480593d8c856b592b3e961fa01fe605ffcdb7dfc8 *src/chain.rs
+1de78b22f2facf6cec717dbf43f098777e10d5561bc51ad44f2c1d9bc9318fc4 *src/evidence.rs
+ea8bc83a38c1c848f23679bb3dd4db9fbdcebedb1bf35e098e533ced2c991842 *tests/u12_being.rs
+   kept: the_being's_own_reach.test.log
+   kept: the_charter's_declared_floor.test.log
+   kept: the_denial_recorded.test.log
+   kept: the_game's_own_flow_step.test.log
+   kept: the_refusal's_own_name__stage_below_floor_.test.log
+   kept: the_refusal's_own_name__water_unreachable_.test.log
+   kept: the_stage_comparison.test.log
+   kept: the_unsouled_refusal.test.log
+   kept: the_world's_own_water_read.test.log
+
+# ---- §32's own run (2026-10-13, plan §32), kept dated: its panic line numbers describe §32's bytes ----
+
+== the world's own water read
+   subject: src/being.rs :: (surface - ground).max(0.0)
+   bit: thread 'being::tests::the_world_s_own_law_stands_water_and_names_the_being_s_step' (23784) panicked at src\being.rs:817:43:
+   bit: error: test failed, to rerun pass `--lib`
+== the game's own flow step
+   subject: src/being.rs :: Some(next) => Act::Walk { from: cell, to: next },
+   bit: thread 'being::tests::the_first_mob_walks_the_world_s_own_flow_law_to_water_and_drinks' (20648) panicked at src\being.rs:862:13:
+   bit: error: test failed, to rerun pass `--lib`
+== the being's own reach
+   subject: src/being.rs :: } else if self.steps() >= self.reach {
+   bit: thread 'the_world_and_the_record_refuse_the_being_by_name' (19652) panicked at tests\u12_being.rs:162:58:
+   bit: error: test failed, to rerun pass `--test u12_being`
+== the refusal's own name (water_unreachable)
+   subject: src/being.rs :: RefusalKind::WaterUnreachable,
+                format!(
+                    "the being walked its whole reach
+   bit: thread 'the_world_and_the_record_refuse_the_being_by_name' (5852) panicked at tests\u12_being.rs:163:5:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--test u12_being`
+== the refusal's own name (stage_below_floor)
+   subject: src/being.rs :: RefusalKind::StageBelowFloor,
+   bit: thread 'the_world_and_the_record_refuse_the_being_by_name' (1624) panicked at tests\u12_being.rs:192:5:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--test u12_being`
+== the charter's declared floor
+   subject: src/being.rs :: pub const ACT_FLOOR: &str = "verified-internal";
+   bit: thread 'the_organisations_vocabulary_stays_owed_by_name' (24932) panicked at tests\u12_being.rs:228:5:
+   bit: assertion `left == right` failed
+   bit: thread 'a_member_acts_and_an_act_it_may_not_do_is_refused_by_name_and_recorded' (19772) panicked at tests\u12_being.rs:91:52:
+== the stage comparison
+   subject: src/being.rs :: if reading != self.organisation.floor() {
+   bit: thread 'the_world_and_the_record_refuse_the_being_by_name' (11284) panicked at tests\u12_being.rs:191:58:
+   bit: error: test failed, to rerun pass `--test u12_being`
+== the denial recorded
+   subject: src/being.rs :: Namespace::Record, EventKind::RefusalRecorded, payload
+   bit: thread 'the_world_and_the_record_refuse_the_being_by_name' (7744) panicked at tests\u12_being.rs:149:5:
+   bit: assertion `left == right` failed: the refusal is recorded
+   bit: thread 'a_member_acts_and_an_act_it_may_not_do_is_refused_by_name_and_recorded' (20688) panicked at tests\u12_being.rs:118:5:
+== the unsouled refusal
+   subject: src/being.rs :: if body.trim().is_empty() {
+   bit: thread 'being::tests::an_unsouled_being_is_refused_with_the_reading_layer_s_own_word' (12148) panicked at src\being.rs:793:14:
+   bit: error: test failed, to rerun pass `--lib`
+
+every guard bit by name, and every touched file came back byte-exact:
+9b0f61f4ab868951c5f68f05fc2d1638a9585e950fe101fbc220d090d15ee364 *src/being.rs
+25984677f415acf7e2ba0670ff22bfa0834db5b1f0f85de9f3ff9b9ad6afa155 *src/refusal.rs
+60d56a24e30d2fd9f0bce6d480593d8c856b592b3e961fa01fe605ffcdb7dfc8 *src/chain.rs
+f3acc27b66e472bd6f17b171128a7d4eece921f666f8e3aebd09aba5433ea845 *src/evidence.rs
+2f5b2c7be4b2283b507415c0761bcfd9a67604222d809725b14b15dd73236ef1 *tests/u12_being.rs
+   kept: the_being's_own_reach.test.log
+   kept: the_charter's_declared_floor.test.log
+   kept: the_denial_recorded.test.log
+   kept: the_game's_own_flow_step.test.log
+   kept: the_refusal's_own_name__stage_below_floor_.test.log
+   kept: the_refusal's_own_name__water_unreachable_.test.log
+   kept: the_stage_comparison.test.log
+   kept: the_unsouled_refusal.test.log
+   kept: the_world's_own_water_read.test.log

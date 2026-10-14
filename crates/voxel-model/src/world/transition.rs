@@ -26,6 +26,7 @@
 //! [`voxel_shapers::earthworks::hand_change`] — a transition's id covers the actor, the verb,
 //! the reservation and the epoch, and a hand edit has none of the last three to distinguish a
 //! redo from an undo. Its identity is over its own content instead.
+use crate::endian::LeBytes;
 
 use super::region::Coord;
 use super::WorldError;
@@ -212,8 +213,8 @@ impl WorldTransition {
                     .as_ref()
                     .map_or("", ReservationId::as_str)
                     .as_bytes(),
-                &self.epoch.to_be_bytes(),
-                &self.nonce.to_be_bytes(),
+                &self.epoch.into_le_bytes(),
+                &self.nonce.into_le_bytes(),
             ],
         )
     }

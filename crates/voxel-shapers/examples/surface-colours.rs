@@ -9,7 +9,7 @@
 //! channels into the shader's base colour, and that derivation is tested in
 //! `crates/voxel-client/src/shading.rs`.
 
-use voxel_shapers::column::materials;
+use voxel_shapers::materials;
 
 fn main() {
     let registry = materials::registry().expect("the admitted registry builds");

@@ -10,6 +10,7 @@
 //! point — a generator whose constants are anonymous cannot be *rebuilt*, because
 //! two runs cannot be shown to have used the same ones (WG-Q4).
 
+use crate::scale;
 use voxel_model::Refusal;
 
 /// Per-world generator configuration.
@@ -51,7 +52,11 @@ pub struct Config {
     pub erosion_droplets_per_column: u32,
     /// Sea level below which a surface cell is submerged.
     pub soil_max_slope: f64,
-    /// Dry adiabatic-ish lapse rate, °C per metre. US Standard Atmosphere, 1976.
+    /// Environmental lapse rate, °C per **engine** metre. US Standard Atmosphere, 1976.
+    ///
+    /// The published `0.0065` °C per *real* metre, converted through [`crate::scale`]: the
+    /// column is eight times shorter in engine metres, so the rate is eight times larger for
+    /// the same temperature drop over the same real height. The default is therefore `0.052`.
     pub lapse_rate_c_per_m: f64,
     /// **Equatorial** sea-level annual mean temperature, °C — the value the latitude
     /// penalty of [`crate::climate::latitude_offset_c`] is measured *down* from.
@@ -94,7 +99,7 @@ impl Default for Config {
             region_size: 32,
             erosion_droplets_per_column: 0,
             soil_max_slope: 0.62,
-            lapse_rate_c_per_m: 0.0065,
+            lapse_rate_c_per_m: scale::per_voxel(0.0065),
             base_temperature_c: 26.0,
             origin_latitude_deg: 45.0,
             orographic_efficiency: 0.0012,

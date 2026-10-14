@@ -12,17 +12,13 @@
 //!
 //! # The two things this layer must not do
 //!
-//! * **It never replaces the BSDF.** Every term is added to a colour that the
-//!   OpenPBR inputs produced, so a non-photoreal look is a *stylisation of
-//!   correct light transport* rather than a second lighting model. The bar this
-//!   serves (`≥3 distinct luminance bands`) is then a property of *the same*
-//!   shading the client draws, not of a separate path that only the test uses.
+//! * **It never replaces the BSDF.** Every term is added to a colour the OpenPBR
+//!   inputs produced, so the `≥3 distinct luminance bands` bar is a property of
+//!   the shading the client *draws*, not of a path only the test uses.
 //! * **It never invents a term's input.** A term whose input is **absent** is
-//!   *absent*, and [`Terms`] records that: a missing `base_color` means no
-//!   diffuse term, not a black one, and the difference is visible in
-//!   [`crate::response::ShadingResponse::terms`] rather than hidden inside a
-//!   zero. The rim's own inputs are the light and the view; it is the term that
-//!   survives every absent material input, which is why an *unadmitted* albedo
+//!   absent, and [`Terms`] records that: an absent `base_color` is no diffuse
+//!   term rather than a black one. The rim — whose inputs are only the light and
+//!   the view — survives every absent input, which is why an *unadmitted* albedo
 //!   still leaves a surface that reads.
 //!
 //! # Where the numbers come from
@@ -109,16 +105,30 @@ pub struct Terms {
     pub rim: bool,
     pub specular_warp: bool,
     pub ambient: bool,
+    /// The **admitted** `subsurface_weight` modulated the diffuse wrap. Admitted and not
+    /// *non-zero*: `Some(0.0)` and `None` compute the same number and are different facts.
+    pub subsurface: bool,
 }
 
 impl Terms {
     pub const fn none() -> Self {
-        Terms { half_lambert: false, rim: false, specular_warp: false, ambient: false }
+        Terms {
+            half_lambert: false,
+            rim: false,
+            specular_warp: false,
+            ambient: false,
+            subsurface: false,
+        }
     }
 
-    /// How many of the four were drawn.
+    /// How many were drawn: the four stylisations, plus the admitted OpenPBR inputs that
+    /// changed the result.
     pub const fn count(self) -> usize {
-        self.half_lambert as usize + self.rim as usize + self.specular_warp as usize + self.ambient as usize
+        self.half_lambert as usize
+            + self.rim as usize
+            + self.specular_warp as usize
+            + self.ambient as usize
+            + self.subsurface as usize
     }
 
     /// The terms either of two evaluations used — the honest summary of a sweep,
@@ -129,6 +139,7 @@ impl Terms {
             rim: self.rim || other.rim,
             specular_warp: self.specular_warp || other.specular_warp,
             ambient: self.ambient || other.ambient,
+            subsurface: self.subsurface || other.subsurface,
         }
     }
 }
@@ -283,6 +294,8 @@ pub fn shade(
             let half_lambert = ndotl * 0.5 + 0.5;
             let lambert_term = ndotl.clamp(0.0, 1.0);
             let subsurface = inputs.subsurface_weight.unwrap_or(0.0);
+            // Recorded as drawn: the wrap was computed for it, whether or not it moved the colour.
+            terms.subsurface = inputs.subsurface_weight.is_some();
             let wrap = half_lambert + subsurface * (lambert_term - half_lambert);
             let lambert = wrap
                 * light.intensity
@@ -426,8 +439,10 @@ mod tests {
     #[test]
     fn a_stated_surface_draws_all_four_terms() {
         let s = shade(&stated(), &overhead(), &LightRig::standard()).unwrap();
-        assert_eq!(s.terms.count(), 4, "terms were {:?}", s.terms);
+        // Five: the four stylisations, plus the `subsurface_weight` the fixture admits.
+        assert_eq!(s.terms.count(), 5, "terms were {:?}", s.terms);
         assert!(s.terms.half_lambert && s.terms.rim && s.terms.specular_warp && s.terms.ambient);
+        assert!(s.terms.subsurface);
     }
 
     /// **Every term the OpenPBR model declares must change the shading.**
@@ -445,7 +460,11 @@ mod tests {
             open: 0.0,
         };
 
-        let probes: [(&str, fn(&mut OpenPbrInputs), fn(&mut OpenPbrInputs)); 11] = [
+        /// One declared term's probe: its name, and two setters whose difference must move the
+        /// picture — a term whose two arms shade identically is a term nothing reads.
+        type Probe = (&'static str, fn(&mut OpenPbrInputs), fn(&mut OpenPbrInputs));
+
+        let probes: [Probe; 11] = [
             ("base_color", |i| i.base_color = Colour::Admitted(LinearRgb::WHITE), |i| i.base_color = Colour::Admitted(LinearRgb::grey(0.4))),
             ("base_metalness", |i| i.base_metalness = 1.0, |i| i.base_metalness = 0.0),
             ("specular_roughness", |i| i.specular_roughness = Some(0.9), |i| i.specular_roughness = Some(0.1)),

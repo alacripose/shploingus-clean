@@ -442,10 +442,10 @@ impl Codec for CanonicalCodec {
         let mut out = Vec::new();
 
         out.extend_from_slice(&WIRE_MAGIC);
-        out.extend_from_slice(&WIRE_VERSION.to_le_bytes());
+        out.extend_from_slice(&crate::endian::le_bytes(WIRE_VERSION));
         push_bytes(&mut out, projection.schema().as_bytes());
-        out.extend_from_slice(&projection.schema_version().to_le_bytes());
-        out.extend_from_slice(&(projection.len() as u32).to_le_bytes());
+        out.extend_from_slice(&crate::endian::le_bytes(projection.schema_version()));
+        out.extend_from_slice(&crate::endian::le_bytes((projection.len() as u32)));;
 
         for (name, value) in projection.iter() {
             if name.is_empty() {
@@ -732,10 +732,10 @@ fn encode_payload(value: &Value) -> Vec<u8> {
     let mut out = vec![value.field_type().tag()];
     match value {
         Value::Text(text) => {
-            out.extend_from_slice(&(text.len() as u32).to_le_bytes());
+            out.extend_from_slice(&crate::endian::le_bytes((text.len() as u32)));
             out.extend_from_slice(text.as_bytes());
         }
-        Value::Integer(number) => out.extend_from_slice(&number.to_le_bytes()),
+        Value::Integer(number) => out.extend_from_slice(&crate::endian::le_bytes(*number)),
         Value::Identity(digest) => out.extend_from_slice(digest.as_bytes()),
     }
     out
@@ -775,7 +775,7 @@ fn decode_payload(payload: &[u8]) -> Result<Value, RefusalSet> {
             }
             let mut length = [0u8; 4];
             length.copy_from_slice(&body[..4]);
-            let length = u32::from_le_bytes(length) as usize;
+            let length = crate::endian::le_from_bytes::<u32>(&length) as usize;
             let rest = &body[4..];
             if rest.len() != length {
                 refusals.refuse(
@@ -813,7 +813,7 @@ fn decode_payload(payload: &[u8]) -> Result<Value, RefusalSet> {
             }
             let mut number = [0u8; 8];
             number.copy_from_slice(body);
-            Ok(Value::Integer(i64::from_le_bytes(number)))
+            Ok(Value::Integer(crate::endian::le_from_bytes::<i64>(&number)))
         }
         FieldType::Identity => {
             if body.len() != 32 {
@@ -837,7 +837,7 @@ fn decode_payload(payload: &[u8]) -> Result<Value, RefusalSet> {
 /// Length-prefix a byte run. **Every field carries its own length**, which is what makes a fold
 /// unambiguous: `("ab","c")` and `("a","bc")` cannot collide.
 fn push_bytes(out: &mut Vec<u8>, bytes: &[u8]) {
-    out.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(&crate::endian::le_bytes((bytes.len() as u32)));
     out.extend_from_slice(bytes);
 }
 
@@ -865,12 +865,12 @@ impl<'a> Cursor<'a> {
 
     fn u16(&mut self) -> Option<u16> {
         let bytes = self.take(2)?;
-        Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+        Some(crate::endian::le_from_bytes::<u16>(&[bytes[0], bytes[1]]))
     }
 
     fn u32(&mut self) -> Option<u32> {
         let bytes = self.take(4)?;
-        Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        Some(crate::endian::le_from_bytes::<u32>(&[bytes[0], bytes[1], bytes[2], bytes[3]]))
     }
 
     /// A length-prefixed run that must be text. **A field name and a schema name are names**,
@@ -1081,7 +1081,7 @@ mod tests {
         let mut length = [0u8; 4];
         length.copy_from_slice(&bytes[length_at..length_at + 4]);
         assert_eq!(
-            u32::from_le_bytes(length),
+            crate::endian::le_from_bytes::<u32>(&length),
             33,
             "a digest payload is 1 type tag + 32 raw bytes. The 64-character hex rendering is a \
              different field with a different length, and reading one as the other would be a \
@@ -1106,7 +1106,7 @@ mod tests {
         bytes[tag_at] = FieldType::Identity.tag();
         let mut length = [0u8; 4];
         length.copy_from_slice(&bytes[length_at..length_at + 4]);
-        let declared = u32::from_le_bytes(length) as usize;
+        let declared = crate::endian::le_from_bytes::<u32>(&length) as usize;
         let body = declared - 1; // the tag byte came out of the declared length
         assert!(body != 32, "the fixture is only meaningful if it is the wrong size");
         bytes.truncate(tag_at + 1 + body);

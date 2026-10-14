@@ -12,19 +12,22 @@
 //! *absent* when the world has the value and the model does not record it.**
 //!
 //! * *Derived* — nothing in the model can declare a conductor, so no material is
-//!   metallic (`base_metalness` is 0). Nothing can declare an emitter, so nothing
-//!   emits. A transmissive material transmits and an opaque one does not, so
-//!   transmission is **never** on a solid. A face whose outward neighbour is
-//!   fluid is wet. And `specular_roughness` is the material's **own** density
-//!   read against the admitted set's own density range, which is the
-//!   `APPEARANCE.md` §1.1 weathering signal: eroded rock is porous, and porous
+//!   metallic (`base_metalness` is 0). A transmissive material transmits and an
+//!   opaque one does not, so transmission is **never** on a solid. A face whose
+//!   outward neighbour is fluid is wet. And `specular_roughness` is the material's
+//!   **own** density read against the admitted set's own density range, which is
+//!   the `APPEARANCE.md` §1.1 weathering signal: eroded rock is porous, and porous
 //!   rock is rough.
-//! * *Absent* — `base_color`, `specular_ior`, `specular_weight`, `coat_roughness`,
+//! * *Sourced* — present when the material's own record carries the value, absent
+//!   when it does not. `base_color` is a sourced reflectance, and the two emission
+//!   parameters are the `SourcedEmission` a body's row declares: **a body is what
+//!   emits**, and a material whose record declares none emits nothing rather than
+//!   zero.
+//! * *Absent* — `specular_ior`, `specular_weight`, `coat_roughness`,
 //!   `transmission_depth` and `subsurface_weight` are **not** defaulted to zero.
-//!   `Option::is_none` and `Colour::Unadmitted` are the honest states, and
-//!   [`OpenPbrInputs::unavailable`] names every one of them. A zero would be
-//!   indistinguishable from an authored value, which is precisely what the one
-//!   rule exists to prevent.
+//!   `Option::is_none` is the honest state, and [`OpenPbrInputs::unavailable`]
+//!   names every one of them. A zero would be indistinguishable from an authored
+//!   value, which is precisely what the one rule exists to prevent.
 //!
 //! So a derived rock today has six of twelve parameters and no albedo: it can
 //! show its rim and its ambient, and it cannot show a diffuse response, because
@@ -155,7 +158,7 @@ pub enum Colour {
 ///
 /// `None` is deliberately **not** `luminance: 0.0`. A zero is a value a caller
 /// can mistake for an authored one; `None` is the absence of a claim, and it is
-/// the true state here because nothing in [`Material`] can declare an emitter.
+/// the state of every material whose record declares no `SourcedEmission`.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Emission {
     None,
@@ -276,11 +279,11 @@ impl Parameter {
             Parameter::SubsurfaceWeight => Availability::Absent(
                 "no admitted scattering: the model carries no subsurface term for soil or snow",
             ),
-            Parameter::EmissionColor => Availability::Derived(
-                "nothing in the model can declare an emitter, so no material emits",
+            Parameter::EmissionColor => Availability::Sourced(
+                "the SourcedEmission in the material's own record; a material that declares none emits nothing",
             ),
-            Parameter::EmissionLuminance => Availability::Derived(
-                "nothing in the model can declare an emitter, so no material emits",
+            Parameter::EmissionLuminance => Availability::Sourced(
+                "the SourcedEmission in the material's own record; a material that declares none emits nothing",
             ),
         }
     }
@@ -708,7 +711,13 @@ fn emission_of(material: &Material) -> Emission {
             // A declared emission of zero is not an emission: it is a material that was
             // given the field and has nothing in it, and shading it as a live emitter
             // would make a table difference look like a physics difference.
-            if !(radiance > 0.0) {
+            //
+            // **The NaN is named rather than implied.** The negation of `radiance > 0.0` is
+            // true for a NaN as well as for a zero or a negative, and stating that as
+            // `<= 0.0` would drop the NaN and emit it — a declared emission that is not a
+            // number, shaded as light. So the two ways to not-be-an-emission are spelled out,
+            // and clippy is not left guessing which comparison was meant.
+            if radiance.is_nan() || radiance <= 0.0 {
                 return Emission::None;
             }
             let rgb = e.colour.linear();
@@ -840,7 +849,7 @@ fn blend_emission(parts: &[(f64, OpenPbrInputs)]) -> Emission {
 mod tests {
     use super::*;
     use voxel_model::{Component, ComponentId, Material, MaterialId, Ratio};
-    use voxel_shapers::column::materials::{self, IGNEOUS, REGOLITH, SEDIMENTARY, WATER};
+    use voxel_shapers::materials::{self, IGNEOUS, REGOLITH, SEDIMENTARY, WATER};
 
     fn registry() -> MaterialRegistry {
         materials::registry().unwrap()
@@ -1186,9 +1195,10 @@ mod tests {
             .collect();
         derived.sort_unstable();
         derived.dedup();
-        // metalness, roughness, coat, transmission and the two emission rows —
-        // the emission pair legitimately shares one reason.
-        assert_eq!(derived.len(), 5);
+        // metalness, roughness, coat and transmission — the two emission rows are
+        // `Sourced`, not `Derived`, because a material's record is where an
+        // emission comes from.
+        assert_eq!(derived.len(), 4);
     }
 
     #[test]

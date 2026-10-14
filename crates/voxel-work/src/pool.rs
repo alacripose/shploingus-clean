@@ -33,6 +33,7 @@
 //! ~4.8 MB of half-filled raster, and cannot be abandoned and reused by another
 //! job. So an in-flight chunk finishes and its result is discarded by the caller —
 //! bounded waste, chosen over a torn raster.
+use voxel_model::endian::LeBytes;
 
 use std::cmp::Reverse;
 use std::collections::{BTreeSet, BinaryHeap};
@@ -94,6 +95,18 @@ pub enum Submitted {
 pub struct Built {
     pub generation: u64,
     pub mesh: Mesh,
+    /// **The chunk's own octree, handed back rather than dropped.**
+    ///
+    /// The mesher needs it and discards it — a worker's steady state is one tree plus one mesh —
+    /// but the *world's light* needs it too: `voxel_client::field` marches a cell's beam through
+    /// this tree, and a tree that has been thrown away cannot answer. It travels with the mesh
+    /// because the two are one chunk's answer and a caller that has one and not the other has a
+    /// mesh it cannot light (or a tree whose chunk is not on screen).
+    ///
+    /// **The cost is declared, not hidden**: about **89 kB per chunk** on top of the mesh's
+    /// 90,481 B, which is the figure `voxel_work::pool`'s own note already carries. At the game's
+    /// 605-chunk window that is about 54 MB more, inside `GAME_CEILING_BYTES`'s 256 MB.
+    pub tree: voxel_mesh::SparseVoxelOctree,
 }
 
 /// What one [`Pool::collect`] returned.
@@ -409,7 +422,7 @@ impl Pool {
         // One query per edit, and only when the target is not already a fluid
         // material, so the common underground edit pays nothing (`fluid_state`
         // declares the query's cost).
-        if !voxel_shapers::column::is_fluid(from)
+        if !voxel_shapers::materials::is_fluid(from)
             && voxel_shapers::fluid_state::fluid_at(
                 &world.source.spec(),
                 edit.x,
@@ -620,17 +633,17 @@ fn build_one(mesher: &mut Mesher, shared: &Shared, pos: ChunkPos) -> Refused<Bui
         (world.source.clone(), world.generation)
     };
     let tree = source.build_chunk(pos)?;
-    let chunk = Chunk::from_tree(pos, tree);
+    let chunk = Chunk::from_tree(pos, tree.clone());
     let neighborhood = source.neighborhood(pos);
     let mesh = mesher.build(&chunk, &shared.config, Some(&neighborhood))?;
-    Ok(Built { generation, mesh })
+    Ok(Built { generation, mesh, tree })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use voxel_model::Digest;
-    use voxel_shapers::column::materials;
+    use voxel_shapers::materials;
     use voxel_shapers::{Config, WorldSpec};
 
     fn source() -> WorldSource {
@@ -681,9 +694,9 @@ mod tests {
         meshes.sort_by_key(|m| (m.chunk.x, m.chunk.y, m.chunk.z));
         let mut t = Vec::new();
         for m in &meshes {
-            t.extend_from_slice(&m.chunk.x.to_le_bytes());
-            t.extend_from_slice(&m.chunk.y.to_le_bytes());
-            t.extend_from_slice(&m.chunk.z.to_le_bytes());
+            t.extend_from_slice(&m.chunk.x.into_le_bytes());
+            t.extend_from_slice(&m.chunk.y.into_le_bytes());
+            t.extend_from_slice(&m.chunk.z.into_le_bytes());
             t.extend_from_slice(m.digest().as_bytes());
         }
         (Digest::of_fields("voxel-work/pool-test", &[t.as_slice()]), meshes.len())
@@ -957,7 +970,7 @@ mod tests {
                     &spec,
                     x as f64 + 0.5,
                     z as f64 + 0.5,
-                    voxel_shapers::column::DEFAULT_HYDRO_RADIUS,
+                    voxel_shapers::materials::DEFAULT_HYDRO_RADIUS,
                 );
                 if sample.water_depth_m > 1.0 {
                     found = Some((x, z, height, sample.water_depth_m));

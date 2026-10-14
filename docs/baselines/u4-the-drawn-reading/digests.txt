@@ -1,0 +1,49 @@
+# §41's own sources and the digests they were measured at (2026-10-13).
+# Verify with: (cd clean-room && sha256sum -c ../docs/baselines/u4-the-drawn-reading/digests.txt)
+f913e756a76c84e4f1e3c09f33861bc873413b212e65358f174089f6ee8b8852 *src/drawn.rs
+6850410258a362e49857b72bfda82f3d98ce86c1ff96163d88e2aad7dab89ead *src/presentation.rs
+bac16ceebec9f772d09532d256c912b5cf9b3eced637c5b1f1ec102d5e3d606e *src/surface.rs
+7aa5cdda9095cec50d21afc72e2d8dfb297ea5a530a775f392ffc54fe322046e *src/main.rs
+31479a13f1cbed6de42bdc395ebe527f9ff30010f31876f768e36ad7b53de7c0 *src/evidence.rs
+5db9acec1105998642f325b348388cbbc79fa8d79eee06a3a56252600fca7373 *src/systems.rs
+a05824ddb8b67edc3e7cf584d25c50566b784d73d9691cdca61c2d59c4c2aa6a *src/lib.rs
+b0372c689f7ca0dddcd5a29c555b546e6b96374b86c0a7e0ed37c1169ce61f50 *tests/u4_drawn.rs
+3da9ac07205a0fb1809425f7601a9d56cdb2e8911989afdddcab87c4421532bf *tests/u1_surface.rs
+# **Two of these are new, seven moved, and two of the seven moved twice.** `src/drawn.rs` and
+# `tests/u4_drawn.rs` did not exist before this pass. `src/presentation.rs` moved because the transfer function
+# (`encode`) moved out of `surface.rs` so both readings encode through one arithmetic and its guard moved with
+# it; `src/surface.rs` moved because the plan reading is now named and the window's frame is the drawn one;
+# `src/main.rs` moved because the `window` mode's own bars are its exit status and its line names both readings;
+# `src/lib.rs` moved because one module joined the crate. **`src/evidence.rs` and `src/systems.rs` moved twice
+# inside this pass**, and the two runs' own printed lists say so:
+#
+#   evidence.rs  71302cfef65f8903befce04e5b3a8921b09bd613f1d8a9a372ef46b62bd84124  (§40)
+#                7367ab9c27ff8fd168688db7dc9305251395dad4a5a9b5b16a0d4711ee09a66e  (this pass's first green state)
+#                31479a13f1cbed6de42bdc395ebe527f9ff30010f31876f768e36ad7b53de7c0  (final — the naming change)
+#   systems.rs   de62834da3a9891a58a8c50ab835fa1c7b420323b7ebe22c8f6f0089a29b1996  (§40)
+#                15a1d7e43fb2d74d63e2f73ba90bd6bb16ec1190b6d9a589967766bc83f567ef  (this pass's first green state)
+#                5db9acec1105998642f325b348388cbbc79fa8d79eee06a3a56252600fca7373  (final — the naming change)
+#
+# The first green state printed **two frame digests in one run** with only the drawn one labelled
+# (`U1 client: … bbdf3b91…` beside `U4 drawn: … 409933f7…`), so the run's own words were changed to name each
+# reading — the five-line movement plan §41 and `LEDGER.md` C-193 §193.3 record rather than smooth.
+# ---------------------------------------------------------------------------
+# **§40's other five files did not move**, and the run can be checked: `src/mesh.rs`
+# (`97637e6d2cc7a7199b4db278816d3174f45c75b1005137cda2b1c616750df78c`), `src/world.rs`
+# (`04a6e2898a8a14dd5b554989b3d9a008d66aeeb43e59e9ce641db88e89b9d585`), `src/gameplay.rs`
+# (`4dd6bd5abfed27a6d8ace3e8a7e2aebc926ae0c8489b1f698b0e04bd386e9b6c`), `tests/u4_geometry.rs`
+# (`f28c2aff13067df786cefdb5e9409fdaf2b88556c7e44afc0daff8f970bdab81`) and `tests/u6_bridge.rs`
+# (`8eca82b5784e913ee24f71995a4df8229ba0674cca39f048f64f17e4adad2941`) — §40's harness re-run on this pass's
+# bytes prints exactly that list beside `evidence.rs`'s and `systems.rs`'s new ones.
+# ---------------------------------------------------------------------------
+# **No declared document digest moved this pass.** `src/gameplay.rs` is unchanged, so
+# `U4_QUICKSTART_DIGEST` (`ca00f1be…`) still describes `clean-room/specs/004-u4-mesh-stream-work/quickstart.md`
+# on disk — this pass wrote no note into it — and the run's printed `U10 documents:` line is byte-identical to
+# §40's. §40's own read-in-place defect (`LEDGER.md` C-192 §192.8) was therefore **not** re-opened, and the
+# guard is named where it holds.
+# ---------------------------------------------------------------------------
+# **§40's own harness re-run on these bytes**: 22 cases, **51 fault lines**, exit **0**, every case bit by
+# name, every touched file byte-exact, the rebuilt binary reproducing the run's own start bytes
+# (`25eb01ea…`) — the two files of its list that this pass moved are `src/evidence.rs` and `src/systems.rs`.
+# Its log is not copied into the tree; §40's own `proof.txt` stands as §40 recorded it, because a harness's
+# proof is of the bytes it ran on and §40's account is dated.

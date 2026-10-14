@@ -147,8 +147,9 @@ pub enum BiomeClass {
 /// §93.2): four of four probed columns changed biome within one world year and each
 /// returned — `(0, 0)` ran `boreal_forest ↔ tundra`, twice — because the classifier is
 /// Holdridge's *scheme* and was being fed one tick of a season. The ruling of 2026-10-02
-/// was to aggregate before classifying, and the stability is pinned by
-/// `column::tests::the_biome_is_the_same_at_every_tick_of_the_year`.
+/// was to aggregate before classifying, and the stability is now structural: the
+/// `Climate` field the world's material law reads carries **no tick**, so there is
+/// no route by which a season could reach the ground.
 ///
 /// **The values are still the ticked functions'.** Nothing here re-derives a climate
 /// model: the twelve samples are tick coordinates, so the world's shapers stay sampled and

@@ -1,0 +1,35 @@
+The parent's residency, re-quoted from its own bytes rather than described — 2026-10-14c
+===================================================================================
+
+The question this pass had to answer again, now that the consumer exists here: can the parent's own
+residency be driven by this clean room's chunks? It still cannot, and the blocking signature is still the
+parent's own type. Given by command, output unedited:
+
+command: grep -n 'pub fn new' -A 2 crates/voxel-stream/src/resident.rs     (repository root, read-only)
+112:    pub fn new(source: WorldSource) -> Refused<Self> {
+113-        let registry = materials::registry()?;
+114-        let config = MeshConfig::from_registry(&registry)?;
+
+command: grep -n 'pub struct WorldSource' -A 3 crates/voxel-stream/src/world_source.rs
+107:pub struct WorldSource {
+108-    spec: WorldSpec,
+109-    earthworks: Earthworks,
+110-    /// The neighbourhood radius hydrology walks per column. Explicit because
+
+So `Resident::new` takes a `voxel_shapers::WorldSpec` generator by **type**: there is no trait, no generic
+parameter and no injection point between the resident set and that generator.
+
+What changed this pass is the *other* end of the seam. This clean room now has its own streamed residency
+(`clean-room/src/stream.rs`): it keeps the chunks around a camera's own chunk while the declared residency
+horizon keeps them, derives each one on the spot through the world's own keyed door, serves a resident
+chunk with no derivation, and evicts and re-derives as the camera moves — the consumer the last two passes
+named as missing (4 of this world's 4 chunk(s) held at each of the parent's four horizons, first eviction
+at 45.2548 m, the world's own far corner; `stream-gate-2026-10-14c.txt`). The parent's residency still
+cannot be handed this world's cells without editing a parent byte (forbidden here) or adopting U3's seam,
+so the mismatch stands on the parent's side of the seam and the streamer here is the clean room's own.
+
+Nothing under `crates/` was written, and the two files read here are already pinned:
+command: sha256sum -c pinned-parent-bytes.txt | grep -c ': OK'
+  87 of 87 — every pinned line OK
+command: find crates -newermt '-120 minutes' -type f | wc -l
+  0 — files written under crates/ in the last two hours

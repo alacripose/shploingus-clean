@@ -1,0 +1,18 @@
+f13ca80bdcb692ffc27615b3270c9dafcd9c98d6ab6057019884b5faeddc85a0 *README.txt
+5e9a6d0f1ccc0b231fe275b2eb76f2b064473d0f0ffd44bdc7752a92c81557c9 *pinned-parent-bytes.txt
+626e62eee35e3d87aea7dc51a99d60ea9e682c4aff2f352b5c7d5b76bfffe1ae *run-after-the-frame-follows-the-residency-2026-10-14d.txt
+545efc63d41a54497830bbb6825e28369183547ad068fa4fb9a5ccec7acf168d *run-movement-2026-10-14d.txt
+a29cd7697f16d402539a95c607a6a49d9afd03175cdefa39075913c155e8c3a4 *stream-gate-2026-10-14d.txt
+d3bc8fe452fbf1ef856a11b9e2ea59a60bcc41fe12fde469f8461e5dcb65a404 *guard-bites-2026-10-14d.txt
+42837a4f1e4021e8394b3cafd02e8ce647c0e10c984c8b268877972b4c949d34 *port-mesh-2026-10-14d.txt
+ae0abdba6121c56431a38df480601cb23f4fdeec6c4d6ee18d2a2a685724d5e3 *window-stdout-2026-10-14d.txt
+e8c0e55ccbcd09eb8ac16f05b47c95ff8af731e01bc8f1c04dd94eccd686f242 *frame-2026-10-14d.ppm
+c54b50b9761f9e24bbe27349cd0af38120f3c14d4ce507e57ceccc08c8e57054 *digests-2026-10-14d.txt
+# 2026-10-14d — the ten files this pass wrote under this directory, verified from here with
+# `sha256sum -c`. `README.txt` is §11 (and §7–§10 are untouched above it); `pinned-parent-bytes.txt`
+# gained the pass's own dated read-set comment (a comment, no digest line); the run, its movement, the
+# stream gate's lines, the six bites, the port's own block, the window's own stdout, the window's own
+# frame as a P6 screenshot, and the source digests beside this file. NOT listed, because they are earlier
+# passes' and were not touched: every `*-2026-10-14c.txt` and earlier, `digests-captures-2026-10-14d.txt`
+# itself (a digest of itself would never verify), and the pre-§42 `frame.ppm` under
+# `docs/baselines/u4-the-drawn-reading/`, which this pass did not write.

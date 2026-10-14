@@ -83,10 +83,13 @@
 //! not describe: the recipe trees, the settings knobs, the streamer, and notifications.
 //! They are marked as extensions everywhere they appear, and they are the honest answer
 //! to *"we need to evaluate the kinds of windows we want that come with the tabs."*
+use voxel_model::endian::LeBytes;
 
 use std::collections::BTreeSet;
 
 use voxel_model::{Digest, Identity, Refusal, RefusalKind, RefusalSet};
+
+use crate::ballot::{self, Ballot};
 
 /// The pin. Older versions are refused; see the module header.
 pub const HEADER: &str = "shploingus.recipe/3";
@@ -542,6 +545,17 @@ pub struct Recipe {
     /// **A window has exactly one home**, and these three rows are the homes: tab, `bar`, or
     /// filed under a tab. A window with none is console-opened and reachable by id.
     pub filed: Vec<(String, String)>,
+    /// **The questions this package's work answers**, in declaration order — the ballot.
+    ///
+    /// The rows above say *what work*; a ballot says *what question the work answers*, and a
+    /// judgment needs one. It is a block in this grammar rather than a sibling file because a
+    /// package and its questions must not be separable: a ballot that can be lost is a package that
+    /// can be judged by a question nobody declared for it.
+    ///
+    /// **Empty is legal, and it is not a pass.** A package that declares no question cannot be
+    /// judged, and the classifier refuses to judge one — *nothing to judge is not nothing wrong*
+    /// (`ballot::parse_body`'s own words).
+    pub ballots: Vec<Ballot>,
 }
 
 fn refusal(detail: impl Into<String>) -> Refusal {
@@ -693,6 +707,7 @@ impl Recipe {
         let mut tabs: Vec<String> = Vec::new();
         let mut bar: Vec<String> = Vec::new();
         let mut filed: Vec<(String, String)> = Vec::new();
+        let mut ballots: Vec<Ballot> = Vec::new();
 
         while cursor < all.len() {
             let line = all[cursor];
@@ -786,10 +801,29 @@ impl Recipe {
                 {
                     filed.push((fields[1].to_string(), fields[2].to_string()));
                 }
+                "ballot" if fields.len() == 2 && identifier(fields[1]) => {
+                    if ballots.iter().any(|seen| seen.id == fields[1]) {
+                        note!(errors, format!(
+                            "ballot {id:?} is declared twice, and an answer to one would be read \
+                             as an answer to the other",
+                            id = fields[1]
+                        ));
+                        // The block is consumed either way, so one bad ballot does not cascade.
+                        let _ = Self::read_ballot(&all, &mut cursor, fields[1]);
+                    } else {
+                        match Self::read_ballot(&all, &mut cursor, fields[1]) {
+                            Ok(ballot) => ballots.push(ballot),
+                            Err(found) => {
+                                errors.absorb(found);
+                            }
+                        }
+                    }
+                }
                 other => {
                     note!(errors, format!(
                         "unexpected row {other:?}: expected `window<TAB>id`, `row<TAB>id<TAB>text`, \
-                         `tab<TAB>id`, `bar<TAB>id`, `filed<TAB>id<TAB>tab` or `pin<TAB>id`"
+                         `ballot<TAB>id`, `tab<TAB>id`, `bar<TAB>id`, `filed<TAB>id<TAB>tab` or \
+                         `pin<TAB>id`"
                     ));
                 }
             }
@@ -907,7 +941,56 @@ impl Recipe {
             ));
         }
 
-        errors.into_result(Self { name, version, rows, windows, pinned, tabs, bar, filed })
+        errors.into_result(Self { name, version, rows, windows, pinned, tabs, bar, filed, ballots })
+    }
+
+    /// Read one ballot block, **handing its lines to the ballot parser** rather than reading its
+    /// fields a second time here.
+    ///
+    /// One grammar, one set of refusals: a term this reader did not know about would be a term
+    /// `ballot::parse_body` refuses, and a field added there is picked up here without an edit —
+    /// which is what [`ballot::is_field`] is for.
+    ///
+    /// Takes the whole line vector and a cursor, and **leaves the cursor on the first line after the
+    /// block**, the same contract [`Self::read_window`] has: a key that is not a ballot term ends the
+    /// block and is still seen by the caller's grammar.
+    fn read_ballot(all: &[&str], cursor: &mut usize, id: &str) -> Result<Ballot, RefusalSet> {
+        let mut text = format!("ballot\t{id}\n");
+        while *cursor < all.len() {
+            let line = all[*cursor];
+            if line.trim().is_empty() || is_comment(line) {
+                *cursor += 1;
+                continue;
+            }
+            let body = line.trim_start_matches('\t');
+            let key = body.split('\t').next().unwrap_or_default();
+            // **A `ballot` row ends the block, and that is not the same rule as "a key the
+            // grammar does not own ends it".** `ballot` *is* a term this grammar knows — it is how
+            // a block declares its own id — so `is_field` alone would read the next block's header
+            // as a field of this one, hand both questions to `parse_body` as a single block, and
+            // report the pair as one malformed question instead of two declarations. A block
+            // boundary is therefore *the next header* as well as an unknown key, and both leave the
+            // cursor on the row so the caller's grammar sees it.
+            if key == "ballot" || !ballot::is_field(key) {
+                break;
+            }
+            *cursor += 1;
+            text.push_str(body);
+            text.push('\n');
+        }
+        let mut ballots = ballot::parse_body(&text)?;
+        if ballots.len() != 1 {
+            let mut refusals = RefusalSet::new();
+            refusals.refuse(
+                RefusalKind::MalformedRecord,
+                format!(
+                    "ballot {id:?} produced {} ballot(s) rather than one; a block is one question",
+                    ballots.len()
+                ),
+            );
+            return Err(refusals);
+        }
+        Ok(ballots.remove(0))
     }
 
     /// Read one window block: every required key, no unknown key, no duplicate.
@@ -1195,7 +1278,7 @@ pub fn compile(source: &[u8]) -> Result<Vec<u8>, RefusalSet> {
     Recipe::parse(source)?;
     let mut frame = Vec::with_capacity(source.len() + 80);
     frame.extend_from_slice(MAGIC);
-    frame.extend_from_slice(&(source.len() as u32).to_le_bytes());
+    frame.extend_from_slice(&(source.len() as u32).into_le_bytes());
     frame.extend_from_slice(Digest::of(source).as_bytes());
     frame.extend_from_slice(source);
     Ok(frame)
@@ -1794,6 +1877,116 @@ pin\tinventory
         assert_eq!(recipe.windows[0].id, "inventory");
         assert_eq!(recipe.windows[1].id, "ledger");
         assert_eq!(recipe.pinned, vec!["inventory", "ledger"]);
+    }
+
+    /// A ballot block as it sits inside a recipe: the header row, then the terms the ballot
+    /// grammar owns. Declared once so every test below rides the same question.
+    const A_BALLOT: &str = "\
+ballot\tbelongs
+claim\tR-62.2
+artifact\tcrates/voxel-package/src/recipe.rs
+kind\tnoul
+instruction\tdoes this belong to the package that declares it?
+presenter\tala
+max-age\t1200
+";
+
+    #[test]
+    fn a_ballot_block_is_read_into_the_package_and_does_not_swallow_it() {
+        // The reason the ballot is a block here rather than a sibling file: a package and its
+        // questions travel together, so this asserts both halves — the question is read, and the
+        // rows that came before it are still read.
+        let source = format!("{GOOD}{A_BALLOT}");
+        let recipe = Recipe::parse(source.as_bytes()).expect("a package with a ballot parses");
+        assert_eq!(recipe.ballots.len(), 1, "one block is one question");
+        let ballot = &recipe.ballots[0];
+        assert_eq!(ballot.id, "belongs");
+        assert_eq!(ballot.claim, "R-62.2");
+        assert_eq!(ballot.kind, ballot::Kind::Noul);
+        assert_eq!(ballot.presenter, "ala");
+        assert_eq!(ballot.max_age, 1200);
+        assert_eq!(recipe.windows.len(), 1, "the window row was not consumed");
+        assert_eq!(recipe.pinned, vec!["inventory"]);
+    }
+
+    #[test]
+    fn a_ballot_block_ends_at_the_next_row_that_is_not_a_ballot_term() {
+        // The block-boundary contract `read_ballot` shares with `read_window`: a key it does not
+        // own ends the block and is still read by the caller's grammar. A reader that could not
+        // push a line back would swallow the `window` row that follows.
+        let source = format!("{GOOD}{A_BALLOT}{}", second_window_block());
+        let recipe = Recipe::parse(source.as_bytes()).expect("two windows and a ballot parse");
+        assert_eq!(recipe.ballots.len(), 1, "the block ended at the window row");
+        assert_eq!(recipe.windows.len(), 2, "the window after the block was still read");
+        assert_eq!(recipe.pinned, vec!["inventory", "ledger"]);
+    }
+
+    #[test]
+    fn a_ballot_is_read_by_the_ballot_parser_and_its_own_refusals_are_the_ones_reported() {
+        // **One grammar, one set of refusals.** The recipe reader hands the block's lines to
+        // `ballot::parse_body` rather than re-reading its fields, so a term this crate's ballot
+        // grammar refuses is refused here with the ballot parser's own words — and a field added
+        // there is picked up without an edit to the recipe grammar.
+        let source = format!("{GOOD}{}", A_BALLOT.replace("kind\tnoul", "kind\tnonsense"));
+        let refusals = Recipe::parse(source.as_bytes()).expect_err("must refuse");
+        assert!(
+            refusals
+                .all()
+                .iter()
+                .any(|r| r.detail().contains("nonsense")),
+            "the ballot's refusal must name the term it saw: {refusals}"
+        );
+    }
+
+    #[test]
+    fn two_ballots_sharing_an_id_would_make_an_answer_ambiguous_and_are_refused() {
+        let source = format!("{GOOD}{A_BALLOT}{A_BALLOT}");
+        let refusals = Recipe::parse(source.as_bytes()).expect_err("must refuse");
+        assert!(
+            refusals
+                .all()
+                .iter()
+                .any(|r| r.detail().contains("declared twice")),
+            "{refusals}"
+        );
+    }
+
+    #[test]
+    fn a_second_ballot_block_is_read_and_the_first_is_not_swallowed() {
+        // The block-boundary regression, for the row that is *both* a term and a boundary: the
+        // second `ballot` row must start a question of its own. A reader that only stopped at an
+        // unknown key read the second header as a field of the first and reported the pair as one
+        // malformed question — a plausible refusal over content it never actually read.
+        let second = A_BALLOT.replace("ballot\tbelongs", "ballot\tcounts").replace(
+            "does this belong to the package that declares it?",
+            "does the package count its own rows?",
+        );
+        let source = format!("{GOOD}{A_BALLOT}{second}");
+        let recipe = Recipe::parse(source.as_bytes()).expect("two questions parse");
+        assert_eq!(recipe.ballots.len(), 2, "one question per block");
+        assert_eq!(recipe.ballots[0].id, "belongs");
+        assert_eq!(recipe.ballots[1].id, "counts");
+        assert_eq!(recipe.ballots[1].instruction, "does the package count its own rows?");
+    }
+
+    #[test]
+    fn a_package_that_declares_no_question_still_parses_and_is_not_given_one() {
+        // **Empty is legal, and it is not a pass.** A package with no ballot cannot be judged, and
+        // this records that the grammar allows the absence rather than conjuring a question for it.
+        let recipe = Recipe::parse(GOOD.as_bytes()).expect("parses without a ballot");
+        assert!(recipe.ballots.is_empty(), "no question was invented");
+    }
+
+    #[test]
+    fn a_ballot_rides_the_package_through_compile_and_load() {
+        // The frame carries the exact source and `load` re-parses it, so a ballot that compiled
+        // must come back — this is the checkpoint that would fail if the block were only readable
+        // at the top level and not through the frame the client actually mounts.
+        let source = format!("{GOOD}{A_BALLOT}");
+        let frame = compile(source.as_bytes()).expect("compiles");
+        let loaded = load(&frame).expect("loads");
+        assert_eq!(loaded.recipe.ballots, Recipe::parse(source.as_bytes()).unwrap().ballots);
+        assert_eq!(loaded.recipe.ballots.len(), 1, "the question survived the frame");
     }
 
     #[test]

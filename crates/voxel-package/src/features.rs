@@ -36,7 +36,7 @@
 //!
 //! # One vocabulary, two questions — and why they are the same question
 //!
-//! [`Establishment`] has four states, and it is used for **both** "is this
+//! [`Establishment`] has five states, and it is used for **both** "is this
 //! feature implemented?" and "was this package's signature checked?". Those are
 //! not two ideas that happen to look alike; they are one question asked of two
 //! subjects: *was this checked, and what was found?*
@@ -45,14 +45,19 @@
 //! |---|---|
 //! | [`Establishment::Active`] | checked, and it holds |
 //! | [`Establishment::Inactive`] | checked, and it is not under this project's root |
+//! | [`Establishment::Stale`] | checked, and what it read has since changed |
 //! | [`Establishment::Unchecked`] | **no instrument ran at all** — never checked |
 //! | [`Establishment::Refused`] | checked, and it failed, or it could not be checked |
 //!
 //! Collapsing [`Unchecked`] into [`Active`] is how an unverified package comes to
 //! look verified. Collapsing [`Inactive`] into [`Refused`] is how an honest
-//! unknown publisher comes to look like a forgery. AWA3D's effort loop states
-//! the general form in one line — chat *"never goes silent"* (C-60) — and an
-//! absence that is not rendered is indistinguishable from a pass.
+//! unknown publisher comes to look like a forgery. Collapsing [`Stale`] into either
+//! is how a reading taken months ago comes to be printed as this build's answer:
+//! most readings this project keeps are **snapshots**, and a snapshot that is not
+//! compared against the bytes it was taken over is a claim with a number attached.
+//! AWA3D's effort loop states the general form in one line — chat *"never goes
+//! silent"* (C-60) — and an absence that is not rendered is indistinguishable from
+//! a pass.
 //!
 //! # Required and pending are different, and both are displayed
 //!
@@ -299,7 +304,7 @@ pub const FEATURES_ARE_TOTAL: [(); FEATURE_COUNT] = [(); FEATURES.len()];
 
 /// The state of one thing that was supposed to be checked.
 ///
-/// Four states, one meaning each, used for **both** feature implementation and
+/// Five states, one meaning each, used for **both** feature implementation and
 /// signature verification. See the module header for why those are one question.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Establishment {
@@ -307,6 +312,14 @@ pub enum Establishment {
     Active,
     /// Checked, and it is not under this project's root.
     Inactive,
+    /// **Checked, and what it read has since changed.**
+    ///
+    /// A reading that is not re-derived per build — a compiler count, a survey, a census taken by
+    /// hand — is true of the bytes it was taken over. [`Stale`](Establishment::Stale) is what
+    /// those bytes having moved is called: the number is not wrong, it is *about a tree this one is
+    /// not*, and the difference is invisible unless something compares the two. Neither a pass nor
+    /// a failure, and deliberately not fatal: the repair is a command, not an edit.
+    Stale,
     /// **No instrument ran.** Never checked. Not a pass.
     Unchecked,
     /// Checked, and it failed — or it could not be checked.
@@ -318,6 +331,7 @@ impl Establishment {
         match self {
             Establishment::Active => "active",
             Establishment::Inactive => "inactive",
+            Establishment::Stale => "stale",
             Establishment::Unchecked => "unchecked",
             Establishment::Refused => "refused",
         }
@@ -334,6 +348,11 @@ impl Establishment {
             Establishment::Inactive => {
                 "inactive — checked, and not under this project's root. A grant is a recorded \
                  decision, not a toggle"
+            }
+            Establishment::Stale => {
+                "stale — checked, and the bytes it was checked over have since changed, so the \
+                 reading describes a tree this one is not. Re-derive it rather than reading it as \
+                 an answer about this build"
             }
             Establishment::Unchecked => {
                 "unchecked — no instrument ran, so this was never checked. A missing instrument \
@@ -621,6 +640,7 @@ mod tests {
         let all = [
             Establishment::Active,
             Establishment::Inactive,
+            Establishment::Stale,
             Establishment::Unchecked,
             Establishment::Refused,
         ];
@@ -641,6 +661,25 @@ mod tests {
         assert_ne!(Establishment::Unchecked, Establishment::Refused);
         assert_ne!(Establishment::Inactive, Establishment::Refused);
         assert!(Establishment::Unchecked.describe().contains("not a pass"));
+    }
+
+    #[test]
+    fn a_stale_reading_is_neither_a_pass_nor_a_failure() {
+        // **The third dangerous direction.** A reading taken over bytes that moved is not the same
+        // fact as a failed check — folding it into `Refused` would fail a build for a number nobody
+        // re-measured, and folding it into `Active` would print an old count as this build's answer.
+        // Its own state is the only rendering that says what happened: the reading is about a tree
+        // this one is not, and the repair is to take it again.
+        assert_ne!(Establishment::Stale, Establishment::Active);
+        assert_ne!(Establishment::Stale, Establishment::Refused);
+        assert_ne!(Establishment::Stale, Establishment::Inactive);
+        assert_eq!(Establishment::Stale.slug(), "stale");
+        let rendering = Establishment::Stale.describe();
+        assert!(rendering.contains("since changed"), "{rendering}");
+        assert!(
+            rendering.contains("Re-derive"),
+            "the state has to say what to do about it: {rendering}"
+        );
     }
 
     #[test]

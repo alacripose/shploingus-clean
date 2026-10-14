@@ -45,7 +45,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use voxel_model::identity::Digest;
-use voxel_model::laya::{queue_dir, Notification, ProofOfWork};
+use voxel_model::laya::{commit_site_artifact, queue_dir, Notification, ProofOfWork};
 use voxel_model::observer::recorder::drain_committed_actions;
 use voxel_model::ticket::EvidenceOrigin;
 
@@ -143,33 +143,10 @@ impl NotificationStream {
 /// **A row is taken once.** The drain is the recorder's own rule: a row handed out never comes
 /// back, so one act cannot be counted twice by two passes of the gate.
 pub fn mint_the_gate_proofs() -> Vec<ProofOfWork> {
-    drain_committed_actions()
-        .into_iter()
-        .map(|row| ProofOfWork {
-            path: commit_site_artifact(&row.site),
-            claim: row.claim(),
-            origin: EvidenceOrigin::ReadBack,
-            evidence: row.message(),
-        })
-        .collect()
+    voxel_model::laya::mint_proofs_from_rows(drain_committed_actions())
 }
 
-/// The artifact a commit site names: `crates/voxel-model/src/civilian/agency/action.rs:607` →
-/// `crates/voxel-model/src/civilian/agency/action.rs`. The trailing `:line` is dropped only
-/// when it is a line number — a site carrying a colon that is not one is kept whole — and `\`
-/// is normalized to `/`, the same comparison `evaluate_project` makes for the artifacts it
-/// judges.
-pub fn commit_site_artifact(site: &str) -> String {
-    let file = match site.rsplit_once(':') {
-        Some((file, line))
-            if !line.is_empty() && line.bytes().all(|byte| byte.is_ascii_digit()) =>
-        {
-            file
-        }
-        _ => site,
-    };
-    file.replace('\\', "/")
-}
+
 
 /// **The judgement this run asks for, written by the game itself.**
 ///

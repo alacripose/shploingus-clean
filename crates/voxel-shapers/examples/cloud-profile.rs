@@ -77,15 +77,25 @@ fn main() {
         );
     }
 
-    // ---- 2. the cloud counts by kind ----
+    // ---- 2. the cloud counts by kind, and by the guide's genus ----
+    //
+    // The genus is the classification the world's own base and depth make, so this is the
+    // reading of whether the field guide's ten genera are what the sky is actually made of
+    // — and of which of them the world never makes, which is a finding rather than a gap.
     for (label, tick) in [("noon", noon), ("midnight", midnight)] {
         let mut fog = 0usize;
         let mut cumulus = 0usize;
         let mut stratus = 0usize;
         let mut base_min = f64::INFINITY;
         let mut base_max = f64::NEG_INFINITY;
+        let mut top_max = f64::NEG_INFINITY;
         let mut water_sum = 0.0;
         let mut columns = 0usize;
+        let mut genera: std::collections::BTreeMap<&'static str, usize> =
+            std::collections::BTreeMap::new();
+        let mut fronts: std::collections::BTreeMap<&'static str, usize> =
+            std::collections::BTreeMap::new();
+        let mut inside = 0usize;
         for i in 0..GRID {
             for j in 0..GRID {
                 let x = i as f64 * STEP_M - HALF_EXTENT_M;
@@ -96,8 +106,21 @@ fn main() {
                         CloudKind::Cumulus => cumulus += 1,
                         CloudKind::Stratus => stratus += 1,
                     }
+                    *genera.entry(column.genus.abbreviation()).or_insert(0) += 1;
+                    if let Some(front) = column.front {
+                        *fronts.entry(front.kind.name()).or_insert(0) += 1;
+                    }
+                    let ground = voxel_shapers::terrain::elevation_m(&spec, x, z);
+                    if column
+                        .genus
+                        .envelope()
+                        .holds(column.base_m - ground, column.top_m - ground)
+                    {
+                        inside += 1;
+                    }
                     base_min = base_min.min(column.base_m);
                     base_max = base_max.max(column.base_m);
+                    top_max = top_max.max(column.top_m);
                     water_sum += column.water;
                     columns += 1;
                 }
@@ -109,8 +132,14 @@ fn main() {
         );
         if columns > 0 {
             println!(
-                "  base {base_min:.0} … {base_max:.0} m, mean water {:.2}",
+                "  base {base_min:.0} … {base_max:.0} m, top to {top_max:.0} m, mean water {:.2}",
                 water_sum / columns as f64
+            );
+            println!("  genera: {genera:?}");
+            println!("  fronts: {fronts:?}");
+            println!(
+                "  inside their genus's envelope: {inside} of {columns} ({} %)",
+                inside * 100 / columns
             );
         } else {
             println!("  (none)");

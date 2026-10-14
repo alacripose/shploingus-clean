@@ -1,0 +1,105 @@
+The changed guards, each proven to bite by perturbing its own subject — 2026-10-14d
+==================================================================================
+
+Each perturbation was applied to the clean room's own bytes **as this pass left them** (the digests below
+are the pass's own, `digests-2026-10-14d.txt`), its subject was **run** — the library test that carries the
+guard, or the built binary's own evidence run (`cargo build --offline -j 2; the binary`) — the failure was
+captured, and the file was restored **byte-exact** from a copy taken before the first bite (`sha256sum`
+against that copy -> OK after every bite, and again at the end: all five files OK, with the same five
+digests `digests-2026-10-14d.txt` records). No parent byte under `crates/` was touched; no perturbation was
+left in place. The harness is deterministic: the perturbation string must occur exactly once, and a count
+other than 1 aborts the run.
+
+The six bites, in order, with what each one proves:
+  d-1  the drawn door meshes the declared whole-patch world instead of the residency
+       (src/surface.rs: `residency.world(),` -> `&client_world()?,` in `region_mesh`)
+       -> the drawn path's own guards fail: the `u4_drawn` gate's "the mesh's key is the state", and the
+          run's `the frame follows the residency` and `the frame's mesh state is the law's own state`.
+  d-2  the law's own steps leave the shown state (src/surface.rs: `plane.steps(SETTLE_TICKS)?;` ->
+       `plane.steps(0)?;` inside `client_state`, so the shown world is the declared surface again)
+       -> the 3 673 reproduction fails ("0 of 131 072 cell(s) differ ... reached from the residency's own
+          side: false").
+  d-3  the world's cell door carries another kind (src/chunk.rs: the `cell` refusal's
+       `RefusalKind::ParameterOutOfRange` -> `RefusalKind::GeometryOutOfResidency`)
+       -> the part-held residency's refusal kind fails ("[geometry_out_of_residency] ... is not one of the
+          3 this world owns", where the guard requires `parameter_out_of_range`).
+  d-4  the residency's held cells are compared against the declared surface (src/evidence.rs:
+       `shown_world.chunk(key)` -> `declared_world.chunk(key)` in the held-cells loop)
+       -> the cells-equal guard fails ("3673 differing of 131072" where it requires 0), while the 3 673
+          reproduction on the same line stays `true` — the two guards are independent.
+  d-5  the cell-for-cell guard's compared world is another state of the same shape (src/stream.rs's test:
+       `world.chunk(key)` -> `shown_world(crate::automaton::SETTLE_TICKS).chunk(key)` — the settled shown
+       state compared against a residency filled from the declared one)
+       -> the cells-equal guard fails at the first differing cell ("cell 10145 of chunk (0, 0, 2) is not
+          the world's own").
+  d-6  the port's stream half is fed another world than the one it asserts over (src/port/tests.rs:
+       `let source = &client;` -> `let source = &fixture;`)
+       -> the gate fails ("every one of this world's chunks must be held at each of the parent's
+          horizons"), with the printed stream-seam lines moving to the 3 x 3 fixture's own numbers
+          (9 of this world's 4 chunk(s)), which is the perturbation showing in the measurement itself.
+
+the files under test, before the first bite:
+  9def730705d96d9d617380917daca9e8b4a8516946ec05780314500a22251724 *src/surface.rs
+  451679d68ec08aa62b38c039508a24e436cc03b040b7f55b74db8d28353d06f8 *src/chunk.rs
+  e3688b1f5d166fd96791ce2919e55b1a37a7f941dc79e9aaf060a47478845240 *src/evidence.rs
+  f384c5ab88cc86ccef3a31668efdb362b9dc8cc3f7a7ef2aef9f45e17914481d *src/stream.rs
+  af0f549831c2785bcb4a42ad182065ab3c9fa0c63534d47987cf425446fe1469 *src/port/tests.rs
+
+--- d-1 the drawn door meshes the declared whole-patch world instead of the residency
+file: src/surface.rs (was 9def730705d96d9d617380917daca9e8b4a8516946ec05780314500a22251724)
+subject: cargo test --test u4_drawn the_drawn_frame_is_a_function_of_the_state_alone -> exit 101
+thread 'the_drawn_frame_is_a_function_of_the_state_alone' (20784) panicked at tests\u4_drawn.rs:155:5:
+assertion `left == right` failed: the mesh's key is the state
+error: test failed, to rerun pass `--test u4_drawn`
+subject: the built binary -> exit 1
+U4 stream the frame follows the residency: the residency's 4 chunk(s) of the shown state draw the drawn reading's own picture — 1227 rectangle(s), frame digest ac462f1c8390db6e5b1c01d4b2aca319be5429b0584e2c67cf7840085772f602, mesh state c01a08b13a6ca31cdcebbcb9ebbb68bdc048912af6abd7fe5ca8b9dd50fd17f2 = the residency's own identity = 7675fd9242bf42abef714cd1f5aafe4debbce2447871b17cbf42a2a00bd9aace (false) — while the same keys holding the **declared** surface draw where the world was placed: 1227 rectangle(s), frame digest ac462f1c8390db6e5b1c01d4b2aca319be5429b0584e2c67cf7840085772f602 (0 fewer rectangle(s), a different picture: the 3 673 moved cell(s) are 0 rectangle(s) of it); a residency holding 3 of 4 chunk(s) is refused by the region's own name: [drawn] —; one holding none is refused the same way: [drawn] —
+U4 drawn: the drawn reading: 1 frame(s) of the world's own geometry — quads submitted 1227, vertices 4908, triangles 2454 (indices 7362), clipped 0, degenerate 2 — the last frame drew 145657 of 331776 pixel(s) (43.9%), depth 105.88..124.35 m, 47 luminance band(s), channels 0x46..0xff; frame digest ac462f1c8390db6e5b1c01d4b2aca319be5429b0584e2c67cf7840085772f602, mesh digest 969a29a615cb7995c7c2460320a4baafb02c8207989995a67e9cb641b916007f, mesh state digest c01a08b13a6ca31cdcebbcb9ebbb68bdc048912af6abd7fe5ca8b9dd50fd17f2; **the camera's own residency** held 4 chunk(s) / 131072 cell(s) of this state, its identity 7675fd9242bf42abef714cd1f5aafe4debbce2447871b17cbf42a2a00bd9aace, and the mesh's state is the residency's own = false; the region is 64 × 64 column(s) of the world's own 64 × 64; camera eye (32.00, 62.92, 185.90) m looking at (32.00, 32.00, 70.50) m, 45° of view, radius 45.72 m, distance 119.47 m, near 1.19 m, far 1194.70 m
+U4 drawn: the drawn reading's own bars: the loop's own counts are the mesh's own = true; every rectangle is inside the camera's own frustum = true; the picture is not a flat fill = true; the frame's mesh state is the law's own state = false; the headless drawn frame of this run's own state is this run's last frame = true
+Clean room FAILED: a measured bar is not met (U1=true, U1 client=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=false, U5=true, U6=true, U7=true, U8=true, U9=true, U10=true, U12=true, U12 stepping=true).
+restored byte-exact: 9def730705d96d9d617380917daca9e8b4a8516946ec05780314500a22251724 (OK)
+
+--- d-2 the law's own steps leave the shown state (the 3 673 are the stepping)
+file: src/surface.rs (was 9def730705d96d9d617380917daca9e8b4a8516946ec05780314500a22251724)
+subject: the built binary -> exit 1
+U4 stream seed=1592639215 tick=0 horizon 256 m: the camera's own chunk (0, 0, 2) holds 4 of this world's 4 chunk(s) — 131072 cell(s) over 4 derivation(s), of the state the client shows (c01a08b13a6ca31cdcebbcb9ebbb68bdc048912af6abd7fe5ca8b9dd50fd17f2); a camera that does not move derives 0 more and serves 4 of 4 (131072 cell(s) held), and the held cells are **the shown world's own**: 0 differing of 131072, while against the **declared surface the fields make** 0 of 131072 cell(s) differ — the law's own 200 tick(s) inside the source, and the 3 673 of 131 072 the port measured, reached from the residency's own side: false; residency identity c01a08b13a6ca31cdcebbcb9ebbb68bdc048912af6abd7fe5ca8b9dd50fd17f2
+Clean room FAILED: a measured bar is not met (U1=true, U1 client=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=false, U5=true, U6=true, U7=true, U8=true, U9=true, U10=true, U12=true, U12 stepping=true).
+restored byte-exact: 9def730705d96d9d617380917daca9e8b4a8516946ec05780314500a22251724 (OK)
+
+--- d-3 the world's own unowned-key refusal carries another kind
+file: src/chunk.rs (was 451679d68ec08aa62b38c039508a24e436cc03b040b7f55b74db8d28353d06f8)
+subject: the built binary -> exit 1
+U4 stream the frame follows the residency: the residency's 4 chunk(s) of the shown state draw the drawn reading's own picture — 1333 rectangle(s), frame digest 7816bf6a07dada5a3b7522c8ecf58fd933ecd37ace31662fc10b3c8d617dce69, mesh state 7675fd9242bf42abef714cd1f5aafe4debbce2447871b17cbf42a2a00bd9aace = the residency's own identity = 7675fd9242bf42abef714cd1f5aafe4debbce2447871b17cbf42a2a00bd9aace (true) — while the same keys holding the **declared** surface draw where the world was placed: 1227 rectangle(s), frame digest ac462f1c8390db6e5b1c01d4b2aca319be5429b0584e2c67cf7840085772f602 (106 fewer rectangle(s), a different picture: the 3 673 moved cell(s) are 106 rectangle(s) of it); a residency holding 3 of 4 chunk(s) is refused by the region's own name: [geometry_out_of_residency] (32, 32, 64) is not in this world: its chunk (1, 1, 2) is not one of the 3 this world owns; one holding none is refused the same way: [geometry_out_of_residency] (0, 0, 64) is not in this world: its chunk (0, 0, 2) is not one of the 0 this world owns
+Clean room FAILED: a measured bar is not met (U1=true, U1 client=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=false, U5=true, U6=true, U7=true, U8=true, U9=true, U10=true, U12=true, U12 stepping=true).
+restored byte-exact: 451679d68ec08aa62b38c039508a24e436cc03b040b7f55b74db8d28353d06f8 (OK)
+
+--- d-4 the residency's held cells are compared against the declared surface, not the shown world
+file: src/evidence.rs (was e3688b1f5d166fd96791ce2919e55b1a37a7f941dc79e9aaf060a47478845240)
+subject: the built binary -> exit 1
+U4 stream seed=1592639215 tick=200 horizon 256 m: the camera's own chunk (0, 0, 2) holds 4 of this world's 4 chunk(s) — 131072 cell(s) over 4 derivation(s), of the state the client shows (7675fd9242bf42abef714cd1f5aafe4debbce2447871b17cbf42a2a00bd9aace); a camera that does not move derives 0 more and serves 4 of 4 (131072 cell(s) held), and the held cells are **the shown world's own**: 3673 differing of 131072, while against the **declared surface the fields make** 3673 of 131072 cell(s) differ — the law's own 200 tick(s) inside the source, and the 3 673 of 131 072 the port measured, reached from the residency's own side: true; residency identity 7675fd9242bf42abef714cd1f5aafe4debbce2447871b17cbf42a2a00bd9aace
+Clean room FAILED: a measured bar is not met (U1=true, U1 client=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=false, U5=true, U6=true, U7=true, U8=true, U9=true, U10=true, U12=true, U12 stepping=true).
+restored byte-exact: e3688b1f5d166fd96791ce2919e55b1a37a7f941dc79e9aaf060a47478845240 (OK)
+
+--- d-5 the cell-for-cell guard's compared world is a state one tick elsewhere
+file: src/stream.rs (was f384c5ab88cc86ccef3a31668efdb362b9dc8cc3f7a7ef2aef9f45e17914481d)
+subject: cargo test --lib stream::tests::the_resident_chunks_are_the_worlds_own_chunks_cell_for_cell -> exit 101
+thread 'stream::tests::the_resident_chunks_are_the_worlds_own_chunks_cell_for_cell' (22896) panicked at src\stream.rs:497:21:
+assertion `left == right` failed: cell 10145 of chunk (0, 0, 2) is not the world's own
+error: test failed, to rerun pass `--lib`
+restored byte-exact: f384c5ab88cc86ccef3a31668efdb362b9dc8cc3f7a7ef2aef9f45e17914481d (OK)
+
+--- d-6 the port's stream half is fed another world than the one it asserts over
+file: src/port/tests.rs (was af0f549831c2785bcb4a42ad182065ab3c9fa0c63534d47987cf425446fe1469)
+subject: cargo test --lib port::tests::the_parents_streaming_and_this_worlds_shape_are_measured_against_each_other -> exit 101
+stream-seam: the parent's simulation horizon = 384 m: the streamer holds 9 of this world's 4 chunk(s) (294912 cell(s), 9 derived, 0 served) — the horizon is wider than the world, so nothing it names beyond those 4 can be held
+thread 'port::tests::the_parents_streaming_and_this_worlds_shape_are_measured_against_each_other' (25968) panicked at src\port\tests.rs:309:5:
+every one of this world's chunks must be held at each of the parent's horizons
+error: test failed, to rerun pass `--lib`
+restored byte-exact: af0f549831c2785bcb4a42ad182065ab3c9fa0c63534d47987cf425446fe1469 (OK)
+
+=== the files after every bite ===
+  src/surface.rs: OK
+  src/chunk.rs: OK
+  src/evidence.rs: OK
+  src/stream.rs: OK
+  src/port/tests.rs: OK
+all restored byte-exact: True

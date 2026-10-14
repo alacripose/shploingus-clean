@@ -195,7 +195,7 @@ impl BandController {
 mod tests {
     use super::*;
     use crate::Site;
-    use voxel_shapers::column::materials;
+    use voxel_shapers::materials;
 
     const IRON: MaterialId = materials::IGNEOUS;
 

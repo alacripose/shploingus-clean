@@ -1,0 +1,92 @@
+# The cubic world's first slice — the capture pair, the movement accounted line by line, and the guard proof
+# (2026-10-13, plan §37; the shape ruling is `LEDGER.md` C-189).
+#
+# **Verifying this file:** `sha256sum -c docs/baselines/u2-cubic-cells/digests.txt` from the repository root
+# checks every bare hash line below; every path is relative to that root. **The plan, `docs/LEDGER.md`, the
+# README and the systems registry are deliberately not listed** — this pass edits them, so their digests would
+# be figures that move with the record that describes them. What this file pins is the artifact set.
+#
+# Every capture was taken from the built binary **directly**
+# (`clean-room/target/debug/shploingus-clean-room`) rather than through `cargo run`, so its stderr carries the
+# program's own line and no cargo timing. The windowed pair is the binary's own `window 200` run.
+# the binary's own output — line counts first, then the digests
+#   510  docs/baselines/u2-cubic-cells/pre-stdout.txt
+#     1  docs/baselines/u2-cubic-cells/pre-stderr.txt
+#   514  docs/baselines/u2-cubic-cells/final-stdout.txt
+#     1  docs/baselines/u2-cubic-cells/final-stderr.txt
+#     6  docs/baselines/u2-cubic-cells/window-stdout.txt
+#     0  docs/baselines/u2-cubic-cells/window-stderr.txt
+#
+# pre-stdout.txt is **§36's own final bytes**, taken before this pass edited anything: its digest
+# `3bd011350959d89a4a7b24798f63ba701a5e392d4b346da0b077ca9d4abb571d` is the digest
+# `docs/baselines/u1-visible-client/digests.txt` records for that baseline's `final-stdout.txt`, so this
+# pass's "before" is §36's "after" **by digest** rather than by assertion. (`cmp` over the two files is that
+# claim's own check.)
+# pre-stderr.txt and final-stderr.txt are the same one `serve:` line, unmoved since §32:
+# `serve: 7 request(s): 5 answered, 2 refused by name`.
+# window-stderr.txt is **empty** — the digest below is the digest of no bytes, because nothing in a windowed
+# run writes to stderr.
+#
+# **The movement from pre to final, accounted line by line (510 → 514: four added, four changed, none
+# removed):**
+#   * line  13  `[U2] World model…` status: the cubic world's own cells, their one identity and the column
+#               world as a reading of them (2026-10-13, §37) replace `world, shapes, chain; audit findings
+#               fixed`; the row's own parenthetical now names the shape ruling (`§37`, `LEDGER.md` C-189)
+#   * line  14  `[U2] … unifies:` gains `the cubic chunk's own cells`
+#   * line  18  `[U2] … interface:` gains `chunk::{CubicWorld, Cell, CubicColumn}`
+#   * line  99  the `U1 client:` line's **label only**: `world cells_digest` → `surface read digest`. Every
+#               figure on it is unchanged — 39 bands, frame digest `6e1d9c96…`, the read's own digest
+#               `88304a75…`, the plane's state `19df3015…` — because a rename moves no byte of what is hashed
+#   * line 109  `U2 cubic cells:` (new): 4 chunk(s) × 32 768 cell(s) = 131 072 cell(s) hashed over the
+#               declared patch's 2 304 column(s); 24 689 of them solid, air named rather than defaulted; the
+#               world's own identity `9d2eea8cd460475b57174ffd8409c4861b70a6dab47f0446746108cb741df265`
+#   * line 110  `U2 surface read:` (new): one reading of that patch — out of the cells `97e0ca2f…`, out of the
+#               generator's own fields `e07145a5…` — the reading moved with the quantisation and is a reading
+#               either way, never the world's identity
+#   * line 111  `U2 cubic reading:` (new): at the settled plane's own deepest column (1271 → (23, 26)) the
+#               generator's Tick(0) column reads surface 73.5539 m and 127 536 µm of water; the cells return
+#               73.0000 m (Δ 0.5539 m < 1 m — the voxel that contains the ground) and the same 127 536 µm,
+#               over 10 solid cell(s); the water round-trips exactly at 2 304 of 2 304 column(s) in whole
+#               micrometres on both sides, and the read answers the cells' own water at 2 299 of them, never
+#               by more than 1 µm (§34's truncating conversion, measured rather than assumed); the routing
+#               graph differs at 2 033 column(s)
+#   * line 112  `U2 cubic step:` (new): the plane over the cubic reading steps 200 tick(s) to 2 079 of
+#               2 304 column(s) standing, deepest 7 809 µm at column 330, state digest `8010a2ea…`; over the
+#               generator's own fields the same 200 tick(s) leave 1 647 standing, deepest 441 809 µm at
+#               column 1271, digest `19df3015…` — **the same state = false**, printed rather than required
+#   * 510 + 4 = 514 ✓
+#
+# **The windowed capture** (`window 200 <scratch>/frame.ppm`, **six** lines): the label moved with the rename
+# (`surface read digest`), every figure did not, the read-back is **66 355 200 of 66 355 200** pixel(s) — every
+# pixel, every frame — and the `P6` frame it wrote is **byte-identical** to §36's
+# `docs/baselines/u1-visible-client/frame.ppm` (`cmp` clean, 995 343 bytes, `86daeaf3…`): the shape ruling
+# moved no pixel of this instrument's picture. The sixth line names the scratch path it wrote, which is why
+# this capture's own digest is not §36's five-line one.
+3bd011350959d89a4a7b24798f63ba701a5e392d4b346da0b077ca9d4abb571d *docs/baselines/u2-cubic-cells/pre-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u2-cubic-cells/pre-stderr.txt
+b49dbd28896770959e1aa9fdbcb3fecbd97f634fcc4e0b20d230144c2a9e015f *docs/baselines/u2-cubic-cells/final-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u2-cubic-cells/final-stderr.txt
+4c53a0e899bed6ad0c528a329f8344cd63754c858dc8504b24573a786bb35240 *docs/baselines/u2-cubic-cells/window-stdout.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *docs/baselines/u2-cubic-cells/window-stderr.txt
+# the guard proof — 80 lines: the harness's own output, **twelve** cases biting by name with each restore
+# checked by digest, and the final check run against the binary's own start-of-run snapshot
+# (`b49dbd28…`, which is the capture above) rather than against a dated file
+528a29f5142faa8a2b414fdcb37ce507a0d82f33447d720ad31355b2223bd0ba *docs/baselines/u2-cubic-cells/proof.txt
+# the runner — the twelve cases, their subjects, the two subjects that **bit nothing** on a first cut and are
+# kept as findings (the patch's framing; the near half of the patch's bound), and the repair §37 made to this
+# kind of last check (the build comes first, then the snapshot)
+68c7254435291801cc1cfe0c52601c03ef593fb85f3f06b1a7a374156c80ca19 *docs/baselines/u2-cubic-cells/run-guards.sh
+# the sources this pass touched, as they stand after the guard harness restored them
+#
+# These are the same nine digests the harness prints and checks (`sha256sum -c`, through a `trap`), so a
+# reader can check the tree rather than the transcript. §37's other edits are documents — the plan, the
+# ledger, the two README sections — and the baselines' own proof files, which are pinned where they live.
+2e944062730cd653aac257be77ff7376a20fa5c1f8b6042ba0a86f4a400183d1 *clean-room/src/chunk.rs
+b620aa4c6432d58553fd5880c017fa37b8c715cce716064892b4d7e00d6c79e6 *clean-room/src/being.rs
+e99776d06d65762407a8c7c50f23f10c7d2277f6a17207dc506690f0df4b3236 *clean-room/src/evidence.rs
+978e1a19ddcd8c47cfa897250dd9ee649a6ec211a3386a849d79060f13b37873 *clean-room/src/surface.rs
+87fcbf25e203f8aecb0f8889f30f895c7224d682ef90aca45210b3a5c044dd5f *clean-room/src/main.rs
+2e199a06aa65d4b4fd5eba0b1ea6a043c3d0c8e712fd7c7f69b51da22e617306 *clean-room/src/lib.rs
+0573f72c8de7dbb2db96280bb0dbd3dfb93ff6ef791e9d6138b89eb6fa0babf2 *clean-room/src/systems.rs
+77576b7fb8f04a0af92ce920881cdbc7916b174deb3846e0f716184557f049b7 *clean-room/tests/u12_being.rs
+faa5e2fac0407b2c802effaedd079ae01f47400de91b99269c583caec3491ed5 *clean-room/tests/u12_stepping.rs

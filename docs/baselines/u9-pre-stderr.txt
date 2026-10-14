@@ -1,0 +1,5 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\clean-room\target\debug\deps\libshploingus_clean_room-1120e90943ec2534.rmeta
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running `target\debug\shploingus-clean-room.exe`
+serve: 7 request(s): 5 answered, 2 refused by name

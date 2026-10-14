@@ -1,0 +1,38 @@
+   Compiling shploingus-clean-room v0.1.0 (C:\Users\ala\Documents\shploingus-clean\clean-room)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.55s
+     Running tests\u12_stepping.rs (target\debug\deps\u12_stepping-873ae90fd0e25781.exe)
+
+running 3 tests
+test the_plane_carries_state_from_tick_to_tick ... FAILED
+test two_states_from_one_read_are_one_digest ... FAILED
+test a_rained_on_column_changes_the_beings_next_step ... FAILED
+
+failures:
+
+---- the_plane_carries_state_from_tick_to_tick stdout ----
+
+thread 'the_plane_carries_state_from_tick_to_tick' (18492) panicked at tests\u12_stepping.rs:135:5:
+assertion `left == right` failed: the read stands the law's water
+  left: 0
+ right: 4147
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- two_states_from_one_read_are_one_digest stdout ----
+
+thread 'two_states_from_one_read_are_one_digest' (18368) panicked at tests\u12_stepping.rs:85:51:
+the drive is not refused: Refusal { kind: WaterUnreachable, detail: "cell 159 is a sink of the game's own flow law — no receiver carries it — and no water stands there: the being has nowhere the world's own routing can take it" }
+
+---- a_rained_on_column_changes_the_beings_next_step stdout ----
+
+thread 'a_rained_on_column_changes_the_beings_next_step' (7868) panicked at tests\u12_stepping.rs:85:51:
+the drive is not refused: Refusal { kind: WaterUnreachable, detail: "cell 159 is a sink of the game's own flow law — no receiver carries it — and no water stands there: the being has nowhere the world's own routing can take it" }
+
+
+failures:
+    a_rained_on_column_changes_the_beings_next_step
+    the_plane_carries_state_from_tick_to_tick
+    two_states_from_one_read_are_one_digest
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+error: test failed, to rerun pass `--test u12_stepping`

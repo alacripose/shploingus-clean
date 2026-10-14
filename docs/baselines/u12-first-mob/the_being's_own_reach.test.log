@@ -1,0 +1,25 @@
+   Compiling shploingus-clean-room v0.1.0 (C:\Users\ala\Documents\shploingus-clean\clean-room)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.20s
+     Running tests\u12_being.rs (target\debug\deps\u12_being-10da00f46ca9f228.exe)
+
+running 4 tests
+test the_organisations_vocabulary_stays_owed_by_name ... ok
+test a_member_acts_and_an_act_it_may_not_do_is_refused_by_name_and_recorded ... ok
+test the_world_and_the_record_refuse_the_being_by_name ... FAILED
+test two_runs_of_the_first_mob_produce_one_chain_digest ... ok
+
+failures:
+
+---- the_world_and_the_record_refuse_the_being_by_name stdout ----
+
+thread 'the_world_and_the_record_refuse_the_being_by_name' (19292) panicked at tests\u12_being.rs:163:58:
+a reach spent before a step: Walk { from: 14, to: 62 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    the_world_and_the_record_refuse_the_being_by_name
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+error: test failed, to rerun pass `--test u12_being`

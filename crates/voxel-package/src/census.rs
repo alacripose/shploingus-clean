@@ -70,6 +70,7 @@
 
 use std::path::Path;
 
+use voxel_model::identity::{Digest, Identity};
 use voxel_model::{RefusalKind, RefusalSet};
 
 
@@ -79,7 +80,7 @@ use crate::record::read_document;
 
 /// How many crates the workspace holds. **A literal**, for the reason
 /// [`crate::features::FEATURE_COUNT`] is one.
-pub const CRATE_COUNT: usize = 12;
+pub const CRATE_COUNT: usize = 16;
 
 /// Every crate in the workspace, in dependency order.
 ///
@@ -87,11 +88,24 @@ pub const CRATE_COUNT: usize = 12;
 /// to read as the build reads: `voxel-model` refuses before anything asks it
 /// to, and a reader who sees `voxel-package` first has not been told what it
 /// stands on.
+///
+/// **This list was twelve and the workspace holds sixteen.** `voxel-light`,
+/// `voxel-audio`, `voxel-mcp` and `voxel-von` were added to the manifest and
+/// never added here, so four members were measured by **nothing** — not by the
+/// census, not by the conformance verdict, not by the patch coverage, which all
+/// iterate this list. The count was a literal that nothing compared against the
+/// manifest, so the blind spot was silent: the report looked complete because it
+/// was complete **about the twelve it knew**. The list is now every workspace
+/// member, and [`crate::census::tests::every_workspace_member_is_in_the_table`]
+/// reads the manifest and refuses when the two disagree, so the next crate
+/// cannot be added without being tracked.
 pub const CRATES: [Crate; CRATE_COUNT] = [
     Crate::Model,
     Crate::Noise,
+    Crate::Light,
     Crate::Mesh,
     Crate::Shapers,
+    Crate::Audio,
     Crate::Stream,
     Crate::Instrument,
     Crate::Appearance,
@@ -99,6 +113,8 @@ pub const CRATES: [Crate; CRATE_COUNT] = [
     Crate::Ui,
     Crate::Client,
     Crate::Package,
+    Crate::Von,
+    Crate::Mcp,
     Crate::Shploingus,
 ];
 
@@ -110,8 +126,10 @@ pub const CRATES_ARE_TOTAL: [(); CRATE_COUNT] = [(); CRATES.len()];
 pub enum Crate {
     Model,
     Noise,
+    Light,
     Mesh,
     Shapers,
+    Audio,
     Stream,
     Instrument,
     Appearance,
@@ -119,6 +137,8 @@ pub enum Crate {
     Ui,
     Client,
     Package,
+    Von,
+    Mcp,
     Shploingus,
 }
 
@@ -131,8 +151,10 @@ impl Crate {
         match self {
             Crate::Model => "voxel-model",
             Crate::Noise => "voxel-noise",
+            Crate::Light => "voxel-light",
             Crate::Mesh => "voxel-mesh",
             Crate::Shapers => "voxel-shapers",
+            Crate::Audio => "voxel-audio",
             Crate::Stream => "voxel-stream",
             Crate::Instrument => "voxel-instrument",
             Crate::Appearance => "voxel-appearance",
@@ -140,6 +162,8 @@ impl Crate {
             Crate::Ui => "voxel-ui",
             Crate::Client => "voxel-client",
             Crate::Package => "voxel-package",
+            Crate::Von => "voxel-von",
+            Crate::Mcp => "voxel-mcp",
             Crate::Shploingus => "shploingus",
         }
     }
@@ -149,8 +173,10 @@ impl Crate {
         match self {
             Crate::Model => "crates/voxel-model",
             Crate::Noise => "crates/voxel-noise",
+            Crate::Light => "crates/voxel-light",
             Crate::Mesh => "crates/voxel-mesh",
             Crate::Shapers => "crates/voxel-shapers",
+            Crate::Audio => "crates/voxel-audio",
             Crate::Stream => "crates/voxel-stream",
             Crate::Instrument => "crates/voxel-instrument",
             Crate::Appearance => "crates/voxel-appearance",
@@ -158,6 +184,8 @@ impl Crate {
             Crate::Ui => "crates/voxel-ui",
             Crate::Client => "crates/voxel-client",
             Crate::Package => "crates/voxel-package",
+            Crate::Von => "crates/voxel-von",
+            Crate::Mcp => "crates/voxel-mcp",
             Crate::Shploingus => "crates/shploingus",
         }
     }
@@ -171,8 +199,10 @@ impl Crate {
         match self {
             Crate::Model => "crates/voxel-model/src/lib.rs",
             Crate::Noise => "crates/voxel-noise/src/lib.rs",
+            Crate::Light => "crates/voxel-light/src/lib.rs",
             Crate::Mesh => "crates/voxel-mesh/src/lib.rs",
             Crate::Shapers => "crates/voxel-shapers/src/lib.rs",
+            Crate::Audio => "crates/voxel-audio/src/lib.rs",
             Crate::Stream => "crates/voxel-stream/src/lib.rs",
             Crate::Instrument => "crates/voxel-instrument/src/lib.rs",
             Crate::Appearance => "crates/voxel-appearance/src/lib.rs",
@@ -180,6 +210,8 @@ impl Crate {
             Crate::Ui => "crates/voxel-ui/src/lib.rs",
             Crate::Client => "crates/voxel-client/src/lib.rs",
             Crate::Package => "crates/voxel-package/src/lib.rs",
+            Crate::Von => "crates/voxel-von/src/lib.rs",
+            Crate::Mcp => "crates/voxel-mcp/src/lib.rs",
             Crate::Shploingus => "crates/shploingus/src/main.rs",
         }
     }
@@ -221,8 +253,10 @@ pub struct CrateRow {
 pub const ROWS: [CrateRow; CRATE_COUNT] = [
     CrateRow { crate_: Crate::Model, means: "the world model: coordinates, identity, materials, and the refusal vocabulary everything else speaks", required: true },
     CrateRow { crate_: Crate::Noise, means: "deterministic noise, so the same seed yields the same world", required: true },
+    CrateRow { crate_: Crate::Light, means: "the band table and the real sun: full-spectrum radiometry over declared bands", required: true },
     CrateRow { crate_: Crate::Mesh, means: "chunks become meshes, and a mesh can be refined or raycast", required: true },
     CrateRow { crate_: Crate::Shapers, means: "stages and shapers produce the world, deterministically, from a seed", required: true },
+    CrateRow { crate_: Crate::Audio, means: "rain as synthesis, not playback: a pure function of tick and address, with no device to open", required: false },
     CrateRow { crate_: Crate::Stream, means: "what is resident, and what is wanted next", required: true },
     CrateRow { crate_: Crate::Instrument, means: "measurement that reports rather than asserts", required: false },
     CrateRow { crate_: Crate::Appearance, means: "how a material looks, and where that answer came from", required: false },
@@ -230,6 +264,8 @@ pub const ROWS: [CrateRow; CRATE_COUNT] = [
     CrateRow { crate_: Crate::Ui, means: "the design system resolves colour, type and elevation, and refuses unrepresentable values", required: false },
     CrateRow { crate_: Crate::Client, means: "the GPU side, shared with the offscreen test that measures it", required: true },
     CrateRow { crate_: Crate::Package, means: "a package is admitted by validation, never by optimism", required: true },
+    CrateRow { crate_: Crate::Von, means: "the classifier port: the gate's questions answered by a model this project did not write, and never took on faith", required: false },
+    CrateRow { crate_: Crate::Mcp, means: "the gate's read surface: a tool server over numbers the package already computed, so a tool call cannot disagree with the build", required: false },
     CrateRow { crate_: Crate::Shploingus, means: "the only place a window opens, and the only place the gate runs", required: true },
 ];
 
@@ -467,12 +503,27 @@ pub enum Axis {
     /// An axis graded against the grader's own prose is not a measurement. This one reads the
     /// spec, and a crate the spec does not name comes back `unclaimed`.
     Claimed,
-    /// **The doc stage: where this crate's rationale lives.** Measured by
-    /// [`bloat::measure_prose`] over the crate's own sources against [`PROSE_FRAME_PERCENT`].
-    /// A crate whose source is documentation wearing a `.rs` extension, with no document under
-    /// `docs/` carrying prose about it, is **refused** — the prose was written where a reader
-    /// does not look. A crate keeping an invented record beside the chain
-    /// ([`bloat::INVENTED_RECORD_EXTENSIONS`]) is refused whatever its prose share reads.
+    /// **The doc stage: whether this crate is documented, as a measurement.** It reads the
+    /// **compiler's own count** ([`MISSING_DOCS_PATH`]): how many public items `missing_docs` —
+    /// enabled in every crate root — reports without a doc comment, produced by the recipe in this
+    /// module's header. `0` is `active`/`documented`; more is `inactive-with-reason` naming the
+    /// count; **a crate with no line in the reading is refused**, because no instrument asked the
+    /// compiler about it and *not measured is not a pass*; and a crate whose declared **pin** no
+    /// longer matches the bytes on disk is
+    /// [`Establishment::Stale`](crate::features::Establishment::Stale) — the count is about a tree
+    /// this one is not. That last state is the difference between a reading and a number: the count
+    /// cannot be re-taken from inside the gate's own build script, but the bytes it was taken over
+    /// can be hashed there, so a reading that has drifted is named rather than repeated.
+    ///
+    /// **Why the compiler and not a header.** Until 2026-10-10 this axis asked whether the entry
+    /// file opened with a `//!` block, and every crate had one — so the axis was `active` for all
+    /// sixteen and could only turn false if someone deleted a line at the top of a file. That is a
+    /// check on the *presence of a claim*, not on the documentation. `missing_docs` counts the thing
+    /// the axis is named for, per item, and falls when docs are written and rises when they are not.
+    /// The user's ruling stands: the documentation belongs in the crate's own rustdoc, next to the
+    /// values it explains. What changed is that the gate now asks the compiler whether it is there.
+    /// A crate keeping an invented record beside the chain ([`bloat::INVENTED_RECORD_EXTENSIONS`]) is
+    /// refused whatever its documentation count reads.
     Documented,
 }
 
@@ -492,10 +543,18 @@ pub const AXES: [Axis; AXIS_COUNT] = [
 /// The declared share of a crate's source that may be comment before the census calls it
 /// documentation rather than code.
 ///
-/// **A declared frame, not a preference.** The tree measures 26% comment overall, so this frame
-/// sits below current practice and the stage fires. That is the intended state: the axis exists
-/// to be red until the prose is in `docs/`, and a frame set to whatever the tree already does
-/// would be a check that cannot fail.
+/// **A declared frame, not a preference.** It is measured on the share of a crate that is *plain*
+/// comment — **rustdoc is excluded** ([`bloat::Prose::plain_percent`]), because the user's ruling of
+/// 2026-10-10 is that documentation belongs in the crate's own rustdoc, next to the values it
+/// explains. A frame counted over rustdoc would charge every crate for writing the thing it is owed.
+/// The tree measures 26% comment overall, so this frame sits below current practice and the stage
+/// reports every crate's plain share against it (3–29%). What the frame **refuses** is a crate whose
+/// plain commentary has risen past its declared share — commentary, not the rustdoc this project is
+/// owed. A frame set to whatever the tree already does would be a check that cannot fail.
+///
+/// **The only reader of this frame is [`check_prose_frame`].** [`Axis::Documented`] does *not* consult
+/// it: that axis reads the compiler's own count ([`MISSING_DOCS_PATH`]), because a share of bytes
+/// cannot say whether any given item has a doc comment.
 pub const PROSE_FRAME_PERCENT: usize = 10;
 
 /// The coverage row: one cell per axis.
@@ -616,6 +675,31 @@ pub struct CrateObservation {
     pub prose: Option<ProseObservation>,
 }
 
+/// **The compiler's documentation count for one crate, and the pin that dates it.**
+///
+/// **A count without a pin is a number about an unknown tree.** `missing_docs` is read by a command
+/// a person runs (`conformance/missing-docs.txt` carries the recipe), so unlike the prose ratchet the
+/// gate cannot take it again from inside its own build script. What the gate *can* do is check
+/// whether the bytes exist that the count was taken over: `declared` is the pin written beside the
+/// count, `measured` is the same digest over the files on disk now, and the two differing is what
+/// [`Establishment::Stale`](crate::features::Establishment::Stale) renders. The comparison is
+/// digest-to-digest over the tree's one hashing scheme rather than a string comparison, the same
+/// rule [`crate::civilians`] applies to a citation.
+///
+/// Both pins are reported so the reason can name them: a reader who is told *stale* and not told
+/// which digest moved cannot tell a real edit from a corrupted reading.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MissingDocsReading {
+    /// How many public items `missing_docs` reported without a doc comment, as declared.
+    pub missing: usize,
+    /// The pin declared beside the count: `sha256:` over the crate's covered files, as they were
+    /// when the count was taken.
+    pub declared: Identity,
+    /// The same pin over the bytes on disk now. Equal to `declared` exactly when the count was taken
+    /// over the tree as it stands.
+    pub measured: Identity,
+}
+
 /// What a crate's source files were read as containing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SourceFacts {
@@ -638,10 +722,22 @@ pub struct ProseObservation {
     /// Covered files in the crate's directory that did not decode as UTF-8. **Named, never
     /// dropped** — a file that was not read is a fact the report carries, not a silence.
     pub undecodable: Vec<std::path::PathBuf>,
-    /// Comment bytes as a whole percent of the crate's text. `None` when unmeasured.
+    /// Comment bytes as a whole percent of the crate's text, **rustdoc included**. `None` when
+    /// unmeasured.
     pub comment_percent: Option<usize>,
+    /// **The share the prose frame is about**: comment bytes that are *not* rustdoc, as a whole
+    /// percent. Rustdoc is documentation and is measured apart, because the two answer to different
+    /// rules (the user's ruling, 2026-10-10).
+    pub plain_percent: Option<usize>,
+    /// **The compiler's documentation reading for this crate, and the bytes it was taken over**: how
+    /// many public items `missing_docs` reports without a doc comment, and the pin that says whether
+    /// the count is still about *this* tree ([`MISSING_DOCS_PATH`]). `None` means **no line asked the
+    /// compiler about this crate**, which is not a pass — it is [`Axis::Documented`]'s `unmeasured`
+    /// refusal, by name.
+    pub missing_docs: Option<MissingDocsReading>,
     /// A document under `docs/` that **defines** this crate — a heading whose text begins with
-    /// its name ([`heading_defines`]). A passing mention is not a definition and does not count.
+    /// its name (`heading_defines`, measured by that private rule). A passing mention is not a definition
+    /// and does not count.
     pub document: Option<String>,
     /// Invented records that name this crate (`bloat::invented_stores`). Reported, never narrowed.
     pub invented: Vec<String>,
@@ -677,6 +773,12 @@ pub fn observe(root: &Path) -> Result<Vec<CrateObservation>, RefusalSet> {
     let docs = read_docs(root);
     let invented = bloat::invented_stores(root);
 
+    // The compiler's own documentation count and its pin, read once for the whole census (one
+    // file, sixteen crates). **An absent file is deliberately not a refusal here**: the axis refuses
+    // each crate by name for having no reading, which is a refusal a reader can act on, where one
+    // "the file is missing" would hide which crates are unmeasured behind which one is.
+    let missing_docs = read_missing_docs(root, &mut refusals);
+
     // The spec's own declaration tables, read once. **This is the axis that can fail** — the
     // other four read the tree, and this one reads what the tree was asked for.
     let claims = match claim_against_spec(root) {
@@ -698,6 +800,10 @@ pub fn observe(root: &Path) -> Result<Vec<CrateObservation>, RefusalSet> {
             named_by_record: corpus.as_ref().map(|corpus| corpus.contains(crate_.name())),
             prose: sources.as_ref().map(|sources| {
                 let prose = bloat::measure_prose(&sources.read);
+                // **The pin, over the same bytes the count was taken over** — the files just read,
+                // not a second walk. This is the one thing that makes a snapshot taken by hand
+                // checkable from inside a build script: hashing is cheap and needs no compiler.
+                let measured = missing_docs_pin(sources, root);
                 ProseObservation {
                     measured: prose.measured,
                     why_unmeasured: prose.why_unmeasured.clone(),
@@ -705,6 +811,10 @@ pub fn observe(root: &Path) -> Result<Vec<CrateObservation>, RefusalSet> {
                     ruled_files: sources.covered.len(),
                     undecodable: sources.undecodable.clone(),
                     comment_percent: prose.comment_percent(),
+                    plain_percent: prose.plain_percent(),
+                    missing_docs: missing_docs.get(crate_.name()).map(|(missing, declared)| {
+                        MissingDocsReading { missing: *missing, declared: *declared, measured }
+                    }),
                     document: defined_by_document(&docs, crate_),
                     invented: invented
                         .iter()
@@ -815,9 +925,11 @@ impl Axis {
 /// A document under `docs/` carrying prose about a crate, or `None`.
 ///
 /// **A table row is not prose about a crate.** [`declares_in_row`] exists because a row is a
-/// *declaration*; a line naming the crate that is not a row is a sentence someone wrote about
-/// it, which is what "the rationale is documented" means here. This reuses this module's own
-/// rule rather than writing a second one, so the two cannot drift.
+/// *declaration*; a line naming the crate that is not a row is a sentence someone wrote about it.
+/// **This is what the oracle's `Documented` instrument reads a crate's prose against**; the axis
+/// itself no longer consults a heading — it reads the compiler's count — so this rule decides which
+/// document a crate's commentary belongs to, not whether the crate is documented. It reuses this
+/// module's own rule rather than writing a second one, so the two cannot drift.
 fn defined_by_document(docs: &[(String, Vec<String>)], crate_: Crate) -> Option<String> {
     let name = crate_.name();
     docs.iter()
@@ -831,7 +943,7 @@ fn defined_by_document(docs: &[(String, Vec<String>)], crate_: Crate) -> Option<
 /// anchors (C-61): a heading defines the thing it begins with, while a heading that cites a name
 /// in its title is a *reference* to it — and reading those as definitions would have inflated
 /// that record by 82. A crate named once in a 7,000-line ledger is not documented; a crate with a
-/// section of its own is. Without this rule the axis cannot fail, which is the defect
+/// section of its own is. Without this rule a heading reading cannot fail, which is the defect
 /// [`Axis::Claimed`] already exists to avoid.
 fn heading_defines(line: &str, name: &str) -> bool {
     let trimmed = line.trim_start();
@@ -901,6 +1013,46 @@ pub(crate) fn read_sources(
         }
     }
     Some(CrateSources { covered: mine, read, undecodable })
+}
+
+/// **The pin over a crate's covered files: what makes the compiler's count a checkable reading.**
+///
+/// The count in [`MISSING_DOCS_PATH`] is taken by a command a person runs, and a build script cannot
+/// run the compiler from inside itself. Hashing the bytes it was taken over *is* available there —
+/// over the same files the prose measure already read, so it costs one pass of sha256 and no second
+/// walk. [`MissingDocsReading`] carries the declared pin and this one, and the axis renders their
+/// difference as `stale`.
+///
+/// Three decisions are inside, and each is deliberate:
+///
+/// * **The relative path is in the digest, forward-slashed.** A rename or a move moves the pin even
+///   when the bytes are identical (the rule [`provenance::measure`] states for the tree digest), and
+///   keeping the path relative means the pin does not move when the checkout moves — the difference
+///   between a digest of the project and a digest of the directory the project happens to sit in.
+/// * **The fields are sorted by path**, because [`Digest::of_fields`] is order-sensitive and a walk's
+///   order is a property of the filesystem, not of the tree.
+/// * **The universe is every covered file in the crate's directory** — its `src/`, its `tests/`, its
+///   `build.rs`, its `Cargo.toml` — rather than a subset chosen here. A chosen subset would be a
+///   second rule about which bytes the reading is about, and this module already refuses that for the
+///   prose denominator. The cost is honest: an edit anywhere under a crate's directory makes its
+///   count stale, including an edit to a test, which cannot change the count. The reading *was* taken
+///   over a tree that edit changed, and saying so is cheaper than a rule that guesses which edits
+///   matter.
+fn missing_docs_pin(sources: &CrateSources, root: &Path) -> Identity {
+    let mut parts: Vec<Vec<u8>> = Vec::with_capacity(sources.read.len() * 2);
+    let mut read: Vec<&(std::path::PathBuf, String)> = sources.read.iter().collect();
+    read.sort_by(|(left, _), (right, _)| left.cmp(right));
+    for (path, text) in read {
+        let relative = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        parts.push(relative.into_bytes());
+        parts.push(text.as_bytes().to_vec());
+    }
+    let fields: Vec<&[u8]> = parts.iter().map(|part| part.as_slice()).collect();
+    Identity::from_digest(Digest::of_fields(MISSING_DOCS_DOMAIN, &fields))
 }
 
 /// Every Markdown document under `docs/`, as lines, **read once for the whole census** — twelve
@@ -1052,6 +1204,645 @@ pub fn check_table_shape() -> Result<(), RefusalSet> {
     refusals.into_result(())
 }
 
+/// **The workspace's own manifest, read against this table.**
+///
+/// A literal count is a number a reader can see, and `CRATE_COUNT` is one for that reason. But a
+/// literal that **nothing compares against the tree** is a list that falls behind the workspace
+/// silently, and this one did: `voxel-light`, `voxel-audio`, `voxel-mcp` and `voxel-von` were
+/// added to `Cargo.toml` and measured by nothing at all — the census, the conformance verdict and
+/// the patch coverage all iterate [`CRATES`], so four members were absent from every report and
+/// the reports read as complete.
+///
+/// `check_table_shape` cannot close this: it compares one table against another, and both tables
+/// are in this file. The witness has to be the **manifest**, which is the thing that changes when
+/// somebody adds a crate — so this reads it, and refuses by name.
+///
+/// A crate in the manifest and not here is measured by nothing. A crate here and not in the
+/// manifest is a report about a tree this is not. Both are refusals, and the two are named
+/// separately because they are different mistakes with different fixes.
+pub fn check_against_manifest(root: &Path) -> Result<(), RefusalSet> {
+    let mut refusals = RefusalSet::new();
+    let manifest = root.join("Cargo.toml");
+    let text = match std::fs::read_to_string(&manifest) {
+        Ok(text) => text,
+        Err(error) => {
+            refusals.refuse(
+                RefusalKind::NoReading,
+                format!(
+                    "the workspace manifest could not be read ({error}), so the crate table was \
+                     compared against nothing. A table that is right about a manifest nobody read \
+                     is an assertion"
+                ),
+            );
+            return Err(refusals);
+        }
+    };
+    let declared = workspace_members(&text);
+    if declared.is_empty() {
+        refusals.refuse(
+            RefusalKind::NoReading,
+            "the workspace manifest was read and its `members` array came back empty. Nothing was \
+             compared, and an empty comparison passes every table"
+                .to_string(),
+        );
+        return Err(refusals);
+    }
+
+    let measured: Vec<&'static str> = Crate::ALL.iter().map(|crate_| crate_.name()).collect();
+    let unmeasured: Vec<&String> = declared
+        .iter()
+        .filter(|member| !measured.contains(&member.as_str()))
+        .collect();
+    if !unmeasured.is_empty() {
+        refusals.refuse(
+            RefusalKind::UncalibratedOracle,
+            format!(
+                "these workspace members are declared in Cargo.toml and in no census table, so \
+                 nothing measures them: {unmeasured:?}. Add a `Crate` variant, a row with its \
+                 witness, and its place in `CRATES`"
+            ),
+        );
+    }
+
+    let ghost: Vec<&&'static str> = measured
+        .iter()
+        .filter(|name| !declared.iter().any(|member| member == *name))
+        .collect();
+    if !ghost.is_empty() {
+        refusals.refuse(
+            RefusalKind::FabricatedFeature,
+            format!(
+                "these census rows name crates the workspace does not declare: {ghost:?}. A table \
+                 with rows for absent crates reports on a tree that is not this one"
+            ),
+        );
+    }
+
+    refusals.into_result(())
+}
+
+/// **Each crate's declared witness, on disk, with `required` deciding what a missing one costs.**
+///
+/// The row table has carried a `required` flag since it was written, and **nothing read it**:
+/// `row_of` had no caller outside this module, so the flag was prose in a struct field rather than
+/// the build decision its own doc comment claims. A crate whose witness file was moved or deleted
+/// was caught by a *test* in this file and by nothing in the gate — and the file that *is* the
+/// crate, by this table's own definition, is not a thing to notice in a suite and shrug at in a
+/// build.
+///
+/// The division is [`crate::features::check_required`]'s, deliberately reused rather than
+/// reinvented, because a second vocabulary for "this absence is fatal and that one is shown" is
+/// how two gates come to disagree about one tree:
+///
+/// * a **required** crate with no witness refuses the build;
+/// * an **optional** crate with no witness is returned and printed. Shown, never silent — the
+///   failure mode of a table like this is not a wrong verdict, it is a line nobody prints.
+///
+/// An absent row is treated as required: a crate the table does not describe is not a crate the
+/// build may quietly skip, and [`check_table_shape`] refuses that case separately.
+pub fn check_witnesses(root: &Path) -> Result<Vec<String>, RefusalSet> {
+    let mut refusals = RefusalSet::new();
+    let mut shown = Vec::new();
+    for crate_ in Crate::ALL {
+        let witness = crate_.witness_of();
+        if root.join(witness).is_file() {
+            continue;
+        }
+        let required = row_of(crate_).map(|row| row.required).unwrap_or(true);
+        if required {
+            refusals.refuse(
+                RefusalKind::NoReading,
+                format!(
+                    "{} declares `{witness}` as its witness and that file is not there. Its row \
+                     says `required`, so this is a refusal and not a gap: a crate the build cannot \
+                     do without is not a crate to report and move past",
+                    crate_.name()
+                ),
+            );
+        } else {
+            shown.push(format!("{}\t{witness}", crate_.name()));
+        }
+    }
+    refusals.into_result(shown)
+}
+
+/// The `members` array of a workspace manifest, as the paths it lists.
+///
+/// **The tree's own manifest, and not a TOML dependency.** This crate carries no external
+/// dependency and its rule is that a resolve is not a use, so the parse is the narrow one the
+/// question needs: the `members = [ … ]` array, quoted, one path per line.
+///
+/// It returns an empty list rather than guessing when the array is absent, because **"no members
+/// were read" and "the workspace holds no members" are different facts**, and every caller here
+/// refuses on the first.
+pub fn workspace_member_paths(manifest: &str) -> Vec<String> {
+    let Some(start) = manifest.find("members = [") else {
+        return Vec::new();
+    };
+    let rest = &manifest[start + "members = [".len()..];
+    let end = rest.find(']').unwrap_or(rest.len());
+    rest[..end]
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let open = line.find('"')?;
+            let close = line[open + 1..].find('"')?;
+            Some(line[open + 1..open + 1 + close].to_string())
+        })
+        .collect()
+}
+
+/// The same list, as bare crate names.
+///
+/// The last segment of the path, which this workspace's `crates/<name>` layout makes equal to the
+/// package name — and which [`check_against_manifest`] holds against [`Crate::name`], so the
+/// convention is checked rather than assumed.
+pub fn workspace_members(manifest: &str) -> Vec<String> {
+    workspace_member_paths(manifest)
+        .iter()
+        .filter_map(|path| path.rsplit('/').next())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Where a crate's prose budget is declared: one `crate<TAB>percent` line per crate.
+///
+/// **A file of numbers you can argue with**, which is the whole point. The record already ruled that
+/// explanation belongs in `docs/` — that is what [`PROSE_FRAME_PERCENT`] states, and what the
+/// `documented` axis refuses on. But while the sixteen sections were owed, that axis refused
+/// **sixteen of sixteen crates and all sixteen were accepted**: it printed every build and blocked
+/// nothing, and a check that cannot fail stops being read, so the code's own 19–50 % comment
+/// headers became the example every later file matched. That is how "the house rule is heavy docs
+/// in the code" outlived the ruling against it — not by anyone deciding it, but by a rule that
+/// fired into a list that said yes. **The user's ruling of 2026-10-10 moved the home and emptied that
+/// list**: documentation belongs in each crate's own rustdoc, where `cargo doc` and a hover put the
+/// reason for a value next to the value. (The axis itself stopped reading prose on 2026-10-10:
+/// [`Axis::Documented`] now reads the compiler's own `missing_docs` count in
+/// [`MISSING_DOCS_PATH`], because asking whether a `//!` block was present answered *has a claim*,
+/// not *is documented*.) What is left for this ratchet is the share that is **plain comment** and not
+/// rustdoc, measured apart since that same ruling, which makes it the only check on prose that is
+/// not documentation.
+///
+/// So the frame is a **ratchet** instead of a threshold: a crate's declared number is what it
+/// measured on the day the frame was declared, the share **may fall and may not rise**, and it does
+/// not have to reach 10 % today. That changes what an agent is asked to do from *fix 12 000 lines of
+/// existing prose* (which nobody will do, and which the axis stopped asking for the day the ruling
+/// landed) to **do not make it worse** (which is checkable every build, on every edit, with no
+/// retrofit owed).
+///
+/// The inverse of the acceptance list, and deliberately: an accepted refusal says *this is known and
+/// tolerated*. A budget says *this is the most you may have*. Only the second one stops growth.
+pub const PROSE_FRAME_PATH: &str = "conformance/prose-frame.txt";
+
+/// Where the compiler's own documentation reading is declared: one `crate<TAB>missing<TAB>pin` line
+/// per crate, `missing` being how many public items `missing_docs` reports without a doc comment and
+/// `pin` being the digest of the bytes that count was taken over ([`MISSING_DOCS_DOMAIN`]).
+///
+/// **The `documented` axis's source, and it is a measurement.** [`Axis::Documented`] reads the
+/// reading: `0` is `active`, more is `inactive` with the count in the reason, a crate with **no line
+/// is refused** — because a `//!` header is a claim that documentation exists while this is a count
+/// of the documentation that does — and a line whose **pin no longer matches the files on disk is
+/// `stale`**, because the count is a reading of a tree and the tree has moved. The recipe that
+/// produces the file is in the head of `conformance/missing-docs.txt`; the compiler step is not
+/// re-run per build, because the census runs inside `shploingus`'s build script and invoking the
+/// compiler from there would recurse into the build that is running. So unlike [`PROSE_FRAME_PATH`],
+/// which the gate re-measures every build, this reading is taken by a command a person runs and read
+/// back by the gate — and the pin is what keeps that from meaning *the gate repeats whatever number
+/// it was last handed*: the count is only read as this tree's answer while the bytes it was taken
+/// over are still the bytes on disk.
+pub const MISSING_DOCS_PATH: &str = "conformance/missing-docs.txt";
+
+/// The domain tag folded in ahead of a documentation pin's payload.
+///
+/// [`Digest::of_fields`] length-prefixes every field under a tag, and the tag is what keeps a pin of
+/// a crate's sources from being mistakable for a pin of a chain, a package or the working tree —
+/// the same discipline [`provenance::DOMAIN`] records.
+pub const MISSING_DOCS_DOMAIN: &str = "shploingus/missing-docs";
+
+/// One crate's standing against its declared prose budget.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProseStanding {
+    pub crate_: Crate,
+    /// The measured share of the crate's source that is comment, as a whole percent.
+    pub measured: usize,
+    /// The most it may be. Declared in [`PROSE_FRAME_PATH`].
+    pub allowed: usize,
+}
+
+impl ProseStanding {
+    /// How much prose could be added before the budget is reached. **Printed, never silent**: a
+    /// budget with slack in it is a budget that can be lowered, and a reader who cannot see the slack
+    /// does not know there is a decision left to make.
+    pub const fn slack(&self) -> usize {
+        self.allowed.saturating_sub(self.measured)
+    }
+}
+
+/// The ratchet's whole rule, as one function, so a test pins the boundary instead of re-implementing
+/// it — a second copy of a rule is a second rule, which is the failure this module was rewritten for.
+///
+/// `None` means within budget. `Some(why)` is the refusal.
+fn over_budget(crate_: Crate, measured: usize, allowed: usize) -> Option<String> {
+    if measured <= allowed {
+        return None;
+    }
+    Some(format!(
+        "{} is {measured}% comment and its declared budget is {allowed}%. The share may fall and may \
+         not rise: the explanation this crate needs belongs in a document under `docs/`, where a \
+         reader looks for it, and prose in a code artifact is documentation written where nobody \
+         reads it. Move the explanation rather than arguing the number up — a budget raised because \
+         the code grew is not a budget, it is a record of what happened",
+        crate_.name()
+    ))
+}
+
+/// **The ratchet, measured.** Every crate's prose share against its declared budget.
+///
+/// **Fatal on a rise, and silent on the debt that is already there** — the whole design. A door that
+/// demanded 10 % today would refuse every build until a 12 000-line retrofit landed, which is how a
+/// gate teaches everyone to route around it; that is what the acceptance list is doing right now for
+/// this very axis. A door that says *not worse than yesterday* refuses exactly the edits this
+/// project keeps having to apologise for, and asks for nothing else.
+///
+/// Three ways to fail, and they are different facts:
+///
+/// * a crate with **no line** in the frame has no budget, and a crate outside the ratchet is free to
+///   inflate — so the next crate added would be too, silently;
+/// * a crate whose sources **cannot be read** is not within budget: *not measured* is not a pass, and
+///   this vocabulary exists precisely so the two never look alike;
+/// * a crate **over its number**, which is the refusal the rule is for.
+///
+/// The frame values come from this function's own measurement — [`check_prose_frame`] prints every
+/// crate's share, so the numbers in the file are a reading rather than a guess.
+pub fn check_prose_frame(root: &Path) -> Result<Vec<ProseStanding>, RefusalSet> {
+    let mut refusals = RefusalSet::new();
+    let declared = read_prose_frame(root, &mut refusals);
+    if !refusals.is_empty() {
+        return Err(refusals);
+    }
+
+    let covered = provenance::covered_files(root);
+    let mut standings = Vec::with_capacity(CRATE_COUNT);
+    for crate_ in Crate::ALL {
+        let name = crate_.name();
+        let Some(allowed) = declared.get(name).copied() else {
+            refusals.refuse(
+                RefusalKind::UncalibratedOracle,
+                format!(
+                    "{name} has no line in {PROSE_FRAME_PATH}, so it has no prose budget, so nothing \
+                     bounds it. A crate outside the ratchet is a crate free to inflate — and the next \
+                     crate added would be too, silently"
+                ),
+            );
+            continue;
+        };
+        let measured = match read_sources(&covered, crate_, root) {
+            Some(sources) if !sources.read.is_empty() => {
+                let prose = bloat::measure_prose(&sources.read);
+                // **The plain share, not the whole comment share.** Rustdoc is documentation this
+                // project wants next to the values it explains, so a ratchet that counted it would
+                // charge every crate for writing the thing it is owed.
+                match prose.plain_percent() {
+                    Some(percent) => percent,
+                    None => {
+                        refusals.refuse(
+                            RefusalKind::NoReading,
+                            format!(
+                                "{name}'s prose share was not measured: {}. Not measured is not \
+                                 within budget",
+                                prose
+                                    .why_unmeasured
+                                    .clone()
+                                    .unwrap_or_else(|| "no reason recorded".to_string())
+                            ),
+                        );
+                        continue;
+                    }
+                }
+            }
+            _ => {
+                refusals.refuse(
+                    RefusalKind::NoReading,
+                    format!(
+                        "{name} has no readable source, so its prose share is not a measurement. An \
+                         unreadable crate is not a crate within budget"
+                    ),
+                );
+                continue;
+            }
+        };
+        if let Some(why) = over_budget(crate_, measured, allowed) {
+            refusals.refuse(RefusalKind::UncalibratedOracle, why);
+        }
+        standings.push(ProseStanding { crate_, measured, allowed });
+    }
+
+    refusals.into_result(standings)
+}
+
+/// The declared budgets, read from [`PROSE_FRAME_PATH`].
+///
+/// Refuses on a line that is not `crate<TAB>percent`, on a number that does not parse, and on a name
+/// that is not a crate in this workspace — **a budget for a crate that does not exist is a decision
+/// about nothing**, and leaving it in the file makes the frame look fuller than it is.
+fn read_prose_frame(
+    root: &Path,
+    refusals: &mut RefusalSet,
+) -> std::collections::BTreeMap<String, usize> {
+    let mut declared = std::collections::BTreeMap::new();
+    let text = match std::fs::read_to_string(root.join(PROSE_FRAME_PATH)) {
+        Ok(text) => text,
+        Err(error) => {
+            refusals.refuse(
+                RefusalKind::NoReading,
+                format!(
+                    "{PROSE_FRAME_PATH} could not be read ({error}), so **no** crate has a prose \
+                     budget and the ratchet is silent. That is the exact state this file exists to \
+                     end, so an unreadable frame is a refusal and not an empty one"
+                ),
+            );
+            return declared;
+        }
+    };
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let number = index + 1;
+        let Some((name, percent)) = line.split_once('\t') else {
+            refusals.refuse(
+                RefusalKind::FabricatedFeature,
+                format!(
+                    "{PROSE_FRAME_PATH}:{number} is not `crate<TAB>percent`: {line:?}. A frame line \
+                     nobody can parse is a budget nobody is held to"
+                ),
+            );
+            continue;
+        };
+        let name = name.trim();
+        if Crate::parse(name).is_err() {
+            refusals.refuse(
+                RefusalKind::FabricatedFeature,
+                format!(
+                    "{PROSE_FRAME_PATH}:{number} budgets `{name}`, which is not a crate in this \
+                     workspace"
+                ),
+            );
+            continue;
+        }
+        match percent.trim().parse::<usize>() {
+            Ok(percent) => {
+                declared.insert(name.to_string(), percent);
+            }
+            Err(_) => {
+                refusals.refuse(
+                    RefusalKind::FabricatedFeature,
+                    format!(
+                        "{PROSE_FRAME_PATH}:{number} declares {percent:?} as a percentage for \
+                         `{name}`"
+                    ),
+                );
+            }
+        }
+    }
+    declared
+}
+
+/// The declared documentation reading, by crate: the compiler's count **and the pin it was taken
+/// under** (see [`MISSING_DOCS_PATH`]).
+///
+/// **Absence is not silence.** A crate with no line comes back with no entry and [`Axis::Documented`]
+/// refuses it by name; this reader deliberately does not invent a zero for it, because a zero is the
+/// measurement of a crate that *is* documented and the two facts are opposite.
+///
+/// **A malformed line is worse than an absent one**, because it would credit one crate and refuse
+/// another out of a file that is not well formed, so a line that is not `crate<TAB>missing<TAB>pin`,
+/// a count that does not parse, a pin that is not `sha256:<64 lowercase hex>`, a name that is not a
+/// crate in this workspace, and a crate declared twice are each a refusal of the whole census.
+///
+/// **The pin is required, and a missing one is a refusal rather than a default.** A count with no
+/// pin is a number about an unknown tree: there is nothing to compare it against, so the axis would
+/// have no choice but to read it as current — the exact failure this column exists to end. That is
+/// [`provenance`]'s rule applied one level down: a digest that cannot be taken is refused loudly
+/// rather than replaced by a digest of nothing.
+fn read_missing_docs(
+    root: &Path,
+    refusals: &mut RefusalSet,
+) -> std::collections::BTreeMap<String, (usize, Identity)> {
+    let mut missing = std::collections::BTreeMap::new();
+    let Ok(text) = std::fs::read_to_string(root.join(MISSING_DOCS_PATH)) else {
+        return missing;
+    };
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let number = index + 1;
+        let Some((name, rest)) = line.split_once('\t') else {
+            refusals.refuse(
+                RefusalKind::FabricatedFeature,
+                format!(
+                    "{MISSING_DOCS_PATH}:{number} is not `crate<TAB>missing<TAB>pin`: {line:?}. A \
+                     reading nobody can parse is a reading that would credit a crate by accident"
+                ),
+            );
+            continue;
+        };
+        let name = name.trim();
+        if Crate::parse(name).is_err() {
+            refusals.refuse(
+                RefusalKind::FabricatedFeature,
+                format!(
+                    "{MISSING_DOCS_PATH}:{number} reads `{name}`, which is not a crate in this \
+                     workspace"
+                ),
+            );
+            continue;
+        }
+        let Some((count, pin)) = rest.split_once('\t') else {
+            refusals.refuse(
+                RefusalKind::FabricatedFeature,
+                format!(
+                    "{MISSING_DOCS_PATH}:{number} declares a count for `{name}` with no pin. A \
+                     reading with no pin cannot be told apart from one taken over a different tree, \
+                     so it would be read as this build's answer; the pin comes from the same recipe \
+                     that produces the count"
+                ),
+            );
+            continue;
+        };
+        let Ok(count) = count.trim().parse::<usize>() else {
+            refusals.refuse(
+                RefusalKind::FabricatedFeature,
+                format!("{MISSING_DOCS_PATH}:{number} declares {count:?} as a count for `{name}`"),
+            );
+            continue;
+        };
+        let Ok(declared) = Identity::parse(pin.trim()) else {
+            refusals.refuse(
+                RefusalKind::FabricatedFeature,
+                format!(
+                    "{MISSING_DOCS_PATH}:{number} pins `{name}` to {:?}, which is not \
+                     `sha256:<64 lowercase hex>`: a pin nothing can check pins nothing",
+                    pin.trim()
+                ),
+            );
+            continue;
+        };
+        if missing.insert(name.to_string(), (count, declared)).is_some() {
+            refusals.refuse(
+                RefusalKind::FabricatedFeature,
+                format!(
+                    "{MISSING_DOCS_PATH}:{number} reads `{name}` twice, so the file holds two \
+                     answers for one crate"
+                ),
+            );
+        }
+    }
+    missing
+}
+
+/// **The dependency discipline's second rule, measured: is it actually USED?**
+///
+/// Every manifest in this workspace carries the same two-line discipline in a comment — *1. does it
+/// do something we need? 2. is it actually USED? (a resolve is not a use)* — and **nothing checked
+/// the second rule**. It was not checkable by any axis: the six the census has measure what a crate
+/// *is* (named, moduled, tested, refusing, claimed, documented) and none asks who *reads* it, so a
+/// crate no one depends on scored exactly like `voxel-model`.
+///
+/// It found two, and neither was a surprise to the record — both were built *ahead* of the world
+/// that would use them (C-25's early slots) with the debt stated in prose and measured nowhere:
+///
+/// * `voxel-audio` — the rain's synthesis, whose own manifest answers rule 2 with *"yes —
+///   voxel-client plays what this returns"*. **No crate in the workspace depends on it and no code
+///   calls it**, so that sentence is false, and it was false when it was written;
+/// * `voxel-instrument` — the sensor concept, the band controller and the gauge wall (S-03, S-12,
+///   S-13), 1,417 lines whose only other mentions in the tree are comments citing
+///   `voxel_instrument::Sensor` as "the one sensor concept".
+///
+/// The rule, written down so it can be argued with rather than inferred from this function:
+///
+/// * a member **another member depends on** is used. Dev-dependencies count — a library read by
+///   tests is read by something in this tree — and *any* `path = "…"` edge counts, wherever it
+///   appears in a member's manifest;
+/// * a member with a **binary target** is an entry point. `shploingus` opens the window and
+///   `voxel-mcp` is a server; neither needs a consumer to be legitimate, and calling them orphans
+///   would make this list noise that a reader learns to skip;
+/// * every other member is an orphan, and **an orphan is a resolve without a use**.
+///
+/// **Reported, never refused.** An orphan is a fact about this tree and the decision is a reader's:
+/// wire it, delete it, or say on the record why a library nothing calls is deliberate. A door here
+/// would refuse every build until a content crate is scheduled, which is how a gate teaches
+/// everyone to route around it.
+pub fn orphan_libraries(root: &Path) -> Result<Vec<String>, RefusalSet> {
+    let mut refusals = RefusalSet::new();
+    let manifest = root.join("Cargo.toml");
+    let text = match std::fs::read_to_string(&manifest) {
+        Ok(text) => text,
+        Err(error) => {
+            refusals.refuse(
+                RefusalKind::NoReading,
+                format!(
+                    "the workspace manifest could not be read ({error}), so nothing could be asked \
+                     which crate reads which. An empty orphan list would read as a clean tree"
+                ),
+            );
+            return Err(refusals);
+        }
+    };
+    let paths = workspace_member_paths(&text);
+    let names = workspace_members(&text);
+    if names.is_empty() {
+        refusals.refuse(
+            RefusalKind::NoReading,
+            "the workspace manifest names no members, so nothing was compared".to_string(),
+        );
+        return Err(refusals);
+    }
+
+    let mut depended: Vec<String> = Vec::new();
+    let mut unreadable: Vec<String> = Vec::new();
+    for (index, path) in paths.iter().enumerate() {
+        let own = root.join(path).join("Cargo.toml");
+        match std::fs::read_to_string(&own) {
+            Ok(own) => depended.extend(
+                dependent_members(&own)
+                    .into_iter()
+                    .filter(|name| names.contains(name)),
+            ),
+            // **A member whose manifest cannot be read is not an orphan**, it is unmeasured, and
+            // the two are different facts: one says nobody reads this crate, the other says nobody
+            // looked. The second is a refusal and never a line in the list.
+            Err(_) => unreadable.push(names[index].clone()),
+        }
+    }
+    if !unreadable.is_empty() {
+        refusals.refuse(
+            RefusalKind::NoReading,
+            format!(
+                "these members' manifests could not be read, so whether anything depends on them is \
+                 unknown: {unreadable:?}"
+            ),
+        );
+    }
+
+    let mut orphans: Vec<String> = names
+        .iter()
+        .enumerate()
+        .filter(|(_, name)| !depended.contains(name))
+        .filter(|(_, name)| !unreadable.contains(name))
+        .filter(|(index, _)| !has_binary_target(root, &paths[*index]))
+        .map(|(_, name)| name.clone())
+        .collect();
+    orphans.sort();
+
+    refusals.into_result(orphans)
+}
+
+/// Every member this manifest points at with a `path = "…"` edge, as bare names.
+///
+/// **Section-blind on purpose.** A dependency, a dev-dependency and a build-dependency are three
+/// different claims about *when* a crate is read, and the question here is only whether it is read
+/// at all — so splitting them would be a more precise answer to a question nobody asked, and the
+/// one that matters (`is this library dead?`) would still be `no` in all three cases.
+///
+/// **It is also comment-blind, and that is a limitation rather than a design.** A manifest that
+/// quoted `path = "../somewhere"` inside a comment would be read as depending on `somewhere`, which
+/// would hide an orphan rather than invent one. No manifest in this workspace does (checked), and a
+/// comment-blind scan is still the right shape here: the alternative is a TOML dependency for one
+/// line, and a false *negative* on this question is a missing report, not a wrong one.
+fn dependent_members(manifest: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut rest = manifest;
+    while let Some(at) = rest.find("path = \"") {
+        rest = &rest[at + "path = \"".len()..];
+        let Some(end) = rest.find('"') else { break };
+        if let Some(name) = rest[..end].rsplit('/').next() {
+            if !name.is_empty() {
+                found.push(name.to_string());
+            }
+        }
+        rest = &rest[end..];
+    }
+    found
+}
+
+/// Whether this member is an entry point: a `src/main.rs`, or a declared `[[bin]]`.
+///
+/// Both, because a manifest can point a binary target at any file, and a check that only looked at
+/// the conventional path would call `voxel-mcp` an orphan the day someone moved its `main`.
+fn has_binary_target(root: &Path, member_path: &str) -> bool {
+    let directory = root.join(member_path);
+    if directory.join("src/main.rs").is_file() {
+        return true;
+    }
+    std::fs::read_to_string(directory.join("Cargo.toml"))
+        .map(|manifest| manifest.contains("[[bin]]"))
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1065,6 +1856,144 @@ mod tests {
     // ---- the pattern's own guarantees -----------------------------------
 
     #[test]
+    fn a_missing_witness_is_fatal_when_the_row_says_required_and_shown_when_it_does_not() {
+        // **The flag's reader, checked.** `CrateRow::required` was written as a build decision and
+        // consulted by nothing; the only thing that noticed a missing witness was a test in this
+        // file. So this exercises the division itself on a scratch tree rather than trusting the
+        // real tree's sixteen present files to say the wiring works.
+        let scratch = std::env::temp_dir().join(format!("census-witness-{}", std::process::id()));
+        let write = |crates: &[Crate]| {
+            let _ = std::fs::remove_dir_all(&scratch);
+            for crate_ in crates {
+                let path = scratch.join(crate_.witness_of());
+                std::fs::create_dir_all(path.parent().expect("a crate directory"))
+                    .expect("a crate directory");
+                std::fs::write(&path, "// a witness\n").expect("a witness file");
+            }
+        };
+        let is_required = |crate_: Crate| row_of(crate_).expect("every crate has a row").required;
+
+        // The required half complete and the optional half absent: the call returns, and names
+        // **exactly** the optional absences. A shown list that dropped one would be the same
+        // silence as no list at all.
+        let required: Vec<Crate> = Crate::ALL.into_iter().filter(|c| is_required(*c)).collect();
+        write(&required);
+        let shown = check_witnesses(&scratch).expect("no required witness is missing");
+        let optional: Vec<&'static str> = Crate::ALL
+            .into_iter()
+            .filter(|c| !is_required(*c))
+            .map(|c| c.name())
+            .collect();
+        assert_eq!(
+            shown.len(),
+            optional.len(),
+            "every optional absence is shown: {shown:?} against {optional:?}"
+        );
+        for name in &optional {
+            assert!(
+                shown.iter().any(|line| line.starts_with(&format!("{name}\t"))),
+                "{name} is absent and not shown: {shown:?}"
+            );
+        }
+
+        // And which half is which is not a detail: remove one **required** witness and the same
+        // call refuses, naming the crate.
+        let mut with_a_hole = required.clone();
+        with_a_hole.retain(|crate_| *crate_ != Crate::Package);
+        write(&with_a_hole);
+        let found = check_witnesses(&scratch).expect_err("a required witness is missing");
+        let joined = found
+            .all()
+            .iter()
+            .map(|refusal| refusal.detail().to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        assert!(
+            joined.contains("voxel-package"),
+            "the absent required witness is named: {joined}"
+        );
+
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn the_dependency_disciplines_second_rule_is_measured_and_finds_the_crates_nothing_reads() {
+        // **Rule 2 as a measurement.** Every manifest in this workspace answers *"is it actually
+        // USED? (a resolve is not a use)"* in a comment, and nothing checked the answer — not the
+        // six axes, which measure what a crate is and never who reads it. The two this finds are
+        // the finding, so they are named here: pinning them means wiring one up, or deleting it, or
+        // ruling it deliberate are all visible as changes to this line.
+        let orphans = orphan_libraries(&real_root()).expect("the manifests are readable");
+        println!("\norphan libraries: {orphans:?}\n");
+        assert_eq!(
+            orphans,
+            vec!["voxel-audio".to_string(), "voxel-instrument".to_string()],
+            "the set of libraries nothing in the workspace depends on changed. If a crate was \
+             wired up or removed, update this list with the reason; if one appeared, it is a \
+             library no code reads"
+        );
+    }
+
+    #[test]
+    fn an_orphan_is_a_library_an_entry_point_is_not_and_an_unreadable_manifest_is_neither() {
+        // The three distinctions the rule rests on, on a scratch workspace — because the real tree
+        // can only show the case it happens to be in, and a rule checked only against its current
+        // answer is a rule that stops being checked the moment it is wrong.
+        let scratch = std::env::temp_dir().join(format!("census-orphans-{}", std::process::id()));
+        let write = |relative: &str, text: &str| {
+            let path = scratch.join(relative);
+            std::fs::create_dir_all(path.parent().expect("a directory")).expect("a directory");
+            std::fs::write(&path, text).expect("a file");
+        };
+        let clean = || {
+            let _ = std::fs::remove_dir_all(&scratch);
+        };
+
+        // `used` is read by `reader`; `dead` is read by nothing; `tool` is an entry point whose
+        // manifest does not exist to be read, which is *not* the same as being an orphan.
+        clean();
+        write(
+            "Cargo.toml",
+            "[workspace]\nmembers = [\n    \"crates/reader\",\n    \"crates/used\",\n    \"crates/dead\",\n    \"crates/tool\",\n]\n",
+        );
+        write("crates/reader/Cargo.toml", "[dependencies]\nused = { path = \"../used\" }\n");
+        write("crates/used/Cargo.toml", "[package]\nname = \"used\"\n");
+        write("crates/dead/Cargo.toml", "[package]\nname = \"dead\"\n");
+        write("crates/tool/Cargo.toml", "[package]\nname = \"tool\"\n");
+        write("crates/tool/src/main.rs", "fn main() {}\n");
+        // `reader` is itself read by nobody and is not an entry point, so it is an orphan too —
+        // the rule is about the graph, not about importance.
+        let found = orphan_libraries(&scratch).expect("the scratch manifests are readable");
+        assert_eq!(found, vec!["dead".to_string(), "reader".to_string()], "{found:?}");
+
+        // A member manifest that cannot be read is unmeasured, which is a refusal — never a name
+        // in the list, because "nothing reads this" and "nobody looked" are different facts.
+        std::fs::remove_file(scratch.join("crates/used/Cargo.toml")).expect("removing a manifest");
+        let found = orphan_libraries(&scratch).expect_err("an unreadable member manifest refuses");
+        let joined = found
+            .all()
+            .iter()
+            .map(|refusal| refusal.detail().to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        assert!(
+            joined.contains("used"),
+            "the member whose manifest could not be read is named: {joined}"
+        );
+
+        // And a workspace manifest that cannot be read is a refusal rather than an empty list,
+        // because an empty orphan list is exactly what a clean tree looks like.
+        let found = orphan_libraries(&scratch.join("no-such-tree"))
+            .expect_err("an unreadable workspace is refused");
+        assert!(found
+            .all()
+            .iter()
+            .any(|refusal| refusal.detail().contains("which crate reads which")));
+
+        clean();
+    }
+
+    #[test]
     fn every_crate_has_a_row_and_a_witness() {
         let _ = CRATES_ARE_TOTAL;
         check_table_shape().expect("the crate table is well formed");
@@ -1075,12 +2004,369 @@ mod tests {
     }
 
     #[test]
+    fn the_prose_frame_prints_every_crates_share_so_the_numbers_are_a_reading() {
+        // **Where the budgets come from.** The frame in `conformance/prose-frame.txt` is a set of
+        // declared numbers, and a declared number nobody measured is a guess wearing a ruling's
+        // clothes. So this prints the measurement every run: run it with `--nocapture` and the file
+        // is authored from the output. C-45's rule — a number that only exists when something breaks
+        // is a number nobody checks.
+        let root = real_root();
+        let covered = crate::provenance::covered_files(&root);
+        println!("--- crate\tplain%(the frame)\trustdoc%\tall-comment% ---");
+        for crate_ in Crate::ALL {
+            let measured = read_sources(&covered, crate_, &root)
+                .filter(|sources| !sources.read.is_empty())
+                .map(|sources| bloat::measure_prose(&sources.read));
+            match measured {
+                Some(prose) => println!(
+                    "{}\t{}\t{}\t{}",
+                    crate_.name(),
+                    prose.plain_percent()
+                        .map_or("not-measured".to_string(), |share| share.to_string()),
+                    prose.doc_percent()
+                        .map_or("not-measured".to_string(), |share| share.to_string()),
+                    prose.comment_percent()
+                        .map_or("not-measured".to_string(), |share| share.to_string()),
+                ),
+                None => println!("{}\tnot-measured", crate_.name()),
+            }
+        }
+    }
+
+    #[test]
+    fn the_missing_docs_pins_print_so_the_reading_can_be_re_pinned() {
+        // **Where the third column of `conformance/missing-docs.txt` comes from.** The compiler's count
+        // cannot be taken from here — that is the recipe in that file's header, and it invokes rustc —
+        // but the pin can, because it is a hash of the bytes on disk and needs no compiler at all. Run
+        // this with `--nocapture` and the file is authored from the output: the count from the compiler
+        // run, the pin from here, both taken after the last edit to the crate. A pin nobody can
+        // reproduce by hand is a claim wearing a digest.
+        let root = real_root();
+        let covered = crate::provenance::covered_files(&root);
+        println!("--- crate\tsha256: (the pin for conformance/missing-docs.txt) ---");
+        for crate_ in Crate::ALL {
+            match read_sources(&covered, crate_, &root) {
+                Some(sources) => {
+                    println!("{}\t{}", crate_.name(), missing_docs_pin(&sources, &root))
+                }
+                None => println!("{}\tnot-measured", crate_.name()),
+            }
+        }
+    }
+
+    #[test]
+    fn a_documentation_pin_moves_when_the_bytes_move_and_not_when_the_checkout_does() {
+        // **The two properties the pin exists for, on a scratch tree.** Determinism: one tree hashes
+        // the same way twice. Sensitivity: a changed byte changes the digest, so an edit under the
+        // crate cannot leave a reading looking current. And the path inside it is **relative**, so the
+        // pin is a property of the project rather than of the directory the project happens to sit in
+        // — the same rule `provenance::measure` records for the tree digest.
+        let scratch = std::env::temp_dir().join(format!("census-pin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(scratch.join("crates/voxel-noise/src")).expect("a crate directory");
+        std::fs::write(scratch.join("crates/voxel-noise/src/lib.rs"), "pub fn a() {}\n")
+            .expect("a source file");
+
+        let pin = |root: &Path| {
+            let covered = crate::provenance::covered_files(root);
+            let sources = read_sources(&covered, Crate::Noise, root).expect("covered files");
+            missing_docs_pin(&sources, root)
+        };
+        let first = pin(&scratch);
+        assert_eq!(first, pin(&scratch), "two reads of one tree must agree");
+
+        std::fs::write(scratch.join("crates/voxel-noise/src/lib.rs"), "pub fn ab() {}\n")
+            .expect("an edit");
+        assert_ne!(
+            first,
+            pin(&scratch),
+            "an edit under the crate must move the pin, or a stale reading reads as current"
+        );
+
+        // A tree that *moves* keeps its pins: the same bytes at another path hash the same, because
+        // the path folded in is relative to the root.
+        let elsewhere = std::env::temp_dir().join(format!("census-pin-moved-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&elsewhere);
+        std::fs::create_dir_all(elsewhere.join("crates/voxel-noise/src")).expect("a crate directory");
+        std::fs::copy(
+            scratch.join("crates/voxel-noise/src/lib.rs"),
+            elsewhere.join("crates/voxel-noise/src/lib.rs"),
+        )
+        .expect("the same bytes elsewhere");
+        assert_eq!(
+            pin(&scratch),
+            pin(&elsewhere),
+            "the pin is a property of the project, not of the directory it sits in"
+        );
+
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&elsewhere);
+    }
+
+    #[test]
+    fn a_reading_line_is_refused_for_every_way_it_can_be_wrong() {
+        // **The reader's whole contract, one case per way it can lie.** A malformed line is worse than
+        // an absent one — it credits one crate while the file is not well formed — and a line with no
+        // pin at all is the specific lie this column exists to prevent: a count that would be read as
+        // this build's answer because there is nothing to compare it against.
+        let scratch = std::env::temp_dir().join(format!("census-missing-docs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(scratch.join("conformance")).expect("a scratch conformance dir");
+        let pin = Identity::of(b"a pin a test can type").to_string();
+        let verdict = |text: &str| -> (std::collections::BTreeMap<String, (usize, Identity)>, String) {
+            std::fs::write(scratch.join(MISSING_DOCS_PATH), text).expect("the reading file");
+            let mut refusals = RefusalSet::new();
+            let read = read_missing_docs(&scratch, &mut refusals);
+            let joined = refusals
+                .all()
+                .iter()
+                .map(|refusal| refusal.detail().to_string())
+                .collect::<Vec<_>>()
+                .join("; ");
+            (read, joined)
+        };
+
+        // A well-formed line reads, pin and all, and comments and blanks are ignored.
+        let (read, refused) =
+            verdict(&format!("# a note\n\nvoxel-noise\t15\t{pin}\n"));
+        assert!(refused.is_empty(), "a well-formed reading refuses nothing: {refused}");
+        assert_eq!(read.get("voxel-noise"), Some(&(15, Identity::parse(&pin).unwrap())));
+
+        let (read, refused) = verdict("voxel-noise\t15\n");
+        assert!(read.is_empty(), "a line with no pin is not a reading: {read:?}");
+        assert!(refused.contains("with no pin"), "{refused}");
+
+        let (_, refused) = verdict("voxel-noise\t15\tabc\n");
+        assert!(refused.contains("pins `voxel-noise` to"), "{refused}");
+
+        // A pin in the wrong case is a different string, and the identity parser refuses it — the
+        // rule the tree states once and applies everywhere (`Identity::parse`).
+        let (_, refused) = verdict(&format!("voxel-noise\t15\t{}\n", pin.to_uppercase()));
+        assert!(refused.contains("pins `voxel-noise` to"), "{refused}");
+
+        let (_, refused) = verdict(&format!("voxel-noise\t15\t{pin}\textra\n"));
+        assert!(refused.contains("pins `voxel-noise` to"), "{refused}");
+
+        let (_, refused) = verdict(&format!("voxel-noise\tfifteen\t{pin}\n"));
+        assert!(refused.contains("as a count"), "{refused}");
+
+        let (_, refused) = verdict(&format!("voxel-fabricated\t15\t{pin}\n"));
+        assert!(refused.contains("not a crate in this workspace"), "{refused}");
+
+        let (_, refused) = verdict(&format!("voxel-noise\t15\t{pin}\nvoxel-noise\t3\t{pin}\n"));
+        assert!(refused.contains("twice"), "{refused}");
+
+        let (_, refused) = verdict(&format!("voxel-noise 15 {pin}\n"));
+        assert!(refused.contains("is not `crate<TAB>missing<TAB>pin`"), "{refused}");
+
+        // **An absent file refuses nothing here, deliberately**: [`Axis::Documented`] refuses each
+        // crate by name for having no line, which is a refusal a reader can act on, where one "the file
+        // is missing" would hide which crates are unmeasured behind which one is.
+        std::fs::remove_file(scratch.join(MISSING_DOCS_PATH)).expect("removing the reading");
+        let mut refusals = RefusalSet::new();
+        let read = read_missing_docs(&scratch, &mut refusals);
+        assert!(read.is_empty() && refusals.is_empty(), "absence is not silence here");
+
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn the_real_tree_is_within_every_declared_prose_budget() {
+        // **The ratchet's state on the real tree, as a test and not only as a build-script
+        // behaviour** — for the reason [`crate::conformance`]'s real-tree test exists: building
+        // `shploingus` needs the GPU stack, so a crate that went over its declared number would
+        // refuse a build that nobody running this crate's tests ever starts, and the only place the
+        // refusal would be visible is on somebody else's machine. The declaration to change is
+        // [`PROSE_FRAME_PATH`]; the refusal names the crate and both numbers.
+        //
+        // It also pins the count: sixteen members, sixteen standings. A crate outside the ratchet is
+        // a crate free to inflate, which is the state `check_prose_frame` refuses rather than passes.
+        let standings = check_prose_frame(&real_root())
+            .unwrap_or_else(|found| panic!("a crate is over its declared budget: {}", RefusalSet::to_string(&found)));
+        assert_eq!(standings.len(), CRATE_COUNT, "a crate with no budget is a crate with no ceiling");
+    }
+
+    #[test]
+    fn the_prose_ratchet_refuses_a_rise_and_allows_a_fall() {
+        // The boundary, pinned on the rule's own function rather than a copy of it. A budget is
+        // allowed to be met exactly, may be under-run, and may not be exceeded — and the last one is
+        // the only refusal, which is what makes this affordable to keep switched on.
+        assert!(over_budget(Crate::Client, 10, 10).is_none(), "meeting the budget exactly is within it");
+        assert!(over_budget(Crate::Client, 4, 10).is_none(), "under the budget is within it");
+        let refused = over_budget(Crate::Client, 11, 10).expect("one percent over is over");
+        assert!(
+            refused.contains("11%") && refused.contains("10%") && refused.contains("voxel-client"),
+            "the refusal carries both numbers and the crate, or nobody can act on it: {refused}"
+        );
+        assert!(
+            refused.contains("may fall and may not rise"),
+            "and it states the rule, because the reader's first instinct will be to raise the \
+             number: {refused}"
+        );
+    }
+
+    #[test]
+    fn a_frame_line_that_is_not_a_budget_is_refused_by_name() {
+        // Three ways a frame line can be wrong, each with its own refusal: a line that is not
+        // `crate<TAB>percent`, a budget for a crate that does not exist (a decision about nothing),
+        // and a missing file (which would make the ratchet silent, the state this file ends).
+        let scratch = std::env::temp_dir().join(format!("census-prose-frame-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(scratch.join("conformance")).expect("a scratch conformance dir");
+        let write = |text: &str| {
+            std::fs::write(scratch.join(PROSE_FRAME_PATH), text).expect("the frame file");
+        };
+        let verdict = |text: &str| -> String {
+            write(text);
+            let mut refusals = RefusalSet::new();
+            let declared = read_prose_frame(&scratch, &mut refusals);
+            let _ = declared;
+            refusals
+                .all()
+                .iter()
+                .map(|refusal| refusal.detail().to_string())
+                .collect::<Vec<_>>()
+                .join("; ")
+        };
+
+        let joined = verdict("voxel-client no-percent-sign\n");
+        assert!(joined.contains("is not `crate<TAB>percent`"), "{joined}");
+
+        let joined = verdict("voxel-fabricated\t10\n");
+        assert!(
+            joined.contains("not a crate in this workspace"),
+            "a budget for a crate that does not exist: {joined}"
+        );
+
+        let joined = verdict("voxel-client\tten\n");
+        assert!(joined.contains("as a percentage"), "{joined}");
+
+        // A well-formed line parses, comments and blanks are ignored, and the file's absence is its
+        // own refusal rather than an empty frame.
+        let mut refusals = RefusalSet::new();
+        write("# a note\n\nvoxel-client\t26\n");
+        let declared = read_prose_frame(&scratch, &mut refusals);
+        assert!(refusals.is_empty(), "a well-formed frame refuses nothing");
+        assert_eq!(declared.get("voxel-client"), Some(&26));
+
+        let _ = std::fs::remove_file(scratch.join(PROSE_FRAME_PATH));
+        let mut refusals = RefusalSet::new();
+        let declared = read_prose_frame(&scratch, &mut refusals);
+        assert!(declared.is_empty());
+        assert!(
+            refusals
+                .all()
+                .iter()
+                .any(|refusal| refusal.detail().contains("the ratchet is silent")),
+            "an absent frame refuses rather than accepting nothing quietly"
+        );
+
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn every_workspace_member_is_in_the_table() {
+        // **The blind spot, closed by reading the manifest instead of trusting a literal.**
+        // `voxel-light`, `voxel-audio`, `voxel-mcp` and `voxel-von` were in `Cargo.toml` and in
+        // no census table, so every report that iterates `CRATES` — the census, the conformance
+        // verdict, the patch coverage — measured twelve of sixteen members and printed a complete
+        // looking table. Nothing compared the count against the tree, and that is the whole
+        // failure: a table is only a census if something checks its edges.
+        //
+        // So: the manifest is the witness, `check_against_manifest` is the comparison, and this
+        // test runs it on the real tree. The gate runs the same function, which is the point — a
+        // check that only exists in the suite is a check the build does not make.
+        let root = real_root();
+        match check_against_manifest(&root) {
+            Ok(()) => {}
+            Err(found) => panic!(
+                "the crate table disagrees with the workspace manifest: {}",
+                found
+                    .all()
+                    .iter()
+                    .map(|refusal| refusal.detail().to_string())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
+        }
+
+        let manifest = std::fs::read_to_string(root.join("Cargo.toml")).expect("the manifest");
+        let declared = workspace_members(&manifest);
+        assert_eq!(
+            declared.len(),
+            CRATE_COUNT,
+            "the manifest declares {} members and this table is {CRATE_COUNT} rows; one of the \
+             two moved",
+            declared.len()
+        );
+    }
+
+    #[test]
+    fn the_manifest_check_can_fail_and_names_what_it_found() {
+        // **A check that cannot fail is not a check.** This tree learned that the expensive way:
+        // the claim axis once searched whole documents for crate names and reported twelve of
+        // twelve claimed, including the binary at the spec's own title line. So the refusal is
+        // exercised here on a manifest that really is short of a row, and on one that really does
+        // name a crate the workspace does not hold.
+        //
+        // The manifests are written into a temporary directory **with a real `Cargo.toml` in
+        // it**, because the refusal this asserts is about reading a manifest, and a check fed a
+        // string is not the check the build runs.
+        let scratch = std::env::temp_dir().join(format!("census-manifest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).expect("a scratch directory");
+
+        // One member the table does not know, and the table's own members left out on purpose:
+        // both refusals at once, so neither can hide behind the other.
+        std::fs::write(
+            scratch.join("Cargo.toml"),
+            "[workspace]\nmembers = [\n    \"crates/voxel-model\",\n    \"crates/voxel-fabricated\",\n]\n",
+        )
+        .expect("a manifest");
+        let found = check_against_manifest(&scratch).expect_err("a short table must be refused");
+        let all: Vec<String> = found
+            .all()
+            .iter()
+            .map(|refusal| refusal.detail().to_string())
+            .collect();
+        let joined = all.join("; ");
+        assert!(
+            joined.contains("voxel-fabricated"),
+            "the unmeasured member is named: {joined}"
+        );
+        assert!(
+            joined.contains("voxel-shapers") && joined.contains("does not declare"),
+            "and the rows that name crates the workspace does not hold are named too: {joined}"
+        );
+
+        // A manifest that cannot be read at all is a third fact, not a pass.
+        let found = check_against_manifest(&scratch.join("no-such-tree"))
+            .expect_err("an unreadable manifest is refused");
+        assert!(
+            found
+                .all()
+                .iter()
+                .any(|refusal| refusal.detail().contains("compared against nothing")),
+            "an unreadable manifest refuses rather than passing quietly"
+        );
+
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
     fn a_crate_name_round_trips_and_an_unknown_one_is_refused() {
         for crate_ in Crate::ALL {
             assert_eq!(Crate::parse(crate_.name()), Ok(crate_));
         }
         let error = Crate::parse("voxel-envelope").expect_err("that crate does not exist yet");
-        assert!(error.contains("12"), "the refusal should say how many there are: {error}");
+        // **Pinned against the count rather than a typed number.** This read "contains 12" until
+        // the workspace grew to sixteen and the message moved with it; a test that has to be
+        // edited because a number it does not own changed is a test that will one day be edited
+        // to the wrong number.
+        assert!(
+            error.contains(&CRATE_COUNT.to_string()),
+            "the refusal should say how many crates there are: {error}"
+        );
     }
 
     #[test]

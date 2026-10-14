@@ -30,3 +30,22 @@
 # volume normally. A Dev Drive exempts its own volume from real-time scanning, which is the
 # other half of what makes a build directory fast on Windows. That is a volume-level change,
 # not a config one, and it was not made.
+#
+# **Correction, 2026-10-10.** The paragraph above says a cache hit on the same volume "costs zero
+# extra bytes and no copy at all", and kache's own advice line says otherwise: on this volume it
+# reports *"cache hits are restored by COPY — the cache and build tree do not share storage
+# blocks, roughly doubling disk for cached content"*, and names `[cache] windows_hardlink = true`
+# as the switch that would dedup them. That switch is **not** set, on purpose: kache warns it is
+# only safe *"if your build never deletes or rewrites an object output"*, and `voxel_package::space`
+# is a guard that deletes object outputs by design. So the store costs its own bytes, the tree
+# costs its own, and the size guard is what keeps the second one from filling the volume.
+
+[alias]
+# The build-tree size guard, asked on its own: the same pass the gate runs, on the crate whose
+# dependencies are headless — which is what makes it usable when the GPU stack cannot build
+# because the volume is full. `cargo space --floor 12GiB` restates the headroom it holds.
+# The corpus survey, asked on its own: what the other trees across these drives hold, measured
+# before a byte of them is imported. Deliberately outside the gate — `F:` answered one naive walk
+# in 400 seconds, and the gate runs on every build. `cargo ingest --max-files 500` bounds it.
+space = "run -p voxel-package --example space-guard --"
+ingest = "run -p voxel-package --example ingest --"

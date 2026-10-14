@@ -1,0 +1,7 @@
+37ebc2a30fc6755423713076c435486f78e09531c013910a394642d371f03e10 *clean-room/src/automaton.rs
+f5351ae691e8abd98448d45637003483be2b0fd02eacc2be281557ace2785f73 *clean-room/src/being.rs
+b5288b40df83d1950548768bb0fab0077880c5f4c53b678032f4834784171d9d *clean-room/src/evidence.rs
+5c4fbdd9d5c6c49dd5e96dcff0b996f993f24974ab7e8bee7eaad7e535ba118d *clean-room/tests/u12_stepping.rs
+3dfeb8dbac767c11a499122e8638c436aa8999e0df54b19cd8958fb55328f9de *clean-room/README.md
+0581ce2ecdc95725485a0dea5c473006da77fcd0bf20aa0cf4f3920e0f1e792e *clean-room/specs/006-world-saves-and-seeds/quickstart.md
+e47bf48bb1c89fd25194c3b435ab545cab34516d6c63f86f8336a3d7a3d30d4d *docs/CLEAN-ROOM-PLAN-2026-10-11.md

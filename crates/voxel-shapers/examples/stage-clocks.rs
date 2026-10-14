@@ -23,9 +23,9 @@
 //! to a shaper whose per-call cost nobody measured is how a tick budget dies — so cost is
 //! part of the measurement, not an optimisation to be discovered later.
 //!
-//! The final sections re-take C-117's composite (`column::material_at`, the exact call
-//! `WorldSource` makes) and prove the change channel: one recorded `Modification` changes
-//! what the world composes.
+//! The final sections re-take C-117's composite (`chunk_fields::material_at_composed`, the
+//! substance of the call `WorldSource` makes) and prove the change channel: one recorded
+//! `Modification` changes what the world composes.
 //!
 //! Run: `cargo run --offline -p voxel-shapers --example stage-clocks`
 
@@ -37,8 +37,8 @@ use voxel_shapers::geology::Lithology;
 use voxel_shapers::spec::{Config, WorldSpec};
 use voxel_shapers::stages::{Cadence, Stage, ALL};
 use voxel_shapers::{
-    atmosphere, caves, climate, column, delta, ecology, erosion, geology, hydrology, substrate,
-    tectonics, terrain, transition, weather,
+    atmosphere, caves, chunk_fields, climate, delta, ecology, erosion, geology, hydrology,
+    materials, substrate, tectonics, terrain, transition, weather,
 };
 
 fn clock_name(c: Cadence) -> &'static str {
@@ -117,8 +117,8 @@ fn main() {
     println!("seed 2468, probes {probes:?}; the later clock is tick 24 000 (one world day)");
     println!();
     println!(
-        "{:<15} {:<11} {:>6}  {:<30} {:<66} {}",
-        "stage", "cadence", "period", "sampler", "measurement (clock 0 -> clock 24 000)", "channel"
+        "{:<15} {:<11} {:>6}  {:<30} {:<66} channel",
+        "stage", "cadence", "period", "sampler", "measurement (clock 0 -> clock 24 000)"
     );
     println!("{}", "-".repeat(170));
 
@@ -161,7 +161,7 @@ fn main() {
                 )
             }
             Stage::Terrain => {
-                let (m, a, b) = two_specs(&probes, &spec, &later, |s, x, z| terrain::elevation_m(s, x, z));
+                let (m, a, b) = two_specs(&probes, &spec, &later, terrain::elevation_m);
                 (
                     "elevation_m(spec; x, z)",
                     format!("{:.3} m -> {:.3} m (delta {:+.3} m); moves {m}/{}", a, b, b - a, probes.len()),
@@ -197,7 +197,7 @@ fn main() {
                     let c = climate::sample(s, x, z, t);
                     (c.temperature_c, c.season_phase)
                 });
-                let (mm, ma, mb) = two_specs(&probes, &spec, &later, |s, x, z| climate::moisture(s, x, z));
+                let (mm, ma, mb) = two_specs(&probes, &spec, &later, climate::moisture);
                 (
                     "sample(spec; x, z, tick)",
                     format!(
@@ -216,8 +216,8 @@ fn main() {
                 )
             }
             Stage::Weather => {
-                let (m, a, b) = two_ticks(&probes, &spec, 0, 24_000, |s, x, z, t| weather::precipitation_mm(s, x, z, t));
-                let (wm, wa, wb) = two_specs(&probes, &spec, &later, |s, x, z| weather::wind_bearing_rad(s, x, z));
+                let (m, a, b) = two_ticks(&probes, &spec, 0, 24_000, weather::precipitation_mm);
+                let (wm, wa, wb) = two_specs(&probes, &spec, &later, weather::wind_bearing_rad);
                 (
                     "precipitation_mm / wind_bearing_rad",
                     format!(
@@ -230,7 +230,7 @@ fn main() {
             Stage::Caves => {
                 let (m, a, b) = two_specs(&probes, &spec, &later, |s, x, z| {
                     let surface = terrain::elevation_m(s, x, z);
-                    caves::void_at(s, Lithology::Sedimentary, x, surface - 20.0, z, surface, &column::cave_params(s))
+                    caves::void_at(s, Lithology::Sedimentary, x, surface - 20.0, z, surface, &caves::CaveParams::for_spec(s))
                 });
                 (
                     "void_at(spec; ., x, y, z, surf, params)",
@@ -307,7 +307,10 @@ fn main() {
     // ------------------------------------------------------------------
     println!();
     println!("cost of one entry-point call, measured (us/call; chunk figures are that cost times the calls a chunk needs)");
-    println!("{:<15} {:<10} {:<12} {}", "stage", "calls", "us/call", "one 32x32x32 chunk, where the arithmetic is meaningful");
+    println!(
+        "{:<15} {:<10} {:<12} one 32x32x32 chunk, where the arithmetic is meaningful",
+        "stage", "calls", "us/call"
+    );
     println!("{}", "-".repeat(120));
 
     let row = |stage: Stage, calls: u32, us: f64, note: String| {
@@ -344,7 +347,7 @@ fn main() {
 
     let us = us_per_call(5_000, || {
         let surface = terrain::elevation_m(&spec, 16.5, 16.5);
-        caves::void_at(&spec, Lithology::Sedimentary, 16.5, surface - 20.0, 16.5, surface, &column::cave_params(&spec))
+        caves::void_at(&spec, Lithology::Sedimentary, 16.5, surface - 20.0, 16.5, surface, &caves::CaveParams::for_spec(&spec))
     });
     row(Stage::Caves, 5_000, us, format!("x32768 voxels = {:.1} ms/chunk, if a whole chunk were asked", us * 32768.0 / 1000.0));
 
@@ -365,8 +368,15 @@ fn main() {
     let us = us_per_call(50_000, || transition::blend_scalar(&[(0.4, 2.0), (0.6, 4.0)]));
     row(Stage::Transition, 50_000, us, "four samples blended".to_string());
 
-    let us = us_per_call(2_000, || column::material_at(&spec, &Earthworks::new(), 16, 20, 16));
-    row(Stage::Earthworks, 2_000, us, "column::material_at, the composed voxel the streamer reads".to_string());
+    let us = us_per_call(2_000, || {
+        chunk_fields::material_at_composed(&spec, &Earthworks::new(), 16, 20, 16)
+    });
+    row(
+        Stage::Earthworks,
+        2_000,
+        us,
+        "chunk_fields::material_at_composed, the composed voxel the streamer reads".to_string(),
+    );
 
     // ------------------------------------------------------------------
     // The change channel, proven: one recorded Modification changes the world.
@@ -375,8 +385,8 @@ fn main() {
     println!("the change channel, measured: one earthworks entry changes what the world composes");
     let (x, y, z) = (3, 20, 4);
     let empty = Earthworks::new();
-    let from = column::material_at(&spec, &empty, x, y, z).unwrap();
-    let to = if from.is_empty() { column::materials::IGNEOUS } else { column::materials::AIR };
+    let from = chunk_fields::material_at_composed(&spec, &empty, x, y, z).unwrap();
+    let to = if from.is_empty() { materials::IGNEOUS } else { materials::AIR };
     let change = hand_change(HandChange {
         x,
         y,
@@ -392,7 +402,7 @@ fn main() {
             let mut record = Earthworks::new();
             match record.record(m) {
                 Ok(()) => {
-                    let after = column::material_at(&spec, &record, x, y, z).unwrap();
+                    let after = chunk_fields::material_at_composed(&spec, &record, x, y, z).unwrap();
                     println!("  ({x}, {y}, {z})  {from:?} -> {after:?}  (asked for {to:?})  with 1 recorded entry");
                 }
                 Err(set) => println!("  refused by the record: {set:?}"),
@@ -414,8 +424,8 @@ fn main() {
             let z = gz;
             let surface = terrain::elevation_m(&spec, x as f64 + 0.5, z as f64 + 0.5).floor() as i32;
             for y in (surface - 2)..=(surface + 2) {
-                let a = column::material_at(&spec, &empty, x, y, z).unwrap();
-                let b = column::material_at(&later, &empty, x, y, z).unwrap();
+                let a = chunk_fields::material_at_composed(&spec, &empty, x, y, z).unwrap();
+                let b = chunk_fields::material_at_composed(&later, &empty, x, y, z).unwrap();
                 compared += 1;
                 if a != b {
                     differing += 1;

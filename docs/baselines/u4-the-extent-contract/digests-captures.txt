@@ -1,0 +1,9 @@
+ecd10f08820784aefd9a90fcf3ef5d7ec33ebea44c87a4ef836aa9ff7083b72c *pre-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *pre-stderr.txt
+6c77b9adad8b6d2f63f250fa870eebde2d95f31a149705e0def58e6b88b68938 *final-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *final-stderr.txt
+e433654fd0f681720355aa270017851dff52f6f26a66a761fca8d2ab2d029c78 *run-guards.sh
+c69fd5cb7a43a57d7a6f719f952c2d04c419da984e6cd0682183ce4e814a0452 *proof.txt
+# The harness's own digest above moved once after its recorded run: the amendment audit's disclosure was
+# written into its header comment, a comment-only edit, so its behaviour, its proof and the sources it restores
+# are unchanged. `proof.txt` is that run's own output.

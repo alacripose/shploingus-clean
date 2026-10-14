@@ -33,14 +33,22 @@
 //! buried in a multiply. It is a **project extension** and is counted by a test.
 
 use voxel_appearance::npr::{Light, LightRig};
+use voxel_light::{
+    aerosol_optical_depth, air_mass, cloud_extinction_per_m, droplet_extinction_per_m,
+    night_sky_radiance_w_m2_sr, path_in_layer, rayleigh_optical_depth, rgb_weights,
+    sun_visible_fraction, twilight_fraction, Air, BandTable, MoonPath, SunPath, BAND_COUNT,
+    DROPLET_ASYMMETRY_G, DROPLET_SINGLE_SCATTER_ALBEDO, GRAZING_AIR_MASS, MIE_ASYMMETRY_G,
+    MOON_SOLID_ANGLE_SR,
+};
 use voxel_appearance::openpbr::LinearRgb;
+use voxel_mesh::octree::SparseVoxelOctree;
 use voxel_shapers::atmosphere::AirSample;
+use voxel_stream::light::{transmittance_tree, Matter, SKY_STENCIL};
 use voxel_appearance::sky::{Sky, SkyInputs};
 use voxel_noise::Vec3;
 use voxel_shapers::WorldSpec;
 
-/// The share of the sky's horizon radiance a surface takes as ambient, per unit
-/// of the dome's own average.
+/// The share of the sky's own reading a surface takes as ambient, per unit of that reading.
 ///
 /// **A declared rendering choice, not a physical constant.** The sky model
 /// computes radiance arriving *from a direction*; a surface integrates it over its
@@ -48,6 +56,22 @@ use voxel_shapers::WorldSpec;
 /// about the stylisation — the same kind of decision as the NPR terms themselves.
 /// The number is here, named, and counted as a project extension rather than
 /// appearing as a bare `0.5` inside a multiply.
+///
+/// # Two readings, one share, and the gap between them that is owed
+///
+/// The **field** reads the dome over [`voxel_stream::light::SKY_STENCIL`] — the zenith and four rays
+/// `45°` above the horizon — walked through the world's own octree, so a cell under a roof receives
+/// the sky a roof leaves it ([`WorldLight::bands_across`]). The **rig** reads the horizon and the
+/// zenith at half each, with nothing in the way ([`daylight_of`]), and that is the reading the
+/// shipped day's brightness was measured against.
+///
+/// They are not interchangeable yet, and the number is large: the days' whole ambient lives in the
+/// **horizon band**, because this model's sky is single-scattering ([`daylight_of`]'s own note
+/// carries the figures — `0.591` against a zenith of `3.9e-5` at the crossing). The stencil's mean
+/// therefore reads **five thousand times** smaller, so a frame that took it as the ambient's only
+/// source measured `mean 0.171` against `0.378`. **The stencil is the field's sampler and this
+/// constant is the share both readings take**; making the field the ambient's *only* source is owed
+/// on the sky away from the horizon, not on this number.
 pub const AMBIENT_FROM_HORIZON: f64 = 0.5;
 
 /// The tick's lighting, as the rig the shader reads.
@@ -84,6 +108,12 @@ pub struct Daylight {
     /// How many lights the rig carries: one for the sun, two when the moon is also up,
     /// zero at a new moon with the sun down.
     pub lights: usize,
+    /// **The frame's own exposure grade**: `1.0` where the world's own peak sun is what is
+    /// arriving, larger as the light falls, so a moonlit night is exposed for the Moon it has and
+    /// not for a noon it does not. The law is [`daylight_of`]'s, and it is continuous in the
+    /// tick — both terms are smooth functions of the clock — which is what keeps a sunset from
+    /// stepping.
+    pub grade: f64,
     /// The sky this rig was built from, **carried rather than re-derived**.
     ///
     /// The background the player sees behind the terrain is this same object, sampled
@@ -100,11 +130,42 @@ pub struct Daylight {
 /// **One function, because there are two consumers.** The light rig's first light and the
 /// drawn disc both ask where the sun is, and a second copy of this formula is a second place
 /// for the sky to be wrong in — in a different quarter, which nothing else would notice.
+///
+/// **And it is a conversion, not the formula.** The convention moved down to
+/// [`voxel_shapers::sky::direction_of`], beside the two functions that produce an altitude and an
+/// azimuth, when the streamer's object lane became a third consumer: that lane streams the Sun and
+/// the Moon as world bodies and cannot reach into this crate, so leaving the trigonometry here
+/// would have made the streamed body and the drawn one two statements of one convention.
 pub fn sun_direction(altitude_deg: f64, azimuth_deg: f64) -> Vec3 {
-    let (alt, az) = (altitude_deg.to_radians(), azimuth_deg.to_radians());
-    let (sin_alt, cos_alt) = alt.sin_cos();
-    let (sin_az, cos_az) = az.sin_cos();
-    Vec3::new(sin_az * cos_alt, sin_alt, -cos_az * cos_alt)
+    let [x, y, z] = voxel_shapers::sky::direction_of(altitude_deg, azimuth_deg);
+    Vec3::new(x, y, z)
+}
+
+/// **The frame's own exposure grade.**
+///
+/// The Sun is the reference while it is up — `peak`, this world's brightest sun, so a noon is exactly
+/// the noon every number in this file was measured against — and the Moon becomes the reference once
+/// the Sun is down, because the Moon's own light is about `1.3e-6` of the Sun's (the real ratio, and
+/// not a fault) and a fixed exposure draws that night black.
+///
+/// **The crossing is the model's own twilight curve** — `twilight_fraction`'s `exp(-decay·altitude)`
+/// below the horizon, as the exponent that carries one grade into the other, `1` while the Sun is up.
+/// So the mapping is continuous in the Sun's altitude: no step at the horizon and none under it.
+/// `max(1.0)` keeps every frame the Sun lights exactly as bright as it was, which is the half of this
+/// that matters to a day nobody asked to change.
+///
+/// **A step in a frame is therefore not here.** Both bodies' own light is gated to zero at its own
+/// horizon — the Sun's beam at `0°` and the Moon's illuminance at its own — and no exposure can hold a
+/// frame smooth across a light that steps. That is the next piece of this work, and
+/// `the_exposure_grade_is_continuous_in_the_twilight` prints the steps it is fighting.
+pub fn exposure_grade(peak: f64, sun_altitude_deg: f64, moon_illuminance: f64) -> f64 {
+    let moon_grade = if peak > 0.0 && moon_illuminance > 0.0 {
+        peak / moon_illuminance
+    } else {
+        1.0
+    };
+    let twilight = voxel_light::twilight_fraction(sun_altitude_deg);
+    moon_grade.powf(1.0 - twilight).max(1.0)
 }
 
 /// The whole of a tick's daylight, or `None` when the atmosphere is refused.
@@ -116,17 +177,7 @@ pub fn daylight_of(
     inputs: SkyInputs,
     new_moon_tick: u64,
 ) -> Option<Daylight> {
-    // **The sky is derived here rather than handed in.** The signature used to be
-    // `(spec, tick, sky, sun_altitude_deg)` — three free parameters for a function whose
-    // own module doc says it "is a function of `(tick, atmosphere)` and has no free
-    // parameters" — and the fourth merely restated `sky.sun_altitude_deg`, so a caller
-    // could hand in a direction built from one atmosphere and a light built from
-    // another. **Two sources of truth for one atmosphere was the defect the signature
-    // had**, and it is precisely what made the normaliser below dishonest: the
-    // denominator could not see the turbidity the numerator was measured through.
-    //
-    // `None` rather than an unlit rig. A refused atmosphere is a question this model
-    // cannot answer, and a black frame would be an answer nobody asked for.
+    // The sky is derived here rather than handed in — docs/lighting-sky-and-moon.md
     let sky = Sky::at(spec, tick, inputs, new_moon_tick)?;
     let sun_altitude_deg = sky.sun_altitude_deg;
 
@@ -134,64 +185,80 @@ pub fn daylight_of(
     // the drawn disc also calls — two consumers, one formula.
     let toward_sun = sun_direction(sun_altitude_deg, sky_azimuth_deg(spec, tick));
 
-    // **Intensity is normalised by this world's own peak sun, measured through the
-    // same atmosphere it is dividing**, so the rig carries a ratio rather than a number
-    // in W/m². The shader multiplies a half-Lambert term by this, and a material's
-    // albedo, and an 8-bit swapchain has no use for 1200 W/m².
-    //
-    // **What was wrong here, and why it read as a small number rather than a wrong
-    // one.** The divisor used to be `noon_irradiance_w_m2(spec)` — the *geometric*
-    // direct irradiance at the year's highest noon, which never sees the air path or
-    // the turbidity — while the dividend was `sky.sun.luminance()`, which is always the
-    // sun **after** `exp(−β_R·H·m) · exp(−β_M·T·H·m)`. Both are W/m², so the units
-    // matched and nothing looked wrong; the two sides were simply two different
-    // measurements, and the missing air column was 9.93% of every intensity this rig
-    // has ever produced. That is the sense in which the normaliser normalised nothing:
-    // it was normalising this world's sun by a sun that had not been through this
-    // world's air.
+    // intensity is normalised by this world's own peak sun — docs/lighting-sky-and-moon.md
     let peak = peak_sun_luminance(spec, inputs);
-    let intensity = if peak > 0.0 { sky.sun.luminance() / peak } else { 0.0 };
+    // **The Moon, read once, from the one orbit the rest of this file reads.** It is needed twice:
+    // for its own light, and for the fraction of the Sun's own disc it is standing in front of.
+    let moon = voxel_shapers::sky::moon_position(spec, tick, new_moon_tick);
+    // **The Sun's beam carries its own visibility**, so a Moon crossing the disc takes the direct
+    // light as well as the scattered light. One function decides that, for both, so the shadow and
+    // the dimming cannot disagree about an eclipse.
+    let sun_visible = voxel_light::sun_visible_fraction(
+        &voxel_light::SunPath {
+            altitude_deg: sky.sun_altitude_deg,
+            azimuth_deg: sky.sun_azimuth_deg,
+        },
+        &voxel_light::MoonPath {
+            altitude_deg: moon.altitude_deg,
+            azimuth_deg: moon.azimuth_deg,
+            illuminated_fraction: moon.phase_fraction,
+        },
+    );
+    // **The Sun's own output is not this ground's view of it.** `voxel_appearance::sky` keeps the
+    // Sun shining below the horizon now (the Moon is lit by it), so the rig takes the **twilight
+    // share** of it: exactly `1.0` while the Sun is up, decaying through civil, nautical and
+    // astronomical twilight under it, where the code this replaces cut the last `4e-3` of the day's
+    // beam to nothing at `0.000°` in one update. Whether the rig *carries* a sun at all is still
+    // `sun_is_up`, which is the same rule `WorldLight` switches the field's beam body on — one rule,
+    // one place, so the rig and the field cannot disagree about which body is lighting the world.
+    let visibility = twilight_fraction(sun_altitude_deg);
+    let intensity = if peak > 0.0 && voxel_shapers::sky::SkyPhase::sun_is_up(sun_altitude_deg) {
+        sky.sun.luminance() / peak * sun_visible * visibility
+    } else {
+        0.0
+    };
 
     let mut lights = Vec::with_capacity(2);
     if intensity > 0.0 {
-        // **The colour is a chromaticity, not a radiance — and that is the whole of the
-        // 103×.**
-        //
-        // `Light` is `colour` × `intensity`: `npr.rs` multiplies them and `shading.wgsl`
-        // computes `base * (light.colour.rgb * lambert)` where `lambert` already carries
-        // `light.direction.w` — the intensity. So one of the two carries the magnitude
-        // and the other carries only the shape. [`LightRig::standard`] settles which is
-        // which: colour `(0.85, 0.90, 1.0)`, intensity `1.0` — a chromaticity whose
-        // strongest channel is exactly 1, and a magnitude beside it.
-        //
-        // **The sky's sun was handing this shader `sky.sun` itself**, which is the
-        // transmitted radiance in W/m² and measured about **1090**. So the light was a
-        // 1090-magnitude radiance multiplied by a 0.78 ratio, and the world rendered
-        // `mean 0.87457` with a brightest pixel of `78.3`. The fix is not a smaller
-        // number; it is putting each factor in the place the rig already put it.
+        // the colour is a chromaticity, not a radiance — docs/lighting-sky-and-moon.md
         lights.push(Light {
             direction: toward_sun,
             colour: chromaticity(sky.sun),
             intensity,
         });
     }
-    // **The moon is a night light, and only a night light.** It is added when the
-    // Sun is **down**, which is the whole of `MAT-0012`'s claim: a night lit by a
-    // second source rather than by the sun multiplied by a small number.
-    //
-    // The Moon is also above the horizon at noon — that is a fact about the sky,
-    // not about this rig — and a first version added it then too, so noon carried
-    // two lights. That is wrong for a reason worth stating: the Moon's light at
-    // noon is ~1e-5 of the Sun's, so the second light costs a shader loop
-    // iteration to contribute nothing visible, and worse, it is a *lie about the
-    // physics of a shadow*: a shadow cast at noon would be lit on one side by the
-    // Sun and, invisibly, by the Moon. The rule is therefore the Sun's own state,
-    // not the Moon's.
-    if sky.moon.luminance() > 0.0 && peak > 0.0 && !voxel_shapers::sky::SkyPhase::sun_is_up(sun_altitude_deg) {
+    // **The Moon's own light, read once for the whole frame.** Two consumers need it now — the rig's
+    // night light below, and the exposure grade, which has to know the Moon's light *before* the Sun
+    // sets for the grade to cross a sunset without a step — so a second call here would be a second
+    // Moon. All twelve bands are zero for a Moon below the horizon, which is the solver's own reading
+    // of "there is no light to add".
+    let moon_bands = if peak > 0.0 {
+        let air = crate::sun::air_at(spec, 0.0, 0.0, tick);
+        let path = voxel_light::MoonPath {
+            altitude_deg: moon.altitude_deg,
+            azimuth_deg: moon.azimuth_deg,
+            illuminated_fraction: moon.phase_fraction,
+        };
+        voxel_light::moonlight(&voxel_light::BandTable::computed(), &air, &path).ok()
+    } else {
+        None
+    };
+    let moon_illuminance = moon_bands
+        .map(|bands| bands.iter().sum::<f64>())
+        .filter(|total| total.is_finite() && *total > 0.0)
+        .unwrap_or(0.0);
+
+    // The moon is a night light, and only a night light — docs/lighting-sky-and-moon.md
+    if moon_illuminance > 0.0 && !voxel_shapers::sky::SkyPhase::sun_is_up(sun_altitude_deg) {
+        let shape = voxel_light::visible_rgb(&moon_bands.expect("the bands the sum came from"));
         lights.push(Light {
-            direction: toward_sun,
-            colour: chromaticity(sky.moon),
-            intensity: sky.moon.luminance() / peak,
+            direction: sun_direction(moon.altitude_deg, moon.azimuth_deg),
+            colour: chromaticity(LinearRgb {
+                r: shape[0],
+                g: shape[1],
+                b: shape[2],
+            }),
+            intensity: moon_illuminance / peak,
         });
     }
 
@@ -200,25 +267,43 @@ pub fn daylight_of(
     // the horizon the dome radiance is zero — the named absence on
     // `Sky::dome_radiance` — so a night's ambient is black rather than a dimmed
     // day, and the moon's light is the only thing in it.
+    //
+    // **And it is the same sample the field measures, with nothing in the way.** [`AMBIENT_FROM_HORIZON`]
+    // carries the convention; this loop is that convention's other source, so the rig's ambient for
+    // an unoccluded cell is the field's own answer for that cell rather than a differently weighted
+    // reading of a different pair of rays.
+    //
+    // **The two rays this is read from, and why it is still two rays.** This was measured rather
+    // than assumed, and the measurement is why the field cannot yet be its only source: at the
+    // crossing the model puts the **horizon band**'s red at `0.591` against a **zenith** of
+    // `3.9e-5`, and at a `13.9°` sun at `0.298` against `1.4e-5` — so *the whole of this term lives
+    // in the horizon band*, because a single-scattering sky away from the horizon is nearly dark.
+    // The field's own stencil ([`AMBIENT_FROM_HORIZON`]) therefore reads `2.1e-5` at the crossing
+    // against this law's `0.131`, and a frame that took the stencil's mean instead of this reading
+    // measured **`mean 0.171` against `0.378`, `max 0.538` against `0.717`** over the shipped world
+    // (`renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe`).
+    //
+    // So the term stays on the rays that carry it, and the debt is named rather than paid out of
+    // the day's brightness: **the sky away from the horizon** — multiple scattering, or a declared
+    // floor with a source — is what has to exist before the field's own occluded measurement can
+    // replace this, and until it does, a measured corner's sky is the field's (nearly dark) and the
+    // rig's ambient is added beside it rather than instead of it (`fs_main`).
     let ambient = if peak > 0.0 {
-        // **Divided by the same peak the sun's intensity is divided by**, because a rig
-        // carrying a ratio in one field and a raw radiance in the other is one rig in two
-        // units. The user saw it on screen: the world rendered **103× too bright** —
-        // `mean 0.87457` against the fixture's `0.00847`, brightest pixel `78.3` — and it
-        // lost colours, 6 against the fixture's 8, because an ambient four and a half
-        // times brighter than full scale swamps the material differences the shading
-        // exists to show.
-        //
-        // **So the ambient is now a ratio too**, and it moves the way the sun's does:
-        // brighter near sunrise (where the path is long and the dome genuinely scatters
-        // more) and dimmer at noon. It measured `17.97` at the client's start tick
-        // against `4.62` at noon, which is the physics; the divisor is what makes those
-        // two numbers commensurable with an intensity of `0.52` and `0.78`.
-        let dome = (sky.horizon * AMBIENT_FROM_HORIZON) + (sky.zenith * AMBIENT_FROM_HORIZON);
-        dome / peak
+        // Divided by the same peak the sun's intensity is divided by — docs/lighting-sky-and-moon.md
+        let air = crate::sun::air_at(spec, 0.0, 0.0, tick);
+        let model = SkyModel::of(&sky, &air, peak, &moon);
+        let azimuth = sky_azimuth_deg(spec, tick);
+        let horizon = sky_ambient_at(&model, 0.0, azimuth);
+        let zenith = sky_ambient_at(&model, 90.0, azimuth);
+        (horizon + zenith) * AMBIENT_FROM_HORIZON
     } else {
         LinearRgb::BLACK
     };
+
+    // **The frame's own grade**, from the world's peak sun, the Sun's own altitude and the Moon's own
+    // light — the three things that decide it and nothing else, so the mapping can be swept on its own
+    // ([`exposure_grade`]) and a step in a frame attributed to the light rather than to this.
+    let grade = exposure_grade(peak, sun_altitude_deg, moon_illuminance);
 
     // **Counted before the rig takes them**, so the readout's `lights` is the rig's own
     // length rather than a second opinion about how many lights there ought to be.
@@ -228,9 +313,333 @@ pub fn daylight_of(
         sun_altitude_deg,
         sun_intensity: intensity,
         lights: count,
+        grade,
         // **The same object the rig was built from**, moved rather than recomputed.
         sky,
     })
+}
+
+/// The three bands an eye receives, by index in the solver's band table: 400–500, 500–600 and
+/// 600–700 nm — **blue, green, red**, which is the order `shading.wgsl` reverses when it builds
+/// `vec3(r, g, b)` out of `light_direct`'s own triple.
+pub const VISIBLE_BANDS: [usize; 3] = [3, 4, 5];
+
+/// **The world's own light, cell by cell, marched through the world's own octree.**
+///
+/// `Scene::build_with_light` attaches a measurement to a corner and `shading.wgsl` reads it as
+/// `light_present`; this is that measurement. What it is *not* is a second light model: every
+/// number in it comes from the same solver the rig's lights come from and the same walk the
+/// world's own picking rays use.
+///
+/// # One law, two bodies
+///
+/// The beam is **the Sun's own light while the Sun is up, and the Sun's own light reflected by the
+/// Moon while it is not** — `direct_beam` and `moonlight`, the same two calls the rig's first light
+/// is built from, so doubling the Sun doubles this beam and an independent emitter could not. The
+/// direction is the same body's: toward the Sun by day, toward the Moon by night, which is what
+/// makes the field's radiance and the shader's wrap angle agree about where the light comes from.
+/// `the_fields_beam_is_the_rigs_own_first_light` holds the two against each other.
+///
+/// # The walk, and why it is this one
+///
+/// Every band is multiplied by the transmittance **marched through the world's own octree**
+/// ([`transmittance_tree`]), which is the same law the per-voxel walk measures and the hierarchy's
+/// own answer to where the matter is: a cell under a roof is dark, a cell in the open is lit, and a
+/// solid block costs one charge rather than one per voxel. The dome is walked the same way, ray by
+/// ray over [`SKY_STENCIL`], so a cave mouth receives less of the sky than a ridge — the sky's own
+/// share of a cell is measured rather than assumed.
+///
+/// **A beam that nothing stands in front of is the same light the rig gives that cell**, because
+/// both are the solver's own bands over the same normaliser; a beam that meets matter is the one
+/// the rig cannot give, because the rig has no idea where the cell is.
+///
+/// # The frame, and the units
+///
+/// [`WorldLight::bands`] takes the cell **in the tree's own coordinates**, for the reason
+/// [`transmittance_tree`] states: a chunk's tree is a shape, not a place.
+///
+/// Everything is **the peak-relative radiance the rig is in**, per band: the same division by
+/// [`peak_sun_luminance`] the rig's intensities and the sky table carry, so a frame lit by this
+/// field and a frame lit by the rig are commensurable. **The dome enters as
+/// [`AMBIENT_FROM_HORIZON`]'s own share of the stencil's mean** — the convention that constant
+/// declares, and the same one [`daylight_of`] reads the rig's ambient with — so the field's sky and
+/// the rig's are one law at two sources rather than two quantities wearing one name.
+pub struct WorldLight {
+    /// The direction toward the body the beam comes from: the Sun, or the Moon.
+    toward_beam: [f64; 3],
+    /// The beam's own bands at the top of the sky, before the world takes any of it, in the
+    /// solver's band order.
+    beam: [f64; voxel_light::BAND_COUNT],
+    /// The dome's radiance in each of the stencil's own directions, likewise before the world
+    /// takes any of it.
+    sky: [([f64; 3], [f64; voxel_light::BAND_COUNT]); SKY_STENCIL.len()],
+    /// The world's own normaliser, so the bands leave in the rig's own units.
+    peak: f64,
+    /// **Whether the beam is the Moon's** — the Sun's light, reflected. Named rather than inferred
+    /// by a caller comparing directions.
+    beam_is_moon: bool,
+}
+
+impl WorldLight {
+    /// The tick's field, or `None` when the atmosphere is refused — **the same refusal from the
+    /// same call** the rig makes.
+    pub fn of(spec: &WorldSpec, tick: u64, inputs: SkyInputs, new_moon_tick: u64) -> Option<Self> {
+        let daylight = daylight_of(spec, tick, inputs, new_moon_tick)?;
+        let peak = peak_sun_luminance(spec, inputs);
+        if !(peak > 0.0) || !peak.is_finite() {
+            return None;
+        }
+        let table = voxel_light::BandTable::computed();
+        let air = crate::sun::air_at(spec, 0.0, 0.0, tick);
+        let sun = voxel_light::SunPath {
+            altitude_deg: daylight.sun_altitude_deg,
+            azimuth_deg: daylight.sky.sun_azimuth_deg,
+        };
+        // **One `if`, and both arms are the solver's.** By day the beam is the Sun's disc; by night
+        // it is that same disc's light reflected off the Moon's declared bands, which is why the
+        // night's light moves when the Sun's spectrum moves and an emitter of its own could not.
+        // **The Moon, read once, because both arms and the sky need it.** Its path is what the
+        // beam is measured at when the Sun is down, and what the sky's own lunar term is scattered
+        // from at every hour — and it is the same reading `sky.wgsl` places the drawn disc from.
+        let moon = voxel_shapers::sky::moon_position(spec, tick, new_moon_tick);
+        let moon_body = voxel_light::MoonPath {
+            altitude_deg: moon.altitude_deg,
+            azimuth_deg: moon.azimuth_deg,
+            illuminated_fraction: moon.phase_fraction,
+        };
+        let (toward_beam, beam, beam_is_moon) = if voxel_shapers::sky::SkyPhase::sun_is_up(
+            daylight.sun_altitude_deg,
+        ) {
+            // **The Sun's own beam carries its own visibility**, so a Moon across the disc dims
+            // the light on the ground at the same instant it dims the sky.
+            let bands = voxel_light::direct_beam(&table, &air, &sun, Some(&moon_body)).ok()?;
+            let d = sun_direction(daylight.sun_altitude_deg, daylight.sky.sun_azimuth_deg);
+            ([d.x, d.y, d.z], bands, false)
+        } else {
+            // **The night's beam comes from where the Moon actually is**, and a Moon that has set
+            // delivers nothing: `moonlight` is zero below the horizon, so a night with no Moon up
+            // is a beam of zero and a field of sky alone rather than a moon glued to the zenith.
+            let bands = voxel_light::moonlight(&table, &air, &moon_body).ok()?;
+            let d = sun_direction(moon.altitude_deg, moon.azimuth_deg);
+            ([d.x, d.y, d.z], bands, true)
+        };
+        // The dome: the solver's own radiance, in each of the stencil's own directions. The
+        // direction-to-angles conversion is [`sky_direction_of`]'s, so a ray of the dome is named
+        // the way every other ray in this module is named.
+        let mut sky = [([0.0f64; 3], [0.0f64; voxel_light::BAND_COUNT]); SKY_STENCIL.len()];
+        for (slot, direction) in sky.iter_mut().zip(SKY_STENCIL) {
+            let (elevation_deg, azimuth_deg) =
+                sky_direction_of(Vec3::new(direction[0], direction[1], direction[2]));
+            *slot = (
+                direction,
+                voxel_light::sky_radiance(
+                    &table,
+                    &air,
+                    &sun,
+                    Some(&moon_body),
+                    elevation_deg,
+                    azimuth_deg,
+                )
+                .ok()?,
+            );
+        }
+        Some(WorldLight { toward_beam, beam, sky, peak, beam_is_moon })
+    }
+
+    /// **The six numbers a corner reads**: the beam's three bands and the dome's three, in band
+    /// order — the busiest of the measurement and the one the shader's own reversal expects.
+    ///
+    /// `matter` and `tree` are the world's, and so is `from_tree_m`: one tree is one chunk's
+    /// cube, so a caller holding a world point subtracts the chunk's origin.
+    pub fn bands(
+        &self,
+        matter: &impl Matter,
+        tree: &SparseVoxelOctree,
+        from_tree_m: [f64; 3],
+        reach_m: f64,
+    ) -> [f32; 6] {
+        let direct = transmittance_tree(matter, tree, from_tree_m, self.toward_beam, reach_m);
+        // The dome, one stencil ray at a time, each weighted by what reached the cell along its
+        // own path. **The mean is the stencil's** — five rays rather than an integral — because
+        // that is the same estimator [`Sampler::sky`] uses for the rig, and a second, more
+        // elaborate one here would make the two disagree about the sky they measure.
+        let mut diffuse = [0.0f64; 3];
+        for (direction, radiance) in &self.sky {
+            let through = transmittance_tree(matter, tree, from_tree_m, *direction, reach_m);
+            for (slot, band) in VISIBLE_BANDS.iter().enumerate() {
+                diffuse[slot] += radiance[*band] * through;
+            }
+        }
+        self.assemble(direct, diffuse)
+    }
+
+    /// **The six numbers a corner reads, with the march going across chunks.**
+    ///
+    /// [`WorldLight::bands`] charges **one** tree and stops at its own box — the honest answer for
+    /// a measurement of one chunk, and the wrong one for a *frame*: a ridge forty metres away
+    /// shadows this cell and lives in another chunk's tree, so a single-tree field would light a
+    /// valley floor at sunset as if the ridge were not there. This walks the ray **chunk by
+    /// chunk**, each resident tree answering for its own 32 m, out to `reach_m`.
+    ///
+    /// # `None` is "no measurement", and it is not "clear"
+    ///
+    /// A cell whose own chunk has no resident tree — a chunk being rebuilt, or one outside the
+    /// window — has **no field**, so the caller falls back to the rig rather than inheriting a
+    /// statement nobody measured. A chunk *further along* the ray that is absent charges nothing
+    /// (there is no tree to charge), and the count of those hops comes back beside the bands as
+    /// [`WorldLight::bands_across`]'s second value: a measurement that quietly assumed clear air
+    /// for a chunk the streamer does not hold would be exactly the plausible lie this project
+    /// keeps refusing.
+    ///
+    /// The first chunk's cell is excluded from its own beam ([`transmittance_tree`]'s rule), and
+    /// every hop after it charges **including** the voxel it starts in
+    /// ([`transmittance_tree_charging_the_start`]), because that voxel is matter the beam has just
+    /// entered — the rule a wall standing on a chunk boundary would otherwise leak through.
+    pub fn bands_across(
+        &self,
+        trees: &dyn crate::field::ChunkTrees,
+        from_world_m: [f64; 3],
+        reach_m: f64,
+    ) -> Option<([f32; 6], usize)> {
+        let (direct, absent) = self.march(trees, from_world_m, self.toward_beam, reach_m)?;
+        let mut diffuse = [0.0f64; 3];
+        let mut unresolved = absent;
+        for (direction, radiance) in &self.sky {
+            let (through, absent) = self.march(trees, from_world_m, *direction, reach_m)?;
+            unresolved += absent;
+            for (slot, band) in VISIBLE_BANDS.iter().enumerate() {
+                diffuse[slot] += radiance[*band] * through;
+            }
+        }
+        Some((self.assemble(direct, diffuse), unresolved))
+    }
+
+    /// **The band arithmetic, once**: a beam share and the dome's own sum in, the six numbers a
+    /// corner reads out.
+    ///
+    /// Extracted so [`WorldLight::bands`] and [`WorldLight::bands_across`] cannot disagree about
+    /// the normaliser or the `π` — they are the same law read at two reachs, and a second copy of
+    /// this would be a second exposure.
+    fn assemble(&self, beam_share: f64, diffuse: [f64; 3]) -> [f32; 6] {
+        let mut out = [0.0f32; 6];
+        for (slot, band) in VISIBLE_BANDS.iter().enumerate() {
+            out[slot] = (self.beam[*band] * beam_share / self.peak) as f32;
+        }
+        // A hemisphere's cosine-weighted integral of a uniform radiance: `π · L`.
+        //
+        // **Left as it was, and the comparison it is owed is in [`AMBIENT_FROM_HORIZON`]'s doc.**
+        // Rescaling this to the rig's two-ray convention was tried and reverted: the field's sky is
+        // already thousands of times darker than the rig's ambient because the model's sky away from
+        // the horizon is single-scattering, so a factor this module chooses here cannot reconcile
+        // them — the term has to be fixed where it is wrong, and until then this is the field's own
+        // reading of its own stencil.
+        let per_ray = core::f64::consts::PI / self.sky.len() as f64;
+        for (slot, value) in diffuse.iter().enumerate() {
+            out[3 + slot] = (value * per_ray / self.peak) as f32;
+        }
+        out
+    }
+
+    /// The transmittance along one direction, **hopping the world's chunks**: `Some((through,
+    /// hops whose chunk was absent))`, or `None` when the cell's own chunk is not resident.
+    fn march(
+        &self,
+        trees: &dyn crate::field::ChunkTrees,
+        from_world_m: [f64; 3],
+        direction: [f64; 3],
+        reach_m: f64,
+    ) -> Option<(f64, usize)> {
+        let length = (direction[0] * direction[0]
+            + direction[1] * direction[1]
+            + direction[2] * direction[2])
+            .sqrt();
+        if !length.is_finite() || length <= 0.0 || !reach_m.is_finite() || reach_m <= 0.0 {
+            return None;
+        }
+        let unit = [direction[0] / length, direction[1] / length, direction[2] / length];
+        // How far past a chunk's own face a hop steps before the next one is named — docs/lighting-sky-and-moon.md
+        const BOUNDARY_EPS_M: f64 = 1.0e-6;
+        let side = voxel_model::CHUNK_SIDE as f64;
+        let mut hops = (reach_m / side).ceil() as usize + 2;
+        let mut through = 1.0f64;
+        let mut absent = 0usize;
+        let mut from = from_world_m;
+        let mut left = reach_m;
+        let mut first = true;
+        while left > 1.0e-9 && hops > 0 {
+            hops -= 1;
+            let pos = crate::field::chunk_of(from);
+            let Some(tree) = trees.tree_at(pos) else {
+                if first {
+                    return None;
+                }
+                absent += 1;
+                break;
+            };
+            let origin = pos.origin();
+            let origin_m = [origin.x as f64, origin.y as f64, origin.z as f64];
+            let from_tree = [from[0] - origin_m[0], from[1] - origin_m[1], from[2] - origin_m[2]];
+            // Where this chunk's own box ends along the ray: the hop. `slab` is the hierarchy's
+            // own box test, so the hop and the spans inside it are the same geometry.
+            let ray = voxel_mesh::raycast::Ray::new(from_tree, unit);
+            let Some((_, far, _)) = voxel_mesh::raycast::slab(
+                &ray,
+                [0, 0, 0],
+                voxel_mesh::OCTREE_LEVELS,
+                left,
+            ) else {
+                break;
+            };
+            let here = far.clamp(0.0, left);
+            if here <= 0.0 {
+                break;
+            }
+            let matter = voxel_stream::light::ChunkMatter::new(tree, [origin.x, origin.y, origin.z]);
+            let hop = if first {
+                transmittance_tree(&matter, tree, from_tree, unit, here)
+            } else {
+                voxel_stream::light::transmittance_tree_charging_the_start(
+                    &matter, tree, from_tree, unit, here,
+                )
+            };
+            through *= hop;
+            if through <= 0.0 {
+                return Some((0.0, absent));
+            }
+            // The step **through** the face rather than onto it: see `BOUNDARY_EPS_M`. The
+            // remainder is clamped at zero so a hop that ends the reach cannot make it negative.
+            let step = (here + BOUNDARY_EPS_M).min(left);
+            from = [
+                from[0] + unit[0] * step,
+                from[1] + unit[1] * step,
+                from[2] + unit[2] * step,
+            ];
+            left -= step;
+            first = false;
+        }
+        Some((through, absent))
+    }
+
+    /// The direction toward the body the beam comes from — the Sun, or the Moon.
+    pub fn toward_beam(&self) -> [f64; 3] {
+        self.toward_beam
+    }
+
+    /// Whether the beam is the Moon's: the Sun's own light, reflected.
+    pub fn beam_is_moon(&self) -> bool {
+        self.beam_is_moon
+    }
+
+    /// The beam's own bands at the top of the sky, in the solver's order — the measurement before
+    /// the world takes any of it, for a caller comparing it against the rig's own light.
+    pub fn beam_bands(&self) -> [f64; voxel_light::BAND_COUNT] {
+        self.beam
+    }
+
+    /// The world's own normaliser, as [`peak_sun_luminance`] measured it for this sky.
+    pub fn peak(&self) -> f64 {
+        self.peak
+    }
 }
 
 /// Preetham's clear-air turbidity, `T = 2`. **Preetham, Shirley & Smits (1999) §3** —
@@ -407,14 +816,52 @@ pub const EXPOSURE: f64 = 4.0;
 /// term and not the other; this is the scale applied to both or to neither, and the test
 /// below checks the ratio between them survives.
 pub fn exposed(rig: &LightRig) -> LightRig {
+    exposed_at(rig, 1.0)
+}
+
+/// The rig as it is uploaded **at a frame's own exposure grade** — [`exposed`] when the grade is
+/// `1.0`, which is the day [`EXPOSURE`] was measured against.
+///
+/// **Both terms take the same scale, grade and all**, for the reason [`exposed`]'s own doc gives: a
+/// scale on one term and not the other is the 103× bug, and a grade that lifted the Moon's light
+/// without lifting the sky it stands in would be that bug with a longer name.
+pub fn exposed_at(rig: &LightRig, grade: f64) -> LightRig {
+    let scale = EXPOSURE * grade;
     LightRig {
         lights: rig
             .lights
             .iter()
-            .map(|l| Light { direction: l.direction, colour: l.colour, intensity: l.intensity * EXPOSURE })
+            .map(|l| Light { direction: l.direction, colour: l.colour, intensity: l.intensity * scale })
             .collect(),
-        ambient: exposed_colour(rig.ambient),
+        ambient: rig.ambient * scale,
     }
+}
+
+/// **The field's six bands on their way to the shader** — the same [`EXPOSURE`] and the same grade
+/// the rig beside them takes, applied at the one place the frame's measurement becomes the frame's
+/// light.
+///
+/// # Why this is not a formality
+///
+/// [`WorldLight`] leaves its bands **peak-relative and unexposed** — deliberately, and its own doc
+/// says the unit it is in is the rig's, exactly (`the_fields_beam_is_the_rigs_own_first_light` holds
+/// the two against each other). But the shader is handed the *uploaded* rig, which is
+/// `EXPOSURE · grade` times the physical one, so the two numbers the fragment compares are a
+/// measured band and a scaled band. Without this, a corner that gained a measurement was lit by a
+/// beam `EXPOSURE` times dimmer than the rig's own beam for the same geometry — which is a second
+/// reason the world still looked rig-lit wherever the field had spoken, beside the ambient the
+/// fragment added on top.
+///
+/// **The cached bands are not what is scaled.** [`CellField`] keeps the physical measurement, so a
+/// frame's grade — which moves through a twilight — cannot make the cache disagree with itself; the
+/// scale is applied where the measurement is read, and this function is that statement.
+pub fn exposed_bands(bands: [f32; 6], grade: f64) -> [f32; 6] {
+    let scale = (EXPOSURE * grade) as f32;
+    let mut out = bands;
+    for value in out.iter_mut() {
+        *value *= scale;
+    }
+    out
 }
 
 /// One radiance on its way to the swapchain: the same [`EXPOSURE`] the rig gets.
@@ -534,72 +981,417 @@ pub const SKY_EXPOSURE: f64 = 12.0;
 /// What the two *do* share is the normaliser, and `the_sky_is_a_normalised_ratio_like_
 /// the_rig_is` says so.
 pub fn sky_exposed(colour: LinearRgb) -> LinearRgb {
-    colour * SKY_EXPOSURE
+    sky_exposed_graded(colour, 1.0)
 }
 
-/// **The directional dome's sampling grid**: azimuth cells around the compass and
-/// elevation rows from the horizon to the zenith.
+/// One sky radiance on its way to the swapchain **at a frame's own exposure grade** — the name is
+/// distinct from `sky_exposed_at`, which reads a *model* at a direction, because a grade is a frame's
+/// number and a direction is a pixel's.
 ///
-/// The 1-D table above is the **elevation summary** (`Sky::dome_radiance`, the Δφ = 0
-/// meridian) and remains what the ambient pair is sampled from. The drawn sky is this
-/// one: `Sky::directional_radiance` over both angles, so the aureole sits where the Sun
-/// is. The azimuth count is the coarser axis because the sky's azimuthal structure is
-/// the broad aureole, not a vertical edge; the elevation axis keeps the horizon→zenith
-/// gradient, which is the sharp one.
-pub const SKY_DOME_AZIMUTHS: usize = 64;
-/// Elevation rows: horizon (0°) to zenith (90°), inclusive endpoints.
-pub const SKY_DOME_ELEVATIONS: usize = 64;
-/// Entries in the dome table: `elevation * azimuth`, row-major.
-pub const SKY_DOME_ENTRIES: usize = SKY_DOME_ELEVATIONS * SKY_DOME_AZIMUTHS;
+/// The sky, the drawn bodies and the light the world is lit by must meet one exposure, and the grade
+/// is the half of it a frame owns — a graded sky beside an ungraded disc would be two pictures of one
+/// night.
+pub fn sky_exposed_graded(colour: LinearRgb, grade: f64) -> LinearRgb {
+    colour * (SKY_EXPOSURE * grade)
+}
 
-/// **The drawn sky: a table over (elevation, azimuth), normalised against the world's own
-/// peak sun.**
+/// **The sky's transport, as the GPU reads it**: the rows `atmosphere.wgsl` declares.
 ///
-/// The client fills this once per tick from one [`Sky`] — the same evaluation the light rig
-/// is built from — and uploads it; the shader turns a pixel into a direction and indexes
-/// the table, evaluating geometry and never physics. Row-major: index `elevation *
-/// SKY_DOME_AZIMUTHS + azimuth`, both counted from zero at the horizon and at north
-/// respectively, azimuth increasing eastwards.
-pub fn sky_dome_table(sky: &Sky, inputs: SkyInputs, peak: f64) -> Vec<LinearRgb> {
-    let mut table = Vec::with_capacity(SKY_DOME_ENTRIES);
-    for e in 0..SKY_DOME_ELEVATIONS {
-        let elevation = 90.0 * e as f64 / (SKY_DOME_ELEVATIONS - 1) as f64;
-        for a in 0..SKY_DOME_AZIMUTHS {
-            let azimuth = 360.0 * a as f64 / SKY_DOME_AZIMUTHS as f64;
-            let delta = azimuth - sky.sun_azimuth_deg;
-            table.push(Sky::directional_radiance(sky.sun_altitude_deg, elevation, delta, inputs) / peak);
+/// This is what replaced the dome table. The dome was 64×64 samples of
+/// `voxel_appearance::sky`'s fit, and the shader interpolated between them; this is the *model* —
+/// the band table's twelve coefficients, the air's own two geometries, and the sun's own column —
+/// so the sky a pixel carries is the integral the light rig was built from, at that pixel's own
+/// direction, with nothing between them to interpolate.
+///
+/// **One model, three consumers**, which is the whole point of it being rows rather than a table:
+/// the sky pass draws it, the world pass reflects it off a fluid, and [`sky_exposed_at`] reads the
+/// same rows back on the CPU so a test can hold the two transcriptions of
+/// `voxel_light::solver::sky_radiance` to each other — the rule `sun::BodyCuboid::ray_hits` and
+/// `sky.wgsl`'s `cuboid_entry` already follow for a body's geometry.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct SkyModel {
+    rows: [[f32; 4]; SKY_MODEL_ROWS],
+}
+
+/// The rows a model carries: **six header rows and three per band**, which is the layout
+/// `atmosphere.wgsl` documents and the number its own refusal is written against.
+///
+/// **The Moon has two rows of its own, and that is the whole of what makes a night a night.** The
+/// transport's only source used to be the Sun, so below the horizon its own scattering was the
+/// twilight's share of nothing and a midnight sky was the moonless floor beside a Moon that was up
+/// and full. Rows 4 and 5 are the Moon's column, its lit fraction and the Sun's own visible
+/// fraction — which is the eclipse — and the direction toward it.
+pub const SKY_MODEL_ROWS: usize = 6 + 3 * BAND_COUNT;
+
+/// The bytes a model occupies: `SKY_MODEL_ROWS` `vec4`s.
+pub const SKY_MODEL_BYTES: usize = SKY_MODEL_ROWS * 16;
+
+/// The rows a host states when a frame has no sky: **zero is no model, not a short one**. The
+/// shader reads its bands from row 6 up and takes their count from row 3, so a zeroed buffer is
+/// the transport's own arithmetic answering nothing rather than a sky with rows missing.
+pub const NO_SKY_ROWS: usize = 0;
+
+/// **Why a frame may not read the sky its host stated.**
+///
+/// `atmosphere.wgsl` refuses a buffer shorter than its own layout, and the buffer this client
+/// binds is always the declared length — so that refusal cannot see the case that matters: a host
+/// that never uploaded a model binds `SKY_MODEL_ROWS` rows of zeros, which is the right length
+/// and no sky. The host's own record is what tells those two apart, and this is the refusal it is
+/// read against.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SkyModelRefusal {
+    /// The host has stated nothing: not a model, and not that there is no sky either.
+    NothingStated,
+    /// A host stated rows that are neither [`NO_SKY_ROWS`] nor [`SKY_MODEL_ROWS`].
+    RowCount { stated: usize, declared: usize },
+}
+
+impl std::fmt::Display for SkyModelRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SkyModelRefusal::NothingStated => write!(
+                f,
+                "no sky has been stated for this frame: the rows hold the zeros they were \
+                 created with, which is the length atmosphere.wgsl declares and no sky inside it. \
+                 State one with WorldPipeline::write_sky_model, or \
+                 WorldPipeline::write_no_sky_model for a frame that has none"
+            ),
+            SkyModelRefusal::RowCount { stated, declared } => write!(
+                f,
+                "the sky was stated at {stated} rows and the layout atmosphere.wgsl declares is \
+                 {declared}"
+            ),
         }
     }
-    table
 }
 
-/// The dome table read back at a direction — **the same bilinear interpolation the shader
-/// performs**, azimuth wrapped and below-horizon clamped.
+/// **Whether a frame may read the sky, and how many rows it reads**: the host's own record of
+/// what it uploaded, against the layout both ends of the wire declare.
 ///
-/// Written on this side so the two can be compared rather than assumed equal, exactly as
-/// [`sky_lut_lookup`] is for the elevation summary.
-pub fn sky_dome_lookup(table: &[LinearRgb], elevation_deg: f64, azimuth_deg: f64) -> LinearRgb {
-    if table.is_empty() {
+/// `None` is *nothing stated* and is refused; `Some`[`NO_SKY_ROWS`] is a stated absence, which the
+/// shader draws as the black this pass drew before a sky existed; `Some`[`SKY_MODEL_ROWS`] is a
+/// model. Any other count is refused rather than padded or truncated — the rule `atmosphere.wgsl`
+/// follows one layer down, made to fail here, where a host can see it and a build can read it.
+pub fn admit_sky_rows(stated: Option<usize>) -> Result<usize, SkyModelRefusal> {
+    match stated {
+        None => Err(SkyModelRefusal::NothingStated),
+        Some(rows) if rows == NO_SKY_ROWS || rows == SKY_MODEL_ROWS => Ok(rows),
+        Some(stated) => Err(SkyModelRefusal::RowCount { stated, declared: SKY_MODEL_ROWS }),
+    }
+}
+
+/// The share of the night sky's radiance one band carries — `voxel_light::solver`'s own
+/// `response_night_share`, flat across the bands that transport light and zero for those that do
+/// not.
+const NIGHT_SHARE_PER_BAND: f64 = 0.1;
+
+impl SkyModel {
+    /// **The model a frame draws**, from the sky, the air and the world's own peak sun.
+    ///
+    /// Every number here is a measurement this tree already made: the bands are
+    /// `voxel_light::spectra`'s, the air is the shapers' density, scale height and droplet load,
+    /// the sun's path is `voxel_light::solver`'s own optics, and the exposure is
+    /// [`SKY_EXPOSURE`] over [`peak_sun_luminance`] — **the same normaliser the drawn Sun and Moon
+    /// are divided by**, so one exposure covers the sky, the disc and the night.
+    pub fn of(sky: &Sky, air: &Air, peak: f64, moon: &voxel_shapers::sky::MoonPosition) -> SkyModel {
+        Self::of_graded(sky, air, peak, moon, 1.0)
+    }
+
+    /// [`SkyModel::of`] **at a frame's own exposure grade** — one sky, one grade, so the night's
+    /// exposure is the same number here as in [`exposed_at`] and [`sky_exposed_graded`].
+    pub fn of_graded(
+        sky: &Sky,
+        air: &Air,
+        peak: f64,
+        moon: &voxel_shapers::sky::MoonPosition,
+        grade: f64,
+    ) -> SkyModel {
+        let table = BandTable::computed();
+        // **The Moon as the solver sees it**, from the one reading of its orbit the caller made
+        // — and the same one `sun::DrawnMoon` places the body from, so the sky's light and the
+        // drawn disc cannot be two different Moons.
+        let moon = MoonPath {
+            altitude_deg: moon.altitude_deg,
+            azimuth_deg: moon.azimuth_deg,
+            illuminated_fraction: moon.phase_fraction,
+        };
+        let toward_moon = sun_direction(moon.altitude_deg, moon.azimuth_deg);
+        let moon_elevation = moon.altitude_deg.max(0.0);
+        let moon_air_path = air.scale_height_m * air_mass(moon_elevation);
+        let moon_drop_path = path_in_layer(moon_air_path, moon_elevation, air.droplet_layer_depth_m);
+        let sun_visible = sun_visible_fraction(
+            &SunPath {
+                altitude_deg: sky.sun_altitude_deg,
+                azimuth_deg: sky.sun_azimuth_deg,
+            },
+            &moon,
+        );
+        let weights = rgb_weights();
+        // A droplet and a vapour molecule take the same light out of the beam, and both are
+        // carried by one coefficient here for the reason the solver carries them in one.
+        let droplets = droplet_extinction_per_m(air.droplet_lwc_g_m3)
+            + cloud_extinction_per_m(air.cloud_water_path_m);
+        // The sun's own column: its path length is this model's optics rather than a caller's
+        // number, and below the horizon it is the horizon's path — a depressed sun's light does
+        // not cross a longer one.
+        let sun_elevation = sky.sun_altitude_deg.max(0.0);
+        let air_path_sun = air.scale_height_m * air_mass(sun_elevation);
+        let drop_path_sun = path_in_layer(air_path_sun, sun_elevation, air.droplet_layer_depth_m);
+        let toward_sun = sun_direction(sky.sun_altitude_deg, sky.sun_azimuth_deg);
+        let exposure = if peak > 0.0 && peak.is_finite() {
+            SKY_EXPOSURE * grade / peak
+        } else {
+            0.0
+        };
+
+        let mut rows = [[0.0f32; 4]; SKY_MODEL_ROWS];
+        rows[0] = [
+            air.scale_height_m as f32,
+            droplets as f32,
+            air.droplet_layer_depth_m as f32,
+            DROPLET_SINGLE_SCATTER_ALBEDO as f32,
+        ];
+        rows[1] = [
+            air_path_sun as f32,
+            drop_path_sun as f32,
+            twilight_fraction(sky.sun_altitude_deg) as f32,
+            night_sky_radiance_w_m2_sr() as f32,
+        ];
+        rows[2] = [
+            toward_sun.x as f32,
+            toward_sun.y as f32,
+            toward_sun.z as f32,
+            exposure as f32,
+        ];
+        rows[3] = [
+            MIE_ASYMMETRY_G as f32,
+            DROPLET_ASYMMETRY_G as f32,
+            GRAZING_AIR_MASS as f32,
+            BAND_COUNT as f32,
+        ];
+        // **The Moon's own two rows.** Its column, how much of its disc the Sun is lighting, and
+        // the Sun's own visible fraction — the eclipse, carried here as one scalar so that the
+        // drawn sky, the CPU's reading of it and the rig's ambient all darken together.
+        rows[4] = [
+            moon_air_path as f32,
+            moon_drop_path as f32,
+            moon.illuminated_fraction as f32,
+            sun_visible as f32,
+        ];
+        rows[5] = [toward_moon.x as f32, toward_moon.y as f32, toward_moon.z as f32, 0.0];
+        for (index, band) in table.bands().iter().enumerate() {
+            // **A band an eye does not receive weighs nothing and still carries light**: it has
+            // no colour weight and no night floor of its own (`response_night_share` is zero for
+            // it), and its power stays in the sum the magnitude is taken from — which is the rule
+            // `sun::DrawnMoon` already follows, `visible_rgb`'s shape against every band's own sum.
+            let links = matches!(band.transport, voxel_light::Transport::Links);
+            let centre_um = band.centre_nm() * 1.0e-3;
+            rows[6 + index * 3] = [
+                band.extinction_per_m as f32,
+                band.scatter_per_m as f32,
+                band.sun_w_per_m2 as f32,
+                rayleigh_optical_depth(centre_um) as f32,
+            ];
+            rows[7 + index * 3] = [
+                aerosol_optical_depth(centre_um) as f32,
+                if links { 0.0 } else { NIGHT_SHARE_PER_BAND as f32 },
+                weights[index][0] as f32,
+                weights[index][1] as f32,
+            ];
+            // **The band's own Moon reflection factor**, precomputed: the reflectance the band
+            // table declares, over `pi` by Lambert's law, through the disc's own solid angle. The
+            // shader multiplies it by the band's solar power and the lit fraction, so the Moon's
+            // light stays the Sun's light reflected rather than a second set of numbers.
+            rows[8 + index * 3] = [
+                weights[index][2] as f32,
+                (band.moon_reflectance / core::f64::consts::PI * MOON_SOLID_ANGLE_SR) as f32,
+                0.0,
+                0.0,
+            ];
+        }
+        SkyModel { rows }
+    }
+
+    /// **The rows this model carries**, which is the layout `atmosphere.wgsl` declares — the
+    /// number [`admit_sky_rows`] admits and [`crate::WorldPipeline::write_sky_model`] records.
+    pub const fn rows(&self) -> usize {
+        SKY_MODEL_ROWS
+    }
+
+    /// The model's bytes, exactly the `vec4` rows `atmosphere.wgsl` indexes.
+    pub fn bytes(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(SKY_MODEL_BYTES);
+        for row in &self.rows {
+            for value in row {
+                out.extend_from_slice(&voxel_model::endian::le_bytes(*value));
+            }
+        }
+        out
+    }
+
+    /// One row, for a test that reads the layout back rather than trusting it.
+    pub fn row(&self, index: usize) -> [f32; 4] {
+        self.rows[index]
+    }
+}
+
+/// **The sky's exposed colour at one direction**, from the model the shader reads.
+///
+/// The CPU's reading of `atmosphere.wgsl`'s `sky_radiance_rgb`: the same rows, the same
+/// single-scatter integral in closed form, the same split between the bands' magnitude and the
+/// response's shape. It exists so a test can compare a frame's pixels against numbers computed from
+/// the model rather than against a second copy of the model, and so `shading::fluid_surface_cpu`
+/// reflects the sky the shader reflects.
+///
+/// **The phase is the reduced form** the shader writes: `mixed_phase` divides a phase by the air's
+/// optical depth and multiplies by it again, `r·R + a·H` either way.
+pub fn sky_exposed_at(model: &SkyModel, elevation_deg: f64, azimuth_deg: f64) -> LinearRgb {
+    let head = model.row(0);
+    let sun_row = model.row(1);
+    let sun = model.row(2);
+    let optics = model.row(3);
+    let exposure = sun[3] as f64;
+    if !(exposure > 0.0) {
         return LinearRgb::BLACK;
     }
-    if table.len() < 2 {
-        return table[0];
+    let (scale_height_m, droplets) = (head[0] as f64, head[1] as f64);
+    let (layer_depth_m, albedo) = (head[2] as f64, head[3] as f64);
+    let (air_path_sun, drop_path_sun) = (sun_row[0] as f64, sun_row[1] as f64);
+    let (twilight, night) = (sun_row[2] as f64, sun_row[3] as f64);
+    // **The Moon's own rows**, read the way the shader reads them: its column, its lit fraction,
+    // the Sun's own visible fraction, and the direction toward it.
+    let moon_row = model.row(4);
+    let moon_dir = model.row(5);
+    let (moon_air_path, moon_drop_path) = (moon_row[0] as f64, moon_row[1] as f64);
+    let (moon_lit, sun_visible) = (moon_row[2] as f64, moon_row[3] as f64);
+    let (mie_asymmetry, droplet_asymmetry) = (optics[0] as f64, optics[1] as f64);
+    let (grazing, bands) = (optics[2] as f64, optics[3] as usize);
+
+    // The ray's own column, in the one frame `sun_direction` builds the model's sun in.
+    let elevation_deg = elevation_deg.clamp(0.0, 90.0);
+    let direction = sun_direction(elevation_deg, azimuth_deg);
+    let sin_e = elevation_deg.to_radians().sin().abs();
+    let view_air_mass = (1.0 / sin_e.max(1.0e-9)).clamp(1.0, grazing);
+    let air_path_view = scale_height_m * view_air_mass;
+    let drop_path_view = path_in_layer(air_path_view, elevation_deg, layer_depth_m);
+    let droplet_scatter = droplets * albedo;
+    let cos_theta = direction.x * sun[0] as f64
+        + direction.y * sun[1] as f64
+        + direction.z * sun[2] as f64;
+    let cos_theta_moon =
+        direction.x * moon_dir[0] as f64 + direction.y * moon_dir[1] as f64 + direction.z * moon_dir[2] as f64;
+
+    let mut acc = [0.0f64; 3];
+    let mut total = 0.0;
+    for index in 0..bands.min(BAND_COUNT) {
+        let a = model.row(6 + index * 3);
+        let b = model.row(7 + index * 3);
+        let c = model.row(8 + index * 3);
+        let extinction = a[0] as f64;
+        let beta_e = extinction + droplets;
+        let beta_s = a[1] as f64 + droplet_scatter;
+        let tau_sun = extinction * air_path_sun + droplets * drop_path_sun;
+        let sun_transmittance = (-tau_sun).exp() * twilight;
+        let t_view = (-(extinction * air_path_view + droplets * drop_path_view)).exp();
+        let mut single_scatter = 0.0;
+        if beta_e > 0.0 {
+            let phase = mixed_phase(
+                a[3] as f64,
+                b[0] as f64,
+                droplet_scatter,
+                cos_theta,
+                mie_asymmetry,
+                droplet_asymmetry,
+            );
+            single_scatter = (beta_s / beta_e) * (1.0 - t_view) * phase;
+        }
+        // **The Moon's own scattering**, in the shader's own order: the band's solar power, the
+        // band's reflection factor, the lit fraction, its own phase angle, its own column. No
+        // twilight — the Moon is a body, and the Sun's afterglow is not its light.
+        let lunar = if beta_e > 0.0 && moon_lit > 0.0 {
+            let moon_phase = mixed_phase(
+                a[3] as f64,
+                b[0] as f64,
+                droplet_scatter,
+                cos_theta_moon,
+                mie_asymmetry,
+                droplet_asymmetry,
+            );
+            let tau_moon = extinction * moon_air_path + droplets * moon_drop_path;
+            a[2] as f64 * c[1] as f64 * moon_lit * (beta_s / beta_e) * (1.0 - t_view) * moon_phase
+                * (-tau_moon).exp()
+        } else {
+            0.0
+        };
+        // The floor is a radiance: added, never scaled by the band's own power.
+        let radiance =
+            a[2] as f64 * sun_visible * single_scatter * sun_transmittance + lunar + night * b[1] as f64;
+        let weight = [b[2] as f64, b[3] as f64, c[0] as f64];
+        for (channel, value) in acc.iter_mut().enumerate() {
+            *value += radiance * weight[channel];
+        }
+        total += radiance;
     }
-    let el = elevation_deg.clamp(0.0, 90.0) / 90.0 * (SKY_DOME_ELEVATIONS - 1) as f64;
-    let e0 = (el.floor() as usize).min(SKY_DOME_ELEVATIONS - 2);
-    let ef = el - e0 as f64;
-    let az = azimuth_deg.rem_euclid(360.0) / 360.0 * SKY_DOME_AZIMUTHS as f64;
-    let a0 = az.floor() as usize % SKY_DOME_AZIMUTHS;
-    let af = az - az.floor();
-    let a1 = (a0 + 1) % SKY_DOME_AZIMUTHS;
-    let at = |e: usize, a: usize| table[e * SKY_DOME_AZIMUTHS + a];
-    let low = at(e0, a0) * (1.0 - af) + at(e0, a1) * af;
-    let high = at(e0 + 1, a0) * (1.0 - af) + at(e0 + 1, a1) * af;
-    low * (1.0 - ef) + high * ef
+    // The shape is the response's own sum of the same bands, so the colour and the magnitude are
+    // one evaluation rather than two measurements.
+    let shape: f64 = acc.iter().sum();
+    if !(shape > 0.0) || !(total > 0.0) {
+        return LinearRgb::BLACK;
+    }
+    let scale = exposure * total / shape;
+    LinearRgb {
+        r: acc[0] * scale,
+        g: acc[1] * scale,
+        b: acc[2] * scale,
+    }
 }
 
-/// **A ray's place in the dome table**: `(elevation, azimuth)` in degrees, in the
-/// convention [`sky_dome_lookup`] and `sky.wgsl` index with.
+/// **The sky's own radiance at one direction, as a ratio against the world's own peak sun** — the
+/// unit the light rig's ambient is in.
+///
+/// Exactly [`sky_exposed_at`] with the exposure taken back out of it, and that is not a trick: the
+/// model carries `SKY_EXPOSURE / peak` in its own row, so dividing by [`SKY_EXPOSURE`] is the same
+/// arithmetic the exposure itself is. What it buys is that **the ambient and the drawn sky are one
+/// evaluation** — the same rows, the same closed form, the same two sources — rather than a
+/// summary of one model lighting a frame drawn from another.
+pub fn sky_ambient_at(model: &SkyModel, elevation_deg: f64, azimuth_deg: f64) -> LinearRgb {
+    sky_exposed_at(model, elevation_deg, azimuth_deg) * (1.0 / SKY_EXPOSURE)
+}
+
+/// **The phase function of the air and the droplets together**, weighted by what each scatters —
+/// `voxel_light::solver::mixed_phase` in the reduced form `atmosphere.wgsl` and
+/// [`sky_exposed_at`] both evaluate.
+fn mixed_phase(
+    rayleigh_od: f64,
+    aerosol_od: f64,
+    droplet_scatter_per_m: f64,
+    cos_theta: f64,
+    mie_asymmetry: f64,
+    droplet_asymmetry: f64,
+) -> f64 {
+    let total = rayleigh_od + aerosol_od + droplet_scatter_per_m;
+    if total <= 0.0 {
+        return 0.0;
+    }
+    let rayleigh = 3.0 / (16.0 * core::f64::consts::PI) * (1.0 + cos_theta * cos_theta);
+    let air = rayleigh_od * rayleigh
+        + aerosol_od * henyey_greenstein(cos_theta, mie_asymmetry);
+    let droplets = droplet_scatter_per_m * henyey_greenstein(cos_theta, droplet_asymmetry);
+    (air + droplets) / total
+}
+
+/// Henyey–Greenstein at one asymmetry: `(1 − g²)/(4π(1 + g² − 2g·cosθ)^1.5)`.
+fn henyey_greenstein(cos_theta: f64, g: f64) -> f64 {
+    let denominator = 1.0 + g * g - 2.0 * g * cos_theta;
+    if denominator <= 0.0 {
+        return 0.0;
+    }
+    (1.0 - g * g) / (4.0 * core::f64::consts::PI * denominator.powf(1.5))
+}
+
+
+/// **A ray's place in the sky's own frame**: `(elevation, azimuth)` in degrees, in the
+/// convention [`sun_direction`], [`sky_exposed_at`] and `sky.wgsl` share.
 ///
 /// The world frame is east-north-up with `x` east and `z` south (the same convention
 /// `voxel_shapers::sky` and the shaders use), so the azimuth is `atan2(x, −z)`, zero at
@@ -702,6 +1494,73 @@ pub fn peak_sun_luminance(spec: &WorldSpec, inputs: SkyInputs) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **What the day and the night are made of**, as numbers, because the frame is not.
+    ///
+    /// The reported symptom is that the world stops rendering at nightfall. Every candidate cause
+    /// is a quantity that can be printed here — the Sun's own light, the Moon's, the two dome
+    /// radiances the sky pass draws, the rig the terrain is lit with, and whether the light field
+    /// builds at all — so this measures them at a day tick and a night tick side by side instead of
+    /// reasoning about which one is zero. A measurement, not an assertion.
+    #[test]
+    #[ignore = "measurement, not an assertion: run with `cargo test -p voxel-client --lib measure_the_day_and_the_night -- --ignored --nocapture`"]
+    fn measure_the_day_and_the_night() {
+        let spec = WorldSpec::new(crate::GAME_SEED, voxel_shapers::Config::default());
+        let inputs = SkyInputs::default();
+        let peak = peak_sun_luminance(&spec, inputs);
+        println!("peak sun luminance (the model's own normaliser): {peak:e}");
+        // **The nights of a whole lunar month, at midnight**, which is the hour the Sun is
+        // deepest and the Moon is only up near the anti-solar point — so this walks the month
+        // from new Moon to new Moon and crosses every phase, rather than sampling two nights
+        // and calling a new Moon "the night".
+        const TICKS_PER_DAY: u64 = 24_000;
+        for day in 0..30u64 {
+            let tick = day * TICKS_PER_DAY;
+            let sky = Sky::at(&spec, tick, inputs, 0).expect("an atmosphere");
+            let moon = voxel_shapers::sky::moon_position(&spec, tick, 0);
+            let daylight = daylight_of(&spec, tick, inputs, 0);
+            let light = WorldLight::of(&spec, tick, inputs, 0);
+            let moon_lum = sky.moon.luminance();
+            let ambient = daylight.as_ref().map(|d| d.rig.ambient.luminance()).unwrap_or(f64::NAN);
+            let lights = daylight.as_ref().map(|d| d.rig.lights.len()).unwrap_or(0);
+            println!(
+                "day {day:2} tick {tick:7}  sun {:.2}deg  moon alt {:.2}deg phase {:.3}  \
+                 moon_lum {moon_lum:e}  lights {lights}  ambient {ambient:e}  field {}",
+                sky.sun_altitude_deg,
+                moon.altitude_deg,
+                moon.phase_fraction,
+                light.as_ref().map(|l| l.beam_is_moon()).unwrap_or(false),
+            );
+        }
+
+        // **And the two ends a gain has to span.** A night's ambient is only a number beside the
+        // day's: the exposure that lifts a night may not touch noon, so both are printed here, and
+        // the sky's own exposed radiance beside them — the pass's output, not the ambient's input,
+        // because it is the pixels a frame is judged by.
+        let (altitude, noon) = highest_noon_tick(&spec);
+        let mut sample = |label: &str, tick: u64| {
+            let sky = Sky::at(&spec, tick, inputs, 0).expect("an atmosphere");
+            let air = crate::sun::air_at(&spec, 0.0, 0.0, tick);
+            let moon = voxel_shapers::sky::moon_position(&spec, tick, 0);
+            let model = SkyModel::of(&sky, &air, peak, &moon);
+            let azimuth = sky_azimuth_deg(&spec, tick);
+            let ambient = daylight_of(&spec, tick, inputs, 0)
+                .map(|d| d.rig.ambient.luminance())
+                .unwrap_or(f64::NAN);
+            println!(
+                "{label:>18} tick {tick:7}  sun {:.2}deg  ambient {ambient:.4e}  \
+                 sky zenith {:.4e}  sky 30deg {:.4e}  sky horizon {:.4e}",
+                sky.sun_altitude_deg,
+                sky_exposed_at(&model, 90.0, azimuth).luminance(),
+                sky_exposed_at(&model, 30.0, azimuth).luminance(),
+                sky_exposed_at(&model, 0.0, azimuth).luminance(),
+            );
+        };
+        println!("highest noon {altitude:.2}deg (tick {noon}), and the two midnights:");
+        sample("highest noon", noon);
+        sample("moonless midnight", 0);
+        sample("full-moon midnight", 312_000);
+    }
     use voxel_shapers::Config;
 
     fn spec() -> WorldSpec {
@@ -861,18 +1720,7 @@ mod tests {
 
     #[test]
     fn the_rig_is_one_unit_so_no_field_of_it_is_a_raw_radiance() {
-        // **What the user saw on screen.** The sun's intensity was a ratio against this
-        // world's own peak — `1.0` at its brightest — and the ambient was the sky's raw
-        // dome radiance, which measured **4.61765** at noon and **17.97** at the
-        // client's start tick. So the rig carried a ratio in one field and a radiance
-        // four to eighteen times brighter than full scale in the other, and the world
-        // rendered **103× too bright**: `mean 0.87457` against the fixture's `0.00847`,
-        // brightest pixel `78.3`, and *fewer* distinct colours than the fixture (6
-        // against 8) because an ambient that dominant swamps the shading.
-        //
-        // **Every value in a rig is now in `[0, 1]`.** That is the whole claim, and it is
-        // checked across a whole day rather than at one tick, because an ambient that is
-        // fine at noon and enormous at dawn is still wrong.
+        // What the user saw on screen — docs/lighting-sky-and-moon.md
         let world = spec();
         let per_day = voxel_shapers::climate::TICKS_PER_DAY;
         let mut worst: f64 = 0.0;
@@ -898,12 +1746,22 @@ mod tests {
         // And the ambient still moves with the sky rather than being pinned — a
         // constant here is the same defect as the constant ambient the standard fixture
         // had, one level up.
+        //
+        // **The witness is noon against midnight**, and it is a stronger pair than the
+        // morning-versus-noon one it replaces. Both sources of the ambient now read one stencil
+        // ([`AMBIENT_FROM_HORIZON`]), and a morning and a noon are two *bright* skies in it: which
+        // of them wins is a property of the stencil's own directions, not of the law this test is
+        // about. The day's own ends are not like that — midnight is the night sky's named floor and
+        // noon is the peak of the day, so their ratio is the law's, and a pinned or constant ambient
+        // cannot pass it.
         let noon = daylight_of(&world, per_day / 2, Default::default(), 0).expect("noon");
-        let morning = daylight_of(&world, per_day * 3 / 8, Default::default(), 0).expect("morning");
+        let midnight = daylight_of(&world, 0, Default::default(), 0).expect("midnight");
+        let ratio = noon.rig.ambient.luminance() / midnight.rig.ambient.luminance();
         assert!(
-            morning.rig.ambient.luminance() > noon.rig.ambient.luminance(),
-            "the ambient at sunrise ({}) was not brighter than at noon ({})",
-            morning.rig.ambient.luminance(),
+            ratio > 50.0,
+            "the ambient ran {ratio} from midnight to noon ({} to {}), so it is not the sky's light \
+             and the day and the night are lit by one number",
+            midnight.rig.ambient.luminance(),
             noon.rig.ambient.luminance()
         );
     }
@@ -927,16 +1785,16 @@ mod tests {
         let mut hi = f64::NEG_INFINITY;
         let mut ozone_lo = f64::INFINITY;
         let mut ozone_hi = f64::NEG_INFINITY;
-        // **Several places, not one, and the reason is in the shaper.** `precipitation_mm`
-        // has two branches: a downslope one that returns `BASE * moisture * 0.35` with
-        // **no tick in it at all**, and an upslope one carrying the seasonal term. The
-        // first version of this test sampled `(0, -96)`, where the wind descends — a rain
-        // shadow — and measured a turbidity that varied by exactly `0.0` and concluded
-        // the weather was not reaching the sky. The *mean* was not reaching that column
-        // and still does not; since C-94.7 the onset is what moves it, and the test below
-        // (`the_onset_reaches_the_sky_even_where_the_mean_never_moves`) holds that to a
-        // column of exactly that kind. A sky sampled at one point is still not the
-        // world's sky, which is why the places stay.
+        /// **Several places, not one, and the reason is in the shaper.** `precipitation_mm`
+        /// has two branches: a downslope one that returns `BASE * moisture * 0.35` with
+        /// **no tick in it at all**, and an upslope one carrying the seasonal term. The
+        /// first version of this test sampled `(0, -96)`, where the wind descends — a rain
+        /// shadow — and measured a turbidity that varied by exactly `0.0` and concluded
+        /// the weather was not reaching the sky. The *mean* was not reaching that column
+        /// and still does not; since C-94.7 the onset is what moves it, and the test below
+        /// (`the_onset_reaches_the_sky_even_where_the_mean_never_moves`) holds that to a
+        /// column of exactly that kind. A sky sampled at one point is still not the
+        /// world's sky, which is why the places stay.
         const PLACES: [(f64, f64); 5] =
             [(0.0, -96.0), (-96.0, 0.0), (96.0, 0.0), (-96.0, -96.0), (96.0, 96.0)];
         for &(x, z) in &PLACES {
@@ -1085,20 +1943,42 @@ mod tests {
         let world = spec();
         let air = voxel_shapers::atmosphere::sample(&world, 0.0);
         let quarter = voxel_shapers::climate::YEAR_TICKS / 4;
-        let mut deepest = 0.0f64;
-        for t in [0u64, quarter, quarter * 2] {
-            for x in (-600..600).step_by(37) {
-                for z in (-600..600).step_by(41) {
+        // **The whole world, not a patch of it**: a convective column is rare, and the claim is about this world's columns.
+        let mut cloudy: Vec<f64> = Vec::new();
+        for t in [0u64, quarter, quarter * 2, quarter * 3] {
+            for x in (-4_000..4_096).step_by(101) {
+                for z in (-4_000..4_096).step_by(101) {
                     let path = voxel_shapers::clouds::column_water_path_m(
                         &world, x as f64, z as f64, t,
                     );
-                    deepest = deepest.max(path);
+                    if path > 0.0 {
+                        cloudy.push(path);
+                    }
                 }
             }
         }
+        cloudy.sort_by(f64::total_cmp);
         assert!(
-            deepest > 0.0,
+            !cloudy.is_empty(),
             "no sampled column carried any water, so the clamp was never exercised"
+        );
+        let deepest = cloudy[cloudy.len() - 1];
+        let typical = cloudy[cloudy.len() / 2];
+        // **The path the law itself saturates at, from its own three constants** — it was `deepest / 4.0`, a divisor guessed here.
+        let saturating = (TURBIDITY_CEILING / CLEAR_AIR_TURBIDITY - 1.0)
+            * WATER_PATH_REFERENCE_M
+            / WET_TURBIDITY_GAIN;
+        println!(
+            "turbidity over {} cloudy samples: the typical column is {typical:.1} m (T = {:.2}), \
+             the deepest {deepest:.1} m (T = {:.2}); the law saturates at {saturating:.1} m",
+            cloudy.len(),
+            turbidity_of(typical, &air),
+            turbidity_of(deepest, &air),
+        );
+        assert!(
+            deepest > saturating,
+            "the world's deepest column is {deepest:.1} m, under the {saturating:.1} m the law \
+             saturates at, so the clamp is never reached"
         );
         assert_eq!(
             turbidity_of(deepest, &air),
@@ -1106,26 +1986,361 @@ mod tests {
             "the world's deepest column ({deepest:.1} m) is not held at the ceiling"
         );
         assert!(
-            turbidity_of(deepest / 4.0, &air) < TURBIDITY_CEILING,
-            "every path sampled sat on the ceiling, so the clamp is not what holds the deep one"
+            turbidity_of(typical, &air) < TURBIDITY_CEILING,
+            "the world's typical cloudy column ({typical:.1} m) sits on the ceiling too, so the \
+             clamp is holding the whole sky rather than the deep end of it"
         );
         let clear = turbidity_of(0.0, &air);
         assert!(
-            clear >= CLEAR_AIR_TURBIDITY && clear < TURBIDITY_CEILING,
+            (CLEAR_AIR_TURBIDITY..TURBIDITY_CEILING).contains(&clear),
             "clear air read {clear}, so the clamp is clipping ordinary columns"
         );
     }
 
-    // **An assertion that was here, and why it is not.** There was a
-    // `RAINFALL_REFERENCE_MM > 0.0` check here, and clippy is right that it could never
-    // fail for any value either side would plausibly take — a comparison between two
-    // constants is not a pin. The pin beside it, `RAINFALL_REFERENCE_MM ==
-    // weather::BASE_PRECIPITATION_MM`, is the one that catches drift, and a zero in the
-    // shaper is that shaper's own test to catch. **I wrote an assertion to defend an
-    // assertion, and deleted the defence when I read it again.**
-    //
-    // **Both are gone as of the column slice**: turbidity reads a cloud's water path, so
-    // weather's rainfall baseline is no longer a number this file depends on at all.
+    /// **The frame's exposure grade follows the light and crosses a sunset without a step.**
+    ///
+    /// Three claims, and each is one the eye could not check on its own:
+    ///
+    /// * while the Sun is up the grade is **exactly `1.0`**, so every noon number in this file is
+    ///   untouched — the exposure that lifts a night may not touch noon;
+    /// * a night's grade is the ratio of the Sun's light to the Moon's on that same world, which is the
+    ///   `~1e-6` the world's own light carries, so the night is exposed for the Moon it has;
+    /// * and tick by tick through a sunset, over the horizon and on into the night, **no step is larger
+    ///   than a declared fraction of the grade itself**. The worst step is printed, so the bound below
+    ///   is a reading rather than a hope, and the two ticks either side of the horizon are printed
+    ///   beside the Sun's own illuminance, because a light that steps cannot be tracked smoothly by any
+    ///   exposure and that would be this test's finding rather than its silence.
+    #[test]
+    fn the_exposure_grade_follows_the_light_across_a_sunset_without_a_step() {
+        /// The largest step one tick may take in the grade, as a share of the grade's own value.
+        ///
+        /// **A factor of 1.5 in a tick is a jump and 15 % is not**, and the observed worst step over a
+        /// sunset is printed below: this bound is deliberately loose enough that a *fast* twilight passes
+        /// and a *step* does not, so the number is not a tolerance tuned until the test went green.
+        const GRADE_STEP: f64 = 0.5;
+
+        let world = spec();
+        let inputs = SkyInputs::default();
+        let day = voxel_shapers::climate::TICKS_PER_DAY;
+        let start = crate::game::GAME_TICK;
+        let sunset = (1..day)
+            .map(|t| start + t)
+            .find(|t| {
+                let (before, now) = (
+                    voxel_shapers::sky::solar_position(&world, t - 1).altitude_deg,
+                    voxel_shapers::sky::solar_position(&world, *t).altitude_deg,
+                );
+                before >= 0.0 && now < 0.0
+            })
+            .expect("the days after the game's own tick have a sunset in them");
+
+        let noon = daylight_of(&world, start, inputs, 0).expect("a noon");
+        assert_eq!(
+            noon.grade, 1.0,
+            "the Sun is up at the world's own start tick and the grade is {} rather than 1",
+            noon.grade
+        );
+
+        // **The mapping this function owns, swept densely.** Its argument is the Sun's own altitude, so
+        // a step here would be this function's; the observed worst step is printed, and the bound is a
+        // real no-jump claim — a factor of 1.5 in one step would be a jump, 15 % is not.
+        let mut worst = 0.0f64;
+        let mut previous = exposure_grade(1000.0, 2.0, 1.0e-3);
+        for step in 0..200_000 {
+            let altitude = 2.0 - step as f64 * 0.0001;
+            let grade = exposure_grade(1000.0, altitude, 1.0e-3);
+            worst = worst.max((grade - previous).abs() / previous.max(grade));
+            previous = grade;
+        }
+
+        // **And the frame's own light, printed because it is what steps.** Both bodies are gated to zero
+        // at their own horizons, so the world's brightness is `light × grade` across a light that cuts:
+        // a sunset is a cut to a black world in one tick, which is the defect the user reported.
+        let mut night = 0.0f64;
+        let mut light_step = 0.0f64;
+        let mut previous_light: Option<f64> = None;
+        for t in sunset - 60..sunset + day / 4 {
+            let daylight = daylight_of(&world, t, inputs, 0).expect("a sky");
+            let light = daylight.sky.sun.luminance();
+            if let Some(before) = previous_light {
+                light_step = light_step.max((light - before).abs() / before.max(light).max(f64::MIN_POSITIVE));
+                if (t as i64 - sunset as i64).abs() <= 1 {
+                    println!(
+                        "the frame's own light at t{t}: sun {:.4} deg, {light:.4e} W/m2 -> the grade \
+                         {:.6e}, {} light(s)",
+                        voxel_shapers::sky::solar_position(&world, t).altitude_deg,
+                        daylight.grade,
+                        daylight.lights
+                    );
+                }
+            }
+            if daylight.lights > 0 && !voxel_shapers::sky::SkyPhase::sun_is_up(daylight.sun_altitude_deg)
+            {
+                night = night.max(daylight.grade);
+            }
+            previous_light = Some(light);
+        }
+        assert!(
+            light_step > 0.0,
+            "this window contains no change of light at all, so it is not the test it claims"
+        );
+        // **The finding this test cannot fix from here, printed rather than hidden.** The Sun's own
+        // *light* is what steps: `Sky::sun` is exactly zero for a Sun below the horizon, so one tick
+        // carries 8.48 W/m² and the next carries none, and the world's own brightness is `light ×
+        // grade` — which no exposure can hold smooth across a light that steps. The grade below is
+        // continuous across it, and the frame is not, so the next piece of this work is the beam's own
+        // twilight decay: `twilight_fraction` is the model's own curve for it and the sky's scattering
+        // already rides it. Until then a sunset is a cut to a black world, which is the defect the
+        // user reported as "the world stops rendering materials at night".
+        let (before, after) = (
+            daylight_of(&world, sunset - 1, inputs, 0).expect("a sky").sky.sun.luminance(),
+            daylight_of(&world, sunset, inputs, 0).expect("a sky").sky.sun.luminance(),
+        );
+        println!(
+            "grade: worst step of the mapping over a swept twilight is {worst:.5} of the grade, and the \
+             Sun's own light steps {before:.4e} -> {after:.4e} W/m2 across the horizon — the frame's \
+             step and not the grade's, which is the beam's own next piece of work"
+        );
+        assert!(
+            worst <= GRADE_STEP,
+            "the grade took a step of {worst:.5} of its own value in one tick, over the {GRADE_STEP} \
+             the model may take: an exposure that steps is the jump this grade exists to remove"
+        );
+        assert!(
+            night > 1.0,
+            "no night in the window lifted the grade above 1, so a moonlit frame is still exposed as \
+             a noon it does not have"
+        );
+        println!("grade: the brightest moonlit night in the window is {night:.6e} times the day's");
+    }
+
+    /// **How far the world's own light may move in one rig update, as a share of the day's peak.**
+    ///
+    /// A declared bound rather than a tolerance tuned to whatever the code happens to do: `5 %` of
+    /// the day's brightest ambient in a single four-tick update is roughly the rate a real sunset
+    /// dims at, and it is an order of magnitude below the step it exists to catch — the horizon
+    /// crossing that removed **36 %** of it in one update, and 100 % of it a few updates later.
+    const SUNSET_STEP_OF_PEAK: f64 = 0.05;
+
+    /// **The light a frame is given, tick by tick, from afternoon through the night.**
+    ///
+    /// A frame that goes black when the Sun reaches the horizon has exactly one number in it that
+    /// stepped, and the whole point of this is that the number is *named* rather than guessed at:
+    /// the run prints the altitude, the Sun's own light, the ambient, the turbidity and the grade,
+    /// and reports which step was the largest.
+    #[test]
+    fn the_worlds_light_across_a_sunset() {
+        let world = spec();
+        let mut previous: Option<(u64, f64, f64, f64, f64)> = None;
+        // (step, tick, altitude, from, to, which)
+        let mut worst = (0.0f64, 0u64, 0.0f64, 0.0f64, 0.0f64, "");
+        let mut rows = Vec::new();
+        // **At the rig's own cadence**, which is the cadence the player sees: `Stage::Atmosphere`
+        // uploads on `Cadence::Water`, every four ticks. A sweep at any other step is measuring a
+        // frame rate the game does not run at, in either direction.
+        const CADENCE_TICKS: u64 = 4;
+        for tick in (14_500..17_400).step_by(CADENCE_TICKS as usize) {
+            let inputs = sky_inputs_at(&world, 0.0, 0.0, tick);
+            let Some(day) = daylight_of(&world, tick, inputs, 0) else {
+                continue;
+            };
+            let intensity = day.rig.lights.first().map_or(0.0, |l| l.intensity);
+            let ambient = day.rig.ambient.luminance();
+            // **The field's own reading of the same sky, evaluated beside the rig's**: the stencil
+            // walked with nothing in the way, which is what the field would measure for a cell the
+            // world does not occlude. It is here so this sweep *measures* the gap between the two
+            // sources of the ambient — the assertion below is made of these two numbers, and
+            // [`AMBIENT_FROM_HORIZON`]'s own doc carries them.
+            let peak = peak_sun_luminance(&world, inputs);
+            let air = crate::sun::air_at(&world, 0.0, 0.0, tick);
+            let model = SkyModel::of(
+                &day.sky,
+                &air,
+                peak,
+                &voxel_shapers::sky::moon_position(&world, tick, 0),
+            );
+            let mut stencil = LinearRgb::BLACK;
+            for direction in SKY_STENCIL {
+                let (elevation_deg, azimuth_deg) =
+                    sky_direction_of(Vec3::new(direction[0], direction[1], direction[2]));
+                stencil = stencil + sky_ambient_at(&model, elevation_deg, azimuth_deg);
+            }
+            let field_reading = stencil.luminance() * (AMBIENT_FROM_HORIZON / SKY_STENCIL.len() as f64);
+            rows.push((
+                tick,
+                day.sun_altitude_deg,
+                intensity,
+                ambient,
+                inputs.turbidity,
+                day.grade,
+                day.lights,
+                field_reading,
+            ));
+            if let Some((last_tick, last_alt, last_intensity, last_ambient, last_turbidity)) = previous {
+                for (step, from, to, which) in [
+                    ((intensity - last_intensity).abs(), last_intensity, intensity, "sun light"),
+                    ((ambient - last_ambient).abs(), last_ambient, ambient, "ambient"),
+                    ((inputs.turbidity - last_turbidity).abs(), last_turbidity, inputs.turbidity, "turbidity"),
+                ] {
+                    if step > worst.0 {
+                        worst = (step, tick, last_alt, from, to, which);
+                    }
+                }
+                let _ = last_tick;
+            }
+            previous = Some((tick, day.sun_altitude_deg, intensity, ambient, inputs.turbidity));
+        }
+        println!("tick  alt_deg   sun_light    ambient  turbidity   grade  lights   field(the stencil)");
+        for (tick, alt, intensity, ambient, turbidity, grade, lights, field_reading) in &rows {
+            // The horizon band, and every 250 ticks either side of it: the whole question is
+            // what these numbers do as `alt` crosses zero.
+            let near = alt.abs() < 1.5;
+            if near {
+                println!(
+                    "{tick}  {alt:>7.3}  {intensity:>9.6}  {ambient:>9.6}  {turbidity:>9.4}  \
+                     {grade:>6.3}  {lights}  {field_reading:>9.6}"
+                );
+            }
+        }
+        // **The two sources of the ambient, measured at the crossing.** The frame goes uniformly
+        // orange when the key light steps to zero and the ambient is left alone on every surface, so
+        // what the ambient *reads* there is the whole of that wash — and the two readings below are
+        // at the same tick and the same sky, which is what makes the gap a measurement rather than a
+        // claim about one of them.
+        let crossing = rows
+            .iter()
+            .min_by_key(|row| (row.1.abs() * 1.0e6) as i64)
+            .expect("a row nearest the horizon");
+        println!(
+            "nearest the crossing: the Sun at {:.3} deg, the rig's ambient {:.6} against the field's \
+             stencil reading {:.6} ({:.2}x)",
+            crossing.1,
+            crossing.3,
+            crossing.7,
+            crossing.3 / crossing.7.max(f64::MIN_POSITIVE)
+        );
+        // **And the high sun, where the two readings are one law**: the change is the *shape* of the
+        // day, not its brightness. The sweep's own brightest row is a high sun, and there the two
+        // readings are two samplings of a bright dome — which is the bound the rest of the frame's
+        // brightness is held to.
+        let highest = rows.iter().max_by(|a, b| a.1.total_cmp(&b.1)).expect("a highest sun");
+        let ratio = highest.3 / highest.7.max(f64::MIN_POSITIVE);
+        println!(
+            "highest sun in the sweep: the Sun at {:.3} deg, the rig's ambient {:.6} against the \
+             field's stencil reading {:.6} ({ratio:.2}x)",
+            highest.1, highest.3, highest.7
+        );
+        // **And the gap between the readings, asserted as the thing that is owed**: if these two ever
+        // meet, the field's own occluded sky can replace the rig's ambient and `fs_main`'s fallback
+        // can go. Until then the assertion below is what says so, and `AMBIENT_FROM_HORIZON`'s own
+        // doc carries the same numbers.
+        assert!(
+            crossing.3 > crossing.7 * 100.0,
+            "the rig's ambient reads {:.6} at the crossing against the field's stencil {:.6} — the two \
+             readings have met, so the field can be the ambient's only source and `daylight_of`'s note \
+             is stale",
+            crossing.3,
+            crossing.7
+        );
+        println!(
+            "worst step: {} {:.6} -> {:.6} ({:+.6}) at tick {} with the Sun at {:.3} deg",
+            worst.5, worst.3, worst.4, worst.4 - worst.3, worst.1, worst.2
+        );
+        // **The claim, from the two numbers it is made of.** The rig's ambient is the world's whole
+        // base light: a frame whose ambient is *exactly* zero is a frame with no light in it at all,
+        // and one that loses most of what it had in a single update is the sunset the eye reads as
+        // the game stopping. Both were true before `voxel_light::solver::path_in_layer` stopped
+        // answering the whole air path at exactly the horizon — an empty droplet layer put an
+        // eighteen-deep optical depth on the Sun's light in the one tick it crossed, and the ambient
+        // fell from `0.189650` to `1.2e-8` and then printed as zero.
+        let lowest = rows.iter().map(|r| r.3).fold(f64::INFINITY, f64::min);
+        let highest = rows.iter().map(|r| r.3).fold(f64::NEG_INFINITY, f64::max);
+        // **The step is measured against the day's own peak, not against the value it came from.**
+        // At deep night the ambient is `1e-4` and a relative bound is meaningless there — a
+        // hundredth of a thousandth is a 100 % step and an invisible one. What the eye sees is how
+        // far the frame moved against the brightest frame in the sweep, and that is what is bound.
+        let mut worst_step = 0.0f64;
+        let mut stepped_at = 0u64;
+        for pair in rows.windows(2) {
+            let step = (pair[0].3 - pair[1].3).abs();
+            if step > worst_step {
+                worst_step = step;
+                stepped_at = pair[1].0;
+            }
+        }
+        let share_of_peak = worst_step / highest.max(f64::EPSILON);
+        println!(
+            "the ambient runs {lowest:.6} .. {highest:.6}; its worst step in one update is \
+             {worst_step:.6} = {:.2}% of the day's peak, at tick {stepped_at}",
+            share_of_peak * 100.0
+        );
+        assert!(
+            lowest > 0.0,
+            "the world's ambient is exactly zero somewhere in the sweep: the frame has no light in \
+             it at all, which is the black sunset"
+        );
+        assert!(
+            share_of_peak <= SUNSET_STEP_OF_PEAK,
+            "one update moved the world's ambient by {:.2}% of the day's peak light (at tick \
+             {stepped_at}), so the frame's own light steps at the horizon rather than decaying \
+             through it",
+            share_of_peak * 100.0
+        );
+
+        // **The two ticks either side of the crossing, taken apart.** The table says *that* the
+        // ambient steps; this says which factor in it did.
+        for tick in [16_300u64, 16_325, 16_350] {
+            let inputs = sky_inputs_at(&world, 0.0, 0.0, tick);
+            let Some(day) = daylight_of(&world, tick, inputs, 0) else {
+                continue;
+            };
+            let peak = peak_sun_luminance(&world, inputs);
+            let air = crate::sun::air_at(&world, 0.0, 0.0, tick);
+            let moon = voxel_shapers::sky::moon_position(&world, tick, 0);
+            let model = SkyModel::of(&day.sky, &air, peak, &moon);
+            let visible = voxel_light::sun_visible_fraction(
+                &SunPath {
+                    altitude_deg: day.sun_altitude_deg,
+                    azimuth_deg: day.sky.sun_azimuth_deg,
+                },
+                &MoonPath {
+                    altitude_deg: moon.altitude_deg,
+                    azimuth_deg: moon.azimuth_deg,
+                    illuminated_fraction: moon.phase_fraction,
+                },
+            );
+            println!(
+                "tick {tick}: alt {:.4}  twilight(row) {:.6}  sun_visible {:.6}  \
+                 moon alt {:.3} phase {:.5}  sky.sun {:.6e}  night floor {:.6e}",
+                day.sun_altitude_deg,
+                model.row(1)[2],
+                visible,
+                moon.altitude_deg,
+                moon.phase_fraction,
+                day.sky.sun.luminance(),
+                night_sky_radiance_w_m2_sr(),
+            );
+            println!(
+                "    rows[1] = {:?}  exposure {:.6e}",
+                model.row(1),
+                model.row(2)[3]
+            );
+            println!(
+                "    ambient: horizon {:?} zenith {:?}",
+                sky_ambient_at(&model, 0.0, day.sky.sun_azimuth_deg),
+                sky_ambient_at(&model, 90.0, day.sky.sun_azimuth_deg),
+            );
+            for index in 0..3 {
+                let a = model.row(6 + index * 3);
+                println!(
+                    "    band {index}: extinction {:.4e} sun_power {:.4e} scatter {:.4e}",
+                    a[0], a[2], a[1]
+                );
+            }
+        }
+    }
+
+    // An assertion that was here, and why it is not — docs/lighting-sky-and-moon.md
 
     #[test]
     fn the_exposure_scales_both_terms_or_neither() {
@@ -1276,16 +2491,30 @@ mod tests {
     }
 
     #[test]
-    fn a_night_has_no_sun_light_and_a_black_ambient() {
-        // **The absence is the point.** A rig that kept the sun's light through the
-        // night would light a night as though it were an overcast afternoon, and
-        // the difference between those two pictures is the entire reason the sky
-        // exists.
+    fn a_night_has_no_sun_light_and_a_moonlit_ambient() {
+        // The absence is the point, and it is the Sun's absence that is the point — docs/lighting-sky-and-moon.md
         let world = spec();
-        let rig = rig_of(&world, 0, Default::default(), 0)
+        let moonless = rig_of(&world, 0, Default::default(), 0)
             .expect("the default atmosphere is a legal one");
-        assert!(rig.lights.is_empty(), "a light was in the rig at midnight: {:?}", rig.lights);
-        assert_eq!(rig.ambient.luminance(), 0.0, "the night had an ambient glow");
+        assert!(
+            moonless.lights.is_empty(),
+            "a light was in the rig at a new-moon midnight: {:?}",
+            moonless.lights
+        );
+        let floor = moonless.ambient.luminance();
+        assert!(floor > 0.0, "the night sky vanished again: ambient {floor:e}");
+
+        // **The regression, measured**: a full Moon at its highest midnight is brighter, by
+        // orders, than the same midnight with the Moon down and new. `docs/light-solver.md`'s own
+        // ratio puts the Moon five or six orders under the Sun; what matters here is that the
+        // direction of the difference is the Moon's and not a constant's.
+        let full = rig_of(&world, 312_000, Default::default(), 0).expect("a legal atmosphere");
+        let lit = full.ambient.luminance();
+        println!("midnight ambient: new and down {floor:e}, full and 59° up {lit:e}");
+        assert!(
+            lit > floor * 10.0,
+            "a full Moon at midnight lit nothing: {lit:e} against a moonless {floor:e}"
+        );
     }
 
     #[test]
@@ -1399,76 +2628,236 @@ mod tests {
     }
 
     #[test]
-    fn the_dome_table_is_the_directional_model_it_samples() {
+    fn the_model_is_the_solvers_own_transport_at_every_angle() {
+        // **The seam that matters for the packing.** The shader's sky and the light rig's sky are
+        // two transcriptions of `voxel_light::solver::sky_radiance`, and this holds the rows the
+        // shader reads — plus `sky_exposed_at`, the CPU's own reading of them — to the solver
+        // itself. A band's power, its extinction, its phase and the response's weights all have to
+        // survive the round trip through `f32` rows for the picture to be the model.
         let (spec, tick) = noon_world();
         let inputs = SkyInputs::default();
         let sky = Sky::at(&spec, tick, inputs, 0).expect("a sky at noon");
         let peak = peak_sun_luminance(&spec, inputs);
-        let table = sky_dome_table(&sky, inputs, peak);
-        assert_eq!(table.len(), SKY_DOME_ENTRIES, "the dome table is the declared size");
-
-        // A table of one colour would make everything below pass for the wrong reason.
-        let brightest = table.iter().map(|c| c.luminance()).fold(0.0_f64, f64::max);
-        assert!(
-            brightest > 0.0 && brightest < 1.0,
-            "the normalised dome is {brightest}, so it is not a ratio"
+        let air = crate::sun::air_at(&spec, 0.0, 0.0, tick);
+        // **The Moon this model carries is the Moon the solver is given**, and it is why this test
+        // means anything: with `None` on the solver's side the comparison passes while the rows are
+        // never exercised at all — which is exactly what it did at this tick, where the Moon is new
+        // and every one of its rows is zero. `the_lunar_rows_are_the_solvers_own_moonlit_transport`
+        // is the tick where they are not.
+        let moon = voxel_shapers::sky::moon_position(&spec, tick, 0);
+        let moon_body = voxel_light::MoonPath {
+            altitude_deg: moon.altitude_deg,
+            azimuth_deg: moon.azimuth_deg,
+            illuminated_fraction: moon.phase_fraction,
+        };
+        let model = SkyModel::of(&sky, &air, peak, &moon);
+        assert_eq!(model.bytes().len(), SKY_MODEL_BYTES, "the model is not its own row count");
+        assert_eq!(
+            model.row(3)[3] as usize,
+            voxel_light::BAND_COUNT,
+            "the model does not carry every band"
         );
 
-        // At a sample point the table is the model exactly — no interpolation.
-        for e in 0..SKY_DOME_ELEVATIONS {
-            for a in 0..SKY_DOME_AZIMUTHS {
-                let elevation = 90.0 * e as f64 / (SKY_DOME_ELEVATIONS - 1) as f64;
-                let azimuth = 360.0 * a as f64 / SKY_DOME_AZIMUTHS as f64;
-                let exact = Sky::directional_radiance(
-                    sky.sun_altitude_deg,
-                    elevation,
-                    azimuth - sky.sun_azimuth_deg,
-                    inputs,
-                ) / peak;
-                let looked = sky_dome_lookup(&table, elevation, azimuth);
-                let (a_, b_) = (looked.luminance(), exact.luminance());
-                assert!(
-                    (a_ - b_).abs() < 1e-12,
-                    "at ({elevation}°, {azimuth}°) the dome is not the model: {a_} against {b_}"
+        let table = voxel_light::BandTable::computed();
+        let sun = voxel_light::SunPath {
+            altitude_deg: sky.sun_altitude_deg,
+            azimuth_deg: sky.sun_azimuth_deg,
+        };
+        let exposure = SKY_EXPOSURE / peak;
+        let mut worst = 0.0_f64;
+        let mut brightest = 0.0_f64;
+        for e in 0..=18 {
+            let elevation = e as f64 * 5.0;
+            for a in (0..360).step_by(15) {
+                let azimuth = a as f64;
+                let bands =
+                    voxel_light::sky_radiance(&table, &air, &sun, Some(&moon_body), elevation, azimuth)
+                        .expect("a computable sky");
+                // The client's own convention, stated once: the bands carry the magnitude, the
+                // response the shape, and one exposure covers the sky, the disc and the night.
+                let total: f64 = bands.iter().sum();
+                let shape = voxel_light::visible_rgb(&bands);
+                let want = LinearRgb {
+                    r: shape[0] * total * exposure,
+                    g: shape[1] * total * exposure,
+                    b: shape[2] * total * exposure,
+                };
+                let got = sky_exposed_at(&model, elevation, azimuth);
+                worst = worst.max((got.luminance() - want.luminance()).abs());
+                brightest = brightest.max(want.luminance());
+            }
+        }
+        assert!(
+            brightest > 0.0,
+            "the model's noon sky is black, so every comparison below would pass for nothing"
+        );
+        assert!(
+            worst < brightest * 1.0e-4,
+            "the rows are {worst} of {brightest} away from the solver's own transport, so the \
+             shader would draw a sky the rig was not built from"
+        );
+        println!(
+            "the model is within {:.2e} of the solver over 19 elevations × 24 azimuths; the \
+             exposed noon sky peaks at {brightest:.4}",
+            worst
+        );
+
+        // **And it is Rayleigh's sky**: the zenith is blue-dominant, which is the property the
+        // twelve bands produce rather than a colour anyone chose.
+        let zenith = sky_exposed_at(&model, 85.0, sky.sun_azimuth_deg + 90.0);
+        assert!(
+            zenith.b > zenith.r,
+            "the exposed zenith is ({:.4}, {:.4}, {:.4}), which is not a blue sky",
+            zenith.r,
+            zenith.g,
+            zenith.b
+        );
+    }
+
+    /// **The lunar rows, at the tick where they are not zero.**
+    ///
+    /// The Moon's own two rows are the newest thing the shader reads, and the test above cannot
+    /// prove they are right: its world's noon is a new moon, so `moon_sky_power` is exactly zero
+    /// and the rows cancel out of the comparison. Here the Moon is **59° up and 96.5 % lit** — the
+    /// tick `a_night_has_no_sun_light_and_a_moonlit_ambient` measures the ambient peak on — so the
+    /// shader's reduced form and the solver's closed form have to agree *through the lunar term*,
+    /// with the row's own column, lit fraction and phase angle all live. It asserts the rows are
+    /// non-trivial first, so it cannot pass by measuring nothing.
+    #[test]
+    fn the_lunar_rows_are_the_solvers_own_moonlit_transport() {
+        let spec = spec();
+        let tick = 312_000u64;
+        let inputs = SkyInputs::default();
+        let sky = Sky::at(&spec, tick, inputs, 0).expect("a sky");
+        let peak = peak_sun_luminance(&spec, inputs);
+        let air = crate::sun::air_at(&spec, 0.0, 0.0, tick);
+        let moon = voxel_shapers::sky::moon_position(&spec, tick, 0);
+        let model = SkyModel::of(&sky, &air, peak, &moon);
+        assert!(moon.altitude_deg > 30.0, "the Moon is not up: {}°", moon.altitude_deg);
+        assert!(
+            model.row(4)[2] > 0.5,
+            "the lunar row's lit fraction arrives as {}",
+            model.row(4)[2]
+        );
+        assert!(model.row(4)[0] > 0.0, "the Moon's own air path is empty");
+        assert!(model.row(5)[1] > 0.5, "the Moon's own direction is not up");
+
+        let table = voxel_light::BandTable::computed();
+        let sun = voxel_light::SunPath {
+            altitude_deg: sky.sun_altitude_deg,
+            azimuth_deg: sky.sun_azimuth_deg,
+        };
+        let body = voxel_light::MoonPath {
+            altitude_deg: moon.altitude_deg,
+            azimuth_deg: moon.azimuth_deg,
+            illuminated_fraction: moon.phase_fraction,
+        };
+        let exposure = SKY_EXPOSURE / peak;
+        let mut worst = 0.0_f64;
+        let mut brightest = 0.0_f64;
+        for elevation in [5.0, 25.0, 60.0, 85.0] {
+            for azimuth in [0.0, 90.0, 180.0, 270.0] {
+                let bands =
+                    voxel_light::sky_radiance(&table, &air, &sun, Some(&body), elevation, azimuth)
+                        .expect("a computable sky");
+                let total: f64 = bands.iter().sum();
+                let shape = voxel_light::visible_rgb(&bands);
+                let want = LinearRgb {
+                    r: shape[0] * total * exposure,
+                    g: shape[1] * total * exposure,
+                    b: shape[2] * total * exposure,
+                };
+                let got = sky_exposed_at(&model, elevation, azimuth);
+                worst = worst.max((got.luminance() - want.luminance()).abs());
+                brightest = brightest.max(want.luminance());
+            }
+        }
+        assert!(brightest > 0.0, "the moonlit sky is black, so nothing was compared");
+        assert!(
+            worst < brightest * 1.0e-4,
+            "at a moonlit midnight the rows are {worst} of {brightest} away from the solver, so \
+             the shader would draw a lunar sky the light model was not built from"
+        );
+        println!(
+            "a moonlit midnight: the model is within {:.2e} of the solver over 16 directions; the \
+             sky peaks at {brightest:.6e}",
+            worst
+        );
+    }
+
+    /// **A second transcription is caught by the shader's own text**, and this is where the two
+    /// halves of the sky meet: `atmosphere.wgsl` is the only file that carries the transport, and
+    /// both passes that draw light are compiled with it exactly once.
+    #[test]
+    fn the_transport_is_one_file_and_both_passes_receive_it() {
+        let transport = include_str!("atmosphere.wgsl");
+        for item in ["fn sky_radiance_rgb", "fn mixed_phase", "fn air_mass"] {
+            assert_eq!(
+                transport.matches(item).count(),
+                1,
+                "atmosphere.wgsl should define `{item}` once"
+            );
+        }
+        for (name, pass) in [
+            ("sky.wgsl", include_str!("sky.wgsl")),
+            ("shading.wgsl", include_str!("shading.wgsl")),
+        ] {
+            for item in ["fn sky_radiance_rgb", "fn mixed_phase", "fn air_mass"] {
+                assert_eq!(
+                    pass.matches(item).count(),
+                    0,
+                    "{name} carries its own `{item}` rather than reaching through atmosphere.wgsl"
                 );
             }
         }
-
-        // **The dome knows where the Sun is.** At one elevation, the cell at the Sun's own
-        // azimuth is brighter than the cell opposite — the azimuthal fact the elevation-only
-        // table could not carry.
-        let toward = sky_dome_lookup(&table, 30.0, sky.sun_azimuth_deg);
-        let away = sky_dome_lookup(&table, 30.0, sky.sun_azimuth_deg + 180.0);
-        assert!(
-            toward.luminance() > away.luminance(),
-            "the dome's sun-side cell is not brighter: {} against {}",
-            toward.luminance(),
-            away.luminance()
+        assert_eq!(
+            transport.matches("@group(0) @binding(5)").count(),
+            1,
+            "the model's binding should be declared once, in the one file both passes share"
         );
+    }
 
-        // Between the samples, the interpolation error is measured rather than assumed; the
-        // bound is generous on purpose and the number is printed so a later change can tighten
-        // it from a measurement.
-        let mut worst = 0.0_f64;
-        for e in 0..=900 {
-            let elevation = e as f64 / 10.0;
-            for a in 0..=359 {
-                let azimuth = a as f64;
-                let exact = Sky::directional_radiance(
-                    sky.sun_altitude_deg,
-                    elevation,
-                    azimuth - sky.sun_azimuth_deg,
-                    inputs,
-                ) / peak;
-                let looked = sky_dome_lookup(&table, elevation, azimuth);
-                worst = worst.max((looked.luminance() - exact.luminance()).abs());
-            }
+    /// **A host that states nothing is refused, and a stated absence is not a mistake.**
+    ///
+    /// The shader's own refusal is one layer too far down to be driven from here: the buffer a
+    /// host binds is always the declared length, so `arrayLength(&sky_model)` cannot see a host
+    /// that never uploaded anything. This drives the decision such a host is read against, and
+    /// the model's own row count is what the admitted case is asked through — a constant that
+    /// agreed with itself would prove nothing.
+    #[test]
+    fn a_sky_that_was_never_stated_is_refused_before_a_frame_can_read_it() {
+        assert_eq!(admit_sky_rows(None), Err(SkyModelRefusal::NothingStated));
+        assert_eq!(admit_sky_rows(Some(NO_SKY_ROWS)), Ok(NO_SKY_ROWS));
+        assert_eq!(NO_SKY_ROWS, 0, "zero rows is the absence, not a model's first row");
+        for wrong in [SKY_MODEL_ROWS - 1, SKY_MODEL_ROWS + 1] {
+            assert_eq!(
+                admit_sky_rows(Some(wrong)),
+                Err(SkyModelRefusal::RowCount { stated: wrong, declared: SKY_MODEL_ROWS }),
+                "{wrong} rows was admitted and the layout is {SKY_MODEL_ROWS}"
+            );
         }
         assert!(
-            worst < 0.1 * brightest + 1e-12,
-            "the dome interpolation is {worst} off, over a tenth of the peak {brightest}"
+            SkyModelRefusal::NothingStated.to_string().contains("no sky has been stated"),
+            "the refusal a host reads does not say what is missing"
         );
-        println!("dome table worst interpolation error: {worst:.6} of peak {brightest:.6}");
+
+        // And the admitted count is the one a **real model** states, not the constant beside it.
+        let (spec, tick) = noon_world();
+        let inputs = SkyInputs::default();
+        let sky = Sky::at(&spec, tick, inputs, 0).expect("a sky at noon");
+        let air = crate::sun::air_at(&spec, 0.0, 0.0, tick);
+        let model = SkyModel::of(
+            &sky,
+            &air,
+            peak_sun_luminance(&spec, inputs),
+            &voxel_shapers::sky::moon_position(&spec, tick, 0),
+        );
+        assert_eq!(admit_sky_rows(Some(model.rows())), Ok(SKY_MODEL_ROWS));
+        assert_eq!(
+            model.bytes().len(),
+            model.rows() * 16,
+            "a model's bytes are not the rows it claims to carry"
+        );
     }
 
     #[test]
@@ -1505,15 +2894,27 @@ mod tests {
         assert!(elevation > 0.0, "the mirror ray points below the horizon: {elevation}");
         assert!((elevation - 45.0).abs() < 1e-6, "the mirror elevation is {elevation}");
         assert!((azimuth - 180.0).abs() < 1e-6, "the mirror azimuth is {azimuth}");
-        // And it reads a real table: south at 45° is brighter than the same table's
-        // black-outside case would be.
+        // And it reads the sky the pass draws: south at 45° is a real sky and not the
+        // no-model case, which is black.
         let (spec, tick) = noon_world();
         let inputs = SkyInputs::default();
         let sky = Sky::at(&spec, tick, inputs, 0).expect("a sky");
         let peak = peak_sun_luminance(&spec, inputs);
-        let table = sky_dome_table(&sky, inputs, peak);
-        let reflected = sky_dome_lookup(&table, elevation, azimuth);
+        let air = crate::sun::air_at(&spec, 0.0, 0.0, tick);
+        let model = SkyModel::of(&sky, &air, peak, &voxel_shapers::sky::moon_position(&spec, tick, 0));
+        let reflected = sky_exposed_at(&model, elevation, azimuth);
         assert!(reflected.luminance() > 0.0, "the reflection is black at noon");
+        // **And with no model, the reflection is nothing at all** — the frame this pass drew
+        // before a sky existed, rather than a guess at one.
+        assert_eq!(
+            sky_exposed_at(
+                &SkyModel::of(&sky, &air, 0.0, &voxel_shapers::sky::moon_position(&spec, tick, 0)),
+                elevation,
+                azimuth
+            ),
+            LinearRgb::BLACK,
+            "a model with no exposure behind it drew a sky"
+        );
     }
 
     #[test]
@@ -1660,5 +3061,209 @@ mod tests {
         );
         // And the sampling choice is pinned, so a later edit has to say it changed it.
         assert_eq!(WATER_PATH_REFERENCE_M, 100.0, "the water-path reference moved");
+    }
+
+    // ---- the world's own light field --------------------------------------------
+    //
+    // `WorldLight` is the per-cell measurement the shading model reads as `light_present`.
+    // Three of its claims a picture cannot show are pinned here: that its beam is the solver's
+    // own (the Sun by day, and the Sun reflected by the Moon at night), that its direction is
+    // the **rig's own first light** rather than a second opinion about where the light is, and
+    // that the world's own octree is what decides how much of either reaches a cell.
+
+    /// **A night the model itself calls lit**: the Sun down and the Moon **up and past half
+    /// phase**, so the beam is the Moon's own light arriving at a body an eye can see.
+    ///
+    /// **The Moon's altitude is part of the fixture now, and that is what the orbit changed.**
+    /// While the Moon was drawn at a declared zenith it was up at every hour of every night, so a
+    /// "lit night" needed only the Sun's altitude; a body on an orbit sets, and a night with the
+    /// waning crescent below the horizon is a night with no moonlight in it at all. Scanned by day
+    /// over the model's own year, so the tick is the world's and not one picked to make the picture
+    /// come out.
+    fn a_lit_night(world: &WorldSpec) -> u64 {
+        let ticks_per_day = voxel_shapers::climate::TICKS_PER_DAY;
+        for day in 0..voxel_shapers::climate::DAYS_PER_YEAR {
+            let start = day * ticks_per_day;
+            for t in start..start + ticks_per_day {
+                let sun = voxel_shapers::sky::solar_position(world, t).altitude_deg;
+                if sun > -6.0 {
+                    continue;
+                }
+                let moon = voxel_shapers::sky::moon_position(world, t, 0);
+                if moon.altitude_deg > 10.0 && moon.phase_fraction > 0.5 {
+                    return t;
+                }
+            }
+        }
+        panic!("the model's own year has no lit night in it");
+    }
+
+    /// A chunk of the shipped world, with the source that answers its addresses — found by asking
+    /// the world where its ground is rather than by naming a chunk, the same way
+    /// `voxel_stream::light`'s own end-to-end test finds it.
+    fn a_generated_chunk() -> (voxel_stream::WorldSource, voxel_model::ChunkPos, SparseVoxelOctree) {
+        use voxel_model::CHUNK_SIDE;
+        let world = spec();
+        let source = voxel_stream::WorldSource::new(world);
+        let (x, z) = (0, -95);
+        let mut surface_y = None;
+        for y in -32..128 {
+            let solid = source
+                .material_at(x, y, z)
+                .map(|material| !material.is_empty())
+                .unwrap_or(false);
+            if solid {
+                surface_y = Some(y);
+            }
+        }
+        let surface_y = surface_y.expect("the spawn column has ground under it");
+        let chunk = voxel_model::ChunkPos::new(
+            x.div_euclid(CHUNK_SIDE),
+            surface_y.div_euclid(CHUNK_SIDE),
+            z.div_euclid(CHUNK_SIDE),
+        );
+        let tree = source.build_chunk(chunk).expect("a chunk of the world");
+        (source, chunk, tree)
+    }
+
+    #[test]
+    fn the_fields_beam_is_the_rigs_own_first_light() {
+        let world = spec();
+        let inputs = SkyInputs::default();
+        for tick in [highest_noon_tick(&world).1, a_lit_night(&world)] {
+            let field = WorldLight::of(&world, tick, inputs, 0).expect("a field");
+            let daylight = daylight_of(&world, tick, inputs, 0).expect("a rig");
+            let first = daylight.rig.lights[0];
+            // **The shader wraps the field's beam at `rig.lights[0].direction`.** A field measured
+            // along a different direction would be lit from where the light is not, and the two
+            // numbers are computed from the same tick, so they may not disagree.
+            for axis in 0..3 {
+                let rig = [first.direction.x as f64, first.direction.y as f64, first.direction.z as f64];
+                assert!(
+                    (field.toward_beam()[axis] - rig[axis]).abs() < 1e-6,
+                    "the field's beam and the rig's first light point different ways on axis \
+                     {axis} at tick {tick}: {:?} against {rig:?}",
+                    field.toward_beam()
+                );
+            }
+            let sun_is_up =
+                voxel_shapers::sky::SkyPhase::sun_is_up(daylight.sun_altitude_deg);
+            assert_eq!(
+                field.beam_is_moon(),
+                !sun_is_up,
+                "the beam's body is not the one the Sun's own state names (tick {tick})"
+            );
+            // One beam, one light: the field measures a single body's light, so a rig carrying a
+            // second would be a light the field has no answer for.
+            assert!(
+                daylight.rig.lights.len() <= 1,
+                "the rig carries {} lights and the field measures one beam",
+                daylight.rig.lights.len()
+            );
+        }
+    }
+
+    #[test]
+    fn the_nights_beam_is_the_suns_reflected_and_the_octree_says_how_much_arrives() {
+        let world = spec();
+        let inputs = SkyInputs::default();
+        let night = a_lit_night(&world);
+        let field = WorldLight::of(&world, night, inputs, 0).expect("a field");
+        assert!(field.beam_is_moon(), "the night's beam is not the Moon's");
+
+        // **The beam is the solver's own moonlight**, recomputed here from the same three inputs:
+        // the field may not carry a model of the Moon of its own.
+        let air = crate::sun::air_at(&world, 0.0, 0.0, night);
+        let orbit = voxel_shapers::sky::moon_position(&world, night, 0);
+        let body = voxel_light::MoonPath {
+            altitude_deg: orbit.altitude_deg,
+            azimuth_deg: orbit.azimuth_deg,
+            illuminated_fraction: orbit.phase_fraction,
+        };
+        let expected = voxel_light::moonlight(&voxel_light::BandTable::computed(), &air, &body)
+            .expect("the Moon's own light");
+        assert_eq!(
+            field.beam_bands(),
+            expected,
+            "the field's night beam is not the solver's moonlight"
+        );
+
+        // **And it is reflected sunlight**: five or six orders under the Sun's own beam over the
+        // *same air*, which is the published ratio between the two and not a dial on the picture.
+        //
+        // The comparison is the Sun risen 30° over this cell's own column rather than the Sun at
+        // its own noon, and that is on purpose: the noon tick's air may carry a cloud thick enough
+        // to extinguish the beam entirely, and a ratio against zero would measure the cloud.
+        let risen = voxel_light::direct_beam(
+            &voxel_light::BandTable::computed(),
+            &air,
+            &voxel_light::SunPath { altitude_deg: 30.0, azimuth_deg: 0.0 },
+            None,
+        )
+        .expect("a risen Sun");
+        let ratio = expected.iter().sum::<f64>() / risen.iter().sum::<f64>();
+        println!(
+            "a lit night: the Moon's beam sums to {:.3e}, the same air under a 30° Sun to \
+             {:.3e} — a ratio of {ratio:.2e}",
+            expected.iter().sum::<f64>(),
+            risen.iter().sum::<f64>()
+        );
+        assert!(
+            ratio < 1e-4,
+            "the night's beam is {ratio} of the Sun's over the same air, so it is not a reflection"
+        );
+
+        // **The world's own octree decides how much of it arrives.** A cell in the open sees the
+        // Moon's beam entire (the body is at the zenith in this model, so nothing is between the
+        // cell and it); a cell three metres inside the rock sees none of it, and none of the sky
+        // either — which is the shadow the rig could not cast, because the rig does not know
+        // where a cell is.
+        let (source, chunk, tree) = a_generated_chunk();
+        let origin = chunk.origin();
+        let surface = {
+            let mut top = None;
+            for y in -32..128 {
+                let solid = source
+                    .material_at(origin.x + 16, y, origin.z + 16)
+                    .map(|material| !material.is_empty())
+                    .unwrap_or(false);
+                if solid {
+                    top = Some(y);
+                }
+            }
+            top.expect("the chunk's centre column has ground under it")
+        };
+        let cell = |world_y: i32| {
+            let world = [(origin.x + 16) as f64 + 0.5, world_y as f64 + 0.5, (origin.z + 16) as f64 + 0.5];
+            [
+                world[0] - origin.x as f64,
+                world[1] - origin.y as f64,
+                world[2] - origin.z as f64,
+            ]
+        };
+        let open = field.bands(&source, &tree, cell(surface + 4), 40.0);
+        let buried = field.bands(&source, &tree, cell(surface - 3), 40.0);
+        println!(
+            "a lit night's field in the spawn chunk: open {open:?}\n  three metres into the \
+             rock: {buried:?}"
+        );
+        assert!(
+            open[0] > 0.0 && open[1] > 0.0 && open[2] > 0.0,
+            "a cell in the open saw none of the Moon's beam: {open:?}"
+        );
+        assert_eq!(
+            [buried[0], buried[1], buried[2]],
+            [0.0; 3],
+            "a cell inside the rock saw the Moon"
+        );
+        assert!(
+            open[3] > 0.0 && open[4] > 0.0 && open[5] > 0.0,
+            "a cell in the open saw none of the dome: {open:?}"
+        );
+        assert_eq!(
+            [buried[3], buried[4], buried[5]],
+            [0.0; 3],
+            "a cell inside the rock saw the dome"
+        );
     }
 }

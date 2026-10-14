@@ -328,8 +328,14 @@ pub fn bands() -> [Band; BAND_COUNT] {
 /// The canonical bytes of a table: version, count, then each band, little-endian.
 pub fn encode(bands: &[Band; BAND_COUNT]) -> Vec<u8> {
     let mut out = Vec::with_capacity(4 + BAND_COUNT * 49);
-    out.extend_from_slice(&SPECTRA_VERSION.to_le_bytes());
-    out.extend_from_slice(&(BAND_COUNT as u16).to_le_bytes());
+    out.extend_from_slice(&[
+        SPECTRA_VERSION as u8,
+        (SPECTRA_VERSION >> 8) as u8,
+    ]);
+    out.extend_from_slice(&[
+        BAND_COUNT as u8,
+        ((BAND_COUNT as u16) >> 8) as u8,
+    ]);
     for band in bands {
         for value in [
             band.lo_nm,
@@ -339,7 +345,16 @@ pub fn encode(bands: &[Band; BAND_COUNT]) -> Vec<u8> {
             band.extinction_per_m,
             band.scatter_per_m,
         ] {
-            out.extend_from_slice(&value.to_bits().to_le_bytes());
+            out.extend_from_slice(&[
+                value.to_bits() as u8,
+                (value.to_bits() >> 8) as u8,
+                (value.to_bits() >> 16) as u8,
+                (value.to_bits() >> 24) as u8,
+                (value.to_bits() >> 32) as u8,
+                (value.to_bits() >> 40) as u8,
+                (value.to_bits() >> 48) as u8,
+                (value.to_bits() >> 56) as u8,
+            ]);
         }
         out.push(band.transport.as_u8());
     }
@@ -357,7 +372,7 @@ impl Reader<'_> {
         let end = self.at + 2;
         let slice = self.bytes.get(self.at..end).ok_or(SpectraError::Truncated)?;
         self.at = end;
-        Ok(u16::from_le_bytes([slice[0], slice[1]]))
+        Ok((slice[0] as u16) | ((slice[1] as u16) << 8))
     }
 
     fn f64(&mut self) -> Result<f64, SpectraError> {
@@ -366,7 +381,16 @@ impl Reader<'_> {
         self.at = end;
         let mut eight = [0u8; 8];
         eight.copy_from_slice(slice);
-        Ok(f64::from_bits(u64::from_le_bytes(eight)))
+        Ok(f64::from_bits(
+            eight[0] as u64
+                | ((eight[1] as u64) << 8)
+                | ((eight[2] as u64) << 16)
+                | ((eight[3] as u64) << 24)
+                | ((eight[4] as u64) << 32)
+                | ((eight[5] as u64) << 40)
+                | ((eight[6] as u64) << 48)
+                | ((eight[7] as u64) << 56),
+        ))
     }
 
     fn u8(&mut self) -> Result<u8, SpectraError> {

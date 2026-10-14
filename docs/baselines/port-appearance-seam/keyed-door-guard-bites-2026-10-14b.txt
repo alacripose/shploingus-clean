@@ -1,0 +1,42 @@
+The keyed door's guards, each proven to bite by perturbing its own subject — 2026-10-14b
+==============================================================================
+
+Each perturbation was applied to the clean room's OWN bytes, measured, then the file was restored
+byte-exact (sha256sum -c against a copy taken before the edit -> OK) and the module re-run green
+(chunk::tests -> 19 passed / 0 failed, exit 0). No parent byte under crates/ was touched by any of it.
+
+--- bite A: the provider stops refusing the cells this patch has no column for ---
+subject: ChunkSource::derived (src/chunk.rs) — the one place a cell over no column is left air
+edit:    'let Some(index) = patch_index(self.patch, key, at) else { continue };'
+      -> 'let index = patch_index(self.patch, key, at).unwrap_or(0);'   (cells over no column take column 0)
+command: cargo test --offline -j 2 --lib chunk::
+  thread 'chunk::tests::a_chunk_over_the_patches_edge_is_whole_and_names_the_air_beyond_it' (20772) panicked at src\chunk.rs:1402:17:
+  assertion `left == right` failed: cell 16 of this chunk is over no column of this patch and must be air by name
+  test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 322 filtered out; finished in 2.80s
+
+--- bite B: the declared water law stops depending on the patch it is read on ---
+subject: stage::Patch::is_edge (src/stage.rs) — the rim law the per-chunk-read measurement names
+edit:    'pub fn is_edge(self, index: usize) -> bool {' -> the same, with 'return false;' first
+command: cargo test --offline -j 2 --lib chunk::
+  water law: one chunk's own 32 × 32 corner read on its own against the world's own 48 × 48 read of the same columns: 0 of 1024 column(s) stand a different water (worst 0.000000 m), 0 of them on the narrow read's own rim
+  thread 'chunk::tests::a_region_read_around_one_chunk_is_not_the_worlds_own_surface' (23640) panicked at src\chunk.rs:1474:9:
+  test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 322 filtered out; finished in 2.69s
+
+--- bite C: the cell law itself moves one voxel (what no consistency gate here can catch) ---
+subject: chunk::column_cell (src/chunk.rs) — the one law both scopes apply
+edit:    'let above = (z - ground - 1) as i64;' -> 'let above = (z - ground) as i64;'
+command: cargo test --offline -j 2 --lib chunk::
+  test chunk::tests::a_column_reads_back_the_water_the_declared_field_stands ... FAILED
+  thread (chunk::tests::a_column_reads_back_the_water_the_declared_field_stands) panicked at src\chunk.rs:944
+  test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 322 filtered out
+command: cargo run --offline -j 2   (the byte-level guard: the pre-pass capture, cmp)
+  the run's stdout DIFFERS from the 524-line pre-pass capture, and exits 1:
+  < U1 client: the **plan reading** — kept and named, and the evidence run's own frame (the window presents the drawn reading, §41): the world the being reads, at the plane's own rest (200 tick(s)) — 2079 of 2304 column(s) stand water, deepest 7809 µm at column 330 — draws 576 x 576 pixel(s) from 2304 shaded column(s) through the contract's own one shade call
+  < U1 client: the plan reading's own frame: its 576 x 576 pixel(s) measure 23 distinct luminance band(s) (>= 3 required, resolution 64); frame digest 0933f12a08a5a02a8437e04a8d0f7adaac8ddd9017448af9be0de1ed7f5f76fb, surface read digest 70a06acd49f452bc7b7b6e73f3a2f5d1c365cf151620a82a219ee11785e025b9, plane state digest 3eb284a3d61f0d21364f1e03ffb9b05f27746cef888ec78ea1aa91186adf0951; channels 0x46..0xff
+  > U1 client: the **plan reading** — kept and named, and the evidence run's own frame (the window presents the drawn reading, §41): the world the being reads, at the plane's own rest (200 tick(s)) — 2079 of 2304 column(s) stand water, deepest 7800 µm at column 330 — draws 576 x 576 pixel(s) from 2304 shaded column(s) through the contract's own one shade call
+  > U1 client: the plan reading's own frame: its 576 x 576 pixel(s) measure 23 distinct luminance band(s) (>= 3 required, resolution 64); frame digest 0933f12a08a5a02a8437e04a8d0f7adaac8ddd9017448af9be0de1ed7f5f76fb, surface read digest 907e6f0c48e648d0b9a387f2c86cc61d14f0b22ead77524adfe3c779b3173b74, plane state digest 75c94abf13d23fbf28d00548494dc0593cf25ba5672852bd177f90b73882a9d6; channels 0x46..0xff
+
+Said exactly: bite C is the reason the record's own gate is the byte comparison of the run and the
+port's measured block rather than the equality between the two scopes — the world is materialised
+through the same door it is measured against, so only a capture taken before the change can show that
+the world's cells did not move, and that capture is run-before-the-keyed-door-2026-10-14b.txt.

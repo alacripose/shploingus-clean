@@ -36,7 +36,7 @@ use std::collections::HashMap;
 use voxel_model::MaterialId;
 
 use crate::climate;
-use crate::column::materials;
+use crate::materials;
 use crate::ecology::{self, Biome};
 use crate::habitat::{self, Habitat};
 use crate::spec::WorldSpec;

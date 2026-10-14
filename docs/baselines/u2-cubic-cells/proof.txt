@@ -1,0 +1,80 @@
+== the named empty (air)
+   subject: src/chunk.rs :: cells: vec![Cell::AIR; CHUNK_CELLS]
+   bit: thread 'chunk::tests::air_is_named_and_a_place_no_chunk_owns_is_refused_by_name' (22252) panicked at src\chunk.rs:612:9:
+   bit: assertion `left == right` failed: a cell nobody filled is air by name
+   bit: error: test failed, to rerun pass `--lib`
+== a place outside the patch
+   subject: src/chunk.rs :: if at.x < origin.x
+            || at.y < origin.y
+            || at.x >= origin.x + side
+            || at.y >= origin.y + side
+        {
+   bit: thread 'chunk::tests::a_place_outside_the_patch_is_refused_by_name' (26216) panicked at src\chunk.rs:624:14:
+   bit: error: test failed, to rerun pass `--lib`
+== the world ends on a chunk boundary
+   subject: src/chunk.rs :: let ceiling_z = (top_chunk + 1) * CHUNK_SIDE;
+   bit: thread 'chunk::tests::the_world_spans_whole_chunks_over_the_surface_it_was_filled_from' (8440) panicked at src\chunk.rs:503:14:
+   bit: error: test failed, to rerun pass `--lib`
+== one patch's own fields
+   subject: src/chunk.rs :: if elevation.len() != cells || water_level.len() != cells || classes.len() != cells {
+   bit: thread 'chunk::tests::fields_that_do_not_describe_one_patch_are_refused_by_name' (21288) panicked at src\chunk.rs:246:25:
+   bit: error: test failed, to rerun pass `--lib`
+== a class that cannot be formed
+   subject: src/chunk.rs :: if !class.is_finite() {
+   bit: thread 'chunk::tests::a_class_that_cannot_be_formed_is_refused_by_name' (22912) panicked at src\chunk.rs:638:14:
+   bit: error: test failed, to rerun pass `--lib`
+== the voxel that contains the ground
+   subject: src/chunk.rs :: let surface_z = elevation[cell].floor() as i32;
+   bit: thread 'chunk::tests::a_column_reads_back_the_water_the_declared_field_stands' (19108) panicked at src\chunk.rs:556:13:
+   bit: error: test failed, to rerun pass `--lib`
+== the water above the surface
+   subject: src/chunk.rs :: water_um += self.cell(VoxelPos::new(at.x, at.y, z))?.water_um;
+   bit: thread 'chunk::tests::a_column_reads_back_the_water_the_declared_field_stands' (23368) panicked at src\chunk.rs:549:13:
+   bit: assertion `left == right` failed: column 78: the cubic reading must stand the water the field stands
+   bit: error: test failed, to rerun pass `--lib`
+== one cell moves the identity
+   subject: src/chunk.rs :: bytes.extend_from_slice(&cell.water_um.to_le_bytes());
+   bit: thread 'chunk::tests::the_identity_is_the_cells_and_moves_with_any_of_them' (8136) panicked at src\chunk.rs:600:9:
+   bit: assertion `left != right` failed: one micrometre in one cell is another world
+   bit: error: test failed, to rerun pass `--lib`
+== the patch's own column order
+   subject: src/chunk.rs ::             let x = origin.x + (cell % side as usize) as i32;
+            let y = origin.y + (cell / side as usize) as i32;
+            out.push(self.column(VoxelPos::new(x, y, 0))?);
+   bit: thread 'chunk::tests::a_column_reads_back_the_water_the_declared_field_stands' (6456) panicked at src\chunk.rs:556:13:
+   bit: error: test failed, to rerun pass `--lib`
+== a pour is a set of the greater water
+   subject: src/chunk.rs :: if water_um > cell.water_um {
+   bit: thread 'chunk::tests::a_second_pour_does_not_shrink_the_water_of_a_cell' (20896) panicked at src\chunk.rs:651:9:
+   bit: assertion `left == right` failed: a pour is a set of the greater water: a smaller number does not shrink what stands
+   bit: error: test failed, to rerun pass `--lib`
+== the reading's water is the cells' (being.rs)
+   subject: src/being.rs :: .map(|column| column.water_um as f64 / 1_000_000.0)
+   bit: thread 'chunk::tests::the_reading_a_being_takes_is_sourced_from_the_cells' (18220) panicked at src\chunk.rs:701:9:
+   bit: assertion `left == right` failed: the reading stands the cells' own water
+   bit: error: test failed, to rerun pass `--lib`
+== the reading's surface is the cells' (being.rs)
+   subject: src/being.rs :: .map(|column| column.surface_um as f64 / 1_000_000.0)
+   bit: thread 'chunk::tests::the_reading_a_being_takes_is_sourced_from_the_cells' (20468) panicked at src\chunk.rs:706:9:
+   bit: assertion `left == right` failed: and the cells' own surface
+   bit: error: test failed, to rerun pass `--lib`
+
+== the rebuilt binary, against the run's own start
+   exit: 0
+   its stdout and stderr are the start-of-run bytes byte for byte
+   b49dbd28896770959e1aa9fdbcb3fecbd97f634fcc4e0b20d230144c2a9e015f */tmp/tmp.SqCyIO0Pnt/rebuilt-stdout.txt
+   (the dated capture final-stdout.txt describes older bytes: a later pass moved a printed line —
+    that is the capture's business, not this check's)
+
+every guard bit by name, and every touched file came back byte-exact:
+2e944062730cd653aac257be77ff7376a20fa5c1f8b6042ba0a86f4a400183d1 *src/chunk.rs
+b620aa4c6432d58553fd5880c017fa37b8c715cce716064892b4d7e00d6c79e6 *src/being.rs
+e99776d06d65762407a8c7c50f23f10c7d2277f6a17207dc506690f0df4b3236 *src/evidence.rs
+978e1a19ddcd8c47cfa897250dd9ee649a6ec211a3386a849d79060f13b37873 *src/surface.rs
+87fcbf25e203f8aecb0f8889f30f895c7224d682ef90aca45210b3a5c044dd5f *src/main.rs
+2e199a06aa65d4b4fd5eba0b1ea6a043c3d0c8e712fd7c7f69b51da22e617306 *src/lib.rs
+0573f72c8de7dbb2db96280bb0dbd3dfb93ff6ef791e9d6138b89eb6fa0babf2 *src/systems.rs
+77576b7fb8f04a0af92ce920881cdbc7916b174deb3846e0f716184557f049b7 *tests/u12_being.rs
+faa5e2fac0407b2c802effaedd079ae01f47400de91b99269c583caec3491ed5 *tests/u12_stepping.rs
+case logs kept in the scratch directory (not copied into the tree): tmp.SqCyIO0Pnt
+u2 exit=0

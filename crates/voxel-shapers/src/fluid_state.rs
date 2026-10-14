@@ -43,9 +43,9 @@
 //! must be found.
 
 use crate::chunk_fields;
-use crate::column;
 use crate::fluidics::{FillLevel, FILL_LEVELS};
 use crate::hydrology;
+use crate::materials;
 use crate::spec::WorldSpec;
 use crate::terrain;
 use voxel_model::matter::{FluidSpecies, Phase};
@@ -127,7 +127,7 @@ pub fn fluid_at(
     // The material path's water: the sea above the terrain, a flooded void inside
     // it. One read of the world's own material law, so this cannot disagree with
     // the chunks the player sees.
-    if column::is_fluid(chunk_fields::material_at(spec, x, y, z)?) {
+    if materials::is_fluid(chunk_fields::material_at(spec, x, y, z)?) {
         let kind = if fy > surface_m { FluidKind::Ocean } else { FluidKind::Karst };
         return Ok(Some(FluidState::of_material(kind)));
     }
@@ -181,14 +181,14 @@ pub(crate) fn fill_level_at(y: i32, fluid_surface_m: f64) -> Refused<FillLevel> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::column::materials;
+    use crate::materials;
     use crate::spec::Config;
 
     fn spec() -> WorldSpec {
         WorldSpec::new(2468, Config::default())
     }
 
-    const RADIUS: usize = crate::column::DEFAULT_HYDRO_RADIUS;
+    const RADIUS: usize = crate::materials::DEFAULT_HYDRO_RADIUS;
 
     fn surface_m(spec: &WorldSpec, x: i32, z: i32) -> f64 {
         terrain::elevation_m(spec, f64::from(x) + 0.5, f64::from(z) + 0.5)

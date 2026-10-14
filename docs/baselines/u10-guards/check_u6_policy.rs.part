@@ -1,0 +1,243 @@
+/// U6's policy chokepoint — **one decision function, measured** (2026-10-12, §29).
+///
+/// The evidence `docs/HYPERGRILLING.md` §L-5 and `docs/LEDGER.md` R-62.3 ask for, **printed** rather
+/// than asserted in private: the closed matrix and its classes; the four faults refused at
+/// **construction** (`grant_unattributed`, `grant_unscoped`, and the unnamed actor); a denial that
+/// **quotes the list**; and the one call site — the reference operator serves every gated row, and an
+/// actor holding nothing is refused **by name** with the refusal **recorded**, which is the half of the
+/// bar the record cares about (*a refusal nobody can read is a refusal that did not happen*).
+pub fn check_u6_policy() -> bool {
+    // **The matrix, as values.** Closed, counted, and every row readable — a row with nothing to say is
+    // refused rather than printed.
+    let matrix = policy::check_matrix();
+    let matrix_ok = matrix.is_ok();
+    let count = |wanted: fn(policy::PermissionClass) -> bool| {
+        policy::Action::ALL
+            .iter()
+            .filter(|action| wanted(policy::permission_of(**action)))
+            .count()
+    };
+    let allowed = count(|class| class == policy::PermissionClass::AlwaysAllowed);
+    let gated = count(|class| matches!(class, policy::PermissionClass::Gated(_)));
+    let denied = count(|class| matches!(class, policy::PermissionClass::AlwaysDenied(_)));
+    let rejected = count(|class| class == policy::PermissionClass::NeverStore);
+    let classes_ok = allowed + gated + denied + rejected == policy::ACTION_COUNT;
+    println!(
+        "U6 policy: {} act(s), closed ({} of them allowed — the reads and the checks everything \
+         depends on; {} gated; {} denied unconditionally; {} a rejection), every row describes itself \
+         = {matrix_ok}, and the classes account for every act = {classes_ok}",
+        policy::ACTION_COUNT,
+        allowed,
+        gated,
+        denied,
+        rejected
+    );
+    // Deny by default, at the vocabulary: an act outside the closed list is not a nearly-right act, and
+    // the words a caller might try are refused by the same rule the table's undeclared verbs are.
+    let outside = ["everything", "execute", "*", "all"];
+    let unrepresentable = outside
+        .iter()
+        .all(|word| policy::Action::parse(word).is_none() && policy::Scope::parse(word).is_none());
+    println!(
+        "U6 policy: deny by default — `{}` are not acts and not scopes, and a missing matrix entry is \
+         a **compile error** rather than a runtime deny (the matrix's `match` has no wildcard arm) = \
+         {unrepresentable}",
+        outside.join("`, `")
+    );
+
+    // **The four faults refused at construction.** A grant with no granter, a grant whose scope is
+    // unbounded, a grant whose scope is undeclared, and a caller naming no actor.
+    let unattributed = policy::Grant::of("", "record").expect_err("no granter");
+    let unbounded = policy::Grant::of("operator", "everything").expect_err("no scope");
+    let undeclared = policy::Grant::of("operator", "worlds").expect_err("not a scope");
+    let unnaming = policy::Caller::of("", Vec::new()).expect_err("no actor");
+    let constructions_ok = unattributed.kind() == RefusalKind::GrantUnattributed
+        && unbounded.kind() == RefusalKind::GrantUnscoped
+        && undeclared.kind() == RefusalKind::GrantUnscoped
+        && unnaming.kind() == RefusalKind::GrantUnattributed
+        && unbounded.detail().contains("everything");
+    println!(
+        "U6 policy construction: a grant with no granter [{}], a scope that is `everything` [{}], a \
+         scope nobody declares [{}], and a caller with no actor [{}] — each refused at construction = \
+         {constructions_ok}",
+        unattributed.kind().name(),
+        unbounded.kind().name(),
+        undeclared.kind().name(),
+        unnaming.kind().name()
+    );
+
+    let roster = match process::roster() {
+        Ok(roster) => roster,
+        Err(refusals) => {
+            eprintln!("U6 policy roster refused by name: {refusals}");
+            return false;
+        }
+    };
+    let mut gate = match reference::gate(&roster, 1) {
+        Ok(gate) => gate,
+        Err(refusal) => {
+            eprintln!("U6 policy: the reference declaration was refused by name: {refusal}");
+            return false;
+        }
+    };
+    let root = std::env::temp_dir().join("shploingus-u6-policy");
+    let _ = std::fs::remove_dir_all(&root);
+    if let Err(error) = std::fs::create_dir_all(&root) {
+        eprintln!("U6 policy: the reference root could not be made: {error}");
+        return false;
+    }
+    gate.set_intake_root(&root);
+
+    // **The operator's session: every gated act is served.** The caller is the reference declaration's
+    // own ([`reference::caller`]), so this is the same actor the served session and the tests act as.
+    let operator = gate.caller().actor().to_string();
+    let mut served = 0usize;
+    let mut saved = None;
+    for line in [
+        "truth",
+        "held",
+        "record",
+        "geometry chunk=0,0,0 level=0",
+        "save path=policy-world.save",
+    ] {
+        match gate.call(line) {
+            Ok(receipt) => {
+                served += 1;
+                if let Answer::Saved(facts) = &receipt.answer {
+                    saved = Some(facts.clone());
+                }
+            }
+            Err(refusal) => {
+                eprintln!("U6 policy: the operator's `{line}` was refused by name: {refusal}");
+                return false;
+            }
+        }
+    }
+    let facts = match saved {
+        Some(facts) => facts,
+        None => {
+            eprintln!("U6 policy: the `save` row answered no document");
+            return false;
+        }
+    };
+    if let Err(refusal) = gate.call(&format!(
+        "load path=policy-world.save digest={}",
+        facts.digest.to_hex()
+    )) {
+        eprintln!("U6 policy: the operator's `load` was refused by name: {refusal}");
+        return false;
+    }
+    served += 1;
+    let served_ok = served == 6;
+    println!(
+        "U6 policy: the reference `{operator}` serves every gated act — `save` wrote {} byte(s), \
+         `load` read them back, and `geometry` appended — {served} of 6 calls answered = {served_ok}",
+        facts.len
+    );
+
+    // **An actor holding nothing is refused by name, and the refusal is recorded.** The reads still
+    // answer — a read is not an act anyone can be kept out of — while the four gated acts refuse
+    // `policy_denied` **before they dispatch**, so a denial is a fact about the table rather than about
+    // the document or the chunk that happened to be named.
+    let before = gate.chain().len();
+    let reader = match policy::Caller::of("reader", Vec::new()) {
+        Ok(reader) => reader,
+        Err(refusal) => {
+            eprintln!("U6 policy: the reader declaration was refused by name: {refusal}");
+            return false;
+        }
+    };
+    gate.set_caller(reader);
+    let mut read_ok = true;
+    for line in ["truth", "held", "record"] {
+        if let Err(refusal) = gate.call(line) {
+            eprintln!("U6 policy: the reader's `{line}` was refused by name: {refusal}");
+            read_ok = false;
+        }
+    }
+    let gated_rows = [
+        "geometry chunk=1,0,0 level=0",
+        "admit path=x.md digest=0000000000000000000000000000000000000000000000000000000000000000 \
+         feature=f licence=permitted claim=checksum_only carrier=U4 check=c.md \
+         check_digest=0000000000000000000000000000000000000000000000000000000000000000",
+        "save path=reader.save",
+        "load path=policy-world.save digest=0000000000000000000000000000000000000000000000000000000000000000",
+    ];
+    let mut refusal_names = Vec::new();
+    let mut quoted = String::new();
+    for line in gated_rows {
+        match gate.call(line) {
+            Ok(_) => {
+                eprintln!("U6 policy: the reader was served `{line}` — the chokepoint did not bite");
+                return false;
+            }
+            Err(refusal) => {
+                if quoted.is_empty() {
+                    quoted = refusal.detail().to_string();
+                }
+                refusal_names.push(refusal.kind().name().to_string());
+            }
+        }
+    }
+    let all_denied = refusal_names.iter().all(|name| name == "policy_denied");
+    let recorded = gate.chain().len() == before + gated_rows.len();
+    let record_verifies = gate.chain().verify().is_ok();
+    let quotes_the_list = quoted.contains("`reader`")
+        && quoted.contains("no scopes")
+        && quoted.contains("the declared scopes are");
+    println!(
+        "U6 policy: `reader` holds nothing — its three reads answer = {read_ok}; its four gated acts \
+         refuse [{}] = {all_denied}, each one **recorded** (the record moved by {} of {}) = {recorded}, \
+         and the record still verifies = {record_verifies}",
+        refusal_names.join(", "),
+        gate.chain().len() - before,
+        gated_rows.len()
+    );
+    println!("U6 policy refusal, quoting the list: {quoted}");
+
+    // The two unconditional denials hold even for an actor that holds **every** declared scope, and a
+    // rejection is not a denial.
+    let everything = match policy::Caller::of(
+        "root",
+        ["record", "content", "world"]
+            .iter()
+            .map(|scope| policy::Grant::of("the operator's own declaration", scope))
+            .collect::<Result<Vec<_>, _>>(),
+    ) {
+        Ok(root) => root,
+        Err(refusal) => {
+            eprintln!("U6 policy: the all-scopes declaration was refused by name: {refusal}");
+            return false;
+        }
+    };
+    let deletion = policy::decide(&everything, policy::Action::DeleteContent).expect_err("denied");
+    let external = policy::decide(&everything, policy::Action::WriteExternal).expect_err("denied");
+    let storage = policy::decide(&everything, policy::Action::PersistMaterial).expect_err("rejected");
+    let unconditional_ok = deletion.kind() == RefusalKind::PolicyDenied
+        && external.kind() == RefusalKind::PolicyDenied
+        && storage.kind() == RefusalKind::NeverStore
+        && everything.holds(policy::Scope::Record)
+        && everything.holds(policy::Scope::Content)
+        && everything.holds(policy::Scope::World);
+    println!(
+        "U6 policy: an actor holding all {} scopes still cannot `delete_content` [{}] or \
+         `write_external` [{}], and `persist_material` is a rejection rather than a permission [{}] = \
+         {unconditional_ok}",
+        policy::Scope::COUNT,
+        deletion.kind().name(),
+        external.kind().name(),
+        storage.kind().name()
+    );
+
+    matrix_ok
+        && classes_ok
+        && unrepresentable
+        && constructions_ok
+        && served_ok
+        && read_ok
+        && all_denied
+        && recorded
+        && record_verifies
+        && quotes_the_list
+        && unconditional_ok
+}

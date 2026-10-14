@@ -265,8 +265,8 @@ fn main() {
         let (rms_b, peak_b) = b.render(FRAMES, declared_gain);
         println!(
             "{name:<18} {mm:>12.1} {:>10.1} {:>10.1} {:>9.3}",
-            dbfs(rms_a as f64),
-            dbfs(rms_b as f64),
+            dbfs(rms_a),
+            dbfs(rms_b),
             peak_b
         );
     }

@@ -1,0 +1,15 @@
+shploingus.ballot/1
+ballot	belongs
+claim	PATCH-023
+artifact	crates/voxel-von/src/lib.rs
+kind	noul
+instruction	Does this module belong to the recipe it claims — a classifier port whose answers are evidence rather than authority, with the origin written by the instrument and not by the caller?
+presenter	ala
+max-age	1200
+ballot	documented
+claim	PATCH-023
+artifact	crates/voxel-von/src/lib.rs
+kind	noul
+instruction	Is this documented where a reader would look for it, rather than only in comments inside the code?
+presenter	ala
+max-age	1200

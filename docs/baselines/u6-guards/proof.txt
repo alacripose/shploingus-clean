@@ -1,0 +1,120 @@
+=== p1-matrix-class — subject: the matrix: `append_event` declared AlwaysAllowed
+    file:         src/policy.rs (line 336)
+    applied:      true
+    digest:       before    17d9e26a015ee6bfdb41e566df4d5a2a6f0b873e11b4905ad5e67965f3da933d
+                  perturbed 08487a4489bb411daffffc8b4966e9132d24adb1d982142dbae1fa1aadd373de
+                  restored  17d9e26a015ee6bfdb41e566df4d5a2a6f0b873e11b4905ad5e67965f3da933d   (byte-exact = true)
+    cargo run --offline   exit = 1
+      | U6 policy: 13 act(s), closed (7 of them allowed — the reads and the checks everything depends on; 3 gated; 2 denied unconditionally; 1 a rejection), every row describes itself = true, and the classes account for every act = true
+      | U6 policy construction: a grant with no granter [grant_unattributed], a scope that is `everything` [grant_unscoped], a scope nobody declares [grant_unscoped], and a caller with no actor [grant_unattributed] — each refused at construction = true
+      | U6 policy: the reference `operator` serves every gated act — `save` wrote 496 byte(s), `load` read them back, and `geometry` appended — 6 of 6 calls answered = true
+    cargo test --offline  exit = 101
+      ! test policy::tests::the_ungated_acts_are_the_ones_the_documents_say_are_ungated ... FAILED
+
+=== p2-row-declares-act — subject: the `geometry` row declaring `read_world` instead of `append_event`
+    file:         src/bridge/table.rs (line 331)
+    applied:      true
+    digest:       before    f779a3e11e8b2dc182ffa5ef2b3d1f89fdb31d14b91a07c697c429cb138b8a71
+                  perturbed 0aa9e3d58d21e8af938c767b8089f5241299bbac150529fcd857a2cbc5d42968
+                  restored  f779a3e11e8b2dc182ffa5ef2b3d1f89fdb31d14b91a07c697c429cb138b8a71   (byte-exact = true)
+    cargo run --offline   exit = 1
+      | U6 policy: 13 act(s), closed (6 of them allowed — the reads and the checks everything depends on; 4 gated; 2 denied unconditionally; 1 a rejection), every row describes itself = true, and the classes account for every act = true
+      | U6 policy construction: a grant with no granter [grant_unattributed], a scope that is `everything` [grant_unscoped], a scope nobody declares [grant_unscoped], and a caller with no actor [grant_unattributed] — each refused at construction = true
+      | U6 policy: the reference `operator` serves every gated act — `save` wrote 496 byte(s), `load` read them back, and `geometry` appended — 6 of 6 calls answered = true
+    cargo test --offline  exit = 101
+      ! test a_class_is_a_property_of_the_act_and_not_of_the_door ... FAILED
+      ! test every_declared_door_names_one_act_and_every_act_is_readable ... FAILED
+      ! test a_caller_with_no_grants_is_refused_by_name_and_the_refusal_is_recorded ... FAILED
+
+=== p3-one-call-site — subject: the gate consulting the chokepoint about another act than the row declares
+    file:         src/bridge/gate.rs (line 204)
+    applied:      true
+    digest:       before    3264003947d961b6ef57f4178d1e1713fbb13f23ac93adc4279fcc9e54207147
+                  perturbed d7e62c992644cc15930803581b412a1114b66656a8fe3a2a8fbd6f939da16fb5
+                  restored  3264003947d961b6ef57f4178d1e1713fbb13f23ac93adc4279fcc9e54207147   (byte-exact = true)
+    cargo run --offline   exit = 1
+      | U6 policy: 13 act(s), closed (6 of them allowed — the reads and the checks everything depends on; 4 gated; 2 denied unconditionally; 1 a rejection), every row describes itself = true, and the classes account for every act = true
+      | U6 policy construction: a grant with no granter [grant_unattributed], a scope that is `everything` [grant_unscoped], a scope nobody declares [grant_unscoped], and a caller with no actor [grant_unattributed] — each refused at construction = true
+      | U6 policy: the reference `operator` serves every gated act — `save` wrote 496 byte(s), `load` read them back, and `geometry` appended — 6 of 6 calls answered = true
+    cargo test --offline  exit = 101
+      ! test a_caller_with_no_grants_is_refused_by_name_and_the_refusal_is_recorded ... FAILED
+
+=== p4-denial-recorded — subject: the denial path returning without writing the refusal to the record
+    file:         src/bridge/gate.rs (line 205)
+    applied:      true
+    digest:       before    3264003947d961b6ef57f4178d1e1713fbb13f23ac93adc4279fcc9e54207147
+                  perturbed 8721738f06c722cb65458fa6433a552cdbf8aefc6e0c6a0dd6975269e725105e
+                  restored  3264003947d961b6ef57f4178d1e1713fbb13f23ac93adc4279fcc9e54207147   (byte-exact = true)
+    cargo run --offline   exit = 1
+      | U6 policy: 13 act(s), closed (6 of them allowed — the reads and the checks everything depends on; 4 gated; 2 denied unconditionally; 1 a rejection), every row describes itself = true, and the classes account for every act = true
+      | U6 policy construction: a grant with no granter [grant_unattributed], a scope that is `everything` [grant_unscoped], a scope nobody declares [grant_unscoped], and a caller with no actor [grant_unattributed] — each refused at construction = true
+      | U6 policy: the reference `operator` serves every gated act — `save` wrote 496 byte(s), `load` read them back, and `geometry` appended — 6 of 6 calls answered = true
+      | U6 policy: an actor holding all 3 scopes still cannot `delete_content` [policy_denied] or `write_external` [policy_denied], and `persist_material` is a rejection rather than a permission [never_store] = true
+    cargo test --offline  exit = 101
+      ! test a_caller_with_no_grants_is_refused_by_name_and_the_refusal_is_recorded ... FAILED
+
+=== p5-grant-names — subject: a grant with no granter refused as `grant_unscoped` rather than `grant_unattributed`
+    file:         src/policy.rs (line 128)
+    applied:      true
+    digest:       before    17d9e26a015ee6bfdb41e566df4d5a2a6f0b873e11b4905ad5e67965f3da933d
+                  perturbed e29346a1fa7c2f383c1768f11f233580c4793e1e9a9427d437eb0f5fd40fb80e
+                  restored  17d9e26a015ee6bfdb41e566df4d5a2a6f0b873e11b4905ad5e67965f3da933d   (byte-exact = true)
+    cargo run --offline   exit = 1
+      | U6 policy: 13 act(s), closed (6 of them allowed — the reads and the checks everything depends on; 4 gated; 2 denied unconditionally; 1 a rejection), every row describes itself = true, and the classes account for every act = true
+      | U6 policy construction: a grant with no granter [grant_unscoped], a scope that is `everything` [grant_unscoped], a scope nobody declares [grant_unscoped], and a caller with no actor [grant_unattributed] — each refused at construction = false
+      | U6 policy: the reference `operator` serves every gated act — `save` wrote 496 byte(s), `load` read them back, and `geometry` appended — 6 of 6 calls answered = true
+      | U6 policy: an actor holding all 3 scopes still cannot `delete_content` [policy_denied] or `write_external` [policy_denied], and `persist_material` is a rejection rather than a permission [never_store] = true
+    cargo test --offline  exit = 101
+      ! test policy::tests::a_grant_with_no_granter_or_no_scope_is_refused_at_construction ... FAILED
+
+=== p6-rejection-is-not-a-denial — subject: `persist_material` declared AlwaysDenied rather than NeverStore
+    file:         src/policy.rs (line 348)
+    applied:      true
+    digest:       before    17d9e26a015ee6bfdb41e566df4d5a2a6f0b873e11b4905ad5e67965f3da933d
+                  perturbed 62d510eae717ab90e69d84c21f8574f8f641dafec57f20941125e1fa44de7fe0
+                  restored  17d9e26a015ee6bfdb41e566df4d5a2a6f0b873e11b4905ad5e67965f3da933d   (byte-exact = true)
+    cargo run --offline   exit = 1
+      | U6 policy: 13 act(s), closed (6 of them allowed — the reads and the checks everything depends on; 4 gated; 3 denied unconditionally; 0 a rejection), every row describes itself = true, and the classes account for every act = true
+      | U6 policy construction: a grant with no granter [grant_unattributed], a scope that is `everything` [grant_unscoped], a scope nobody declares [grant_unscoped], and a caller with no actor [grant_unattributed] — each refused at construction = true
+      | U6 policy: the reference `operator` serves every gated act — `save` wrote 496 byte(s), `load` read them back, and `geometry` appended — 6 of 6 calls answered = true
+      | U6 policy: an actor holding all 3 scopes still cannot `delete_content` [policy_denied] or `write_external` [policy_denied], and `persist_material` is a rejection rather than a permission [policy_denied] = false
+    cargo test --offline  exit = 101
+      ! test policy::tests::deny_by_default_and_every_denial_quotes_the_list ... FAILED
+      ! test policy::tests::the_ungated_acts_are_the_ones_the_documents_say_are_ungated ... FAILED
+
+=== p7-row-readable — subject: an act in the matrix that describes nothing
+    file:         src/policy.rs (line 313)
+    applied:      true
+    digest:       before    17d9e26a015ee6bfdb41e566df4d5a2a6f0b873e11b4905ad5e67965f3da933d
+                  perturbed 7f802140b2200099ba962044a58ea93711ea7d091dd979845a6b5bfea7b341c5
+                  restored  17d9e26a015ee6bfdb41e566df4d5a2a6f0b873e11b4905ad5e67965f3da933d   (byte-exact = true)
+    cargo run --offline   exit = 1
+      | U6 policy: 13 act(s), closed (6 of them allowed — the reads and the checks everything depends on; 4 gated; 2 denied unconditionally; 1 a rejection), every row describes itself = false, and the classes account for every act = true
+      | U6 policy construction: a grant with no granter [grant_unattributed], a scope that is `everything` [grant_unscoped], a scope nobody declares [grant_unscoped], and a caller with no actor [grant_unattributed] — each refused at construction = true
+      | U6 policy: the reference `operator` serves every gated act — `save` wrote 496 byte(s), `load` read them back, and `geometry` appended — 6 of 6 calls answered = true
+      | U6 policy: an actor holding all 3 scopes still cannot `delete_content` [policy_denied] or `write_external` [policy_denied], and `persist_material` is a rejection rather than a permission [never_store] = true
+    cargo test --offline  exit = 101
+      ! test policy::tests::the_vocabularies_are_closed_and_counted ... FAILED
+
+=== what each perturbed run said, on stderr (the bar's own words) ===
+--- p1-matrix-class
+    | U6 policy: the reader was served `geometry chunk=1,0,0 level=0` — the chokepoint did not bite
+    | Clean room FAILED: a measured bar is not met (U1=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=true, U5=true, U6=false, U7=true, U8=true, U9=true, U10=true).
+--- p2-row-declares-act
+    | U6 policy: the reader was served `geometry chunk=1,0,0 level=0` — the chokepoint did not bite
+    | Clean room FAILED: a measured bar is not met (U1=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=true, U5=true, U6=false, U7=true, U8=true, U9=true, U10=true).
+--- p3-one-call-site
+    | U6 policy: the reader was served `geometry chunk=1,0,0 level=0` — the chokepoint did not bite
+    | Clean room FAILED: a measured bar is not met (U1=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=true, U5=true, U6=false, U7=true, U8=true, U9=true, U10=true).
+--- p4-denial-recorded
+    | Clean room FAILED: a measured bar is not met (U1=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=true, U5=true, U6=false, U7=true, U8=true, U9=true, U10=true).
+    | U6 policy: `reader` holds nothing — its three reads answer = true; its four gated acts refuse [policy_denied, policy_denied, policy_denied, policy_denied] = true, each one **recorded** (the record moved by 0 of 4) = false, and the record still verifies = true
+--- p5-grant-names
+    | Clean room FAILED: a measured bar is not met (U1=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=true, U5=true, U6=false, U7=true, U8=true, U9=true, U10=true).
+    | U6 policy construction: a grant with no granter [grant_unscoped], a scope that is `everything` [grant_unscoped], a scope nobody declares [grant_unscoped], and a caller with no actor [grant_unattributed] — each refused at construction = false
+--- p6-rejection-is-not-a-denial
+    | Clean room FAILED: a measured bar is not met (U1=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=true, U5=true, U6=false, U7=true, U8=true, U9=true, U10=true).
+    | U6 policy: an actor holding all 3 scopes still cannot `delete_content` [policy_denied] or `write_external` [policy_denied], and `persist_material` is a rejection rather than a permission [policy_denied] = false
+--- p7-row-readable
+    | Clean room FAILED: a measured bar is not met (U1=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=true, U5=true, U6=false, U7=true, U8=true, U9=true, U10=true).
+    | U6 policy: 13 act(s), closed (6 of them allowed — the reads and the checks everything depends on; 4 gated; 2 denied unconditionally; 1 a rejection), every row describes itself = false, and the classes account for every act = true

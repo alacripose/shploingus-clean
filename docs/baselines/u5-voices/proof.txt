@@ -1,0 +1,37 @@
+the tree before any perturbation:
+53b0e6bd8f26b62539b2719006058b234b64493102f464232ce8c3b82ab69d53 *src/light.rs
+7eea71a63f8b12523e3da7f976748da3794baa4ff6e34a7a680dd3314734ff13 *src/feeling.rs
+5da729a4d12f811ed018e275bee7900315946a5442bccdeb5a7e350c83451a92 *src/audio.rs
+2f6fab802a54bb689b12b5ff8ff55a2a1e0c57ab0e639ac86d8fbafc7d6fd5f7 *tests/u5_measure.rs
+
+== feeling_absent is refused, and by its own name
+   subject: src/audio.rs :: RefusalKind::FeelingAbsent,
+                "no feeling-wheel reading
+   RESULT: bit by name — thread 'a_feeling_that_was_never_declared_is_refused_by_name_rather_than_voiced' (22908) panicked at tests\u5_measure.rs:410:5:
+== a word the wheel does not declare is refused, and by its own name
+   subject: src/feeling.rs :: RefusalKind::FeelingUndeclared,
+                format!(
+   RESULT: bit by name — thread 'a_feeling_that_was_never_declared_is_refused_by_name_rather_than_voiced' (11156) panicked at tests\u5_measure.rs:413:5:
+== the ladder is a guard, not a formality: one band wider accepts the wheel's own example
+   subject: src/feeling.rs ::         (-(band as i32), CHANNEL_COUNT as i32 - 1 - band as i32)
+   RESULT: bit by name — thread 'a_feeling_that_was_never_declared_is_refused_by_name_rather_than_voiced' (23280) panicked at tests\u5_measure.rs:420:5:
+== a blend of two families is refused, and by its own name
+   subject: src/feeling.rs ::                     RefusalKind::FeelingContradictory,
+                    format!(
+   RESULT: bit by name — thread 'a_feeling_that_was_never_declared_is_refused_by_name_rather_than_voiced' (25228) panicked at tests\u5_measure.rs:423:5:
+== the levels are bounded by the signature's own normalisation
+   subject: src/feeling.rs ::                 *weight /= total;
+   RESULT: bit by name — thread 'audio::tests::the_voice_mixes_a_bed_and_a_rain_and_its_samples_stay_bounded' (2780) panicked at src\audio.rs:511:9:
+== the digest is the buffer's identity: a moved band tone moves it
+   subject: src/audio.rs :: pub const BAND_OCTAVE_STEPS: f64 = 0.25;
+   RESULT: bit by name — thread 'the_voice_renders_a_bounded_buffer_that_the_wheel_and_the_weather_both_move' (15308) panicked at tests\u5_measure.rs:392:5:
+== the table's own band arithmetic reads its bands half-open, lower end inside
+   subject: src/light.rs :: if !nm.is_finite() || nm < VISIBLE_LO_NM || nm >= VISIBLE_HI_NM {
+   RESULT: bit by name — thread 'light::tests::a_wavelength_lands_in_exactly_one_band_and_outside_the_span_in_none' (22484) panicked at src\light.rs:715:13:
+
+the tree after every case:
+53b0e6bd8f26b62539b2719006058b234b64493102f464232ce8c3b82ab69d53 *src/light.rs
+7eea71a63f8b12523e3da7f976748da3794baa4ff6e34a7a680dd3314734ff13 *src/feeling.rs
+5da729a4d12f811ed018e275bee7900315946a5442bccdeb5a7e350c83451a92 *src/audio.rs
+2f6fab802a54bb689b12b5ff8ff55a2a1e0c57ab0e639ac86d8fbafc7d6fd5f7 *tests/u5_measure.rs
+GUARD PROOF OK: every guard bit by name, and every touched file came back byte-exact

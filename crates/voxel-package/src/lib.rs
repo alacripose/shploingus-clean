@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 //! Content intake: **a package is admitted by validation, never by optimism.**
 //!
 //! # The claim this crate refuses to blur
@@ -32,8 +33,20 @@
 //! dropped: a package that names a shaper stage the world does not run, or a
 //! material the registry has not admitted, is refused with that name in the
 //! refusal.
+//!
+//! **The audit, 2026-10-10 — and this one is about the game, not the gate.** 32 189 lines: more than
+//! the renderer, mesher, streamer, pool, appearance, light, audio, UI and shapers combined. That is
+//! the expected size of an admissions gate. What was not expected is that **the game reads it**: the
+//! client takes 88 references from this crate, and three of them are load-bearing for *play* rather
+//! than for the gate — `recipe` (the shell's content format), `decision::read_report` (read in
+//! `shell/mount.rs`), and `features::Establishment`. So a gate verdict showing up in the game's own
+//! terminal is an **import, not a leak or an accident of wording**. Whether a game should read a
+//! gate's prose has never been decided on the record, and neither has the client's dependency on this
+//! crate at all: it has simply been true since the shell needed a content format. Either rule it, or
+//! split `recipe` — a content format — out of the admissions gate it currently shares a crate with.
 
 pub mod apidoc;
+pub mod ballot;
 pub mod bloat;
 /// The ticket board's report, so the build gate needs no second dependency on `voxel-model`.
 pub mod board {
@@ -48,20 +61,24 @@ pub mod bridge;
 pub mod census;
 pub mod civilians;
 pub mod compendium;
+pub mod conformance;
 pub mod compiler;
 pub mod context;
 pub mod decision;
 pub mod features;
 pub mod filing;
+pub mod ingest;
 pub mod migration;
 pub mod numbers;
 pub mod oracle;
+pub mod patch;
 pub mod policy;
 pub mod projection;
 pub mod provenance;
 pub mod recipe;
 pub mod record;
 pub mod signing;
+pub mod space;
 
 use voxel_model::{Digest, MaterialId, MaterialRegistry, Refusal, RefusalKind, RefusalSet};
 use voxel_shapers::{Declared, Stage};
@@ -461,7 +478,7 @@ mod tests {
     use voxel_shapers::Stage;
 
     fn registry() -> MaterialRegistry {
-        voxel_shapers::column::materials::registry().expect("the admitted registry builds")
+        voxel_shapers::materials::registry().expect("the admitted registry builds")
     }
 
     fn manifest_for(payload: &[u8], name: &str) -> Manifest {

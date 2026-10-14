@@ -1,0 +1,5 @@
+U1 window: a real window of 576 x 576 client pixel(s) (12 pixel(s) per column of 2304 column(s)) presented 200 of the declared 200 frame(s) at 30 frame(s)/s; dpi-aware = true
+U1 window: the plane's own law took 200 tick(s) — one tick per frame — and stands at 1647 of 2304 column(s) with water, deepest 441809 µm at column 1271; settled at the declared horizon = true
+U1 window: the world it drew: world digest 88304a755c44dcb1cf809967f8ca713be80e6bf4b0f890017efed88aa9936bc4, the plane's own state digest 19df3015adb32e0fabf9d7413d4b37d6ebbc97b3769254f0e7f7f1db04105e97, the frame's own digest 6e1d9c96f32ca12a225ff5c183040dab1b84d1b6adfa28af952554487425c2c3 (channels 0x47..0xfb)
+U1 window: the window's own client area, read back through a 32 bit, top-down, `BI_RGB` DIB, is the surface's own bytes at 66355200 of 66355200 pixel(s) — every pixel, every frame
+U1 window: 39 distinct luminance band(s) on the frame's own 2304 sample(s) (>= 3 required); materials 0->1 1->1 2->2 3->3 4->4 5->6 with water = material 5; the Sun at 35° with tint (1.000, 0.925, 0.733)

@@ -1,0 +1,413 @@
+shploingus clean room — new code beside the old tree (Constitution P7)
+derive-from documents: docs/CLEAN-ROOM-PLAN-2026-10-11.md, docs/DESIGN-SPEC.md, docs/APPEARANCE.md
+
+The clean room's 13 unified systems (docs/CLEAN-ROOM-PLAN-2026-10-11.md §2, extended by §16):
+
+[U1] Presentation  (slice 1) — specified + one measured behaviour
+     unifies:       OpenPBR-input derivation, Source 2 stylisation, the GPU pipeline, sky, shell painting
+     witness:       crates/voxel-appearance, crates/voxel-client (+ 7 .wgsl)
+     derived from:  docs/APPEARANCE.md §1, docs/DESIGN-SPEC.md §2 F13, the FMA bar, LEDGER C-39
+     must not copy: any file under crates/voxel-appearance or crates/voxel-client
+     interface:     shade(surface, normal, light, view) -> Rgb; band_count; Renderer seam
+
+[U2] World model and its vocabulary  (slice 2) — in progress (world, shapes, chain; audit findings fixed; axis vocabulary owed)
+     unifies:       coordinates, the 4x4x4 lattice and 256x level, matter, materials, shapes, chain, tickets
+     witness:       crates/voxel-model
+     derived from:  docs/DESIGN-SPEC.md §1-§5, docs/SHAPERS.md §2, docs/MODS-MATERIALS.md, the Axis/Laya rules
+     must not copy: crates/voxel-model source; the two generated materials files
+     interface:     Coord; Subvoxel; MaterialRegistry; RefusalSet; ShaperSet; Profile; Chain
+
+[U3] World generation (the shapers)  (slice 3) — in progress (15-stage roster declared and validated; 13 stage bodies landed; one digest at 1/2/4/8 workers; 2 stages refuse by name by decision — caves, whose dissolution field is not declared, and earthworks, the record and not a generator; delta's avulsion state is owed inside a landed stage)
+     unifies:       noise primitives and the fifteen shaper stages plus the cadence runtime
+     witness:       crates/voxel-noise, crates/voxel-shapers
+     derived from:  docs/SHAPERS.md, docs/MISSING-SYSTEMS.md, docs/DESIGN-SPEC.md §2 F4-F10
+     must not copy: any .rs under crates/voxel-noise or crates/voxel-shapers
+     interface:     Declared; Stage; ShaperSet; ProcessScheduler; TickDriver; field_at
+
+[U4] Meshing, streaming and work  (slice 4) — in progress (field-derived mesh with greedy merge; level ladder 0..=2; four typed horizons; resident set keyed by world truth with exact invalidation; work ledger counted where the work happens; budget by name; one digest at 1/2/4/8 workers; the displaced 256x level, the multi-chunk stitch, a strided field request and a streamed residency policy are owed)
+     unifies:       sparse voxel octree, greedy mesh, 256x refinement, four horizons, resident set, pool, budget
+     witness:       crates/voxel-mesh, crates/voxel-stream, crates/voxel-work
+     derived from:  docs/DESIGN-SPEC.md §4 SPEC-3/SPEC-5, LEDGER C-43, C-46
+     must not copy: any .rs under those three crates
+     interface:     Mesh; Octree; refine; WorldSource; Horizon; Resident; Pool; Budget; TickReceipt
+
+[U5] Instrumentation, light and audio  (slice 5) — built (2026-10-12, §24): the one sensor concept with the wall and the overlay as its consumers, a min/max band per item, a weighing gate whose answer is a mass and nothing else, the virtual gauge wall in one controller; one band table and the closed-form solver (sky, beam, twilight, the Moon as a reflectance, two-droplet geometries) and the onset layer's own read for the audio seam — a quantity that cannot be weighed is refused by name. Owed and named: ozone, an azimuth, the per-cell frame format, and the audio voices themselves
+     unifies:       the sensor concept, min/max bands, the weighing gate, the gauge wall, the light solver, audio
+     witness:       crates/voxel-instrument, crates/voxel-light, crates/voxel-audio
+     derived from:  docs/DESIGN-SPEC.md §3 S-03/S-12/S-13, FC-2.16, docs/light-solver.md, docs/lighting-sky-and-moon.md
+     must not copy: any .rs under those three crates
+     interface:     Sensor; Band; GaugeReading; GaugeWall; Crossing; Mass (and nothing else); Solver; Spectra; the audio seam (onset, gain)
+
+[U6] The record and the API layer  (slice 6) — in progress (the gate: a closed eight-row table, the canonical request line, the answer and its claims, the checks, the effect, the receipt, and the parse/world refusal split with the world's refusals recorded through the chain's one writer; the stdio transport: one line in, one response record out, served by the binary's `serve` mode and driven as a separate process by the binary's own evidence and the tests; the content gate: a declared row consumed **in place by reference** — as `intake`'s own seam and as the table's `admit` row, which arrives over the wire by reference (`path + digest`, never bytes) and answers what the row became — judged on **seven** named axes, `admit`/`inspect` -> `Established` and never a bool, with an unchecked axis never a pass and a pin still not a claim a request line can carry; the last axis is **conformance against the world's own declarations** — a row may require stages of U3's `Declared` and materials of U2's `MaterialRegistry` (the table's two **optional** arguments, `requires_stages`/`requires_materials`, whose absence is the declaration *this row requires nothing*), refused `stage_undeclared` with the stage named and `unadmitted_material` in the registry's own words, with a requirement that is **owed** or names nothing reachable through the intake's seam but not yet spellable by a served line, and with neither ever counted as a pass; `save`/`load` arrived as the seventh and eighth rows of the table (2026-10-12, §28) by reference, so the table is closed at eight and U9's document form reads through this gate; owed: the gate's remainder — the document record and its compression, the structural judge, the ballot, the policy matrix, the recipe, the API document — and the legacy-vocabulary bijection)
+     unifies:       intake gate, document record, structural judge, ballot, census, policy, recipe, apidoc, bridge
+     witness:       crates/voxel-package (+ crates/voxel-mcp as transport)
+     derived from:  docs/DESIGN-SPEC.md §2 F1-F2, docs/UI-SPEC.md, docs/SHELL-PORT.md, docs/MODS-MATERIALS.md
+     must not copy: any .rs under crates/voxel-package; also must not carry bytes
+     interface:     intake::{Source, Claim, Row, Requirement, Requirements, Axis, Establishment, Finding, WorldDeclarations, Intake::over/admit/inspect -> Established, Intake::census}; Compendium::derive; StructuralJudge; Ballot; policy::decide; recipe; apidoc::render; bridge::TOOLS + Receipt; reference::gate + serve_stdio; transport::serve
+
+[U7] The decision layer (axis, laya, von)  (slice 7) — built (2026-10-12, §25): the seven ladders — three declared from documents, four **owed by name** — with the two prohibitions and round 5's bare-token rule, the coverage table's total pin and its anti-fabrication guard; the closed three-word verdict, the typed question, the ballot whose floor is declared before the answer exists, the structural-judge seam and the four fail-closed rules, each refused by its own name; and the classifier — the record's own declared facts (twelve features over the format's words) with its claim's fourteen features beside them, calibrated over the sixteen labelled records at five life stages — answering a ballot with `Origin::Oracle` while its leave-one-out accuracy beats the majority class (0.5000 against 0.3125, margin +0.1875, with the claim-only reading 0.0000 printed beside it because that is the finding that moved the question to the head). Owed and named: the four ladders' token lists (U12's vocabulary), the score instrument's rungs, the `noul`/`score` calibration sets (a `noul` question is **refused by name** until its set exists), and a model-backed instrument (this build's `von` is structural, on CPU, with no dependency added)
+     unifies:       the seven axes, the Laya questions, the ballot, the calibrated oracle, the von classifier
+     witness:       crates/voxel-model/src/{axis,laya}.rs, crates/voxel-package/src/{oracle,ballot}.rs, crates/voxel-von
+     derived from:  the Axis rules in LEDGER (rule 51-55, round-5 bare-token), the plan's Lane C join, patches/PATCH-023 (the ballot), patches/PATCH-039 (the five stages, and that the stage question is answerable from heads)
+     must not copy: any .rs under those files
+     interface:     AxisKind + Ladder + refuse_interchange/refuse_reduction/refuse_bare + COVERAGE/check_coverage; Question{Choice,Score,Noul}; Verdict{Belongs,NotBelongs,NoReading}; Ballot; Measurement (four accuracies and the majority class); StructuralJudge + Unreachable; laya::answer and the four fail-closed rules; von::Classifier (Declared/Feature, calibrate, classified, carriers) and von::claimed_vocabulary
+
+[U8] The game binary and the shell UI  (slice 8) — built (2026-10-12, §27): the only window — a Mount-shaped pane tree driven by a declared Recipe (six declared windows, and the mount adds none it was not handed, so there is no second registry), the shell/HUD layer toggle over one window set, the one pointer-ownership decision read once and passed by value into both the drawing and the grab so the glyph and the grab cannot disagree, the four-bucket admitted constants table (16 rows; an unadmitted name is refused by name) and a visibly drawn 100 × 30 frame whose panes read the systems already built (the registry, the reference world, its materials, the stage roster, a derived chunk's geometry and the light table). The `shell` mode is the interactive demonstration. Owed and named: undock, the splitter-drag resize, the console's five graded levels, the toast's final form, and the gholtzap/lintapple **P8** gate, which U13 owns and this slice does not take
+     unifies:       the only window, the mount window manager, the design system, input ownership, the frame loop
+     witness:       crates/shploingus, crates/voxel-ui, crates/voxel-client/src/shell
+     derived from:  docs/SHELL-PORT.md, docs/UI-SPEC.md, docs/DESIGN-SPEC.md §3, portal_simulator.py's structure
+     must not copy: crates/shploingus, crates/voxel-ui, shell/
+     interface:     shell::Mount over a declared shell::Recipe (split/close/focus/toggle_layer/read_pointer/layout), the shell::Content readers, the four-bucket shell::CONSTANTS table, and shell::frame → a drawn Canvas; plus the binary's `shell` mode
+
+[U9] Saves and loads, and the world's own seed systems  (slice 9) — in progress (the written form of a world: the exact length-framed encoding and its trailer; five declared per-domain stream seeds carried and checked in both directions; the ruleset identity; the record carried in its own wire form and declared by head and length; six named refusals; a real file round trip and one generation digest at 1/2/4/8 workers; and the **document form** — a world written at and read back from a declared reference (`path + digest`) through **U6's content gate**, the one place that gate is a hard prerequisite, carried as the table's own `save`/`load` rows and as `Save::read_document`. Owed: a save of a resident set, compression, and a versioned migration path)
+     unifies:       the save, the load, and the seed systems of a world
+     witness:       crates/voxel-client's `World` (seed + tick + config), crates/voxel-shapers' `WorldSpec` with its per-stage seed derivation
+     derived from:  docs/DESIGN-SPEC.md §1.3 and §2 F1, SPEC-3; LEDGER C-96.1 and H-7.20; docs/CIVILIAN-PORT.md (GeneratorIdentity); docs/GAIA.md §5c/§11
+     must not copy: those .rs files; and no legacy save format is the contract
+     interface:     Save::of / Save::parse / Save::load -> Loaded; SaveIdentity; StreamSeed; Ruleset; LoadReport; and the document form: Document::write / Save::read_document, which reads only through U6's `Intake::read`
+
+[U10] The gameplay tree the mods references imply  (slice 10) — in progress (the tree: **one entry per reference** in `docs/MODS-MAP.md` §1–§5, in the record's own order, each carrying the record's own four-word disposition — the count this build derives is printed beside the record's own figures, un-averaged — and **one row per technology** under the double-cover rule: 43 rows, each U6's own row, whose document is read **in place** and admitted through the gate the way an `admit` row is, so a document that is absent refuses `source_absent` and one whose bytes have moved refuses `source_digest_mismatch`, a refused reference refuses `licence_refused` by the owner's own name, and an owed reference is named and never admitted. Owed, and printed as owed: the recipe document's row-kind key and version, the duplicate-row refusal's name, a verb that serves the whole tree, and the per-row family assignment)
+     unifies:       the ordered set of playable systems the mods references imply, as one declared tree of rows
+     witness:       docs/MODS-MAP.md (**106 references** — 10 §1 + 42 §2 + 19 §3 + 35 §4, one row per reference with its clean-repo destination; its source file's 91 URLs and this repo's copy's 97 are counted in the header), docs/MODS-MATERIALS.md
+     derived from:  docs/DESIGN-SPEC.md ruling 3 and §3's S-01..S-24 slots; docs/MODS-MAP.md §1-§5; docs/SHAPERS.md
+     must not copy: any mod's code; and nothing derived may be implemented from a refused reference
+     interface:     gameplay::Tree::of_record/entries/rows/first/declared/declare + Disposition + Entry + Technology; a tree of declared rows: feature, source document (path + digest), licence verdict, the system that carries it, its own acceptance check
+
+[U11] planet shploingus (the planet-scale world)  (slice 11) — absent (admitted by §16; waits on U4's octree, refine and streamed residency policy, and on a declared scale/extent ruling — the 20-level ladder's 16 777.216 km is short of an Earth-sized circumference)
+     unifies:       the planet as one world: its scale contract, its addressing, and the residency policy that lets it exist without being resident
+     witness:       nothing in crates/ implements a planet; the outside tree's F:\planet-shploingus\docs\ART-DIRECTION.md is reference, never authority
+     derived from:  docs/DESIGN-SPEC.md §5 and SPEC-5; docs/SHAPERS.md §2 (tectonics: Kreischer & Bommes 2019); docs/PLAN-2026-10-08-cloud-cubes.md
+     must not copy: the outside tree; any .rs claiming to implement a planet here
+     interface:     a declared scale/extent contract; U4's Octree + refine + Resident's streamed policy
+
+[U12] Civilian organisations for mobs and autonomous players  (slice 12) — absent (admitted by §16; waits on U2's owed civilian/government vocabulary (T016), U6's permission policy matrix and self-description — U7's decision layer is **built** (§25), so what stands in front of this row is U2's vocabulary and U6's matrix)
+     unifies:       the organisations civilians, mobs and autonomous players belong to and act through: membership, authority, permitted verbs, and the record of what was done
+     witness:       crates/voxel-model/src/civilian (BLD-0221, whose `pub mod civilian;` is absent from that crate's lib.rs), the government vocabulary in LEDGER, docs/GAIA.md for an autonomous population
+     derived from:  the Axis/Laya rules quoted in LEDGER; docs/GAIA.md §2-§9; docs/CIVILIAN-PORT.md as a document; DESIGN-SPEC §2 F11 and F8
+     must not copy: civilian/**, axis.rs, laya.rs source
+     interface:     Organisation with declared membership and authority; an actor that asks the one tool table what it may do; every act a governed event on the one Chain
+
+[U13] The shell completed, and the gholtzap/lintapple gate  (slice 13) — absent (admitted by §16; waits on U1's remainder, U6's admitted constants table, U8, and the P8 gate, which its own acceptance check closes)
+     unifies:       the mission's more complete shell as an acceptance surface: U1's shade and sky, admitted constants, and its own conformance gate
+     witness:       crates/shploingus, crates/voxel-ui, crates/voxel-client/src/shell
+     derived from:  docs/SHELL-PORT.md (the four-bucket rule), docs/UI-SPEC.md, docs/DESIGN-SPEC.md §3, portal_simulator.py's structure, the linter's own published rules
+     must not copy: crates/shploingus, crates/voxel-ui, shell/
+     interface:     U8's Mount pane tree plus the gate: the shell's drawn values and tool surface checked by P8, with the result recorded
+
+U1 bar: 14 distinct luminance bands over 181 samples (>= 3 required, resolution 64)
+U2 world identity: seed=1592599656 period=1s tick=0
+U2 truth digest:       b6315519388c787840e66962a55542686db2b33cb0d5a2225571d361af632028 (anchor+cache equal: true)
+U2 truth (tick 1):     6e80318ec99e64644140a1949396dfa5eecb4b86ff4ffaab882d4e4915dbed3b (differs: true)
+U2 residency order-free: 3eb19116a51eb521d0eaf59a87525bcbda0693c8fa82034bc0d5d27a0204379d / 3eb19116a51eb521d0eaf59a87525bcbda0693c8fa82034bc0d5d27a0204379d
+U2 plan order-free:    c9e3096e02bb09352a7ca2392e460eabc59dd6a1eb2191d89009329dc696ded6 / c9e3096e02bb09352a7ca2392e460eabc59dd6a1eb2191d89009329dc696ded6
+U2 materials:          6 admitted (digest 78ff25de6f9689a1cddf5e70d1f6ff4edfa2b2792337fb17b0fa898a86965e5a)
+U2 coordinate probe:   recompose ok = true, chunks reached = 3
+U2 sampled terrain seed: 3501304017916357257 (pure: true)
+U2 stalagmite:  base normal = (1.000, 0.000, 0.000) [radial: true], cap normal = (0, 0, 1) [up: true]
+U2 cap radius:  law 0.8660 = sqrt(1-1/Da^2) 0.8660; printed figure 0.7071 does not reproduce: true
+U2 malformed profile refused: true
+U2 shaper:      physical fill = true (occupancy 1); material empty refused = true (occupancy 1); 2x2 coverage = [[2, 1], [1, 1]] full = true
+U2 chain:       4 events, head 9b0ca2150cf24901285d366bc27de89fa9ba4d81a013d9e2cf608bcd9dbef39d, verified = true
+U2 chain:       ticket #0 filed+resolved = true, double-resolve refused = true, unknown refused = true
+U2 chain wire:  true exact round trip, tamper refused = true
+U3 declared roster: 15 stages, declaration digest 0e2f704345b47814c2fdbad3183a8290a60210bcefe711751c40824a1cc60cb3
+U3   tectonics   rung 3 (detail  ) reads [] writes ["uplift", "plate_id"]
+U3   fields      rung 3 (detail  ) reads [] writes ["lithology"]
+U3   geology     rung 3 (detail  ) reads ["uplift"] writes ["stratigraphy"]
+U3   terrain     rung 0 (per_tick) reads ["uplift"] writes ["elevation"]
+U3   hydrology   rung 0 (per_tick) reads ["elevation"] writes ["discharge", "stream_order", "water_level"]
+U3   substrate   rung 2 (sediment) reads ["elevation"] writes ["soil_depth"]
+U3   erosion     rung 2 (sediment) reads ["discharge", "elevation"] writes ["erosion_rate", "hillslope_flux"]
+U3   climate     rung 1 (climate ) reads ["elevation"] writes ["temperature"]
+U3   atmosphere  rung 1 (climate ) reads ["elevation"] writes ["pressure"]
+U3   weather     rung 0 (per_tick) reads ["elevation", "temperature"] writes ["precipitation"]
+U3   ecology     rung 0 (per_tick) reads ["temperature", "precipitation", "soil_depth"] writes ["biome", "carrying_capacity", "flock"]
+U3   caves       rung 0 (per_tick) reads ["discharge"] writes ["cave_occupancy"]
+U3   delta       rung 0 (per_tick) reads ["elevation", "discharge", "erosion_rate", "water_level"] writes ["deposition"]
+U3   transition  rung 0 (per_tick) reads ["lithology", "biome"] writes ["blend"]
+U3   earthworks  rung 0 (per_tick) reads [] writes ["recorded_mass"]
+U3 digest at 1 worker(s): 460214b1b503d3e6334acabd73a6a654a110394df2de8235c750cf6a331b2fc6
+U3 digest at 2 worker(s): 460214b1b503d3e6334acabd73a6a654a110394df2de8235c750cf6a331b2fc6
+U3 digest at 4 worker(s): 460214b1b503d3e6334acabd73a6a654a110394df2de8235c750cf6a331b2fc6
+U3 digest at 8 worker(s): 460214b1b503d3e6334acabd73a6a654a110394df2de8235c750cf6a331b2fc6
+U3 tally at tick 0: 13/15 stages ran, 2 refused by name: ["body_owed", "not_a_generator"]
+U3   ran      tectonics   -> ["uplift", "plate_id"]
+U3   ran      fields      -> ["lithology"]
+U3   ran      geology     -> ["stratigraphy"]
+U3   ran      terrain     -> ["elevation"]
+U3   ran      hydrology   -> ["discharge", "stream_order", "water_level"]
+U3   ran      substrate   -> ["soil_depth"]
+U3   ran      erosion     -> ["erosion_rate", "hillslope_flux"]
+U3   ran      climate     -> ["temperature"]
+U3   ran      atmosphere  -> ["pressure"]
+U3   ran      weather     -> ["precipitation"]
+U3   ran      ecology     -> ["biome", "carrying_capacity", "flock"]
+U3   refused  caves       [body_owed] cave occupancy needs a dissolution field (flow × CO₂ aggressiveness × residence time), which is not one of the declared fields: the field is owed, not the threshold
+U3   ran      delta       -> ["deposition"]
+U3   ran      transition  -> ["blend"]
+U3   refused  earthworks  [not_a_generator] earthworks is the record, not a generator: recorded modification belongs to the append-only chain, and its mass ledger is written by whoever changes the world
+U3 deliberate refusals: caves owed (the dissolution field) = true; earthworks bodyless by design (the record) = true
+U3 tick 1 digest: 7da363a83442494e85baec7864fa3eaddd273e6bc7d115ea943ff3d0d2d8cae5 (moves the world: true)
+U3 tick 3 driven twice is one receipt: true; rewind refused by name = true (rewind: tick 2 is earlier than tick 3 that was already driven)
+U3 field_at: elevation from terrain, 2304 columns = true; region-only discharge at a lone site refused by name = true (region_required: hydrology is a law about a relation between columns: it needs a region, and the request is a lone site)
+U3 owed after this slice: caves (the dissolution field it reads) and `delta`'s avulsion state — the two refusals named above are decisions, not debt — 13 of 15 stages landed
+U3 law readings: stream order 1-4; 275 columns hold water (deepest 0.303 m); deposition 0.1362 m over 96 columns; blend 0.000-0.995; capacity up to 165.1 g m^-2 yr^-1; flock up to 0.546
+U3 conservation: hillslope flux sums to -8.674e-18 over a region of magnitude 3.217e0 (cancels: true)
+U4 render ladder: 3 levels (rectangles up to 4 columns); palette 6 classes over 5 admitted ground materials: 0->1 1->1 2->2 3->3 4->4 5->6; water = 5
+U4 horizons (four types): render 128 m < simulation 192 m < residency 256 m < field 1024 m, ordered = true
+U4 seed=1592639215 period=1s tick=0 chunk=(0, 0, 0) level=0: 144 quads from 1024 columns (1031 cells, merge factor 7.16), vertices 576, indices 864, digest 0e7358e45550878105b7ee0ee7f53b1039c1629dbdb059b2e7d333f31f814ed8
+U4 recount: ledger == mesh == the request's own columns = true
+U4 worker knob: digest 0e7358e45550878105b7ee0ee7f53b1039c1629dbdb059b2e7d333f31f814ed8 at 1/2/4/8 workers is one value = true
+U4 seed=1592639215 cache: re-ask was a hit producing 0 more columns and 0 more quads (free: true); at tick 1 the tick-0 entry is served = false (never stale); rebuild digest 4de4e860bed0db19e2e028497bc788f0deece433314500b78a7e0a46e06a8811 moved = true; invalidate removed 1 of 2 and kept 1 current
+U4 seed=1592639215 tick=0 chunk=(0, 0, 0) level=2: read 64 of 1024 produced columns, 27 quads, digest 28c02ca285eb208b14f7f72073f481750f89ea40179d0a464710defc6b7332b2 (a level is part of the identity: true)
+U4 budget refusal by name: [geometry_budget_exceeded] this request would produce 1024 columns and the declared budget allows 64 (nothing cached: true)
+U4 residency refusal by name: [geometry_out_of_residency] chunk (2, 0, 0) is 64.0 m from the anchor at (0, 0, 0), outside the declared residency horizon 48.0 m (nothing cached: true)
+U4 horizons mixed refused by name: [horizon_mixed] the render horizon 300.0 m is wider than the residency horizon 256.0 m: geometry would be drawn from a set that is never kept
+U4 owed after this slice: the displaced 256x surface (a non-planar rectangle must be subdivided and triangulated), the multi-chunk stitched mesh, a strided field request (U3's vocabulary), a streamed residency policy (U5/U6's) and the per-chunk memory figure (slice 4 asks for the merge factor and the bytes; this slice measures the quads, not their footprint)
+U6 tool table: 8 declared verbs, closed and bijective
+U6   truth     no arguments                           owner world.truth_digest   record false checks request_parsed+owner_answered+claims_hold
+U6             answers: the world's identity and its truth digest
+U6   fields    field:field, at:voxel, side:side       owner field_at             record false checks request_parsed+arguments_typed+owner_answered+claims_hold
+U6             answers: one declared field's values over a patch, with the values' digest
+U6   geometry  chunk:chunk, level:level               owner mesher.derive        record true  checks request_parsed+arguments_typed+owner_answered+claims_hold+recorded
+U6             answers: a chunk's geometry at a level, derived or served, and the record of the derivation
+U6   held      no arguments                           owner resident.digest      record false checks request_parsed+owner_answered+claims_hold
+U6             answers: the geometry the gate holds, how much of it is stale, and its digest
+U6   record    no arguments                           owner chain.head           record false checks request_parsed+owner_answered+claims_hold
+U6             answers: the chain's length and its head
+U6   admit     path:path, digest:digest, feature:name, licence:name, claim:name, carrier:name, check:path, check_digest:digest, requires_stages:list of names, requires_materials:list of names owner intake.admit         record false checks request_parsed+arguments_typed+owner_answered+recorded
+U6             answers: what the declared row became: the digest its document hashes to, read in place, the claim it was admitted under, and every axis's state
+U6   save      path:path                              owner save.write_document  record false checks request_parsed+arguments_typed+owner_answered+recorded
+U6             answers: a world written down as a document at the declared reference: the digest the bytes hash to, their length, and the identity, ruleset and record the save carries
+U6   load      path:path, digest:digest               owner save.load_document   record false checks request_parsed+arguments_typed+owner_answered+recorded
+U6             answers: the world a declared document is of, consumed in place by reference: the digest the bytes hash to, their length, and the identity, record and truth the load reproduces
+U6 call `truth`
+U6   answer   seed=1592639215 period=1s tick=0 truth=146ff7bf95369b177f3df90ae837d91c95ff4dbf152d266aa2d8f1e46c381733  [57440bd13f1d7b13cace1da1ad92d8ea951f725beea1c4d98f86e2d4f1f9ab48]
+U6   checks   request_parsed[passed] owner_answered[passed] claims_hold[passed]
+U6   claims   truth_is (seed=1592639215 period=1s tick=0 truth=146ff7bf95369b177f3df90ae837d91c95ff4dbf152d266aa2d8f1e46c381733)
+U6   effect   work 0/0 columns (0 misses, 0 hits, 0 refusals) -> 0 quads; held 0 -> 0; record 1 -> 1 events, appended nothing
+U6   verified every claim re-checked against the owners it describes
+U6 call `fields field=elevation at=0,0,0 side=8`
+U6   answer   elevation: 64 columns in [74.606894, 75.776636], values=08652d46efd8107d494126310b6dc280f31f304e004246c6ff2af411e0a48925  [457f6ec4af2476a53c751ec1d739772d78a0a27e49174ec77f0ea0ace003e50c]
+U6   checks   request_parsed[passed] arguments_typed[passed] owner_answered[passed] claims_hold[passed]
+U6   claims   field_is (elevation: 64 columns, values=08652d46efd8107d494126310b6dc280f31f304e004246c6ff2af411e0a48925)
+U6   effect   work 0/0 columns (0 misses, 0 hits, 0 refusals) -> 0 quads; held 0 -> 0; record 1 -> 1 events, appended nothing
+U6   verified every claim re-checked against the owners it describes
+U6 call `geometry chunk=0,0,0 level=0`
+U6   answer   chunk=(0, 0, 0) level=0 144 quads over 1031 cells, mesh=0e7358e45550878105b7ee0ee7f53b1039c1629dbdb059b2e7d333f31f814ed8 of truth=146ff7bf95369b177f3df90ae837d91c95ff4dbf152d266aa2d8f1e46c381733  [508ed951671cf3716fcc501d16e9cabc3e16f6bcbf85b8571bd70fb167af678f]
+U6   checks   request_parsed[passed] arguments_typed[passed] owner_answered[passed] claims_hold[passed] recorded[passed]
+U6   claims   truth_is (seed=1592639215 period=1s tick=0 truth=146ff7bf95369b177f3df90ae837d91c95ff4dbf152d266aa2d8f1e46c381733); mesh_is_held (chunk=(0, 0, 0) level=0 144 quads, mesh=0e7358e45550878105b7ee0ee7f53b1039c1629dbdb059b2e7d333f31f814ed8); event_is (event 1 = 35a1924f7b1b2720857ee41ebde062d10d37028a1b3e88c8209fbaeedf20990f)
+U6   effect   work 1024/1024 columns (1 misses, 0 hits, 0 refusals) -> 144 quads; held 0 -> 1; record 1 -> 2 events, appended 35a1924f7b1b2720857ee41ebde062d10d37028a1b3e88c8209fbaeedf20990f
+U6   verified every claim re-checked against the owners it describes
+U6 call `held`
+U6   answer   1 entries (0 stale), resident=ba7a97d44077486fbbe6dd9cb0fdaa1d56e93f0cfc93c1269df9fd5beca094a1  [8e0c5f0fdde2628196dc226e125010a8a72c9f87523dcec6556bd63248b63306]
+U6   checks   request_parsed[passed] owner_answered[passed] claims_hold[passed]
+U6   claims   held_is (1 entries (0 stale), resident=ba7a97d44077486fbbe6dd9cb0fdaa1d56e93f0cfc93c1269df9fd5beca094a1)
+U6   effect   work 0/0 columns (0 misses, 0 hits, 0 refusals) -> 0 quads; held 1 -> 1; record 2 -> 2 events, appended nothing
+U6   verified every claim re-checked against the owners it describes
+U6 call `record`
+U6   answer   2 events, head=35a1924f7b1b2720857ee41ebde062d10d37028a1b3e88c8209fbaeedf20990f  [3882292e176e2b7648dead9ccf7bdb4abe5aa105d01450f3c9176f3414641c70]
+U6   checks   request_parsed[passed] owner_answered[passed] claims_hold[passed]
+U6   claims   record_head_is (2 events, head=35a1924f7b1b2720857ee41ebde062d10d37028a1b3e88c8209fbaeedf20990f)
+U6   effect   work 0/0 columns (0 misses, 0 hits, 0 refusals) -> 0 quads; held 1 -> 1; record 2 -> 2 events, appended nothing
+U6   verified every claim re-checked against the owners it describes
+U6 call `admit path=source.md digest=05285b942c550cd7a426d39f538f75dbc418d06f27c9b6b3efe085cfdfb46441 feature=a-declared-row licence=permitted claim=checksum_only carrier=U4 check=check.md check_digest=bbf6713240b9adc99c12c2635b07b959368dd778d8678a5d39876e4a1d23fae4`
+U6   answer   a-declared-row: admitted as checksum_only (identity established = false), the document read in place at 05285b942c550cd7a426d39f538f75dbc418d06f27c9b6b3efe085cfdfb46441; axes feature=active source=active licence=active carrier=active acceptance=active identity=inactive conformance=inactive  [f489311f713e02c14c926500771f0658dbbf59445abac8bfb2358531fbc79fec]
+U6   checks   request_parsed[passed] arguments_typed[passed] owner_answered[passed] recorded[passed]
+U6   claims   none — this row declares no `claims_hold`, and makes no claim nothing here could re-check
+U6   effect   work 0/0 columns (0 misses, 0 hits, 0 refusals) -> 0 quads; held 1 -> 1; record 2 -> 2 events, appended nothing
+U6   verified every claim re-checked against the owners it describes
+U6 call `save path=u6-world.save`
+U6   answer   saved u6-world.save (673 bytes, 0b5cbe0c9637fee095155c9691f91eb85e306858943d2cce347cf8e84a8ac225) seed=1592639215 period=1s tick=0 ruleset 7 revision 3 truth=146ff7bf95369b177f3df90ae837d91c95ff4dbf152d266aa2d8f1e46c381733 record 2 event(s) head=35a1924f7b1b2720857ee41ebde062d10d37028a1b3e88c8209fbaeedf20990f  [7168bbf7c78c422f56d62f0be3f2fcd6695f3ebdd5f0f82f1aae46638c27ad4a]
+U6   checks   request_parsed[passed] arguments_typed[passed] owner_answered[passed] recorded[passed]
+U6   claims   none — this row declares no `claims_hold`, and makes no claim nothing here could re-check
+U6   effect   work 0/0 columns (0 misses, 0 hits, 0 refusals) -> 0 quads; held 1 -> 1; record 2 -> 2 events, appended nothing
+U5 instruments: 3 virtual gauges in one controller, band 32..=96 — 64→within, 31→below, 97→above
+U5 weighing gate: 3 units of quartz = 7950000/1 g exactly; 64 units of basalt = 192000000/1 g (a mass, and nothing else)
+U5 refusals by name: not_weighable=true (nothing crossed), unadmitted_material=true, not_a_count=true (a mass at a band), unwatched=true, band_inverted=true
+U5 spectra: 12 bands over 400–700 nm, 1361.000000 W/m² (the solar constant); flat spectrum → (0.08333, 0.08333, 0.08333) spread 4.55e-7; the Sun → (0.080, 0.088, 0.086)
+U5 sky: Sun 60°, ray 40° up → (0.039, 0.079, 0.143) — blue over red 3.6×, from λ^-4.09 alone
+U5 fog: 0.021 g/m³ → 0.895 km visibility; the beam 1185.90 → 969.13 W/m² while the sky 21.2256 → 120.5584 — light moved into the line of sight
+U5 twilight: 400.0 lx at 0°, 73.0734 at -2° (prints ~80), 13.3493 at -4° (prints ~15), 2.4387 at -6° (prints ~2.5), 0.0149 at -12° (prints ~0.01), 0.0010 at -18° (prints ~0.001)
+U5 night: the curve meets the night sky's own 0.001 lx at -15.18°, before astronomical twilight's −18°; the floor as a radiance is 4.660e-7 W/m²/sr
+U5 beam: 94.7526 W/m² at +0.1°, exactly 0.0 at −0.1° (not small: zero), and the sky at −18° reads 5.712e-6 against the night sky's own 5.593e-6
+U5 moon: the full Moon 2.8519e-3 W/m² (1.95 lx at 683 lm/W, 0.29 lx at the Moon's own ≈100 lm/W), doubling the Sun doubles it (5.7039e-3), a tenth-lit crescent is exactly a tenth (2.8519e-4), an occluded Moon is exactly zero
+U5 moon geometry: Ω = 6.4177e-5 sr = π(R/d)²; the legacy's own (R/d)² = 2.0428e-5 is π too dim, named rather than inherited
+U5 sun ÷ moon: 4.772e5 (the record's own six orders: 4.5e5)
+U5 audio: the onset read at (1234, −55) t7000 = 0.0290 (gain 0.000, raining false); one value per 2000 ticks and per 900 m; this field's own duty 0.0482 against the record's own measured 0.0997
+U10 tree: 106 entries, one per reference in `docs/MODS-MAP.md` §1–§5 in the record's own order, and 43 rows, one per technology
+U10 documents: `docs/MODS-MAP.md` (11873cad81c2af8d) · `docs/MODS-MATERIALS.md` (6ddffde0fa7be61e) · `docs/SHAPERS.md` (426b58d7f518aef6) · `clean-room/specs/004-u4-mesh-stream-work/quickstart.md` (481412a537b29391) — each row reads its own where it lives, never a copy
+U10 census: entries=106 mapped=64 open=25 refused=5 unresolved=12 (mapped+open+refused+unresolved = 106) — the record's own figures, un-averaged: 106 references named in `docs/MODS-MAP.md` §1–§5 (10 §1 + 42 §2 + 19 §3 + 35 §4) = the entry count above; the file the map was written from (`references/shploingus_dirty/references.md`) 91 URLs; this repo's copy (`docs/references.md`) 97 URLs; 9 §2 rows carry the record's own `*`; 43 `open` rows in the prior disposition file
+U10 entry: MOD-c2me mapped feature=chunk-infrastructure licence=permitted carrier=U4 source=docs/MODS-MAP.md check=clean-room/specs/004-u4-mesh-stream-work/quickstart.md
+U10 entry: MOD-cubicchunks mapped feature=vertical-extent licence=permitted carrier=U4 source=docs/MODS-MAP.md check=clean-room/specs/004-u4-mesh-stream-work/quickstart.md
+U10 entry: distant-horizons mapped feature=lod-horizon licence=permitted carrier=U4 source=docs/MODS-MAP.md check=clean-room/specs/004-u4-mesh-stream-work/quickstart.md
+U10 entry: voxy mapped feature=lod-horizon licence=permitted carrier=U4 source=docs/MODS-MAP.md check=clean-room/specs/004-u4-mesh-stream-work/quickstart.md
+U10 entry: MOD-chunky mapped feature=pre-generation licence=permitted carrier=U3 source=docs/MODS-MAP.md check=owed
+U10 entry: DynamicTrees mapped feature=flora-placement licence=permitted carrier=U3 source=docs/MODS-MAP.md check=docs/SHAPERS.md
+U10 entry: DynamicTreesPlus mapped feature=flora-placement licence=permitted carrier=U3 source=docs/MODS-MAP.md check=docs/SHAPERS.md
+U10 entry: MOD-tidal open (owed: unreviewed; candidate for `voxel-shapers::hydrology` (tides))
+U10 entry: BigGlobe refused feature=world-shape licence=refused carrier=U3 source=docs/MODS-MAP.md check=owed (ARR + CC-BY-NC on earlier versions, explicit no-AI clause: readable to understand a problem, and nothing derived may be implemented)
+U10 entry: lithostitched refused feature=world-structure licence=refused carrier=U3 source=docs/MODS-MAP.md check=owed (no licence declared (verified 2026-09-25))
+U10 entry: Create mapped feature=crushing licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: Create-Diesel-Generators mapped feature=distillation licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: CreateExtraGauges open (owed: the record's own `*`: it assigned this mod no feature)
+U10 entry: create-factory-controller mapped feature=gauges-and-control licence=permitted carrier=U5 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: Create-The_Factory_Must_Grow refused feature=factory-automation licence=refused carrier=U3 source=docs/MODS-MAP.md check=owed (explicit no-AI clause — the highest-caution reference: not cloned, not read; any use needs the user's explicit sign-off first)
+U10 entry: extra-disks mapped feature=storage-and-logistics licence=permitted carrier=U8 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: cable-tiers open (owed: the record's own `*`: it assigned this mod no feature)
+U10 entry: stockbridge mapped feature=storage-and-logistics licence=permitted carrier=U8 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: refined-fluid-substitution open (owed: the record's own `*`: it assigned this mod no feature)
+U10 entry: create-storage-neo-forge mapped feature=storage-and-logistics licence=permitted carrier=U8 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: refined-storage mapped feature=silicon-refining licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: Create-Threaded-Trains open (owed: the record's own `*`: it assigned this mod no feature)
+U10 entry: createsifter mapped feature=sifting licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: create-more-vertical-additions open (owed: the record's own `*`: it assigned this mod no feature)
+U10 entry: optical open (owed: the clone is empty (only `.git`): nothing was harvested, so the record assigned it no feature)
+U10 entry: Create-Ez-Stock-Ticker mapped feature=gauges-and-control licence=permitted carrier=U5 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: create-metalwork mapped feature=casting licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: Create-Mobile-Packages mapped feature=storage-and-logistics licence=permitted carrier=U8 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: create-new-age open (owed: scope = energy (corium + radiation); the harvest recorded nothing further and §8.1 declares no rule for it)
+U10 entry: Create-Pantographs-and-Wires open (owed: the record's own `*`: it assigned this mod no feature — its citations survive on the coking, oxidation and wire-drawing rows)
+U10 entry: create-pressure-gauges open (owed: the record's own `*`: it assigned this mod no feature)
+U10 entry: Repackaged open (owed: the record's own `*`: it assigned this mod no feature)
+U10 entry: Rubberworks mapped feature=sapping licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: SteamPowered mapped feature=steam-generation licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: GregTech-Modern mapped feature=smelting licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: Immersive-Weathering mapped feature=oxidation licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: TinkersConstruct mapped feature=casting licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: Step-Crafter mapped feature=assembly licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: BuildCraft open (owed: the record's own `*`: it assigned this mod no feature — its refining citations survive on the distillation row)
+U10 entry: effortless mapped feature=parametric-primitives licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: IC2 mapped feature=crushing licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: Railcraft mapped feature=coking licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: ComputerCraft mapped feature=storage-and-logistics licence=permitted carrier=U8 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: ProjectRed mapped feature=silicon-refining licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: BluePower mapped feature=wafer-doping licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: EE 3 open (owed: minium dust/shard/stone only — magic, deferred to the Deadlock-integrated model (2026-10-03))
+U10 entry: ForestryMC mapped feature=woodworking licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: MFR refused feature=factory-automation licence=refused carrier=U3 source=docs/MODS-MAP.md check=owed (no licence file anywhere in the tree — read-only ideas, no derivation, on the BigGlobe/lithostitched footing)
+U10 entry: LogisticsPipes mapped feature=storage-and-logistics licence=permitted carrier=U8 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: ironchest mapped feature=storage-and-logistics licence=permitted carrier=U8 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: TerraFirmaCraft mapped feature=smelting licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: Calculator mapped feature=smelting licence=permitted carrier=U3 source=docs/MODS-MATERIALS.md check=owed
+U10 entry: sodium mapped feature=instanced-batch-submission licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: sodiumextras mapped feature=instanced-batch-submission licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: sodiumleafculling mapped feature=instanced-batch-submission licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: AcceleratedRendering mapped feature=instanced-batch-submission licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: Flywheel mapped feature=instanced-batch-submission licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: ImmediatelyFast mapped feature=instanced-batch-submission licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: pc mapped feature=instanced-batch-submission licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: SodiumOptionsAPI mapped feature=option-dirty-tracking licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: lithium mapped feature=allocation-free-hot-paths licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: FerriteCore mapped feature=allocation-free-hot-paths licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: ModernFix mapped feature=allocation-free-hot-paths licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: krypton open (owed: network/tick budget: `N/A until multiplayer`)
+U10 entry: Redirected open (owed: network/tick budget: `N/A until multiplayer`)
+U10 entry: tt20 open (owed: performance: a TPS fixer — how ticks behave when TPS is low (the network/tick reading is retracted; the record assigns it no rule))
+U10 entry: MixinTraceReforged mapped feature=refusal-naming licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: SodiumDynamicLights mapped feature=dynamic-block-light licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: shuttfup unresolved (owed: open, and R32 pointed from `shuttfup` to `Stfu`: recorded, not guessed)
+U10 entry: Stfu unresolved (owed: open, and R32 pointed from `shuttfup` to `Stfu`: recorded, not guessed)
+U10 entry: AcceleratedRecoiling unresolved (owed: has no record hit: recorded, not guessed)
+U10 entry: Jade mapped feature=read-the-world-overlay licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: JustEnoughItems mapped feature=one-index licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: searchables mapped feature=one-index licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: MouseTweaks mapped feature=bulk-inventory-gestures licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: pick-up-notifier mapped feature=pickup-merge licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: reeses-sodium-options mapped feature=option-dirty-tracking licence=permitted carrier=U8 source=docs/MODS-MAP.md check=owed
+U10 entry: enhancedtooltips open (owed: rides the UI/design round: the record assigned it no feature)
+U10 entry: Minecraft-Smooth-Scrolling open (owed: rides the UI/design round: the record assigned it no feature)
+U10 entry: lazy-language-loader open (owed: no i18n row exists yet; recorded as an owed decision)
+U10 entry: AmbientSounds mapped feature=scanned-local-soundscape licence=permitted carrier=U5 source=docs/MODS-MAP.md check=owed
+U10 entry: Cool-Rain mapped feature=rain-by-material licence=permitted carrier=U5 source=docs/MODS-MAP.md check=owed
+U10 entry: Presence-Footsteps mapped feature=footsteps-by-material licence=permitted carrier=U5 source=docs/MODS-MAP.md check=owed
+U10 entry: matmos-ambient-sound mapped feature=spatialised-emitters licence=permitted carrier=U5 source=docs/MODS-MAP.md check=owed
+U10 entry: sound-physics-remastered mapped feature=absorption-and-reverb licence=permitted carrier=U5 source=docs/MODS-MAP.md check=owed
+U10 entry: immersivethunder open (owed: event audio scaled by distance — but it names a dependency this world does not have: there is no lightning, no storm cell and no electrical field anywhere in `voxel-shapers`)
+U10 entry: biomemusic open (owed: `rodio` dynamic audio for all audio — verbatim R33; unscoped)
+U10 entry: countereds-smooth-steps open (owed: might feed FC-10.2: the record assigned it no feature)
+U10 entry: SereneSeasons mapped feature=seasonal-clock licence=permitted carrier=U3 source=docs/MODS-MAP.md check=docs/SHAPERS.md
+U10 entry: Ecologics mapped feature=biome-triple licence=permitted carrier=U3 source=docs/MODS-MAP.md check=docs/SHAPERS.md
+U10 entry: boids-reforged mapped feature=flocking licence=permitted carrier=U3 source=docs/MODS-MAP.md check=docs/SHAPERS.md
+U10 entry: Boids-Birds mapped feature=flocking licence=permitted carrier=U3 source=docs/MODS-MAP.md check=docs/SHAPERS.md
+U10 entry: DenseOres mapped feature=dense-ore-dials licence=permitted carrier=U3 source=docs/MODS-MAP.md check=docs/SHAPERS.md
+U10 entry: curious-mobs unresolved (owed: ecology/food rows: recorded, not guessed)
+U10 entry: personality unresolved (owed: ecology/food rows: recorded, not guessed)
+U10 entry: Ratatouille unresolved (owed: ecology/food rows: recorded, not guessed)
+U10 entry: water-your-crops unresolved (owed: ecology/food rows: recorded, not guessed)
+U10 entry: SeedDelight unresolved (owed: ecology/food rows: recorded, not guessed)
+U10 entry: consistent-block-drops unresolved (owed: block drops: recorded, not guessed)
+U10 entry: no-more-knockback-latency unresolved (owed: combat feel: recorded, not guessed)
+U10 entry: resquake open (owed: the Squake movement model — added to the game's player controller with `Minecraft-CameraOverhaul` (`docs/LEDGER.md` C-150); not in the clean room, assigned no row)
+U10 entry: Minecraft-CameraOverhaul open (owed: camera tilting and roll for the player controller (`github.com/Mirsario/Minecraft-CameraOverhaul`), added to it with `resquake` (`docs/LEDGER.md` C-150); **GPL-3.0**, and not in the clean room, so the record assigns it no row (2026-10-12, user))
+U10 entry: neruina unresolved (owed: purpose unclear from the slug: recorded, not guessed)
+U10 entry: mercuryium-mod unresolved (owed: purpose unclear from the slug: recorded, not guessed)
+U10 entry: ReplayMod open (owed: replay/camera recording — candidate for the debug views)
+U10 entry: archipelago refused feature=world-shape licence=refused carrier=U3 source=docs/MODS-MAP.md check=owed (the Modrinth datapack the reference points at (`modrinth.com/datapack/archipelago`): its own terms declare **CC-BY-NC-ND-4.0** — attribution, non-commercial, **no derivatives** — so a licence fact forbids deriving (re-keyed 2026-10-12, user; the name this row used to carry, `MinecraftFabricArchipelagoMod`, is the Archipelago randomiser client — a different artifact))
+U10 rows: 43 technologies, one row each; 23 carry more than one citation (the record's own double-cover rule) and 35 declare their own acceptance check as owed
+U10 row: chunk-infrastructure carrier=U4 licence=permitted check=clean-room/specs/004-u4-mesh-stream-work/quickstart.md cited_by=MOD-c2me
+U10 row: vertical-extent carrier=U4 licence=permitted check=clean-room/specs/004-u4-mesh-stream-work/quickstart.md cited_by=MOD-cubicchunks
+U10 row: lod-horizon carrier=U4 licence=permitted check=clean-room/specs/004-u4-mesh-stream-work/quickstart.md cited_by=distant-horizons+voxy
+U10 row: pre-generation carrier=U3 licence=permitted check=owed cited_by=MOD-chunky
+U10 row: flora-placement carrier=U3 licence=permitted check=docs/SHAPERS.md cited_by=DynamicTrees+DynamicTreesPlus
+U10 row: world-shape carrier=U3 licence=refused check=owed cited_by=BigGlobe+archipelago refused_citations=BigGlobe+archipelago
+U10 row: world-structure carrier=U3 licence=refused check=owed cited_by=lithostitched refused_citations=lithostitched
+U10 row: smelting carrier=U3 licence=permitted check=owed cited_by=TerraFirmaCraft+Create+Calculator+GregTech-Modern+refined-storage
+U10 row: coking carrier=U3 licence=permitted check=owed cited_by=Railcraft+Create-Pantographs-and-Wires
+U10 row: blast-conversion carrier=U3 licence=permitted check=owed cited_by=Railcraft+IC2+TerraFirmaCraft
+U10 row: steam-generation carrier=U3 licence=permitted check=owed cited_by=SteamPowered+Railcraft+MFR+GregTech-Modern refused_citations=MFR
+U10 row: crushing carrier=U3 licence=permitted check=owed cited_by=Create+IC2+Railcraft+create-metalwork+GregTech-Modern
+U10 row: sifting carrier=U3 licence=permitted check=owed cited_by=createsifter
+U10 row: distillation carrier=U3 licence=permitted check=owed cited_by=BuildCraft+Create-Diesel-Generators+GregTech-Modern+ForestryMC
+U10 row: casting carrier=U3 licence=permitted check=owed cited_by=TerraFirmaCraft+create-metalwork+Create-Diesel-Generators+TinkersConstruct
+U10 row: sapping carrier=U3 licence=permitted check=owed cited_by=Rubberworks+IC2
+U10 row: oxidation carrier=U3 licence=permitted check=owed cited_by=Immersive-Weathering+Create+Create-Pantographs-and-Wires
+U10 row: woodworking carrier=U3 licence=permitted check=owed cited_by=ForestryMC+Create
+U10 row: silicon-refining carrier=U3 licence=permitted check=owed cited_by=refined-storage+BluePower+ProjectRed
+U10 row: wafer-doping carrier=U3 licence=permitted check=owed cited_by=BluePower
+U10 row: assembly carrier=U3 licence=permitted check=owed cited_by=Create+refined-storage+Calculator+Create-Pantographs-and-Wires+Step-Crafter
+U10 row: gauges-and-control carrier=U5 licence=permitted check=owed cited_by=Create+create-factory-controller+Create-Ez-Stock-Ticker+Repackaged+CreateExtraGauges+create-pressure-gauges
+U10 row: storage-and-logistics carrier=U8 licence=permitted check=owed cited_by=refined-storage+ironchest+MFR+stockbridge+LogisticsPipes+ComputerCraft+extra-disks+create-storage-neo-forge+Create-Mobile-Packages refused_citations=MFR
+U10 row: factory-automation carrier=U3 licence=refused check=owed cited_by=MFR+Create-The_Factory_Must_Grow refused_citations=MFR+Create-The_Factory_Must_Grow
+U10 row: parametric-primitives carrier=U8 licence=permitted check=owed cited_by=effortless
+U10 row: instanced-batch-submission carrier=U8 licence=permitted check=owed cited_by=sodium+sodiumextras+sodiumleafculling+AcceleratedRendering+Flywheel+ImmediatelyFast+pc
+U10 row: allocation-free-hot-paths carrier=U8 licence=permitted check=owed cited_by=lithium+FerriteCore+ModernFix+MOD-c2me
+U10 row: option-dirty-tracking carrier=U8 licence=permitted check=owed cited_by=reeses-sodium-options+SodiumOptionsAPI
+U10 row: refusal-naming carrier=U8 licence=permitted check=owed cited_by=MixinTraceReforged
+U10 row: dynamic-block-light carrier=U8 licence=permitted check=owed cited_by=SodiumDynamicLights
+U10 row: read-the-world-overlay carrier=U8 licence=permitted check=owed cited_by=Jade
+U10 row: one-index carrier=U8 licence=permitted check=owed cited_by=JustEnoughItems+searchables
+U10 row: bulk-inventory-gestures carrier=U8 licence=permitted check=owed cited_by=MouseTweaks
+U10 row: pickup-merge carrier=U8 licence=permitted check=owed cited_by=pick-up-notifier
+U10 row: scanned-local-soundscape carrier=U5 licence=permitted check=owed cited_by=AmbientSounds
+U10 row: rain-by-material carrier=U5 licence=permitted check=owed cited_by=Cool-Rain
+U10 row: footsteps-by-material carrier=U5 licence=permitted check=owed cited_by=Presence-Footsteps
+U10 row: spatialised-emitters carrier=U5 licence=permitted check=owed cited_by=matmos-ambient-sound
+U10 row: absorption-and-reverb carrier=U5 licence=permitted check=owed cited_by=sound-physics-remastered
+U10 row: seasonal-clock carrier=U3 licence=permitted check=docs/SHAPERS.md cited_by=SereneSeasons
+U10 row: biome-triple carrier=U3 licence=permitted check=docs/SHAPERS.md cited_by=Ecologics
+U10 row: flocking carrier=U3 licence=permitted check=docs/SHAPERS.md cited_by=boids-reforged+Boids-Birds
+U10 row: dense-ore-dials carrier=U3 licence=permitted check=docs/SHAPERS.md cited_by=DenseOres
+U10 gate: 43 declared row(s) over 7 axes (301 cells): 177 established, 121 inactive, 0 unchecked, 3 refused — admitted 8 of 43
+U10 refusals by name: licence_refused×3, axis_inactive×35 — every row the world refused is named by the owner's own name
+U10 bar: 69 row(s) declared by 106 entr(ies); every row names its document, its licence verdict and its carrier = true
+U10 bar: the refused reference `BigGlobe` is refused by name (`licence_refused`) = true; the permitted head `MOD-c2me` admits = true
+U10 bar: the head's row was admitted as checksum_only — read in place at 11873cad81c2af8d6ed344097019a46f88f1810e6cf9d729d2ece462295ca77f, identity established = false
+U10 owed references: 37 of 106 entries are named owed and carry no row (never admitted = true)
+U10 in place: the same row over the same bytes admits = true; one byte moves and the same row refuses `source_digest_mismatch` = true (source axis, subject `docs/MODS-MAP.md`: the bytes at docs/MODS-MAP.md hash to 610f13c7cb2e12c68d331f77ba608d8516686773b7d5a09a4248f2363a66bec6, and the row declares 11873cad81c2af8d6ed344097019a46f88f1810e6cf9d729d2ece462295ca77f — these are not the bytes the row describes); a reference that is not there refuses `source_absent` = true (source axis, subject `docs/not-a-document.md`: the declared reference `docs/not-a-document.md` could not be read in place: no such document)
+U10 double cover: `coking` is one row cited by Railcraft and Create-Pantographs-and-Wires = true; 23 row(s) carry more than one citation; a second row for a held technology is refused = true — the closest declared name is `duplicate_output` and the **exact name is owed**: the entry `a-descendant` declares a second row for the technology `coking`, which the tree already holds (cited by Railcraft+Create-Pantographs-and-Wires): the record states the rule — one rule with every citation on it, `docs/MODS-MATERIALS.md` §8.2, *never grow a second row for a descendant* — and names no word for the refusal, so the closest declared name is `duplicate_output` and the **exact name is owed**
+U10 double cover: the refused second row grew no row (true); the record's own witnesses: lod-horizon=distant-horizons+voxy, flora-placement=DynamicTrees+DynamicTreesPlus, world-shape=BigGlobe+archipelago, smelting=TerraFirmaCraft+Create+Calculator+GregTech-Modern+refined-storage, coking=Railcraft+Create-Pantographs-and-Wires, blast-conversion=Railcraft+IC2+TerraFirmaCraft, steam-generation=SteamPowered+Railcraft+MFR+GregTech-Modern, crushing=Create+IC2+Railcraft+create-metalwork+GregTech-Modern, distillation=BuildCraft+Create-Diesel-Generators+GregTech-Modern+ForestryMC, casting=TerraFirmaCraft+create-metalwork+Create-Diesel-Generators+TinkersConstruct, sapping=Rubberworks+IC2, oxidation=Immersive-Weathering+Create+Create-Pantographs-and-Wires, woodworking=ForestryMC+Create, silicon-refining=refined-storage+BluePower+ProjectRed, assembly=Create+refined-storage+Calculator+Create-Pantographs-and-Wires+Step-Crafter, gauges-and-control=Create+create-factory-controller+Create-Ez-Stock-Ticker+Repackaged+CreateExtraGauges+create-pressure-gauges, storage-and-logistics=refined-storage+ironchest+MFR+stockbridge+LogisticsPipes+ComputerCraft+extra-disks+create-storage-neo-forge+Create-Mobile-Packages, factory-automation=MFR+Create-The_Factory_Must_Grow, instanced-batch-submission=sodium+sodiumextras+sodiumleafculling+AcceleratedRendering+Flywheel+ImmediatelyFast+pc, allocation-free-hot-paths=lithium+FerriteCore+ModernFix+MOD-c2me, option-dirty-tracking=reeses-sodium-options+SodiumOptionsAPI, one-index=JustEnoughItems+searchables, flocking=boids-reforged+Boids-Birds
+U10 OWED: the recipe document's row-kind key and version (`docs/LEDGER.md` R-64.1 closes the format, and `packages/alpha-shell.shspec` declares no gameplay row kind)
+U10 OWED: the name of the refusal for a second row on a descendant technology (`docs/MODS-MATERIALS.md` §8.2 states the rule and no reference states the word)
+U10 OWED: a verb that serves the whole tree (U6's table is closed and bijective; the rows cross over `admit` today, the list does not)
+U10 OWED: the per-row family assignment and the `SUBSTANCES` table shape (`docs/MODS-MATERIALS.md` §5, §8.3)
+U7 axes: 7 ladders — 3 declared and 4 owed by name (certification, org_rank, gate_status, evidence_level) — the coverage table describes every axis exactly once = true; a forged row refuses `fabricated_axis` = true, an axis with no row refuses `uncovered_axis` = true
+U7 prohibitions: a cross-ladder comparison refuses `axis_interchange_refused` = true (two members of one ladder compare freely = true); 14 reductions refused (7 axes × 2); a bare `A` is AMBIGUOUS across 3 declared ladders = true, a bare `SSS` is UNQUALIFIED = true, and a token no declared ladder claims is not this rule's business = true
+U7 vocabulary: 8 declared word(s) read over 39 record(s) in place — strengthen×4(+1 outside), replace×1(+0 outside), design-approved×8(+0 outside), applied-to-internal-base×5(+0 outside), user-confirmed×2(+0 outside), user-selected×1(+0 outside), user-directed×23(+23 outside), failed-eval×4(+0 outside); every word's claim held = true, and 24 of the readings are records the calibration was **not** taken over (d803c643)
+U7 calibration: 16 reading(s), proposed 5 / designed 4 / verified-internal 4 / applied-internal 1 / approved 2 — accuracy 0.7500 in sample, 0.5000 leave-one-out, 0.4375 leave-one-out with absence, 0.0000 leave-one-out from the claim only, majority class 0.3125, margin +0.1875 — the bar is the majority class, read strictly (leave-one-out 0.5000 > majority 0.3125) = true; the stored labels still describe the records = true; the set's own digest d803c643
+U7 ballot: `u7-life-of-PATCH-015` over `patches/PATCH-015-hypergrilling.md` → `belongs`, origin A (Oracle) = true; the reading is `approved`; 3 declared feature(s) held; 5 option(s) scored; the evidence is 21aa66cd (read in place)
+U7 reading: the declared feature(s) that carry a stage are operation_is_add→proposed +0.13, operation_is_strengthen→applied-internal +0.44, operation_is_replace→designed +0.22, declares_no_dependency→verified-internal +0.39, approval_is_design_approved→proposed +0.36, approval_is_applied_to_internal_base→verified-internal +0.50, approval_is_user_selected→designed +0.22, approval_is_user_confirmed→approved +0.58, source_is_a_user_instruction→proposed +0.13, source_is_a_failed_evaluation→verified-internal +0.39, states_what_is_owed→approved +0.17, names_a_path→designed +0.22, reports_a_figure→designed +0.17, long_body→approved +0.58, short_body→applied-internal +0.44 — the figure is a reading of 16 record(s), so the mechanism is named rather than implied
+U7 fail-closed: an uncalibrated instrument writes nothing [`not_established`] = true; a missing instrument is refused [`oracle_unreachable`] = true; a non-reading is never a pass [`no_reading`] = true; a `not_belongs` reading needs a human's reason in the same act [`reason_absent`] = true, and with one it is filed carrying the reason = true
+U8 shell frame:  100 × 30 cells — 6 windows, 6 panes, layer=shell, pointer_owner=shell, glyph=true
+U8 frame digest: 79f3885c50beaf5c715aab995be36892052f2b0158b179240bcb67722e4f0d58 (a visibly drawn frame = true, pointer ownership read once = true)
+U8 constants:    16 admitted (md1-rule 8, md1-example 2, platform-translation 1, project-extension 5); an unadmitted name is refused by name

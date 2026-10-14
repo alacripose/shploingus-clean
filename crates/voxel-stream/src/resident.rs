@@ -24,6 +24,7 @@
 //! edge of the world after it stopped being at the edge of the world — visible
 //! only at seams, and therefore exactly the kind of defect that survives to
 //! release.
+use voxel_model::endian::LeBytes;
 
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -32,7 +33,7 @@ use voxel_model::{ChunkPos, Digest, LocalPos, Refusal, RefusalKind, Refused, Vox
 use voxel_mesh::source::ChunkNeighborhood;
 use voxel_mesh::{Chunk, Mesh, MeshConfig, Mesher};
 
-use voxel_shapers::column::materials;
+use voxel_shapers::materials;
 use voxel_shapers::WorldSpec;
 
 use crate::horizons::{Horizon, Horizons};
@@ -341,18 +342,18 @@ impl Resident {
     /// chunks happened to be generated in (WG-Q4).
     pub fn digest(&self) -> Digest {
         let mut t = Vec::new();
-        t.extend_from_slice(&(self.chunks.len() as u64).to_le_bytes());
+        t.extend_from_slice(&(self.chunks.len() as u64).into_le_bytes());
         for (pos, chunk) in &self.chunks {
-            t.extend_from_slice(&pos.x.to_le_bytes());
-            t.extend_from_slice(&pos.y.to_le_bytes());
-            t.extend_from_slice(&pos.z.to_le_bytes());
+            t.extend_from_slice(&pos.x.into_le_bytes());
+            t.extend_from_slice(&pos.y.into_le_bytes());
+            t.extend_from_slice(&pos.z.into_le_bytes());
             t.extend_from_slice(chunk.content_digest().as_bytes());
         }
-        t.extend_from_slice(&(self.meshes.len() as u64).to_le_bytes());
+        t.extend_from_slice(&(self.meshes.len() as u64).into_le_bytes());
         for (pos, mesh) in &self.meshes {
-            t.extend_from_slice(&pos.x.to_le_bytes());
-            t.extend_from_slice(&pos.y.to_le_bytes());
-            t.extend_from_slice(&pos.z.to_le_bytes());
+            t.extend_from_slice(&pos.x.into_le_bytes());
+            t.extend_from_slice(&pos.y.into_le_bytes());
+            t.extend_from_slice(&pos.z.into_le_bytes());
             t.extend_from_slice(mesh.digest().as_bytes());
         }
         Digest::of_fields("voxel-stream/resident", &[b"v1", t.as_slice()])

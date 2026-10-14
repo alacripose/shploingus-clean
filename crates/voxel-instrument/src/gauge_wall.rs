@@ -257,7 +257,7 @@ mod tests {
     use super::*;
     use crate::Measured;
     use voxel_model::{MaterialRegistry, Ratio};
-    use voxel_shapers::column::materials;
+    use voxel_shapers::materials;
 
     const NETWORK: Site = Site::Network([0, 0, 0]);
     const OTHER: Site = Site::Network([40, 0, 0]);

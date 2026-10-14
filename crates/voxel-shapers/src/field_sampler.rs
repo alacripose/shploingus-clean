@@ -38,6 +38,7 @@
 //! generated rows whose schema carries `resolution`, `sampling` and `seam_policy`. This
 //! tree has no generated manifest yet, so that function refuses by name instead of
 //! returning an empty catalog — an empty catalog would look like a world with no fields.
+use voxel_model::endian::LeBytes;
 
 use std::collections::BTreeMap;
 
@@ -60,8 +61,29 @@ pub enum FieldId {
     Climate,
     Temperature,
     Moisture,
+    /// How deep inside a landmass a position sits, `[0, 1]` — the atlas's continentalness
+    /// (`earth_biomes_subbiomes_continentalness_mountains.pdf` §2), produced by
+    /// [`crate::climate::continentality`] and consumed by the moisture and season laws.
+    Continentalness,
     Precipitation,
     Humidity,
+    /// Near-surface **condensed** liquid water, kg/m³ — the fog guide's droplet field, produced by
+    /// [`crate::fog`] and addressed at a height, because a fog layer has a bottom and a top.
+    FogWater,
+    /// Near-surface **mechanically produced** liquid water, kg/m³ — spray and the droplets a foam's
+    /// bubbles burst. A separate field because it exists with the air below saturation.
+    SprayWater,
+    /// Koschmieder visibility of the addressed droplet field, metres — read from the droplets and
+    /// never from relative humidity.
+    Visibility,
+    /// The cloud model's **local water content** at an address, `[0, 1]` — zero where there is no
+    /// cloud, because the absence of a cloud is a measurement and not an unproduced field.
+    CloudWater,
+    /// The base of the cloud this column is making, metres. A query where the column makes **no**
+    /// cloud refuses by name: the base of a cloud that does not exist is not a value.
+    CloudBase,
+    /// The top of that cloud, metres — same refusal rule as [`FieldId::CloudBase`].
+    CloudTop,
     Groundwater,
     Pressure,
     Wind,
@@ -73,7 +95,7 @@ pub enum FieldId {
 
 impl FieldId {
     /// The full roster, in declaration order.
-    pub const ALL: [FieldId; 19] = [
+    pub const ALL: [FieldId; 26] = [
         FieldId::Tectonics,
         FieldId::Geology,
         FieldId::Elevation,
@@ -84,8 +106,15 @@ impl FieldId {
         FieldId::Climate,
         FieldId::Temperature,
         FieldId::Moisture,
+        FieldId::Continentalness,
         FieldId::Precipitation,
         FieldId::Humidity,
+        FieldId::FogWater,
+        FieldId::SprayWater,
+        FieldId::Visibility,
+        FieldId::CloudWater,
+        FieldId::CloudBase,
+        FieldId::CloudTop,
         FieldId::Groundwater,
         FieldId::Pressure,
         FieldId::Wind,
@@ -107,8 +136,15 @@ impl FieldId {
             Self::Climate => "climate",
             Self::Temperature => "temperature",
             Self::Moisture => "moisture",
+            Self::Continentalness => "continentalness",
             Self::Precipitation => "precipitation",
             Self::Humidity => "humidity",
+            Self::FogWater => "fog-water",
+            Self::SprayWater => "spray-water",
+            Self::Visibility => "visibility",
+            Self::CloudWater => "cloud-water",
+            Self::CloudBase => "cloud-base",
+            Self::CloudTop => "cloud-top",
             Self::Groundwater => "groundwater",
             Self::Pressure => "pressure",
             Self::Wind => "wind",
@@ -381,14 +417,14 @@ impl FieldContract {
         identity_field(payload, self.id.as_str().as_bytes());
         identity_field(payload, self.unit.as_str().as_bytes());
         let resolution = self.resolution;
-        identity_field(payload, &resolution.origin().x.to_be_bytes());
-        identity_field(payload, &resolution.origin().y.to_be_bytes());
-        identity_field(payload, &resolution.origin().z.to_be_bytes());
-        identity_field(payload, &resolution.coarse_horizontal().to_be_bytes());
-        identity_field(payload, &resolution.fine_horizontal().to_be_bytes());
+        identity_field(payload, &resolution.origin().x.into_le_bytes());
+        identity_field(payload, &resolution.origin().y.into_le_bytes());
+        identity_field(payload, &resolution.origin().z.into_le_bytes());
+        identity_field(payload, &resolution.coarse_horizontal().into_le_bytes());
+        identity_field(payload, &resolution.fine_horizontal().into_le_bytes());
         identity_field(
             payload,
-            &resolution.vertical().unwrap_or(i32::MIN).to_be_bytes(),
+            &resolution.vertical().unwrap_or(i32::MIN).into_le_bytes(),
         );
         identity_field(payload, &[self.vertical_dependence.discriminant()]);
         match self.sampling {
@@ -398,7 +434,7 @@ impl FieldContract {
             } => {
                 identity_field(payload, &[0]);
                 identity_field(payload, &[resolution_level_code(level)]);
-                identity_field(payload, &coverage_radius.to_be_bytes());
+                identity_field(payload, &coverage_radius.into_le_bytes());
             }
             SamplingPolicy::PiecewiseConstant { level } => {
                 identity_field(payload, &[1]);
@@ -409,8 +445,8 @@ impl FieldContract {
         let (seam_discriminant, seam_value) = self.seam_policy.identity_parts();
         identity_field(payload, &[seam_discriminant]);
         identity_field(payload, &[seam_value]);
-        identity_field(payload, &self.tolerance.numerator().to_be_bytes());
-        identity_field(payload, &self.tolerance.denominator().to_be_bytes());
+        identity_field(payload, &self.tolerance.numerator().into_le_bytes());
+        identity_field(payload, &self.tolerance.denominator().into_le_bytes());
         identity_field(payload, self.review_state.name().as_bytes());
         let mut source_ids = self.source_ids.clone();
         source_ids.sort();
@@ -418,7 +454,7 @@ impl FieldContract {
             payload,
             &u64::try_from(source_ids.len())
                 .unwrap_or(u64::MAX)
-                .to_be_bytes(),
+                .into_le_bytes(),
         );
         for source in source_ids {
             identity_field(payload, source.as_bytes());
@@ -445,7 +481,7 @@ impl FieldSamplerIdentity {
             &mut payload,
             &u64::try_from(contracts.len())
                 .unwrap_or(u64::MAX)
-                .to_be_bytes(),
+                .into_le_bytes(),
         );
         for contract in contracts.values() {
             contract.append_identity(&mut payload);
@@ -496,30 +532,6 @@ impl FieldSpec {
 
     pub const fn review_state(&self) -> Lifecycle {
         self.contract.review_state
-    }
-
-    #[cfg(test)]
-    pub(crate) fn synthetic_for_test(
-        id: FieldId,
-        unit: Unit,
-        resolution: FieldResolution,
-        vertical_dependence: VerticalDependence,
-        sampling: SamplingPolicy,
-        seam_policy: SeamPolicy,
-        tolerance: Rational,
-        source_ids: Vec<String>,
-    ) -> Self {
-        Self::from_contract(FieldContract {
-            id,
-            unit,
-            resolution,
-            vertical_dependence,
-            sampling,
-            seam_policy,
-            tolerance,
-            source_ids,
-            review_state: Lifecycle::Admitted,
-        })
     }
 
     fn from_contract(contract: FieldContract) -> Self {
@@ -1003,7 +1015,7 @@ fn coordinate_distance(left: VoxelPos, right: VoxelPos) -> i128 {
 /// The reference's payload framing: every field length-prefixed, so that `("ab", "c")` and
 /// `("a", "bc")` have different identities.
 fn identity_field(payload: &mut Vec<u8>, bytes: &[u8]) {
-    payload.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
+    payload.extend_from_slice(&(bytes.len() as u64).into_le_bytes());
     payload.extend_from_slice(bytes);
 }
 
@@ -1061,8 +1073,52 @@ mod tests {
     }
 
     #[test]
-    fn the_field_roster_is_the_references_nineteen() {
-        assert_eq!(FieldId::ALL.len(), 19, "the roster was narrowed");
+    fn the_field_roster_carries_the_references_nineteen_and_names_its_own_additions() {
+        // The reference's nineteen are the vocabulary this roster was ported from, and **every one
+        // of them must still be here** — a narrowed roster is a field somebody deleted. It was
+        // widened on 2026-10-10 by four, from the two guides the user adopted, and the widening is
+        // named rather than absorbed: the additions are exactly these, so a fifth field cannot
+        // arrive without this test being the place that says so.
+        for field in [
+            FieldId::Tectonics,
+            FieldId::Geology,
+            FieldId::Elevation,
+            FieldId::Slope,
+            FieldId::ErosionResistance,
+            FieldId::Soil,
+            FieldId::SoilFertility,
+            FieldId::Climate,
+            FieldId::Temperature,
+            FieldId::Moisture,
+            FieldId::Precipitation,
+            FieldId::Humidity,
+            FieldId::Groundwater,
+            FieldId::Pressure,
+            FieldId::Wind,
+            FieldId::Storms,
+            FieldId::Radiation,
+            FieldId::CarryingCapacity,
+            FieldId::SpeciesSuitability,
+        ] {
+            assert!(FieldId::ALL.contains(&field), "{field:?} fell out of the roster");
+        }
+        let additions = [
+            FieldId::Continentalness,
+            FieldId::FogWater,
+            FieldId::SprayWater,
+            FieldId::Visibility,
+            FieldId::CloudWater,
+            FieldId::CloudBase,
+            FieldId::CloudTop,
+        ];
+        assert_eq!(
+            FieldId::ALL.len(),
+            19 + additions.len(),
+            "the roster grew by something other than the declared additions"
+        );
+        for field in additions {
+            assert!(FieldId::ALL.contains(&field), "{field:?} is not in the roster");
+        }
         let mut names: Vec<&str> = FieldId::ALL.iter().map(|f| f.as_str()).collect();
         let before = names.len();
         names.sort_unstable();

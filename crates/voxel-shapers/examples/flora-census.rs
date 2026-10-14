@@ -6,7 +6,7 @@
 //! broadleaf, `#` the ground the tree is rooted in, `.` air.
 
 use voxel_shapers::chunk_fields;
-use voxel_shapers::column::materials;
+use voxel_shapers::materials;
 use voxel_shapers::spec::{Config, WorldSpec};
 use voxel_shapers::{flora, terrain};
 

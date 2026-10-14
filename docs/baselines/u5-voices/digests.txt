@@ -1,0 +1,37 @@
+# U5's voices — the digests on the frozen final bytes (the record repair, 2026-10-12, §31).
+#
+# §30's `post-*` pair was taken before the last `src/systems.rs` edit (the capture at 14:30:03, the
+# registry row that names the voices at 14:33:57), so it describes a superseded build and its
+# "four added, none rewritten" is true of pre → post and false of pre → final. Its figures live only
+# in §30's dated correction and §31 of `docs/CLEAN-ROOM-PLAN-2026-10-11.md`. This file now records the
+# captures against the frozen final bytes: `pre-*` (kept), `final-*` (taken directly from the built
+# binary, so its stderr carries the program's own line and no cargo timing), and the sources re-hashed.
+
+## the sources (re-hashed on the final bytes, 2026-10-12; systems.rs was the one stale row)
+53b0e6bd8f26b62539b2719006058b234b64493102f464232ce8c3b82ab69d53 *clean-room/src/light.rs
+7eea71a63f8b12523e3da7f976748da3794baa4ff6e34a7a680dd3314734ff13 *clean-room/src/feeling.rs
+5da729a4d12f811ed018e275bee7900315946a5442bccdeb5a7e350c83451a92 *clean-room/src/audio.rs
+d4fa3912f200f585f20812b7aec9c30ebb67327b3ba15abc02eea33fd0583363 *clean-room/src/evidence.rs
+b0e1f8f08c0b312b3307de9b02ec77f35b9a70817cdf9dddc9c478d2fb2aebd0 *clean-room/src/refusal.rs
+d977303a87ef153fb8ddbcb547f7f9209997a3a1d85f105cb1054a7eb2d343e7 *clean-room/src/lib.rs
+5f399654c0342c683a9576e4d8a8c4aa0fda3862d91513100f427c09c9104c60 *clean-room/src/systems.rs
+2f6fab802a54bb689b12b5ff8ff55a2a1e0c57ab0e639ac86d8fbafc7d6fd5f7 *clean-room/tests/u5_measure.rs
+
+## the binary's own output
+1491a596a1b8f2584347e99fc4a65fbde112de8e4b52a6cc5a404adbacb58e6d *pre-stdout.txt    (494 lines, before this pass's first edit)
+7cea9c2f634b80881b795caad171dbf12519ac2ddb8a4c317b743d5a076b5635 *pre-stderr.txt
+b8203cbc8c649ff2eadf3781719ff1993e17f524a39a87990c4e82fbbcd53fda *final-stdout.txt  (498 lines, the frozen final bytes; two runs byte-identical)
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *final-stderr.txt  (the program's own line, no cargo timing)
+
+## superseded, kept for the dated account
+a4fb60fb09f3f1945766146eb80b5351bde20de9ad7f35a1321abe364e9a56c5 *post-stdout.txt  (498 lines: the build before §30's registry-row rewrite)
+a3c3d1b6cf3a79f4b1167a45f73838b5cd1ad379db5e5d388835d6f083b6e455 *post-stderr.txt
+
+## the movement this repair accounts (pre → final, §31)
+494 → 498 lines: four added (U5 voices, rain, buffer, refusals) and three rewritten (the `[U5]` row,
+its `derived from:` line and its `interface:` line). The post pair's "four added, none rewritten"
+described the pre-rewrite build.
+
+## the voice the test pins (tests/u5_measure.rs, 2048 frames, Powerful at the strong radius, drift -1, the dry column at (1234, -55) t7000)
+a33ede013edf0e2f97acfe33bece2af5a9b78d9583ba89972a79c33ed1f754a2  the buffer's digest (2048 f64, little-endian)
+f5a59a8b  the same shape with the field's own first wet cell (0, 1) at t7000, as the binary prints it

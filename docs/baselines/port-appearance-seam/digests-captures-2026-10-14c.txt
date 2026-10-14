@@ -1,0 +1,14 @@
+67f9325ebe671ecc1d2efd95ae3ea98bb2b8e12d63aabb08133f34784f8eca80 *README.txt
+7cfb615861afea8accb90b1cc80bea71a90ea995183f0572d4473702245c053e *pinned-parent-bytes.txt
+16cb13977847dd41e5946fde94db92601e17c253bbf3801daa3011bda9238d02 *port-mesh-2026-10-14c.txt
+d8884d93f623f164bad4fdfb306f7eb74536c6771b135dd406c0ae208c758a3c *run-after-the-streamed-residency-2026-10-14c.txt
+2e4494c1bd5f463834b395ab5e5ac9f71bf5b2a63c087bc450c66ff47588a535 *run-movement-2026-10-14c.txt
+8a032d4b40c68d34f1d5286806936631edf3efe9eb2e52b0af3d213e38c850ad *stream-gate-2026-10-14c.txt
+e58ec613174c285ba2cdbcca94e130618e2417835551d312990a8fba1458268c *streamer-guard-bites-2026-10-14c.txt
+b841213bfa7ad2abd55d7da6621a8f7fdf174671f8bb2b28cf9c01d143dc430f *parent-blocker-2026-10-14c.txt
+e0cbc14b6fd6fd9fdc5fcda54274e8ea5e95a6ac9a6eaee04d0a1d8331392eec *digests-2026-10-14c.txt
+# 2026-10-14c+1 — the correction appended to `digests-2026-10-14c.txt` changed that file, so the line
+# naming it above is superseded; every other line here still verifies (`README.txt`, the pin and the five
+# captures were not touched by the correction). Both files as they now stand:
+67f9325ebe671ecc1d2efd95ae3ea98bb2b8e12d63aabb08133f34784f8eca80 *README.txt
+1b08bb466f7a4e5d79af0e05c47b6a12f68cdf91cd8a58732715485d00c65c1d *digests-2026-10-14c.txt

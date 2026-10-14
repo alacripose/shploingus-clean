@@ -1,0 +1,24 @@
+   Compiling shploingus-clean-room v0.1.0 (C:\Users\ala\Documents\shploingus-clean\clean-room)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.98s
+     Running unittests src\lib.rs (target\debug\deps\shploingus_clean_room-4324855fbab52049.exe)
+
+running 1 test
+test automaton::tests::rain_wets_a_dry_pit_and_the_plane_comes_to_rest_at_the_laws_own_fixed_point ... FAILED
+
+failures:
+
+---- automaton::tests::rain_wets_a_dry_pit_and_the_plane_comes_to_rest_at_the_laws_own_fixed_point stdout ----
+
+thread 'automaton::tests::rain_wets_a_dry_pit_and_the_plane_comes_to_rest_at_the_laws_own_fixed_point' (24000) panicked at src\automaton.rs:313:9:
+assertion `left == right` failed: the holding settles within the first hundred ticks and stays put: 79400 µm
+  left: 1679400
+ right: 79400
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    automaton::tests::rain_wets_a_dry_pit_and_the_plane_comes_to_rest_at_the_laws_own_fixed_point
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 304 filtered out; finished in 0.33s
+
+error: test failed, to rerun pass `--lib`

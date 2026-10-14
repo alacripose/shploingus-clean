@@ -1,0 +1,121 @@
+efbe40c4213d746b78b415b951aafa268474012e46c3239e83c3820da0ff8e74 *crates/voxel-appearance/Cargo.toml
+5a4483beae523e4ccceaac570cd23105239d8cfd3b37d49fbb60d0425febb8c6 *crates/voxel-appearance/src/composition.rs
+9eb46ef9132dfe7d725eed28747d14a4a172ce2e648f36985e55176aed4d4f27 *crates/voxel-appearance/src/detail.rs
+1b7e8900cc3d1b0e3418d342fcf653944b8808c44ec2538e153fe5e15f8e52e5 *crates/voxel-appearance/src/fluid.rs
+0d2597cea9e5eb8cd9f1d15c65532329c9807ccbd24b8402e2aa3ebebba529be *crates/voxel-appearance/src/lib.rs
+6bfb990a97613d4f41217e8d7c319bc40449e8db3e79c765bfd07f5161b2df13 *crates/voxel-appearance/src/npr.rs
+a8d9d27a648d038ea099125dbd6787b40a5165852677353f2344269c260a3a7b *crates/voxel-appearance/src/openpbr.rs
+1a5cc3a6217b3ebb563efb2a349455d378a1fd620b677565596ea6ab75339e57 *crates/voxel-appearance/src/provenance.rs
+b0994b1d23a6c8f5b9900cbfb2e5649057f62ef42e5d302e6e74a662b51894c7 *crates/voxel-appearance/src/response.rs
+246ba3990dbab20bc0634c38d38193e4837417a9d7be0e34bc1a0da684d681ed *crates/voxel-appearance/src/sky.rs
+2fdacd2ebddbe395e2827c8176b2f832362a50b38b3fef3db32af5486665edfe *crates/voxel-appearance/src/tonemap.rs
+4246453543193f412b8417b91002a13e81b72483a7ec7050b974efcbfccf6f45 *crates/voxel-appearance/src/wrap.rs
+16215cfd8246a8501e1fcd90aedf0f250519cf011753cf78a9faabf509b22e77 *crates/voxel-client/Cargo.toml
+43eebacf9bf3710006c9c08564d0be2a8bb6d25ed600cd6e7f9bfa13faac7e1c *crates/voxel-client/examples/adapter-features.rs
+9d554a2ee77ed741d2c0b2c412238593eb2ceeac06ab933c11d12ccd46f7ceff *crates/voxel-client/examples/daylight-hue.rs
+9c5d6f15f5265d0a483ed714282b7628b2a2d448ec1136062dbfb3f69b7b5093 *crates/voxel-client/examples/exposure-steps.rs
+dc0ab9639b510c430d49eabd96821971c8ab4babecb16f97eab8634647bd1513 *crates/voxel-client/examples/measured-light.rs
+f0999aeaf5a77720833bc9f29f2ff93e2c6e7ed02cd7d212cfea27603487b762 *crates/voxel-client/examples/moon-report.rs
+80f7e6e6eaf60913ad0a8b6aeb1523f6fc25f699a40aca8c398136680ba77650 *crates/voxel-client/examples/pattern-flicker.rs
+ed14c6d29c345c2f0c6d3f1de013cd728f1f556f8f54aa71b782238558742089 *crates/voxel-client/examples/remesh-timing.rs
+1679dfc749395b493e543a6610595b41d82531bde9d980eba71bf8b747d29cc0 *crates/voxel-client/examples/rig-balance.rs
+6c26841b84aa6f5359530944b05460aa70cb6ae79215bbcef23fb72802fcdcca *crates/voxel-client/examples/rung-attribution.rs
+67950a64e1b74a167764076bb96fb36aeba1b9353f5349a6900e764aff41cd01 *crates/voxel-client/examples/sun-in-the-sky.rs
+cf6ae94898935116ecc260a24ea9aac65a193a7b5455082df204fe0cefd479a7 *crates/voxel-client/examples/surface-colours.rs
+80b67c3a6baef6821b8b97f9365a0ec590f7b8af743dde49b56c742a179353d9 *crates/voxel-client/examples/surface-format-check.rs
+02e8b59d1b8d0ef03cc8cf30d92cd0027839176776915f7fff23738ee81d4307 *crates/voxel-client/src/atmosphere.wgsl
+6825b3d100ff82f72b32f4d4d085a182d4b9e6851ccf275d374eef82ff3f719f *crates/voxel-client/src/camera.rs
+902cc89f160e2d5643d22ede53a3288899b17669963ced2f056e7edd680cdfc1 *crates/voxel-client/src/camera_overhaul.rs
+a45e1c9be2b7e1c0e94a03013f99c51c91c07b2599213a976c1051056400dbc1 *crates/voxel-client/src/clock.rs
+309b1c6ac21aa19276ac2a06bc9ab406c02de1e9199231b0796f1d75357096fa *crates/voxel-client/src/cloud_cubes.rs
+8c2eacb25e4bffad3d0068bfe08f81427fbdcdca1d5aaab5d348c83c5955494f *crates/voxel-client/src/cloud_field.rs
+77ad04a3847b1311c10a34aaf03853d3c371c4db5c67476f2ba641aaa105f9b0 *crates/voxel-client/src/debug.rs
+ba3b38a731b0b877439ba155b8761ed594b9da346a1d4f214f4e27e4a097d0d4 *crates/voxel-client/src/display.wgsl
+834e20a900bd22ab08bc851513151a3a69729f9c0de0b4d0c18676245323034e *crates/voxel-client/src/field.rs
+f3f10962f0a7f70486a697daa4ff82701fcb477e2af9c8c291cf4978d2199b0a *crates/voxel-client/src/frame.rs
+6ac790dc083c782bc967d390c0e39c717103746b1b207f566d82a44ce0203a92 *crates/voxel-client/src/game.rs
+d34e5ae9e8dc8d6afcfebd1a6e069e678ec81c62b76d5c4dc48b4ac17ca2a24d *crates/voxel-client/src/hud.rs
+1d896b4b5d6e9647614b554eea45ed5043ac30903c0545a658b9f2d54eea53e9 *crates/voxel-client/src/lib.rs
+fcc2f8981e3d691626f8c31bb3668dae0903c99572297e85833a119371183ada *crates/voxel-client/src/merge.wgsl
+39e3e3ebf0fe1bc4242ba52862d3327ee131a0974512be250071790eecf7e9f1 *crates/voxel-client/src/motion.rs
+61c853994d151f9615b519bc0e23d6e07bbd2c62b28a1f7d874c30036d6260d5 *crates/voxel-client/src/panels.wgsl
+8a0f36e9e58005f4e537d24229db085289d93d98868237bf6ab5a089708686d3 *crates/voxel-client/src/pattern.rs
+ee0797cc3eb1693c5448f2ead097fd4816c0987ea288799c7a9129f31a8934a8 *crates/voxel-client/src/quad.rs
+3139c822e70340773301516d9195535c40ceb68c588118abcff8ffe2552b3921 *crates/voxel-client/src/renderer.rs
+f66195c34a367f0da2ba8b53aea81aa6fc93990d055fe7bfc069b0e715ef00e0 *crates/voxel-client/src/scene.rs
+21d6b7ca780e294a0987b79b711a37f785a84c3b6d31d1f38d817b84de5495a9 *crates/voxel-client/src/shading.rs
+6a013fb755c25a71b62013ed1ac76746b6117e7725cccf830e1afdc539f9d667 *crates/voxel-client/src/shading.wgsl
+06a1aba05038add873b595e0e8b3e3292c9957f6f31fb1ae75beb8ad80d4b282 *crates/voxel-client/src/shell/arrangement.rs
+8253e252412e2f8fcfb5872dbdb6620860d820837293f436193b2506d1ecf991 *crates/voxel-client/src/shell/changes.rs
+e0b1dc264cdca554aed631face8e99ab0947c97f395d1b789a102ee90c31016e *crates/voxel-client/src/shell/console.rs
+0f18851c0d668d03d4b57c3e51b85847cda137bc5ce8a7af32ee340be666b5e2 *crates/voxel-client/src/shell/debug.rs
+50660f666f3a81c074f9b115ff16e87c34a608080179f9467d8c84c560533542 *crates/voxel-client/src/shell/desktop.rs
+0fbd80c7a972dcd62914a7f832de2690ed3b97136276c23f2aff23ac207effa5 *crates/voxel-client/src/shell/drop.rs
+5d49814d1332fb3c8cce091f6b6e92cef63b23a56ad79742c6b023ef4e7f0dde *crates/voxel-client/src/shell/hud.rs
+765e92add39ae522775ad6e8d9cba2f4cbf6c95a50450e86a82d3b7bf7302e48 *crates/voxel-client/src/shell/mod.rs
+73b4d1408f2ad192cac5f92e6371f04528731acd30b540e85af7121b18199ea5 *crates/voxel-client/src/shell/mount.rs
+bf0efadb85b52bf8540dc7b69f85b5a50b7c56752a5ea4e63e7fa05589b16182 *crates/voxel-client/src/shell/notifications.rs
+3f8b5d4bafd6cbe3929c479b455b97983e2f2ff3e47b8550d74a92ad1f87bafc *crates/voxel-client/src/shell/pane.rs
+2e01c1ba66e9555186849f16d3f8e2f10cca2a8fa79bc258a8559235a9d62291 *crates/voxel-client/src/shell/placeholder.rs
+61256060bd26cdf5d5fc1479b26eb02210caa1ed5dfe2ae0ce12ecb31a578137 *crates/voxel-client/src/shell/splitter.rs
+6a1f7847e9eeadcccbe73ed456a963e7cda0bb571155fa753f0e06ede606be2a *crates/voxel-client/src/shell/taskbar.rs
+034bbf11a9ab18874aadeb0251765dc4b89d4c2b0b37b0a795c6e7048dd0ef98 *crates/voxel-client/src/shell/theme.rs
+779c8923a93ef2cc3ff9c414fd380c69ea8ddb76e78c5e77a0897816f0e134a7 *crates/voxel-client/src/shell/titlebar.rs
+89786977e7b94904e5161404509ea20c154af7936be48a6a08c5726a5530d5f5 *crates/voxel-client/src/shell/window.rs
+c770e5f6f21bc57214fc7352192096a7c9cd30d4b8831db801b24bd92fd22d3a *crates/voxel-client/src/sky.wgsl
+07e5a769bdfd403fe09af596d47fefd2e209f2f311c1cc75a8b1acd6df2961b4 *crates/voxel-client/src/skylight.rs
+cdeb73282b129f8a7b87123918711cd0ec45ef775357880db5f83427c4c3f7dc *crates/voxel-client/src/sun.rs
+7431d05cfe06997cd6f98e29c4379662fb20f67b380cf1d1883fb789c01b534f *crates/voxel-client/src/wire.wgsl
+8134693843a36c23f249093026268561be698bf7955c50d1649e66662c00937c *crates/voxel-client/src/world.rs
+4ad27b052116bb8e9940d6daaf8d6ec22c66e41fd37baf68065fcd2c85edfdd8 *docs/APPEARANCE.md
+901b1ca12d422d95a51ad7114bd839ae2dc4175f6deba73a70087dc6bd3b5163 *Cargo.lock
+0e4f47a98f04919c0bb98197289d3a3e8344765de226b5200d8fd81ee2877c70 *crates/voxel-mesh/Cargo.toml
+658353a7043655bccf001f5f2fc036f688ee6cb4fb99a74a0a5ff09ede28227d *crates/voxel-mesh/src/chunk.rs
+77de0753272fd2db35c1264afe2f91349eaaaa36e3f0cf0baac051d1f38c24a0 *crates/voxel-mesh/src/lib.rs
+4d4c91e0d5c2e5a73f405f4d1cb38b65bd8cd81444164d42171a609bdf145b4c *crates/voxel-mesh/src/mesh.rs
+85de4ac4271f1d38697e7362c1ee8a450c02bc38921a896e951dc50692bf2537 *crates/voxel-mesh/src/octree.rs
+a4d7a951fa058000ba1da9fbda9fe6c614de1c5282d2edcf8900b366bebbebc9 *crates/voxel-mesh/src/source.rs
+5ed8ea72eb6afe183f945242ee15abb7cd299a3892c5d93a54554d69e418446a *crates/voxel-model/src/coord.rs
+10e9bca8a5f90d061a550143c79a59aac99921944cfacd2d44a3c58d4547b3a6 *crates/voxel-model/src/lib.rs
+c3299084225ea9c56562cc3fc98322c23a6a1c032fed610f28b69c1ea5ca29f0 *crates/voxel-model/src/material.rs
+a349427002db4be29c1e27112b85afaa10bf696373f4e2a29ee98fcff5e3dc31 *crates/voxel-model/src/refusal.rs
+0d02f837cd739d98656bbbb0e3715106d68bdea68e4caaa8b0d0b3bca687db2c *crates/voxel-model/src/subvoxel.rs
+b8a2147d6611e02cfdeed081951b795daa0c04c01e387ceeb5975c5fa65bbf7d *crates/voxel-stream/Cargo.toml
+22bdb49358c54ef2e99a24f81db98a269eceacd823820ee1439e75f91b003196 *crates/voxel-stream/src/horizons.rs
+69a764913a38e67b7fe7928218a0ef83ed30fb2043c669a04fecab262fc4773c *crates/voxel-stream/src/lib.rs
+e6ea08447dac9f5b1989830dd8abea12ed4eec193261a5d272454c2cd1a051ae *crates/voxel-stream/src/resident.rs
+6aa73281f3db584512ae447a276d91200439c10449e5dcb7c344c307d9e18deb *crates/voxel-stream/src/world_source.rs
+# Read-set appended 2026-10-14b (the keyed door), and it is a comment rather than a digest line on purpose:
+# the two parent files this pass read are ALREADY pinned above, so a second digest line for one path would be
+# a pin that says two things about one file. What the pass read, by path + digest:
+#   e6ea08447dac9f5b1989830dd8abea12ed4eec193261a5d272454c2cd1a051ae crates/voxel-stream/src/resident.rs
+#   (read for `pub fn new(source: WorldSource)` — the stream seam's blocking signature)
+#   6aa73281f3db584512ae447a276d91200439c10449e5dcb7c344c307d9e18deb crates/voxel-stream/src/world_source.rs
+#   (read for `pub struct WorldSource { spec: WorldSpec, .. }` — the type that door takes)
+# Both digests are re-checked by `sha256sum -c pinned-parent-bytes.txt` (comments are not checksums), and
+# nothing under crates/ was written: `find crates -newermt '-300 minutes' -type f` -> 0.
+# Read-set 2026-10-14c: the same two files, re-read for the blocker re-quote above (already pinned at
+# lines 86-87 with these digests, so no digest line is added here): crates/voxel-stream/src/resident.rs and
+# crates/voxel-stream/src/world_source.rs. sha256sum -c -> 87 of 87 OK; find crates -newermt -> 0.
+# Read-set 2026-10-14d: **no parent byte was read this pass.** The two paths this pass's prose names
+# (`crates/voxel-stream/src/resident.rs`, `crates/voxel-stream/src/world_source.rs`) are citations of the
+# blocker the 10-14b/c passes read and pinned at lines 86-87, not reads of their bytes here — so this line is
+# a comment and adds no digest line. Re-verified on these bytes: `sha256sum -c pinned-parent-bytes.txt` ->
+# 87 of 87 OK, and `find crates -newermt '-300 minutes' -type f` -> 0, so nothing under `crates/` was read
+# or written by this pass. No third-party crate was added.
+# The controller seam's own pin, 2026-10-14e — appended rather than rewritten, and it is one line because
+# three of this pass's four read paths are ALREADY pinned above: `crates/voxel-client/src/motion.rs`
+# (line 40: the intent vocabulary and the diagonal rule), `crates/voxel-client/src/camera.rs` (line 27: the
+# pole, `MAX_PITCH_RAD = 1.569_051_2`) and `crates/voxel-client/Cargo.toml` (line 13: the wgpu / glyphon /
+# pollster declarations that ARE the blocker). A second digest line for a path already pinned would be a pin
+# that says two things about one file, so those three are named here rather than repeated. The fourth path
+# is new to this file and is pinned here for the first time:
+69b3490839fdfa3708657d8d298b321a4c1c01f304cfce13afecd2ae96189953 *crates/shploingus/src/main.rs
+# (read for `const FLY_M_PER_S: f64 = 18.0` (line 143), the bin's own key -> intent translation at lines
+# 3036-3039 (`forward: key(KeyCode::KeyW) - key(KeyCode::KeyS)`, `strafe: key(KeyCode::KeyD) -
+# key(KeyCode::KeyA)`), and its free-flight sentence at line 82 — the three parent numbers this seam
+# re-uses, quoted in `parent-blocker-2026-10-14e.txt`.)
+# Read-set 2026-10-14e: nothing under `crates/` was written — `find crates -newermt '-300 minutes' -type f`
+# -> 0 — no third-party crate was added to `clean-room/Cargo.toml`, and `sha256sum -c` over this file is
+# 88 of 88 OK. The doc comment on the line above is a note, not part of the checksum: the pinned digest is
+# of the parent file, never of this one.

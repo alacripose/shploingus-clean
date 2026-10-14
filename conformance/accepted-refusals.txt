@@ -1,0 +1,48 @@
+# The refusals this record admits, by name — `shploingus.recipe`-style `crate/axis` keys.
+#
+# **What acceptance means here, and what it does not.**
+# An entry on this list does not delete the refusal, fix it, or silence it: the gate still measures
+# it, still counts it, and still prints it as `conformance-accepted-by-name` in every build report.
+# It only stops the refusal from *failing the build*. Accepted is reported, never hidden.
+#
+# **An absent list accepts nothing.** Deleting this file makes the build door refuse again — that is
+# the door working, not the door breaking.
+#
+# **No entry is declared, and that is a measurement rather than an omission.** Every key this file
+# carried from 2026-10-09 was on the `documented` axis — *this crate carries 19–50% comment and no
+# `docs/` heading begins with its name* — and each one named owed work: sixteen sections of real
+# documentation, one per crate. That documentation landed on **2026-10-10**, and it landed where the
+# user's ruling says it belongs: in each crate's own **rustdoc**, the `//!` and `///` doc comments the
+# compiler carries, which `cargo doc` renders as the crate's page and a hover shows on the item. The
+# axis does not take that on a header's word: `census::Axis::Documented` reads the compiler's own
+# `missing_docs` count (`conformance/missing-docs.txt`, per public item) and names the number in its
+# reason — three crates at 0, thirteen carrying debt that is now **reported** rather than accepted. So
+# the sixteen keys were deleted,
+# and the honest reading of a receipt is no longer *documentation: declared debt* but *documentation:
+# lives in the crate it describes*, with the plain-comment share beside it held by the ratchet in
+# `conformance/prose-frame.txt` (which measures rustdoc apart from commentary — see its header).
+#
+# **The sixteen stale keys were a hole, not a formality.** Once the sections landed each key
+# answered no refusal, and a key that answers no refusal is not an empty line: it is a **standing
+# permission**, and the refusal it names comes straight back if that axis regresses — printing
+# nothing while it waits, because `accepted` is computed by asking which refusals the keys match, a
+# question that never looks at the keys nothing matched. The gate now computes the other direction
+# too and **refuses** a declared key no refusal answers (`conformance-stale-acceptance`, printed by
+# key, because the repair is to delete the line). That is this file's own doctrine applied to
+# itself: a list that names work it does not have is the same failure as a list that reads silence
+# as permission.
+#
+# **What the axis can still refuse.** A crate the reading does not name — a new member of the
+# workspace, or a line dropped from `missing-docs.txt` — becomes `refused` on `documented` until the
+# recipe is run again, because *a crate nobody counted is not a documented one*. That is the refusal a
+# list should never pre-accept, and nothing here does. **And a crate whose reading has drifted** —
+# the pin beside its count no longer matching its files — becomes `stale`, which is its own state and
+# not a refusal: the repair is re-running the recipe, so it is reported (`conformance-stale`) and
+# deliberately does not close the door. Neither state is reachable from this list, and neither should
+# be: this file admits *measurements a reader has decided to tolerate*, not readings that are about
+# another tree.
+#
+# Declared 2026-10-09 with the door's wiring (PATCH-022's *the build door is still not fatal*);
+# emptied 2026-10-10, when the retrofit it was holding open landed.
+
+# ---- no accepted refusal ----

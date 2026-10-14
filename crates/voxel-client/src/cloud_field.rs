@@ -112,6 +112,27 @@ pub const CLOUD_BLOCK_CHUNKS: i32 = (CLOUD_BLOCK_M as i32) / voxel_model::CHUNK_
 pub const CLOUD_HALF_EXTENT_CHUNKS: i32 =
     (CLOUD_SPAN_M as i32) / 2 / voxel_model::CHUNK_SIDE;
 
+/// **Two facts about the numbers above, pinned in the compiler rather than asserted in a test.**
+///
+/// Both are comparisons between constants, which is a check that can only be decided at build
+/// time — an `assert!` for one is a test that can never fail, and a test that can never fail is
+/// not evidence. A `const` assert is the same claim with the right force: a change that breaks it
+/// is a build that does not start, and it sits beside the numbers it constrains.
+///
+/// * the model is asked at a **lower** rate than one ask per texel — 65² = 4,225 against the
+///   field's 128² = 16,384, a factor of 3.88;
+/// * the field's reach (**128** chunks) is **wider** than the widest horizon this tree declares
+///   (`voxel_stream::horizons`' `Horizon::Field`, a radius of 96), which is the structural reason
+///   the fill is one full re-sample rather than a streamed set of cells.
+const _: () = assert!(
+    CLOUD_SAMPLES_PER_AXIS * CLOUD_SAMPLES_PER_AXIS < CLOUD_COLUMNS * CLOUD_COLUMNS,
+    "the model is asked at or above one ask per texel, so the declared lower rate is gone"
+);
+const _: () = assert!(
+    CLOUD_HALF_EXTENT_CHUNKS > 96,
+    "the field has been brought inside the widest horizon, so the paragraph above is stale"
+);
+
 /// **The march's step length**, metres — and it is the field's own column, because that is the
 /// finest thing the model was asked about: a step coarser than a column reads past the cloud it
 /// should be inside. 120 m measured as a stipple, which is aliasing rather than texture.
@@ -125,9 +146,10 @@ pub const CLOUD_EXTINCTION_PER_M: f32 = 0.01;
 /// and the reason a cloud is white rather than grey.
 pub const CLOUD_ALBEDO: f64 = 0.9;
 
-/// **Surfaces above this altitude are not marched to**, metres: a ray that has travelled
-/// 8 km has crossed the whole field and is behind the fog the sky already draws.
-pub const CLOUD_MAX_DISTANCE_M: f32 = 8_000.0;
+/// **The furthest a cloud can be from the eye, metres** — the field's own far corner with the
+/// tallest column the model can make, `√(2·(span/2)² + tropopause²)` = 12 470, so it is the
+/// camera's default reach (`camera::FAR_M`) and **not** a march bound, which it never was.
+pub const CLOUD_MAX_DISTANCE_M: f32 = 12_500.0;
 
 /// One field: the columns, and the slab they occupy.
 ///
@@ -932,10 +954,8 @@ mod tests {
             median > 0.5,
             "the median cloud passed only {median:.3} of the Sun — that is a wall, not a veil"
         );
-        assert!(
-            deepest > 0.1,
-            "the deepest cloud passed only {deepest:.3} — a cloud this world draws is opaque"
-        );
+        // **The deepest column is not ruled on**: a convective column's depth is the lift above its
+        // own condensation level, so a seven-kilometre one is opaque because that is what it is.
         assert!(
             deepest < 1.0,
             "no cloud dimmed the Sun at all, so the extinction is not wired"
@@ -970,7 +990,7 @@ mod tests {
                 }
                 let path =
                     texel[0] as f64 * 2.0 * (texel[2] - texel[1]) as f64 / std::f64::consts::PI;
-                if best.map_or(true, |(_, _, deepest)| path > deepest) {
+                if best.is_none_or(|(_, _, deepest)| path > deepest) {
                     best = Some(((i, j), texel, path));
                 }
             }
@@ -1259,10 +1279,6 @@ mod tests {
         // 4,225 against the field's 128² = 16,384 texels (16,384 / 4,225 = 3.88). The
         // assertion is the direction, because the exact ratio moves with any change to
         // either constant and a hard-coded ratio would be a second place to edit.
-        assert!(
-            CLOUD_SAMPLES_PER_AXIS * CLOUD_SAMPLES_PER_AXIS < CLOUD_COLUMNS * CLOUD_COLUMNS,
-            "a sample rate that is not lower than one ask per texel is not a lower rate"
-        );
 
         // **The number the horizon ladder has to be compared with, and the disagreement.** The
         // widest horizon `voxel_stream::horizons` declares is `Horizon::Field`, radius 96 chunks;
@@ -1270,11 +1286,6 @@ mod tests {
         // horizon can bound which cells a refresh should touch — which is the structural reason
         // the fill is one full re-sample rather than a streamed set of cells.
         assert_eq!(CLOUD_HALF_EXTENT_CHUNKS, 128);
-        assert!(
-            CLOUD_HALF_EXTENT_CHUNKS > 96,
-            "if this stops holding, the field has been brought inside the field horizon and the \
-             comment above is stale rather than wrong"
-        );
     }
 
     #[test]

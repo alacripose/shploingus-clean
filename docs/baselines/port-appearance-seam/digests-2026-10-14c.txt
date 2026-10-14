@@ -1,0 +1,12 @@
+c72fc71df099e0934474a1be4b448870b7e9f22ffc04df27544036cc8610485f *src/stream.rs
+8d8ab1f8d92b0504493dbd64e2ec9bf76709641d42983b722741a12d160aed9a *src/lib.rs
+d9abd01a55ae9f3c668ca3db4ca5856f205c6db105ef835dca245c2e2aec8607 *src/port/tests.rs
+2f86db76329d26c78a5e77b780f6c8535d05a3f1c229ae05440465c5a189b537 *src/evidence.rs
+fbdde4ebe644dae806dcbeec278290661fd68ce6e92ff68a34e6fe240d6f83e7 *src/systems.rs
+26b6505ca621ecf85b7bb4304926e6a18f78fa83fa1c92097802f04a9a3f0fbd *README.md
+# 2026-10-14c+1 — one sentence in `README.md` §43d was false and is corrected here rather than in place: it
+# said nothing under `crates/` was "read or written" this pass, while this pass **did** read two parent
+# bytes — `crates/voxel-stream/src/resident.rs` and `world_source.rs`, for the blocker re-quote, both already
+# pinned by path and digest in `pinned-parent-bytes.txt`. The line naming README.md above is superseded;
+# README.md as it now stands:
+3bacb8072d03e0ee84f4ebedd51b478466f80ebea12de91d43617a24bc49ddf1 *README.md

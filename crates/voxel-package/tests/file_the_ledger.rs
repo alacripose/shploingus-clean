@@ -96,13 +96,14 @@ fn ledger_text(root: &Path) -> String {
 fn entries(text: &str) -> Vec<(usize, usize, &str)> {
     let mut starts: Vec<(usize, usize)> = Vec::new();
     let mut offset = 0usize;
-    let mut line = 1usize;
-    for text_line in text.split_inclusive('\n') {
+    // **The line number comes from the iteration**, not from a counter kept in step beside the
+    // byte offset: two counters advancing together is one place to forget an increment, and the
+    // number a ticket writes is what a reader follows back into the record.
+    for (index, text_line) in text.split_inclusive('\n').enumerate() {
         if names_a_c_entry(text_line) {
-            starts.push((offset, line));
+            starts.push((offset, index + 1));
         }
         offset += text_line.len();
-        line += 1;
     }
     let total_lines = text.lines().count();
     let mut bounds: Vec<(usize, usize)> = Vec::with_capacity(starts.len());

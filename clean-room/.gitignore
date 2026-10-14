@@ -1,0 +1,3 @@
+# The clean room is its own Cargo workspace, so it has its own build tree. The root `.gitignore`'s
+# `/target` is root-relative and does not cover this directory.
+/target

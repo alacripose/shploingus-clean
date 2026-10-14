@@ -1,0 +1,38 @@
+# The settled stepped plane — captures, sources and the guard proof (2026-10-13, plan §35)
+#
+# Captures, both taken from the built binary (clean-room/target/debug/shploingus-clean-room.exe):
+   507 docs/baselines/u12-settled/pre-stdout.txt
+     1 docs/baselines/u12-settled/pre-stderr.txt
+   507 docs/baselines/u12-settled/final-stdout.txt
+     1 docs/baselines/u12-settled/final-stderr.txt
+#
+b094253135b41fb93ab22cf90dfcd00ded5af8402d110115c302087ff4778523 *docs/baselines/u12-settled/pre-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u12-settled/pre-stderr.txt
+d14588a531bff5fefbc4f840c1a43cf7f40afb0fbbc50d256cd087fa379bf150 *docs/baselines/u12-settled/final-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u12-settled/final-stderr.txt
+#
+# The pre pair is §34's own final pair, copied in: the tree this pass began from and the tree the
+# read-only audit graded. The pre-pass binary is not rebuildable, so the pair is inherited by digest
+# (b0942531… is the value §34 recorded for those bytes) rather than re-taken, and cmp says unmodified.
+# The binary's own stderr did not move (f583ca18… on both sides).
+#
+# The sources this pass touched, as they stand after the harness restored them:
+37ebc2a30fc6755423713076c435486f78e09531c013910a394642d371f03e10 *clean-room/src/automaton.rs
+f5351ae691e8abd98448d45637003483be2b0fd02eacc2be281557ace2785f73 *clean-room/src/being.rs
+b5288b40df83d1950548768bb0fab0077880c5f4c53b678032f4834784171d9d *clean-room/src/evidence.rs
+5c4fbdd9d5c6c49dd5e96dcff0b996f993f24974ab7e8bee7eaad7e535ba118d *clean-room/tests/u12_stepping.rs
+3dfeb8dbac767c11a499122e8638c436aa8999e0df54b19cd8958fb55328f9de *clean-room/README.md
+0581ce2ecdc95725485a0dea5c473006da77fcd0bf20aa0cf4f3920e0f1e792e *clean-room/specs/006-world-saves-and-seeds/quickstart.md
+e47bf48bb1c89fd25194c3b435ab545cab34516d6c63f86f8336a3d7a3d30d4d *docs/CLEAN-ROOM-PLAN-2026-10-11.md
+#
+# The ten guard logs this pass's own harness run wrote, as they stand on disk:
+258bc28e19a36afe68dd8111821f65a8970adf4ebc90f1ec2532262d71249a43 *docs/baselines/u12-settled/the_being_reads_the_law's_state.test.log
+3e80f6b5fb897ebd82f87583572f4061a76c9a9b0369d82956476cb28cbc4545 *docs/baselines/u12-settled/the_declared_rain.test.log
+f761b0ae21c5f36c4358cdd7f80c2ceeaae35ec5dd4a4189ac03bdfdb18e603e *docs/baselines/u12-settled/the_fraction_a_pit_keeps.test.log
+537ce3f8051a7164ef086be25bf192598f10e6b71305e577c784ec1e27cedd31 *docs/baselines/u12-settled/the_one-hop_transfer.test.log
+9cf14536ee8340be31f3ffc3064dd3f902cb44b7022bcd4f51c6542c44b56869 *docs/baselines/u12-settled/the_pit's_own_thinning.test.log
+76df62d0677b35a7c2e39100386e7ae4939efa033b4d2d6fba031714ed2108ff *docs/baselines/u12-settled/the_settle_count.test.log
+ffe02364a44bb3f0df20274bc34e28725513665615090be2dba92495c080a596 *docs/baselines/u12-settled/the_state_the_law_starts_from.test.log
+c13cbd883f238495199a673741328b8077d10b2749255115a17af89b4ce536e8 *docs/baselines/u12-settled/the_stepped_read's_own_water.test.log
+9b0ce9da3830b2785ba9ce89b2b14e5699df925b08d341ac0d22d9050525e0e9 *docs/baselines/u12-settled/the_tick_count.test.log
+8d85be54ed29bacd627e6daf2f362b853bbb6d286bc8106c16a8c3908c24c631 *docs/baselines/u12-settled/the_water_truth.test.log

@@ -1860,8 +1860,9 @@ impl<'a> Model<'a> {
                         &format!(
                             "{} carries comment prose in its sources and no document under \
                              docs/ defines it — no heading there begins with its name. The \
-                             prose has no declaration to belong to, which is the state this \
-                             axis exists to name",
+                             prose has no declaration to belong to. This instrument's subject is \
+                             the axis, and the axis measures the compiler's count; a prose reading \
+                             with no document to read against is that state, named here",
                             crate_.name()
                         ),
                     ));

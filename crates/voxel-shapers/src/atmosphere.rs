@@ -12,10 +12,19 @@
 //! # Why an exponential and not the full layered table
 //!
 //! The real standard atmosphere is piecewise, with a different lapse rate in each
-//! layer. Below ~11 km — which is where this world's entire playable band lives,
-//! by three orders of magnitude — a single isothermal exponential is accurate to
-//! well under a percent, and it is **one function with one constant** instead of
-//! a table whose indexing can be wrong. The approximation is stated, not hidden.
+//! layer. Below the tropopause — which is where this world's whole playable column
+//! lives — a single isothermal exponential is accurate to well under a percent, and
+//! it is **one function with one constant** instead of a table whose indexing can be
+//! wrong. The approximation is stated, not hidden.
+//!
+//! # The scale (2026-10-10)
+//!
+//! The published numbers here are **real-world** ones, and every length passes through
+//! [`crate::scale`]: one voxel stands for eight real metres, so the 8 500 m scale height is
+//! 1 062.5 engine metres. Sea-level pressure and density are *intensive* and therefore
+//! unchanged — the same air, in a world eight times shorter.
+
+use crate::scale;
 
 use crate::spec::WorldSpec;
 
@@ -24,7 +33,9 @@ pub const SEA_LEVEL_PRESSURE_KPA: f64 = 101.325;
 /// Sea-level standard density, kg/m³.
 pub const SEA_LEVEL_DENSITY_KG_M3: f64 = 1.225;
 /// The scale height: the altitude over which pressure falls by `1/e`.
-pub const SCALE_HEIGHT_M: f64 = 8500.0;
+///
+/// The published 8 500 real metres, eight times shorter in engine metres.
+pub const SCALE_HEIGHT_M: f64 = scale::voxels(8_500.0);
 /// Standard gravity, m/s².
 pub const GRAVITY_M_S2: f64 = 9.806_65;
 
@@ -120,11 +131,13 @@ mod tests {
         for y in -100..200 {
             assert!(!sample(&s, y as f64).is_thin, "thin air at y = {y}");
         }
-        // The Armstrong limit sits at ~25 km in this exponential: 6.3 kPa is
-        // `-8500·ln(6.3/101.325)` ≈ 23.6 km. An earlier test used 20 km and
-        // failed, because at 20 km the pressure is 9.6 kPa — not thin air yet.
-        assert!(!sample(&s, 20_000.0).is_thin);
-        assert!(sample(&s, 25_000.0).is_thin);
+        // **The Armstrong limit moved with the scale.** In real metres it is still
+        // `-8500·ln(6.3/101.325)` ≈ 23.6 km, but the world's column is eight times
+        // shorter, so it arrives at ≈ 2.95 km of engine altitude. The old assertion used
+        // 20 km and 25 km, which were the *real* heights and are now far above the
+        // tropopause — a test that had stopped describing this world.
+        assert!(!sample(&s, 2_900.0).is_thin, "thin air below the limit");
+        assert!(sample(&s, 3_000.0).is_thin, "thin air above the limit");
     }
 
     #[test]

@@ -1,0 +1,107 @@
+# The guard proof for U1's visible client (2026-10-13, plan §36).
+#
+# The run: `bash docs/baselines/u1-visible-client/run-guards.sh`, exit status **0**. Twelve cases, each
+# perturbing one exact string in its own subject, each shown to bite **by name** — an assertion, a named
+# refusal, or a panic whose text names the fault — and each restored before the next case, with every touched
+# file's digest checked (`sha256sum -c`, through a `trap` so an interrupt cannot leave the tree perturbed).
+#
+# The case logs are **not** kept beside this file: they carry each run's own test-thread PIDs and cargo
+# timings, so they are the one artifact of a pass that cannot be reproduced byte-for-byte (§33 recorded that
+# trap against §32's nine logs). This file is the harness's own output, and its `bit:` lines quote the PID of
+# the thread that bit — which is why **its own digest changes when it is re-run**. The digest in `digests.txt`
+# is of the bytes on disk from this run. Each case is still re-runnable by hand: the subject string, the file
+# and the selector are all in `run-guards.sh`.
+#
+# The last block is the check this pass added after §36's own near-miss, and it is worth the words. `cargo
+# test` builds the **binary** as well as the test harnesses, so a case that runs while a source is perturbed
+# leaves a perturbed binary at `target/debug/shploingus-clean-room` — and a later `window` run of that binary
+# reports the perturbation, not the world. That is exactly how a guard case was first read as a rendering
+# defect: the read-back "disagreed at 0 of 66 355 200 pixel(s)" and, at (0, 0), the two buffers held **equal**
+# bytes ([100, 88, 71, 255] against [100, 88, 71, 0]) because case 12's `if false && …` had short-circuited
+# the comparison to `false`. A rebuild from the restored sources made every subsequent run agree on every
+# pixel again, and the threshold that was being hunted for did not exist. Every case now rebuilds, and the run
+# ends by running that rebuilt binary and comparing its own stdout and stderr against this baseline's frozen
+# capture — a tree that came back byte-exact and a build that did not would pass every other check here and
+# still be the wrong program.
+
+== the world's own water read
+   subject: src/surface.rs :: let wet = world.depth_um(cell) > 0;
+   bit: thread 'the_material_of_a_column_is_the_ladder_s_own_mapping_and_water_is_its_own' (25896) panicked at tests\u1_surface.rs:162:5:
+   bit: assertion `left == right` failed: a wet column is water's own sourced colour, drawn as a level surface
+   bit: thread 'the_frame_is_a_pure_function_of_the_world_and_its_declared_view' (10632) panicked at tests\u1_surface.rs:75:5:
+== the level water surface
+   subject: src/surface.rs ::     if wet {
+        return [0.0, 0.0, 1.0];
+    }
+   bit: thread 'the_material_of_a_column_is_the_ladder_s_own_mapping_and_water_is_its_own' (20212) panicked at tests\u1_surface.rs:162:5:
+   bit: assertion `left == right` failed: a wet column is water's own sourced colour, drawn as a level surface
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the declared relief
+   subject: src/surface.rs :: pub const RELIEF_EXAGGERATION: f64 = 8.0;
+   bit: thread 'the_material_of_a_column_is_the_ladder_s_own_mapping_and_water_is_its_own' (18832) panicked at tests\u1_surface.rs:196:5:
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the refusal's own name (no_reflectance)
+   subject: src/surface.rs :: RefusalKind::NoReflectance,
+                    format!(
+                        "material
+   bit: thread 'a_material_that_derives_no_colour_refuses_the_frame_by_name' (10988) panicked at tests\u1_surface.rs:227:5:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the zoom guard
+   subject: src/surface.rs :: if zoom == 0 {
+   bit: thread 'a_zoom_of_none_and_a_column_count_that_is_not_the_world_s_are_refused_by_name' (26312) panicked at tests\u1_surface.rs:243:10:
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the column-count guard
+   subject: src/surface.rs :: if classes.len() != cells {
+   bit: thread 'a_zoom_of_none_and_a_column_count_that_is_not_the_world_s_are_refused_by_name' (10048) panicked at tests\u1_surface.rs:249:10:
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the declared frame count
+   subject: src/surface.rs :: pub const DECLARED_FRAMES: u32 = SETTLE_TICKS as u32;
+   bit: thread 'the_declared_frame_count_is_the_horizon_the_run_settles_at' (22056) panicked at tests\u1_surface.rs:291:5:
+   bit: assertion `left == right` failed: the client's declared count is the plane's own rest horizon
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the encoding's own byte order
+   subject: src/surface.rs :: [channel(colour.b), channel(colour.g), channel(colour.r), 255]
+   bit: thread 'surface::tests::a_flat_colour_encodes_to_the_byte_the_screen_is_handed' (26456) panicked at src\surface.rs:1313:9:
+   bit: assertion `left == right` failed: red encodes to the third byte, because the buffer is BGRA
+   bit: error: test failed, to rerun pass `--lib`
+== the screenshot's own channel order
+   subject: src/surface.rs :: bytes.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
+   bit: thread 'the_frames_own_bytes_are_the_screenshot_the_bar_asks_for' (18556) panicked at tests\u1_surface.rs:283:5:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the client area is the frame's
+   subject: src/surface.rs :: || client.right - client.left != width
+   bit: thread 'the_presented_frame_reaches_the_window_s_own_pixels' (14788) panicked at tests\u1_surface.rs:343:25:
+   bit: the client is refused by name: platform_refused: the platform made a 576 x 576 pixel(s) client area for a 576 x 576 
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the blit's own answer
+   subject: src/surface.rs :: if lines != self.height {
+                return Err(Refusal::new(
+                    RefusalKind::PlatformRefused,
+                    format!(
+                        "the platform's own blit copied
+   bit: thread 'the_presented_frame_reaches_the_window_s_own_pixels' (8348) panicked at tests\u1_surface.rs:343:25:
+   bit: the client is refused by name: platform_refused: the platform's own blit copied 576 of 576 scan line(s): the frame did not reach the screen whole
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the screen holds the frame
+   subject: src/surface.rs :: if self.pixels[at..at + 3] == surface.pixels()[at..at + 3] {
+   bit: thread 'the_presented_frame_reaches_the_window_s_own_pixels' (25228) panicked at tests\u1_surface.rs:343:25:
+   bit: the client is refused by name: platform_refused: the window's own client area is the surface's frame at 0 of 663552 pixel(s) — at (0,0) the surface's own bytes are [100, 88, 71, 255] and the window's are [100, 88, 71, 0]
+   bit: error: test failed, to rerun pass `--test u1_surface`
+== the binary the restored tree builds
+   exit: 0
+   its stdout and stderr are final-stdout.txt / final-stderr.txt byte for byte
+   3bd011350959d89a4a7b24798f63ba701a5e392d4b346da0b077ca9d4abb571d */tmp/tmp.nFlwm7Upt5/rebuilt-stdout.txt
+
+every guard bit by name, and every touched file came back byte-exact:
+70b9744bb8bc554060336b1d0067cda9d877ee52ee1c67873dc14a6133bdd0bd *src/surface.rs
+e134c77e0b800be1b4ee1b9a5d04287bb330ea94f71842d8d45be6e489e627fd *src/main.rs
+1b0ab8a2cbeafca5b0f393f66cd8614bcfed472928a6ec2e18861fa63d3d6657 *src/lib.rs
+098d6bb413413643722d967cb75b4b9584746075e2a8c8b004bc7c6978a454c9 *src/refusal.rs
+968c6b77e3896c4a5198343feecea90412744580ae64e4a3d5f90dd85a5c3918 *src/reference.rs
+16df8fe4f5ce655f8069125dd7b076f675ff0082c4c169c25dc1fb18f2180fec *src/evidence.rs
+c3b5e241e1401971d304d1c504609850e3512dd9cebf28e366cf87beff291c84 *src/systems.rs
+ddc54a9ea389ea830e6afba464a5b2d2aeea8194c24f4f3e53e47b9f00012ad0 *tests/u1_surface.rs
+fac97225f734637b108c7a483d1cdbafd45b4acedbbb223d1c7212e8cddf41a3 *tests/u5_measure.rs
+case logs kept in the scratch directory (not copied into the tree): tmp.nFlwm7Upt5

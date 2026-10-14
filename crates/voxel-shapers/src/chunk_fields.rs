@@ -51,7 +51,7 @@ use voxel_model::{MaterialId, Refusal, RefusalKind, Refused};
 use crate::caves::{self, Void};
 use crate::climate;
 use crate::ecology::{self, Biome};
-use crate::column::{self, materials};
+use crate::materials;
 use crate::field_sampler::{
     canonical_query_of, DraftFieldSampler, DraftFieldSpec, FieldId, FieldResolution,
     FieldSamplerIdentity, FieldValue, FixedValue, ResolutionLevel, SamplingPolicy, SeamPolicy, Unit,
@@ -105,6 +105,46 @@ pub fn declared_fields() -> Refused<Vec<DraftFieldSpec>> {
             FieldId::Moisture,
             Unit::Ratio,
             "docs/SHAPERS.md §1 climate (Whittaker 1960)",
+        )?,
+        measured(
+            FieldId::Continentalness,
+            Unit::Ratio,
+            "docs/earth_biomes_subbiomes_continentalness_mountains.pdf §2 (continentalness)",
+        )?,
+        measured(
+            FieldId::FogWater,
+            Unit::KilogramPerCubicMeter,
+            "docs/fog_mist_foam_and_aerosol_dispersion.pdf §8, §10 (Koschmieder 1924)",
+        )?,
+        measured(
+            FieldId::SprayWater,
+            Unit::KilogramPerCubicMeter,
+            "docs/fog_mist_foam_and_aerosol_dispersion.pdf §2.3, §5 (mechanical atomization)",
+        )?,
+        measured(
+            FieldId::Visibility,
+            Unit::Metre,
+            "docs/fog_mist_foam_and_aerosol_dispersion.pdf §8.1, §10.1 (visibility from droplets)",
+        )?,
+        // **The cloud model's own state, as fields.** This is the conformance the cubic chunks format
+        // was blocking: `clouds::cloud_column` stops being the contract and becomes a sampling
+        // detail — what the plane declares is the water **at an address** and the base and top of
+        // the deck above it, so a cubic chunk reads its own voxel's cloud instead of a column
+        // object it has to slice.
+        measured(
+            FieldId::CloudWater,
+            Unit::Ratio,
+            "docs/clouds_and_atmospheric_formation.pdf §1; docs/cloud_types_fronts_and_altitudes_guide.pdf §3",
+        )?,
+        measured(
+            FieldId::CloudBase,
+            Unit::Metre,
+            "docs/cloud_types_fronts_and_altitudes_guide.pdf §3 (base and top envelopes)",
+        )?,
+        measured(
+            FieldId::CloudTop,
+            Unit::Metre,
+            "docs/cloud_types_fronts_and_altitudes_guide.pdf §3 (base and top envelopes)",
         )?,
         measured(
             FieldId::Soil,
@@ -236,6 +276,16 @@ fn law_of(field: FieldId) -> Option<FieldLaw> {
         FieldId::Wind => Some(wind_law),
         FieldId::CarryingCapacity => Some(carrying_capacity_law),
         FieldId::SpeciesSuitability => Some(species_suitability_law),
+        // **The two guides' fields**, produced here rather than by the stage roster for the
+        // same reason the material fields are: their producers are shapers, and the plane is
+        // where a shaper's answer becomes a declared field.
+        FieldId::Continentalness => Some(continentalness_law),
+        FieldId::FogWater => Some(fog_water_law),
+        FieldId::SprayWater => Some(spray_water_law),
+        FieldId::Visibility => Some(visibility_law),
+        FieldId::CloudWater => Some(cloud_water_law),
+        FieldId::CloudBase => Some(cloud_base_law),
+        FieldId::CloudTop => Some(cloud_top_law),
         // Declared in the nineteen-name roster and produced by **no stage** in this cut
         // (`process::owning_stage` is `None`). A refusal by name is the honest answer; a
         // zero would be a value somebody could believe.
@@ -516,14 +566,116 @@ fn species_suitability_law(
     process_field(FieldId::SpeciesSuitability, spec, coord)
 }
 
+// ---- the two guides' fields -----------------------------------------------------------
+
+/// **The near-surface field of one address.** The guide's §1.1 rule is that a pale plume does
+/// not identify its mechanism, so the plane carries the droplet loading itself and lets the
+/// mechanism be [`crate::fog::FogMechanism`]'s answer, not an appearance.
+///
+/// **These four are the plane's only ticked fields.** Every other law here reads its world at
+/// the absence of a season (`holdridge_inputs(…, 0)` for `Climate`), because an aggregate does
+/// not move with the tick; fog is the opposite — it *is* a moment, and the same address is
+/// foggy at dawn and clear at noon. So the tick is read from the world it was built with
+/// ([`WorldSpec::tick`]) and the declaration's identity stays over the lattice, not the value.
+///
+/// The address is the tree's own `(x, y, z)`: `y` is the height, as it is for every law here,
+/// and it is why the fog fields are **not** a heightfield — the layer's top is a real answer here
+/// (no droplets above it) rather than a value repeated up the column.
+fn fog_sample(spec: &WorldSpec, coord: VoxelPos) -> crate::fog::FogSample {
+    crate::fog::fog_at(
+        spec,
+        coord.x as f64 + 0.5,
+        coord.y as f64 + 0.5,
+        coord.z as f64 + 0.5,
+        spec.tick,
+    )
+}
+
+fn continentalness_law(
+    _fields: &dyn FieldQuery,
+    spec: &WorldSpec,
+    coord: VoxelPos,
+) -> Refused<FieldValue> {
+    let value = climate::continentality(spec, coord.x as f64 + 0.5, coord.z as f64 + 0.5);
+    Ok(FieldValue::Fixed(fixed_from_f64(value)?))
+}
+
+fn fog_water_law(_fields: &dyn FieldQuery, spec: &WorldSpec, coord: VoxelPos) -> Refused<FieldValue> {
+    let grams = fog_sample(spec, coord).lwc_g_m3;
+    Ok(FieldValue::Fixed(fixed_from_f64(grams / 1000.0)?))
+}
+
+fn spray_water_law(
+    _fields: &dyn FieldQuery,
+    spec: &WorldSpec,
+    coord: VoxelPos,
+) -> Refused<FieldValue> {
+    let grams = fog_sample(spec, coord).spray_g_m3;
+    Ok(FieldValue::Fixed(fixed_from_f64(grams / 1000.0)?))
+}
+
+fn visibility_law(_fields: &dyn FieldQuery, spec: &WorldSpec, coord: VoxelPos) -> Refused<FieldValue> {
+    let visibility = fog_sample(spec, coord).visibility_m;
+    Ok(FieldValue::Fixed(fixed_from_f64(visibility)?))
+}
+
+/// The cloud's own state at an address — the cubic read of the cloud model, declared so a chunk
+/// can ask its own voxel instead of holding a column object.
+fn cloud_at(spec: &WorldSpec, coord: VoxelPos) -> Option<crate::clouds::CloudSample> {
+    crate::clouds::cloud_at(
+        spec,
+        coord.x as f64 + 0.5,
+        coord.y as f64 + 0.5,
+        coord.z as f64 + 0.5,
+        spec.tick,
+    )
+}
+
+/// **The asymmetry, and why it is not an inconsistency.** A cloud's water at an address is a
+/// measurement: *no cloud here* is `0`, and the field answers it. Its base and top are not — the
+/// base of a cloud that does not exist is not a value, and the field refuses by name instead, which
+/// is the tree's rule for an impossible question rather than an absent producer.
+fn cloud_water_law(_fields: &dyn FieldQuery, spec: &WorldSpec, coord: VoxelPos) -> Refused<FieldValue> {
+    let water = cloud_at(spec, coord).map(|sample| sample.water).unwrap_or(0.0);
+    Ok(FieldValue::Fixed(fixed_from_f64(water)?))
+}
+
+fn cloud_base_law(_fields: &dyn FieldQuery, spec: &WorldSpec, coord: VoxelPos) -> Refused<FieldValue> {
+    let layer = no_cloud(spec, coord)?;
+    Ok(FieldValue::Fixed(fixed_from_f64(layer.base_m)?))
+}
+
+fn cloud_top_law(_fields: &dyn FieldQuery, spec: &WorldSpec, coord: VoxelPos) -> Refused<FieldValue> {
+    let layer = no_cloud(spec, coord)?;
+    Ok(FieldValue::Fixed(fixed_from_f64(layer.top_m)?))
+}
+
+/// The column's cloud, or the named refusal that says why there is no base to report.
+fn no_cloud(spec: &WorldSpec, coord: VoxelPos) -> Refused<crate::clouds::CloudColumn> {
+    crate::clouds::cloud_column(
+        spec,
+        coord.x as f64 + 0.5,
+        coord.z as f64 + 0.5,
+        spec.tick,
+    )
+    .ok_or_else(|| {
+        Refusal::owned(
+            RefusalKind::Unimplemented,
+            format!(
+                "the column at ({}, {}, {}) makes no cloud, so it has no base or top to report",
+                coord.x, coord.y, coord.z
+            ),
+        )
+    })
+}
+
 // ---- the material rules ---------------------------------------------------------------
 
 /// The material a voxel holds, **read through the field plane**.
 ///
-/// This is the same order of tests `column::ColumnProfile::material_at` documents — above
-/// ground: sea or air; below: soil, then rock or a void — with its inputs coming from
-/// field queries instead of a column profile. `the_field_plane_materializes_exactly_what_the_column_profile_says`
-/// pins the equivalence against the column definition over a whole chunk.
+/// The order of tests is the physical world's own: above ground is sea or air; below is
+/// soil, then rock or a void. There is no second material law to agree with — this **is**
+/// the world's material law, and `voxel-stream`'s chunk build reads it voxel by voxel.
 pub fn material_of<Q: FieldQuery + ?Sized>(
     fields: &Q,
     spec: &WorldSpec,
@@ -540,8 +692,8 @@ pub fn material_of<Q: FieldQuery + ?Sized>(
     let surface = f64_of(fields.sample(FieldId::Elevation, coord)?, FieldId::Elevation)?;
     if fy > surface {
         // Above ground: sea where the ground is below sea level; a tree where one reaches
-        // this voxel — `flora` is a pure function of position (C-159.11), the same call
-        // the column definition makes — and air otherwise.
+        // this voxel — `flora` is a pure function of position (C-159.11) — and air
+        // otherwise.
         if fy <= sea {
             return Ok(materials::WATER);
         }
@@ -555,11 +707,9 @@ pub fn material_of<Q: FieldQuery + ?Sized>(
     let soil = f64_of(fields.sample(FieldId::Soil, coord)?, FieldId::Soil)?;
     if depth <= soil && soil > 0.0 {
         // **The biome decides the cover and the terrain expression its variant**
-        // (C-159.10, C-160) — the same composition the column definition reads, which is
-        // what keeps `the_field_plane_materializes_exactly_what_the_column_profile_says`
-        // true. The slope and moisture come from the declared fields the plane already
-        // carries, and `ColumnMemo` caches them per column, so the habitat costs no new
-        // producers and no new terrain evaluations.
+        // (C-159.10, C-160). The slope and moisture come from the declared fields the plane
+        // already carries, and `ColumnMemo` caches them down a column, so the habitat costs
+        // no new producers and no new terrain evaluations.
         let biome = biome_of(fields.sample(FieldId::Climate, coord)?)?;
         let slope = f64_of(fields.sample(FieldId::Slope, coord)?, FieldId::Slope)?;
         let moisture = f64_of(fields.sample(FieldId::Moisture, coord)?, FieldId::Moisture)?;
@@ -576,13 +726,13 @@ pub fn material_of<Q: FieldQuery + ?Sized>(
     }
 
     let lithology = lithology_of(fields.sample(FieldId::Geology, coord)?)?;
-    let params = column::cave_params(spec);
+    let params = caves::CaveParams::for_spec(spec);
     Ok(match caves::void_at(spec, lithology, fx, fy, fz, surface, &params) {
         Void::Open => materials::AIR,
         Void::Flooded => materials::WATER,
         // The rock is the **declared rock this region's bed is made of**, with an ore
-        // where the vein field puts one — the same call the column path makes, so the two
-        // cannot draw two different rocks at one voxel (`corpus::rock_voxel`).
+        // where the vein field puts one — one call, so no two readers can draw two
+        // different rocks at one voxel (`corpus::rock_voxel`).
         Void::Rock => crate::corpus::rock_voxel(spec, lithology, fx, fy, fz, depth)?,
     })
 }
@@ -591,6 +741,24 @@ pub fn material_of<Q: FieldQuery + ?Sized>(
 /// the mesher's boundary reads.
 pub fn material_at(spec: &WorldSpec, x: i32, y: i32, z: i32) -> Refused<MaterialId> {
     material_of(&DirectQuery { spec }, spec, x, y, z)
+}
+
+/// The generated material at a voxel, **composed with** an earthworks record.
+///
+/// The record is applied last and only to the exact positions it names, which is what
+/// keeps the generator pure: removing the record removes every change, and the world is
+/// the generated one again. The composition lives here, next to the material law, so a
+/// caller that holds a spec and a record — the movement check, the pick, a census — asks
+/// the same question `voxel-stream`'s own source asks rather than spelling it again.
+pub fn material_at_composed(
+    spec: &WorldSpec,
+    earthworks: &crate::earthworks::Earthworks,
+    x: i32,
+    y: i32,
+    z: i32,
+) -> Refused<MaterialId> {
+    let base = material_at(spec, x, y, z)?;
+    Ok(earthworks.material_at(x, y, z, base))
 }
 
 // ---- value encodings ------------------------------------------------------------------
@@ -779,7 +947,11 @@ mod tests {
         // so a declaration nobody can read — the decoration the module doc forbids —
         // still fails here.
         let specs = declared_fields().expect("the declarations are consistent");
-        assert_eq!(specs.len(), 15, "the material fields plus nine roster fields");
+        assert_eq!(
+            specs.len(),
+            22,
+            "the material fields, nine roster fields, the two guides' four, and the cloud's three"
+        );
         let ids: Vec<FieldId> = specs.iter().map(|spec| spec.id).collect();
         for required in [
             FieldId::Elevation,
@@ -797,6 +969,13 @@ mod tests {
             FieldId::Wind,
             FieldId::CarryingCapacity,
             FieldId::SpeciesSuitability,
+            FieldId::Continentalness,
+            FieldId::FogWater,
+            FieldId::SprayWater,
+            FieldId::Visibility,
+            FieldId::CloudWater,
+            FieldId::CloudBase,
+            FieldId::CloudTop,
         ] {
             assert!(ids.contains(&required), "{required:?} is not declared");
         }
@@ -877,6 +1056,45 @@ mod tests {
                 .abs()
                 < 1e-12
         );
+
+        // **The two guides' fields**, end to end through the plane. The droplet loading is the
+        // near-surface field's own, in the unit the declaration names (kg/m³ where the guide
+        // writes g/m³), the spray is the mechanical source alone, and the visibility is the
+        // one Koschmieder puts on that loading. `Continentalness` is the atlas's, and `y` is
+        // the height: the two addresses below differ only in `y`, and the layer is why.
+        let address = crate::fog::fog_at(&spec, x, y, z, spec.tick);
+        assert!((fixed(FieldId::FogWater) - address.lwc_g_m3 / 1000.0).abs() < 1e-12);
+        assert!((fixed(FieldId::SprayWater) - address.spray_g_m3 / 1000.0).abs() < 1e-12);
+        assert!((fixed(FieldId::Visibility) - address.visibility_m).abs() < 1e-12);
+        // The mechanical producer can never be the larger half: `lwc` is condensation plus spray,
+        // so the spray field cannot exceed the droplet field it is part of.
+        assert!(fixed(FieldId::FogWater) >= fixed(FieldId::SprayWater));
+        assert!(
+            (fixed(FieldId::Continentalness)
+                - crate::climate::continentality(&spec, x, z))
+                .abs()
+                < 1e-12
+        );
+
+        // **The cloud's own state through the plane, at an address.** Three properties are pinned
+        // here and each one is the reason the fields exist: the water is the address's own (so a
+        // voxel above the deck reads zero even where the column below it has a cloud), the base and
+        // top are the deck's own where there is one, and a column that makes no cloud **refuses**
+        // rather than answering a fabricated base.
+        let water = fixed(FieldId::CloudWater);
+        let deck = crate::clouds::cloud_at(&spec, x, y, z, spec.tick);
+        assert_eq!(water, deck.map(|sample| sample.water).unwrap_or(0.0));
+        match crate::clouds::cloud_column(&spec, x, z, spec.tick) {
+            Some(column) => {
+                assert!((fixed(FieldId::CloudBase) - column.base_m).abs() < 1e-12);
+                assert!((fixed(FieldId::CloudTop) - column.top_m).abs() < 1e-12);
+            }
+            None => {
+                let refused = FieldQuery::sample(&source, FieldId::CloudBase, coord)
+                    .expect_err("a cloudless column answered a cloud base");
+                assert_eq!(refused.kind(), RefusalKind::Unimplemented);
+            }
+        }
     }
 
     #[test]
@@ -896,48 +1114,52 @@ mod tests {
     }
 
     #[test]
-    fn the_field_plane_materializes_exactly_what_the_column_profile_says() {
-        // The load-bearing equivalence: the field path is the *same world* as the column
-        // definition it replaces, or the cut changed the world rather than the foundation.
+    fn every_voxel_of_a_chunk_resolves_to_an_admitted_material() {
+        // Totality and admission, over a whole chunk. The field plane answers for every
+        // voxel, and every non-empty answer is a row the registry admits. This is the
+        // claim the chunk build rests on: a voxel the plane refused would be a hole in
+        // the world, and an unadmitted row would be something nobody declared.
+        //
+        // This used to be stated as an equivalence against a second, column-shaped
+        // implementation of the same world. That implementation is gone, so the claim is
+        // made against the world itself rather than against a copy of it.
         let spec = world();
         let source = FieldSource::new(&spec).expect("the plane builds");
-        let owner = source.for_owner(ChunkPos::new(0, 1, 0));
-        let pos = ChunkPos::new(0, 1, 0);
+        let surface = terrain::elevation_m(&spec, 0.5, 0.5);
+        let pos = VoxelPos::new(0, surface.floor() as i32, 0).chunk();
+        let owner = source.for_owner(pos);
         let o = pos.origin();
-        let mut compared = 0u32;
+        let registry = materials::registry().expect("the registry admits");
+        let mut solid = 0u32;
         for lz in 0..voxel_model::coord::CHUNK_SIDE {
-            for lx in 0..voxel_model::coord::CHUNK_SIDE {
-                let (x, z) = (o.x + lx, o.z + lz);
-                let surface = terrain::elevation_m(&spec, x as f64 + 0.5, z as f64 + 0.5);
-                let profile = column::profile_with_surface(&spec, x as f64 + 0.5, z as f64 + 0.5, surface);
-                for ly in 0..voxel_model::coord::CHUNK_SIDE {
-                    let y = o.y + ly;
-                    let through_fields = material_of(&owner, &spec, x, y, z)
+            for ly in 0..voxel_model::coord::CHUNK_SIDE {
+                for lx in 0..voxel_model::coord::CHUNK_SIDE {
+                    let (x, y, z) = (o.x + lx, o.y + ly, o.z + lz);
+                    let m = material_of(&owner, &spec, x, y, z)
                         .expect("the material path is total here");
-                    let through_columns = profile
-                        .material_at(&spec, x, y, z)
-                        .expect("the column path is total here");
-                    assert_eq!(
-                        through_fields, through_columns,
-                        "the field plane and the column definition disagree at ({x}, {y}, {z})"
+                    if m == materials::AIR {
+                        continue;
+                    }
+                    assert!(
+                        registry.material(m).is_ok(),
+                        "voxel ({x}, {y}, {z}) held unadmitted material {m:?}"
                     );
-                    compared += 1;
+                    solid += 1;
                 }
             }
         }
-        assert!(compared > 30_000, "the comparison was too small to mean anything");
+        assert!(solid > 0, "the chunk contained no material at all");
+        println!("field plane: {solid} non-empty voxels, every one an admitted row");
     }
 
     #[test]
-    fn the_field_plane_grows_the_trees_the_column_definition_grows() {
-        // A tree's voxels are **above** the ground, which is a branch the two paths reach
-        // with different inputs (the field path reads `Elevation`, the profile is handed
-        // it). This walks one real tree's trunk and canopy through both, with each
-        // neighbour column's own profile — the canopy spans columns, and every one of
-        // them must agree about what is in the air.
+    fn the_field_plane_grows_trees_above_the_ground() {
+        // A tree's voxels are **above** the ground and its canopy spans columns, so this
+        // walks one real tree's trunk and canopy through the public single-voxel entry
+        // point and asks the plane for the wood. The tree branch is the one place the
+        // material law returns something other than ground or sky, and it is reached by
+        // reading `Elevation` rather than by being handed a profile.
         let spec = world();
-        let source = FieldSource::new(&spec).expect("the plane builds");
-        let owner = source.for_owner(ChunkPos::new(0, 0, 0));
         let mut found = None;
         'search: for cell_x in 0..64 {
             for cell_z in 0..64 {
@@ -947,42 +1169,27 @@ mod tests {
                 }
             }
         }
-        let tree = found.expect("no tree in the first 64×64 cells of this world");
-        let mut compared = 0u32;
-        let mut tree_voxels = 0u32;
+        let tree = found.expect("no tree in the first 64x64 cells of this world");
+        let mut wood = 0u32;
+        let mut canopy = 0u32;
         for dy in 0..=(tree.trunk_height + 2) {
             for dx in -3..=3 {
                 for dz in -3..=3 {
                     let (x, z) = (tree.base_x + dx, tree.base_z + dz);
                     let y = tree.base_y + dy;
-                    let through_fields = material_of(&owner, &spec, x, y, z)
+                    let m = material_at(&spec, x, y, z)
                         .expect("the material path is total here");
-                    let surface = terrain::elevation_m(&spec, x as f64 + 0.5, z as f64 + 0.5);
-                    let profile = column::profile_with_surface(
-                        &spec,
-                        x as f64 + 0.5,
-                        z as f64 + 0.5,
-                        surface,
-                    );
-                    let through_columns = profile
-                        .material_at(&spec, x, y, z)
-                        .expect("the column path is total here");
-                    assert_eq!(
-                        through_fields, through_columns,
-                        "the two paths disagree about the tree at ({x}, {y}, {z})"
-                    );
-                    if through_fields == materials::WOOD
-                        || through_fields == materials::LEAF
-                        || through_fields == materials::CONIFER
-                    {
-                        tree_voxels += 1;
+                    if m == materials::WOOD {
+                        wood += 1;
+                    } else if m == materials::LEAF || m == materials::CONIFER {
+                        canopy += 1;
                     }
-                    compared += 1;
                 }
             }
         }
-        assert!(compared > 300, "the tree walk was too small to mean anything");
-        assert!(tree_voxels > 0, "the walk found no tree voxels at all");
+        assert!(wood > 0, "the walk found no wood: the trunk never reached the plane");
+        assert!(canopy > 0, "the walk found no canopy above the trunk");
+        println!("field plane: {wood} trunk voxels, {canopy} canopy voxels in one tree");
     }
 
     #[test]
@@ -1056,7 +1263,7 @@ mod tests {
 
     #[test]
     fn the_fixed_encoding_round_trips_through_f64() {
-        for value in [16.0, 16.0004, -0.5, 12_345.6789, 0.000_976_562_5, 0.0] {
+        for value in [16.0, 16.000_4, -0.5, 12_345.678_9, 0.000_976_562_5, 0.0] {
             let fixed = fixed_from_f64(value).expect("representable");
             assert_eq!(
                 f64_of_fixed(fixed),

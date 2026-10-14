@@ -1,0 +1,4 @@
+keyed door: the declared 48-column patch: chunk (1, 0, 2) is whole (32768 cell(s)) and 16384 of its cell(s) lie over columns this patch does not have — all of them air, named
+water law: one chunk's own 32 × 32 corner read on its own against the world's own 48 × 48 read of the same columns: 13 of 1024 column(s) stand a different water (worst 0.053204 m), 8 of them on the narrow read's own rim
+keyed door: the client's own world: 4 chunk(s) derived one at a time, 131072 cell(s) equal to the world's own, world digest c01a08b13a6ca31cdcebbcb9ebbb68bdc048912af6abd7fe5ca8b9dd50fd17f2
+keyed door: a 3 x 3 world: 9 chunk(s) derived one at a time, 294912 cell(s) equal to the world's own, world digest 743de94c725cbb6b9aaf0d9acba10350a9531da25237389f03926fde79fa7ef9

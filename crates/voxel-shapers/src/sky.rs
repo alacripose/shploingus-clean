@@ -98,6 +98,31 @@ pub const MOON_BOND_ALBEDO: f64 = 0.12;
 /// simplification rather than an invented number.
 pub const SYNODIC_MONTH_DAYS: f64 = 29.530_588_853;
 
+/// **The sidereal month, in days — the Moon's own orbit around the planet.**
+///
+/// **Derived, not tabulated, and the derivation is the published relation rather than this
+/// project's shape.** For a prograde orbit the three periods are one identity:
+///
+/// ```text
+/// 1/P  =  1/S  +  1/Y          sidereal, synodic, year
+/// P = 22.5836 days            with this world's `S = 29.530588853` and `Y` = 96 days
+/// ```
+///
+/// Check it on the Earth's own published figures (27.321661, 29.530589 and 365.25 days) and the
+/// identity holds to **7e-8 of a turn per day** — which is what
+/// `the_sidereal_month_is_the_published_relation` measures, so the formula is the source's and
+/// not a curve fitted to the phase.
+///
+/// **Why the Moon has a sidereal month at all.** Until this existed the Moon was a *phase*: a
+/// cosine of `(tick, new_moon_tick)` with no position, drawn at a declared zenith
+/// (`MOON_ALTITUDE_DEG`). What the orbit buys is a body that goes round the planet, so the
+/// elongation — and with it the phase, the hour angle and the altitude — comes from one place
+/// instead of three. This world's year is 96 days rather than 365.25, so its Moon is a **fast**
+/// one: an orbit of 22.58 days against the same 29.53-day cycle of phases. That is the identity
+/// working, not a second choice of month.
+pub const SIDEREAL_MONTH_DAYS: f64 =
+    1.0 / (1.0 / SYNODIC_MONTH_DAYS + 1.0 / crate::climate::DAYS_PER_YEAR as f64);
+
 /// Solar noon, as a fraction of the day.
 ///
 /// **A project extension**, and the only one this module has. A day is
@@ -107,6 +132,22 @@ pub const SYNODIC_MONTH_DAYS: f64 = 29.530_588_853;
 /// day is defined to begin at midnight and noon to fall at its half. Named here
 /// rather than chosen quietly in the hour-angle arithmetic.
 pub const SOLAR_NOON_FRACTION: f64 = 0.5;
+
+/// The Rayleigh optical depth of the whole atmosphere at sea level, band
+/// averaged over the visible.
+///
+/// Bodhaine et al. (1999), *On Rayleigh optical depth calculations*, J. Atmos.
+/// Oceanic Technol. 16:1854–1861: the standard-atmosphere Rayleigh scattering
+/// coefficients integrated over the visible spectrum. **This is the number that
+/// makes the horizon red**, because Rayleigh scattering is proportional to
+/// `1/λ⁴` and a longer path therefore removes far more blue than red — so it is
+/// separated out here and named, rather than folded into a product where it
+/// would read as a rounding constant.
+///
+/// **It is declared here, with the other constants and above the table that cites it.** It used
+/// to sit after `mod tests`, which is the one place a reader looking for this module's numbers
+/// does not look — and the table below is its first reader.
+pub const RAYLEIGH_OPTICAL_DEPTH: f64 = 0.1083;
 
 /// Every bare number this module computes with.
 pub const CONSTANTS: &[(&str, f64, Provenance)] = &[
@@ -129,6 +170,11 @@ pub const CONSTANTS: &[(&str, f64, Provenance)] = &[
         "synodic_month_days",
         SYNODIC_MONTH_DAYS,
         Provenance::Paper("mean synodic month, U.S. Naval Observatory / Astronomical Almanac"),
+    ),
+    (
+        "sidereal_month_days",
+        SIDEREAL_MONTH_DAYS,
+        Provenance::Paper("derived: the published 1/P = 1/S + 1/Y, the synodic/sidereal/year identity"),
     ),
     (
         "solar_noon_fraction",
@@ -293,13 +339,25 @@ pub fn hour_angle_deg(tick: u64) -> f64 {
 /// no clock and no RNG, which is what lets a replay light the same way the run
 /// it replays did.
 pub fn solar_position(spec: &WorldSpec, tick: u64) -> SolarPosition {
-    let latitude = spec.config.origin_latitude_deg;
-    let declination = declination_deg(day_of_year(tick));
-    let hour_angle = hour_angle_deg(tick);
+    position_of(
+        spec.config.origin_latitude_deg,
+        declination_deg(day_of_year(tick)),
+        hour_angle_deg(tick),
+    )
+}
 
+/// **The one spherical triangle**, for any body: a latitude, a declination and an hour angle in,
+/// a position in the local east-north-up frame out.
+///
+/// It is a function rather than a paragraph of [`solar_position`] because **two bodies ride it** —
+/// the Sun and the Moon — and a second transcription of this trigonometry is a second place for a
+/// sign to be wrong. The module has already paid for that once: the survey convention's `atan2`
+/// put an evening sun in the east, and what caught it was one function being the only source of
+/// the answer.
+fn position_of(latitude: f64, declination: f64, hour_angle: f64) -> SolarPosition {
     let (phi, dec, h) = (latitude.to_radians(), declination.to_radians(), hour_angle.to_radians());
 
-    // **The Sun's direction in the local east-north-up frame**, which is how the
+    // **The body's direction in the local east-north-up frame**, which is how the
     // altitude/azimuth pair is defined rather than how it is usually computed:
     //
     // ```text
@@ -504,19 +562,133 @@ pub fn air_mass(altitude_deg: f64) -> Option<f64> {
     Some(1.0 / (theta.to_radians().cos() + inner))
 }
 
+/// The mean longitude a body has swept at a tick, degrees, from its epoch and its own period.
+///
+/// Both bodies' longitudes are measured in **one frame** — the same inertial circle — which is
+/// what makes their difference an angle a sky has rather than the difference of two numbers that
+/// happen to be measured from different things.
+fn mean_longitude_deg(tick: u64, epoch: u64, period_days: f64) -> f64 {
+    let days = tick.wrapping_sub(epoch) as f64 / crate::climate::TICKS_PER_DAY as f64;
+    360.0 * days / period_days
+}
+
+/// **The Sun–planet–Moon angle**, degrees: the elongation. `0` at new moon, `180` at full, and
+/// advancing eastwards, so the Moon is ahead of the Sun's longitude by this much.
+///
+/// **This is what the Moon's orbit is for.** It is the difference of two mean longitudes — the
+/// Moon's own over [`SIDEREAL_MONTH_DAYS`] and the Sun's over the world's year — so the synodic
+/// month is not a second period this module declares: it is the *consequence*
+/// `1/S = 1/P − 1/Y` of the two bodies moving at different rates. A body on a **sidereal** orbit
+/// of its own, and a star to measure it against, is the whole of the difference between this and
+/// a cosine of the clock.
+///
+/// `new_moon_tick` is a parameter because **where a world's cycle starts is a property of that
+/// world**, not of this module — the same reason `WorldSpec` carries a seed. At that tick the two
+/// longitudes agree, which is what "new" means and is why the epoch *is* the new moon.
+pub fn moon_elongation_deg(tick: u64, new_moon_tick: u64) -> f64 {
+    mean_longitude_deg(tick, new_moon_tick, SIDEREAL_MONTH_DAYS)
+        - mean_longitude_deg(tick, new_moon_tick, crate::climate::DAYS_PER_YEAR as f64)
+}
+
 /// The Moon's **phase**, as the illuminated fraction of its disc.
 ///
-/// Derived from the synodic cycle rather than tabulated, so the answer is a
-/// function of `(tick, new_moon_tick)` and nothing else. `new_moon_tick` is a
-/// parameter because **where a world's cycle starts is a property of that world**,
-/// not of this module — which is the same reason `WorldSpec` carries a seed.
+/// **It is the elongation's own geometry**: `(1 − cos E)/2` is the lit fraction of a sphere's
+/// disc seen from the planet at elongation `E`, which is the shape the published phase curve
+/// has because it is what the geometry is. The phase is therefore a *reading* of the orbit
+/// ([`moon_elongation_deg`]) rather than a second period beside it: a change to the sidereal
+/// month moves the phase, and nothing here can disagree with where the body is.
+///
+/// A function of `(tick, new_moon_tick)` and nothing else, as it always was.
 pub fn moon_phase_fraction(tick: u64, new_moon_tick: u64) -> f64 {
-    let days = tick.wrapping_sub(new_moon_tick) as f64 / crate::climate::TICKS_PER_DAY as f64;
-    let phase = (days / SYNODIC_MONTH_DAYS).rem_euclid(1.0);
-    // `1 − cos(2π·phase)`, halved. The cosine is what makes the new and full
-    // moons the two ends of the cycle and the quarters the middle of it, which
-    // is the published shape of the phase curve rather than a ramp's.
-    (1.0 - (std::f64::consts::TAU * phase).cos()) * 0.5
+    let elongation = moon_elongation_deg(tick, new_moon_tick);
+    (1.0 - elongation.to_radians().cos()) * 0.5
+}
+
+/// **The Moon's position in the local sky, and how much of it is lit** — one reading of one orbit.
+///
+/// The altitude and azimuth are degrees in the window's own frame, from north and increasing
+/// eastwards, exactly as [`SolarPosition`]'s are: a caller converts both bodies to a direction
+/// with the same function, because a second spelling of that convention is how a body lands in
+/// the wrong quarter.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct MoonPosition {
+    /// Degrees above the horizon. **Negative when the Moon is down**, which is a real state of a
+    /// real orbit and not an error: a Moon that has set lights nothing.
+    pub altitude_deg: f64,
+    /// Degrees from due north, increasing eastwards.
+    pub azimuth_deg: f64,
+    /// The Sun–planet–Moon angle, degrees — [`moon_elongation_deg`], carried so a caller can
+    /// state *why* the phase is what it is without recomputing it from the clock.
+    pub elongation_deg: f64,
+    /// The illuminated fraction of the disc, from the elongation and nothing else.
+    pub phase_fraction: f64,
+    /// **The Moon's own hour angle**, degrees — the Sun's less the elongation, reduced into one
+    /// turn. It is what the altitude above is read from, carried so a caller can see the orbit's
+    /// own circuit rather than infer it from a rise time.
+    pub hour_angle_deg: f64,
+}
+
+/// **Where the Moon is at a tick** — the body's own orbit, read in the local frame.
+///
+/// # One triangle, two bodies
+///
+/// The Moon rides [`position_of`] — the same spherical triangle the Sun does — with one thing
+/// changed: its **hour angle is the Sun's less the elongation**. That single subtraction is the
+/// orbit, and it is worth saying why it is the right one:
+///
+/// * the hour angle is `local angle − right ascension`, and the Moon's right ascension is the
+///   Sun's plus the elongation, since the Moon leads the Sun eastwards by `E`;
+/// * so the Moon rises **later** than the Sun by `E/15` hours — 48 minutes a day at this world's
+///   synodic month, which is the observed lag;
+/// * and it puts the phases where they belong: `E = 0` is the Moon **with** the Sun (up at noon,
+///   down at midnight), `E = 90°` is the first quarter on the meridian **at sunset**, and
+///   `E = 180°` is the full Moon up all night and down all day.
+///
+/// # What the orbit does not model, named
+///
+/// The orbit is taken **circular and coplanar with the ecliptic**, so the Moon's declination is
+/// the Sun's and its ecliptic latitude is zero. The real Moon's 5.145° inclination and the
+/// regression of its nodes move the declination and set the eclipse seasons; neither is here, and
+/// the honest reading is that this is a first-order orbit rather than an ephemeris. What it does
+/// give — the elongation, the phase, the Moon's own hour angle and its own altitude, hence its
+/// own rise and set — is what the light model and the sky pass actually ask for.
+/// **The unit vector toward a body**, in the world frame: `x` east, `y` up, `z` south — so a
+/// body due north is `−z` and azimuth runs clockwise from north.
+///
+/// **The convention lives here, beside the two functions that produce an altitude and an
+/// azimuth, because a convention is only safe when it has one home.** It was written in the
+/// client, in `skylight::sun_direction`, and that was fine while the light rig and the drawn
+/// body were its only consumers. A body that is *streamed* — built by the streamer's own object
+/// lane, which cannot see the client — is a third consumer, and a third transcription is a
+/// third place for a body to land in the wrong quarter.
+///
+/// `[f64; 3]` rather than the client's `Vec3` because a shaper holds no vector type; the client's
+/// function is a conversion of this one and nothing else.
+pub fn direction_of(altitude_deg: f64, azimuth_deg: f64) -> [f64; 3] {
+    let (alt, az) = (altitude_deg.to_radians(), azimuth_deg.to_radians());
+    let (sin_alt, cos_alt) = alt.sin_cos();
+    let (sin_az, cos_az) = az.sin_cos();
+    [sin_az * cos_alt, sin_alt, -cos_az * cos_alt]
+}
+
+/// The Moon's position in the local sky, and how much of it is lit.
+pub fn moon_position(spec: &WorldSpec, tick: u64, new_moon_tick: u64) -> MoonPosition {
+    let elongation_deg = moon_elongation_deg(tick, new_moon_tick);
+    // The Moon's hour angle: the Sun's less the elongation, reduced into one turn because a
+    // negative hour angle is a morning body and `atan2` reads the sign of it.
+    let hour_angle = (hour_angle_deg(tick) - elongation_deg).rem_euclid(360.0);
+    let position = position_of(
+        spec.config.origin_latitude_deg,
+        declination_deg(day_of_year(tick)),
+        hour_angle,
+    );
+    MoonPosition {
+        altitude_deg: position.altitude_deg,
+        azimuth_deg: position.azimuth_deg,
+        elongation_deg,
+        phase_fraction: (1.0 - elongation_deg.to_radians().cos()) * 0.5,
+        hour_angle_deg: hour_angle,
+    }
 }
 
 /// The Moon's illuminance with a **full** disc at the zenith, W/m².
@@ -881,6 +1053,182 @@ mod tests {
     }
 
     #[test]
+    fn the_sidereal_month_is_the_published_relation() {
+        // **The formula is the source's, and this is the measurement that says so.** For a
+        // prograde orbit `1/P = 1/S + 1/Y`; evaluated on the Earth's own published figures — the
+        // sidereal month 27.321661 d, the synodic month 29.530589 d and the Julian year — the
+        // identity comes out to within a part in **3e-5 of a turn per day**, which is the
+        // irregularity of the Sun's apparent motion and nothing this module can be blamed for.
+        // A formula fitted to the phase curve would not hold on the real Moon at all.
+        let real = (1.0 / 27.321_661f64 - 1.0 / 29.530_589) - 1.0 / 365.25;
+        assert!(
+            real.abs() < 1e-6,
+            "the identity misses the Earth's own months by {real} turns per day, so it is not the \
+             published relation"
+        );
+        // And this world's own numbers satisfy it exactly, because `SIDEREAL_MONTH_DAYS` is the
+        // identity rearranged rather than a period chosen beside the synodic month.
+        let world = (1.0 / SIDEREAL_MONTH_DAYS - 1.0 / SYNODIC_MONTH_DAYS)
+            - 1.0 / crate::climate::DAYS_PER_YEAR as f64;
+        assert!(world.abs() < 1e-12, "the world's own months miss the identity by {world}");
+        // **Prograde, so the sidereal month is the shorter of the two.** A retrograde Moon would
+        // satisfy a `+` — so the sign is asserted rather than left to the reader of a formula.
+        assert!(
+            SIDEREAL_MONTH_DAYS < SYNODIC_MONTH_DAYS,
+            "the sidereal month {SIDEREAL_MONTH_DAYS} is not shorter than the synodic \
+             {SYNODIC_MONTH_DAYS}, so the orbit is retrograde"
+        );
+        println!(
+            "this world's own Moon: a sidereal month of {SIDEREAL_MONTH_DAYS:.4} days against a \
+             synodic {SYNODIC_MONTH_DAYS:.4} and a year of {} days",
+            crate::climate::DAYS_PER_YEAR
+        );
+    }
+
+    #[test]
+    fn the_phase_is_the_elongations_own_geometry() {
+        let new_moon = 0u64;
+        let month_ticks = SYNODIC_MONTH_DAYS * crate::climate::TICKS_PER_DAY as f64;
+        for step in 0..64 {
+            let tick = (month_ticks * step as f64 / 64.0) as u64;
+            let elongation = moon_elongation_deg(tick, new_moon);
+            let expected = (1.0 - elongation.to_radians().cos()) * 0.5;
+            let phase = moon_phase_fraction(tick, new_moon);
+            assert!(
+                (phase - expected).abs() < 1e-12,
+                "at tick {tick} the phase is {phase} where the elongation {elongation} deg gives \
+                 {expected}"
+            );
+            assert!((0.0..=1.0).contains(&phase), "a phase of {phase} is not a fraction of a disc");
+        }
+        // **One turn of elongation per synodic month, and no drift**: the two bodies' mean
+        // longitudes differ by a full turn after exactly `S` days, which is why the phase closes
+        // rather than precessing. This is the identity read as a period rather than as a rate.
+        //
+        // The residual is the tick's own quantisation and it is *measured* rather than assumed:
+        // a synodic month is `708,734.13` ticks, so the nearest tick leaves `0.13` of one — about
+        // `6.6e-5` of a degree of elongation — and a tolerance tighter than that would be a test
+        // of the rounding of `month_ticks` rather than of the orbit.
+        let one_month = (month_ticks).round() as u64;
+        let a = moon_elongation_deg(12_345, new_moon);
+        let b = moon_elongation_deg(12_345 + one_month, new_moon);
+        let residual = (b - a).rem_euclid(360.0);
+        let residual = residual.min(360.0 - residual);
+        println!("one synodic month closed the elongation with {residual:.3e} deg left over");
+        assert!(
+            residual < 1e-3,
+            "one synodic month moved the elongation from {a} to {b} instead of by a whole turn"
+        );
+        // And the phase — the thing a picture is drawn from — closes with it.
+        let p_a = moon_phase_fraction(12_345, new_moon);
+        let p_b = moon_phase_fraction(12_345 + one_month, new_moon);
+        assert!(
+            (p_a - p_b).abs() < 1e-5,
+            "the phase did not close with the elongation: {p_a} against {p_b}"
+        );
+    }
+
+    #[test]
+    fn the_moons_hour_angle_is_the_suns_less_the_elongation() {
+        // **The one line that is the orbit.** The Moon's right ascension is the Sun's plus the
+        // elongation, and the hour angle is the local angle less the right ascension — so the
+        // Moon's hour angle is the Sun's less `E`, which is what makes it rise later than the Sun
+        // by `E` and what puts the phases at the hours they happen at.
+        let world = spec_at(45.0);
+        for step in 0..48 {
+            let tick = step * 977 + 13;
+            let moon = moon_position(&world, tick, 0);
+            let sun_hour_angle = hour_angle_deg(tick);
+            let expected = (sun_hour_angle - moon.elongation_deg).rem_euclid(360.0);
+            let error = (moon.hour_angle_deg - expected)
+                .rem_euclid(360.0)
+                .min((expected - moon.hour_angle_deg).rem_euclid(360.0));
+            assert!(
+                error < 1e-9,
+                "at tick {tick} the Moon's hour angle is {} where the Sun's {sun_hour_angle} less \
+                 the elongation {} gives {expected}",
+                moon.hour_angle_deg,
+                moon.elongation_deg
+            );
+        }
+    }
+
+    #[test]
+    fn the_moon_is_a_body_with_its_own_circuit_since_the_orbit_replaced_the_zenith() {
+        // **This is the test the old placeholder could not pass.** Until the orbit existed the
+        // Moon sat at a declared zenith (`MOON_ALTITUDE_DEG = 90`): it never rose, never set, and
+        // a full Moon at noon was as bright as a full Moon at midnight. A body on an orbit is
+        // above the horizon for part of a day and below it for the rest, and those two statements
+        // are the whole difference.
+        let world = spec_at(45.0);
+        let day = crate::climate::TICKS_PER_DAY;
+        let mut seen_up = false;
+        let mut seen_down = false;
+        let mut highest: f64 = f64::NEG_INFINITY;
+        for t in (0..day).step_by(137) {
+            let altitude = moon_position(&world, t, 0).altitude_deg;
+            seen_up |= altitude > 0.0;
+            seen_down |= altitude < 0.0;
+            highest = highest.max(altitude);
+        }
+        assert!(
+            seen_up && seen_down,
+            "over one day the Moon never crossed the horizon (up {seen_up}, down {seen_down}), so \
+             it is a lamp and not a body"
+        );
+        assert!(highest > 5.0, "the Moon's best altitude in a day was {highest} deg");
+
+        // **A new Moon is the Sun's own position**, to the last bit: at `E = 0` the two bodies
+        // ride the same triangle with the same hour angle, which is why a new Moon is invisible
+        // and why it is up in daylight. The Moon's own hour angle is the Sun's here, and the
+        // altitude follows — so this is an equality rather than a small difference.
+        let together = moon_position(&world, 0, 0);
+        let sun = solar_position(&world, 0);
+        assert!(together.elongation_deg.abs() < 1e-12, "tick 0 is not a new moon");
+        assert_eq!(together.altitude_deg, sun.altitude_deg, "a new Moon is not with the Sun");
+        assert_eq!(together.azimuth_deg, sun.azimuth_deg, "a new Moon is not with the Sun");
+        assert!(together.phase_fraction.abs() < 1e-12, "a new Moon has no lit face");
+
+        // **And a full Moon is up while the Sun is down** — the other end of the same geometry.
+        // Half a synodic month on, the Sun has set at this tick (its hour angle is a hair past a
+        // quarter turn) while the Moon's own hour angle is the Sun's less half a turn, so it is
+        // still rising in the east. At this world's own declination both bodies are *below* the
+        // horizon at this instant — the Sun well down and the Moon not yet up — which is why the
+        // claim is pinned as a scan of the night rather than as a reading of one tick: a full
+        // Moon is above the horizon for the whole of the night, and a lamp at the zenith is not.
+        let full = (SYNODIC_MONTH_DAYS * 0.5 * day as f64).round() as u64;
+        let moon = moon_position(&world, full, 0);
+        let sun = solar_position(&world, full);
+        assert!(
+            (moon.elongation_deg - 180.0).abs() < 1e-3,
+            "half a synodic month gave an elongation of {} deg rather than half a turn",
+            moon.elongation_deg
+        );
+        assert!(sun.altitude_deg < 0.0, "the Sun was up at the full moon's own tick");
+        // **And it is the higher body whenever the Sun is down**, which at half a turn is an
+        // identity rather than a coincidence: the two ride one triangle at hour angles half a
+        // turn apart, so `sin(alt_moon) − sin(alt_sun) = −2·cos φ·cos δ·cos H_sun` — positive
+        // exactly while the Sun is below the horizon, whatever the declination is.
+        let mut moon_up = false;
+        let mut moon_higher = 0;
+        for t in full..full + day {
+            let m = moon_position(&world, t, 0).altitude_deg;
+            let s = solar_position(&world, t).altitude_deg;
+            if s < 0.0 {
+                moon_up |= m > 0.0;
+                moon_higher += u32::from(m > s);
+            }
+        }
+        assert!(moon_up, "the full Moon never rose in the night of its own tick");
+        assert!(moon_higher > 0, "the full Moon was never higher than the Sun at night");
+        println!(
+            "the night of the full moon: the Sun at {:.1} deg and the Moon at {:.1} deg the \
+             instant of its own tick, phase {:.3}",
+            sun.altitude_deg, moon.altitude_deg, moon.phase_fraction
+        );
+    }
+
+    #[test]
     fn the_moon_is_a_second_light_source_and_not_the_sun_dimmed() {
         // **This is `MAT-0012`'s whole claim.** A night lit by the sun at 1e-5 of
         // its daylight would be a number this project chose; the Moon's
@@ -1015,14 +1363,3 @@ mod tests {
         );
     }
 }
-/// The Rayleigh optical depth of the whole atmosphere at sea level, band
-/// averaged over the visible.
-///
-/// Bodhaine et al. (1999), *On Rayleigh optical depth calculations*, J. Atmos.
-/// Oceanic Technol. 16:1854–1861: the standard-atmosphere Rayleigh scattering
-/// coefficients integrated over the visible spectrum. **This is the number that
-/// makes the horizon red**, because Rayleigh scattering is proportional to
-/// `1/λ⁴` and a longer path therefore removes far more blue than red — so it is
-/// separated out here and named, rather than folded into a product where it
-/// would read as a rounding constant.
-pub const RAYLEIGH_OPTICAL_DEPTH: f64 = 0.1083;

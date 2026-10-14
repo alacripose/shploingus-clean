@@ -10,9 +10,9 @@
 //! # The three modules are three different questions
 //!
 //! * [`world_source`] — *what is at this voxel?* The shapers' world, answerable
-//!   one voxel at a time or one chunk at a time, and **proven equal to
-//!   `voxel_shapers::column::material_at`** voxel by voxel rather than asserted
-//!   to be.
+//!   one voxel at a time or one chunk at a time. Both ways reach
+//!   `voxel_shapers::chunk_fields`' one material law, and that they agree is
+//!   **tested** voxel by voxel rather than asserted.
 //! * [`horizons`] — *how far out is this horizon?* Four horizons, strictly
 //!   nested, and each with the field-ladder level it reads at. The nesting is
 //!   checked; a set that is not nested is four unrelated numbers, not four
@@ -41,8 +41,14 @@
 //! passed off as final — because "this is what the world looks like" and "this
 //! is what the world looks like so far" are different claims, and a renderer
 //! that cannot tell them apart cannot be debugged.
+//!
+//! **The audit, 2026-10-10.** 2 833 lines, 5 modules, 70 public items, 48 tests; read by `work`,
+//! `client` and the binary. The cross-crate equality claim — the single-voxel read and the chunk
+//! build are one world — is the strongest claim any crate in this workspace makes, and it has its
+//! own tests rather than a note saying it should have one. **No finding this pass.**
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 pub mod horizons;
 pub mod light;

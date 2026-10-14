@@ -1,0 +1,22 @@
+[package]
+name = "voxel-von"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The classifier port: the gate's questions, answered by a model this project did not write."
+
+[dependencies]
+# **The one external dependency in the gate's judging path, and it is named here on purpose.**
+# A model's answer is evidence, not authority (the ticket-evidence ladder's own rule), so the
+# dependency that produces one lives in its own crate where it can be seen, feature-gated and
+# tested against a named model — rather than hidden inside the crate that decides.
+jigor.workspace = true
+# The state the model reads is JSON, and so is the answer it returns.
+serde_json.workspace = true
+# **The decision layer's own types.** A judgment is a `laya::Decision` — the same record the
+# gate files — so an answer cannot be given a shape of its own invention and then compared with
+# the gate's. `voxel-model` carries no external dependency, so this edge adds no weight.
+voxel-model = { path = "../voxel-model" }
+# The ballot a package declares: the question, its terms and its floor.
+voxel-package = { path = "../voxel-package" }

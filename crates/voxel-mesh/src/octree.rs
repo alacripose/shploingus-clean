@@ -430,7 +430,7 @@ impl SparseVoxelOctree {
         // re-deriving. A tree at any other span is prefixed with it, and no node tag is `4` or
         // above, so the two forms cannot collide.
         if self.levels != OCTREE_LEVELS {
-            transcript.extend_from_slice(&self.levels.to_le_bytes());
+            transcript.extend_from_slice(&voxel_model::endian::le_bytes(self.levels));
         }
         transcript_node(&self.root, &mut transcript);
         Digest::of_fields(
@@ -614,12 +614,12 @@ fn transcript_node(node: &Node, out: &mut Vec<u8>) {
         Node::Empty => out.push(0),
         Node::Uniform(m) => {
             out.push(1);
-            out.extend_from_slice(&m.0.to_le_bytes());
+            out.extend_from_slice(&voxel_model::endian::le_bytes(m.0));
         }
         Node::Mixed(b) => {
             out.push(2);
             for cell in b.cells() {
-                out.extend_from_slice(&cell.0.to_le_bytes());
+                out.extend_from_slice(&voxel_model::endian::le_bytes(cell.0));
             }
         }
         Node::Branch(children) => {

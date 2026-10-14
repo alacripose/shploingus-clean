@@ -39,8 +39,22 @@
 //!   quad has no single `open`; see [`shading::MESH_DOES_NOT_CARRY_OPEN`].
 //! * No reuse of GPU buffers between frames — every frame re-uploads. That is
 //!   an honest first version and a named cost, not an oversight.
+//!
+//! **The audit, 2026-10-10.** The largest crate in the workspace: 36 589 lines, 20 modules, 6 `.wgsl`
+//! shaders, 447 tests (the most in the tree), and ten crate dependencies (the widest fan-in). The
+//! Source 2 stylisation is in and measured — `Terms { half_lambert, rim, specular_warp, ambient,
+//! subsurface }`, all true under the declared rig. Two things are owed, and both are named rather
+//! than quietly adjusted:
+//!
+//! * the band measurement spans **0.474 → 0.481** luminance over 8 bands of 8 — about 1.5 % — so the
+//!   `≥3 distinct luminance bands` bar is satisfied by sub-percent variation and cannot yet tell
+//!   "stylised" from "flat";
+//! * Deadlock-style **additive outlines** are missing from the record rather than from the code:
+//!   `APPEARANCE.md` §1.2 declares four terms and none of them is an outline, so nothing could report
+//!   one missing. `docs/TODO.md` row 36 holds the three decisions it needs.
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 pub mod camera;
 pub mod camera_overhaul;
@@ -49,6 +63,7 @@ pub mod cloud_cubes;
 pub mod cloud_field;
 pub mod quad;
 pub mod debug;
+pub mod field;
 pub mod frame;
 pub mod game;
 pub mod hud;
@@ -71,6 +86,7 @@ pub use cloud_field::{
     cloud_transmittance, density_of, extinction_per_m, optical_depth, CloudField, CloudMedium,
     CloudSun, CLOUD_BLOCK_SIDE, CLOUD_COLUMNS, CLOUD_SAMPLE_M, CLOUD_SPAN_M,
 };
+pub use field::{CellField, ChunkTrees, BEAM_STEP_DEG, CELLS_PER_FRAME, REACH_M};
 pub use frame::{luminance, Frame};
 pub use game::{
     spawn_eye, GAME_CEILING_BYTES, GAME_PITCH_RAD, GAME_SEED, GAME_TICK, GAME_WINDOW,
@@ -82,7 +98,7 @@ pub use pattern::{
     MAX_FEATURE_M, MIN_FEATURE_M, OCTAVE_GAIN, OCTAVE_TOP, SUBVOXEL_CELL_M, SUBVOXEL_OCTAVE,
 };
 pub use renderer::{offscreen_device, Renderer, DEPTH_FORMAT, TARGET_FORMAT};
-pub use scene::{Scene, Vertex};
+pub use scene::{LightAt, Scene, Vertex};
 pub use shading::{
     shade_cpu, table, world_lattice_uniform, GpuRig, MaterialParams, ShadingReport,
     MESH_DOES_NOT_CARRY_OPEN,

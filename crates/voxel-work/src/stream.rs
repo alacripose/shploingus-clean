@@ -27,11 +27,12 @@
 //! viewer, the shapers are always running somewhere, and a HUD can say exactly
 //! how far along it is. [`Streamer::settle`] is the same loop run to completion,
 //! which is what a test or a first-load screen wants.
+use voxel_model::endian::LeBytes;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use voxel_mesh::raycast::{Crossings, Ray};
-use voxel_mesh::{Mesh, MeshConfig};
+use voxel_mesh::{Mesh, MeshConfig, SparseVoxelOctree};
 use voxel_model::{ChunkPos, Digest, Face, MaterialId, Refusal, RefusalKind, Refused, VoxelPos};
 use voxel_shapers::earthworks::Modification;
 use voxel_stream::{Horizon, Horizons, WorldSource};
@@ -249,6 +250,25 @@ pub struct Streamer {
     ///    world that no longer exists and a digest spanning both would be a
     ///    statement about two worlds at once.
     stale: BTreeMap<ChunkPos, Mesh>,
+    /// **The octrees behind the fresh meshes**, kept so the world's own light can be measured
+    /// where it stands.
+    ///
+    /// The mesher needs a chunk's tree and throws it away ([`crate::pool`]'s own note is the
+    /// memory argument for a worker); a *light* needs it after the mesh exists. `voxel_client::field`
+    /// marches a cell's beam through this tree, so a tree that has been dropped cannot answer and
+    /// the cell would fall back to the rig — the one light-per-frame model this exists to leave
+    /// behind.
+    ///
+    /// **Held only while the mesh is fresh**, and dropped on the same two events the mesh is: an
+    /// edit that demotes the chunk to [`Streamer::stale`], and eviction from the window. A chunk
+    /// being rebuilt therefore has no field for the frames it is stale, and its cells fall back to
+    /// the rig — which is the honest answer, because the tree in hand describes a world that has
+    /// just been edited away.
+    ///
+    /// **Charged to the same ceiling the meshes are** (`SparseVoxelOctree::bytes`, about 89 kB a
+    /// chunk against a mesh's 90,481 B), so `Frame::bytes` remains the whole of what this crate
+    /// holds and not a mesh-only reading of it.
+    trees: BTreeMap<ChunkPos, SparseVoxelOctree>,
     /// Chunks the generator refused. Remembered so a broken chunk is asked for
     /// once and not every frame — a hot retry loop on a chunk that cannot exist
     /// would spend the whole machine producing the same refusal.
@@ -276,6 +296,7 @@ impl Streamer {
             horizons: Horizons::declared(),
             centre: ChunkPos::new(0, 0, 0),
             meshes: BTreeMap::new(),
+            trees: BTreeMap::new(),
             stale: BTreeMap::new(),
             failed: BTreeSet::new(),
             last_refusal: None,
@@ -366,6 +387,24 @@ impl Streamer {
     }
 
     /// The material at a world voxel, from the live record.
+    /// **A chunk's own octree**, for a caller that has to measure the world's light where it
+    /// stands — `voxel_client::field` is the one there is.
+    ///
+    /// `None` for a chunk with no fresh mesh: one being rebuilt, one outside the window, and one
+    /// the ceiling refused. The absence is the same statement in all three cases — there is no
+    /// tree in hand that describes the chunk as it now is — and a caller that gets it falls back
+    /// to the rig rather than to a guess.
+    pub fn tree(&self, pos: ChunkPos) -> Option<&SparseVoxelOctree> {
+        self.trees.get(&pos)
+    }
+
+    /// Bytes held by the resident octrees, **beside** the meshes [`Streamer::digest`] and
+    /// [`Frame::bytes`] account for. The charge inside the budget is the sum of the two; this is
+    /// the breakdown, for a readout that has to say where the memory went.
+    pub fn tree_bytes(&self) -> usize {
+        self.trees.values().map(|tree| tree.bytes()).sum()
+    }
+
     pub fn material_at(&self, x: i32, y: i32, z: i32) -> Refused<MaterialId> {
         self.pool.material_at(x, y, z)
     }
@@ -405,6 +444,13 @@ impl Streamer {
             // re-demoting it would be a no-op that still cost a lookup.
             if let Some(mesh) = self.meshes.remove(&pos) {
                 self.stale.entry(pos).or_insert(mesh);
+            }
+            // **And its tree goes now rather than with the mesh**, because a field measured
+            // through it would be a measurement of the world the edit just removed: a dug hole
+            // would keep casting the shadow of the block that was there. Unconditionally, so a
+            // second edit before the replacement lands finds nothing left to release.
+            if let Some(tree) = self.trees.remove(&pos) {
+                self.budget.release(tree.bytes());
             }
             // It may be inside again later with the *new* world; a remembered
             // failure would keep the hole the edit just made.
@@ -464,11 +510,11 @@ impl Streamer {
     /// *true*, and those are deliberately different questions.
     pub fn digest(&self) -> Digest {
         let mut t = Vec::new();
-        t.extend_from_slice(&(self.meshes.len() as u64).to_le_bytes());
+        t.extend_from_slice(&(self.meshes.len() as u64).into_le_bytes());
         for (pos, mesh) in &self.meshes {
-            t.extend_from_slice(&pos.x.to_le_bytes());
-            t.extend_from_slice(&pos.y.to_le_bytes());
-            t.extend_from_slice(&pos.z.to_le_bytes());
+            t.extend_from_slice(&pos.x.into_le_bytes());
+            t.extend_from_slice(&pos.y.into_le_bytes());
+            t.extend_from_slice(&pos.z.into_le_bytes());
             t.extend_from_slice(mesh.digest().as_bytes());
         }
         Digest::of_fields("voxel-work/stream", &[t.as_slice()])
@@ -569,6 +615,11 @@ impl Streamer {
                 self.budget.release(mesh.bytes());
                 evicted += 1;
             }
+            // The tree goes with the mesh it belongs to, so a chunk outside the window costs
+            // nothing: not its mesh and not its octree.
+            if let Some(tree) = self.trees.remove(&pos) {
+                self.budget.release(tree.bytes());
+            }
         }
         // A chunk that failed and has left residency is forgotten: it may be
         // inside again later, and a permanent blacklist would leave a hole in the
@@ -627,7 +678,7 @@ impl Streamer {
         let generation = self.pool.generation();
         let mut apply = Apply::default();
         for built in meshes {
-            let Built { generation: built_from, mesh } = built;
+            let Built { generation: built_from, mesh, tree } = built;
             let pos = mesh.chunk;
             if built_from != generation {
                 // An edit landed while this chunk was being meshed. It is not a
@@ -639,7 +690,10 @@ impl Streamer {
                 apply.discarded += 1;
                 continue;
             }
-            let bytes = mesh.bytes();
+            // **The tree is charged beside the mesh**, because both are held: a chunk is not
+            // affordable if only one of its two artifacts fits, and a reading that counted the
+            // mesh alone would report a streamer holding half of what it holds.
+            let bytes = mesh.bytes() + tree.bytes();
             if self.budget.charge(bytes).is_err() {
                 apply.refused_for_budget += 1;
                 self.failed.insert(pos);
@@ -653,6 +707,7 @@ impl Streamer {
                 self.budget.release(previous.bytes());
             }
             self.meshes.insert(pos, mesh);
+            self.trees.insert(pos, tree);
             apply.completed += 1;
         }
         for (pos, refusal) in failures {
@@ -748,6 +803,7 @@ impl Streamer {
         // path is a full world change, so there is nothing worth drawing from it
         // anyway: every chunk is about to be rebuilt from the new source.
         self.stale.clear();
+        self.trees.clear();
         self.failed.clear();
         self.last_refusal = None;
         self.budget.release(self.budget.charged());
@@ -762,7 +818,7 @@ impl Streamer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use voxel_shapers::column::materials;
+    use voxel_shapers::materials;
     use voxel_shapers::{Config, WorldSpec};
 
     /// Small enough to settle in a test, wide enough to have a surface in it.
@@ -802,8 +858,10 @@ mod tests {
         assert_eq!(frame.wanted, window().count() as usize);
         assert!((frame.progress() - 1.0).abs() < 1e-12);
         // The invariant that makes the budget meaningful: what is charged is
-        // exactly what is held.
-        let held: usize = s.meshes().map(Mesh::bytes).sum();
+        // **exactly what is held** — and since the octrees are held beside the meshes
+        // (`Streamer::tree`), the sum is both or the invariant is not the one stated.
+        assert!(s.tree_bytes() > 0, "no chunk's octree was kept, so nothing could be lit");
+        let held: usize = s.meshes().map(Mesh::bytes).sum::<usize>() + s.tree_bytes();
         assert_eq!(s.budget().charged(), held);
         assert_eq!(frame.bytes, held);
         s.shutdown();
@@ -1036,6 +1094,13 @@ mod tests {
             .into_iter()
             .find(|p| s.mesh(*p).is_some())
             .expect("the edit reaches a resident chunk");
+        // The mesh that is about to become stale, measured **before** it moves: the charge that
+        // must come back is this one, and only this one.
+        let replaced_bytes = s.mesh(target).expect("found above").bytes();
+        // And the octree that goes **now** rather than with the mesh: the field is measured through
+        // it, and a field measured through the world before the edit would keep the dug block's
+        // shadow standing for the frames the chunk is stale.
+        let replaced_tree_bytes = s.tree(target).expect("the chunk had a tree").bytes();
 
         s.edit(crate::pool::Edit {
             x,
@@ -1049,14 +1114,45 @@ mod tests {
         .unwrap();
         assert_eq!(
             s.budget().charged(),
-            charged_before,
-            "a stale mesh is still held, so its charge must not silently vanish"
+            charged_before - replaced_tree_bytes,
+            "a stale mesh is still held — its charge must not silently vanish — while the tree it \
+             was lit through must come back"
+        );
+        assert!(
+            s.tree(target).is_none(),
+            "the edited chunk's octree outlived the world it described"
         );
 
         s.settle().unwrap();
         assert_eq!(s.stale_len(), 0, "the replacement should have released it");
-        assert_eq!(s.budget().charged(), charged_before, "and given the charge back");
         assert!(s.mesh(target).is_some(), "and the chunk should be current again");
+        // **The charge back, said exactly.** This line used to assert that the total returned to
+        // `charged_before` — which is only true when the replacement is the same size as the mesh
+        // it replaced, and *digging changes the mesh*: removing a voxel exposes its neighbours'
+        // faces, so the new mesh may be larger or smaller than the old by any amount. That made a
+        // claim about the budget's arithmetic depend on the world's geometry, and the assertion
+        // broke the day the terrain under it changed — 150 bytes, which is a handful of faces, not
+        // a leaked entry.
+        //
+        // Rule 1 is about the **entries**, so the identity is exact and holds for any content: the
+        // stale entry's bytes come back, and the replacement is charged.
+        let replacement_bytes = s.mesh(target).expect("checked above").bytes();
+        assert_eq!(
+            s.budget().charged(),
+            charged_before - replaced_bytes + replacement_bytes,
+            "the stale mesh's {replaced_bytes} bytes came back and the replacement's \
+             {replacement_bytes} were charged, so the budget moved by exactly that exchange"
+        );
+        // And it holds nothing else: the budget is the current meshes **and their octrees**,
+        // re-walked. This is the half the old assertion was reaching for, and it is
+        // content-independent.
+        let held: usize = s.meshes().map(voxel_mesh::Mesh::bytes).sum::<usize>() + s.tree_bytes();
+        assert_eq!(
+            s.budget().charged(),
+            held,
+            "the budget holds exactly the current meshes and their trees, and nothing stale is \
+             still charged"
+        );
         s.shutdown();
     }
 

@@ -91,7 +91,21 @@ pub fn tone_map(colour: LinearRgb) -> LinearRgb {
     // divide by a luminance so small that the two forms disagree. The WGSL
     // transcription uses the same form, so the two compute the same expression
     // rather than two expressions a reader has to prove equal.
-    let gain = 1.0 / (1.0 + luminance);
+    //
+    // **And it is not a bound, which is the defect this line had.** Rec. 709's weights are
+    // dominated by green (`0.7152` against red's `0.2126`), so a **red-dominant** colour is given a
+    // gain computed mostly from a channel it does not have much of, and it leaves the domain: the
+    // horizon at sunset reads `(2.36, 0.78, 0.01)` after `EXPOSURE`, whose luminance is `1.06` and
+    // whose gain is therefore `0.485` — red comes out at **`1.145`**, above the `[0, 1]` a display
+    // can show. The 8-bit target then clips it, and what is lost is the *redness*: `(1.0, 0.378)`
+    // is a frame washed yellow where the sky computed a deep orange. The wash is not the sky's
+    // colour, it is the transform's clip.
+    //
+    // The repair is the smallest one that cannot desaturate: **one scalar gain**, the smaller of
+    // the curve's own and the brightest channel's own bound. Chromaticity is still untouched — a
+    // grey is still a grey — and no channel can leave `[0, 1]` however saturated the colour is.
+    let brightest = colour.r.max(colour.g).max(colour.b);
+    let gain = (1.0 / (1.0 + luminance)).min(1.0 / brightest);
     LinearRgb::new(colour.r * gain, colour.g * gain, colour.b * gain)
 }
 

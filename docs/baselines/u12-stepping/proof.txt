@@ -1,0 +1,58 @@
+# §34's guard proof (2026-10-13): the harness was run on this pass's bytes and exited 0 — all eight cases
+# bit by name and every perturbed source came back byte-exact. The lines below are that run's own output,
+# and the eight .test.log files beside this file are its logs; their digests are in digests.txt.
+
+== the declared rain
+   subject: src/automaton.rs :: pub const RAIN_UM_PER_TICK: i64 = 200;
+   bit: thread 'automaton::tests::rain_wets_a_dry_pit_and_the_plane_comes_to_rest_at_the_laws_own_fixed_point' (24884) panicked at src\automaton.rs:270:9:
+   bit: error: test failed, to rerun pass `--lib`
+== the fraction a pit keeps
+   subject: src/automaton.rs :: pub const PIT_KEEP_PERCENT: i64 = 90;
+   bit: thread 'automaton::tests::rain_wets_a_dry_pit_and_the_plane_comes_to_rest_at_the_laws_own_fixed_point' (18096) panicked at src\automaton.rs:284:9:
+   bit: assertion `left == right` failed: the holding settles within the first hundred ticks and stays put: 79400 µm
+   bit: error: test failed, to rerun pass `--lib`
+== the one-hop transfer
+   subject: src/automaton.rs :: moved[to] += own;
+   bit: thread 'automaton::tests::one_tick_is_one_synchronous_hop_by_the_declared_arithmetic' (16032) panicked at src\automaton.rs:231:13:
+   bit: assertion `left == right` failed: column 0
+   bit: error: test failed, to rerun pass `--lib`
+== the pit's own thinning
+   subject: src/automaton.rs :: None => moved[cell] -= own * (100 - PIT_KEEP_PERCENT) / 100,
+   bit: thread 'automaton::tests::rain_wets_a_dry_pit_and_the_plane_comes_to_rest_at_the_laws_own_fixed_point' (18616) panicked at src\automaton.rs:284:9:
+   bit: assertion `left == right` failed: the holding settles within the first hundred ticks and stays put: 79400 µm
+   bit: error: test failed, to rerun pass `--lib`
+== the stepped read's own water
+   subject: src/automaton.rs ::         base.stepped_from(&self.depth_um)
+   bit: thread 'the_plane_carries_state_from_tick_to_tick' (18492) panicked at tests\u12_stepping.rs:135:5:
+   bit: assertion `left == right` failed: the read stands the law's water
+   bit: thread 'two_states_from_one_read_are_one_digest' (18368) panicked at tests\u12_stepping.rs:85:51:
+== the tick count
+   subject: src/automaton.rs ::         self.ticks += 1;
+   bit: thread 'automaton::tests::the_law_is_a_pure_function_of_the_state_and_the_tick_count' (19148) panicked at src\automaton.rs:325:9:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--lib`
+== the state the law starts from
+   subject: src/automaton.rs ::             depth_um: (0..world.cells()).map(|cell| world.depth_um(cell)).collect(),
+   bit: thread 'the_plane_carries_state_from_tick_to_tick' (24100) panicked at tests\u12_stepping.rs:105:5:
+   bit: assertion `left == right` failed: the state the law starts from is the read's own water, not a plane of zeros
+   bit: error: test failed, to rerun pass `--test u12_stepping`
+== the being reads the law's state
+   subject: tests/u12_stepping.rs :: drive(&stepped, &scratch("stepped"), start, TICKS)
+   bit: thread 'a_rained_on_column_changes_the_beings_next_step' (21872) panicked at tests\u12_stepping.rs:158:5:
+   bit: assertion `left != right` failed: the plane's own change must move the being's next step: (4, Some(159)) both times
+   bit: error: test failed, to rerun pass `--test u12_stepping`
+
+every guard bit by name, and every touched file came back byte-exact:
+1e4fa64744ff19da898993478dd88796f8e4cfdde014abfec9c79c21ec87ee11 *src/automaton.rs
+74b34020877d4b0486dcb8d98d7da1db43c4c9525ef548693370ef3b18693cdb *src/being.rs
+539bafbeb349e104806a22e39421e0a319c86de1a33c3b21e81ae7e0a8b659c6 *src/lib.rs
+512b972d4b5b96231a0188ea1262da36d01f33c762d9b676618491c75e35f14b *src/evidence.rs
+10aaeff87222691e9b32390b695a294bce893bc3198e1b09746d76e63696f0bf *tests/u12_stepping.rs
+   kept: the_being_reads_the_law's_state.test.log
+   kept: the_declared_rain.test.log
+   kept: the_fraction_a_pit_keeps.test.log
+   kept: the_one-hop_transfer.test.log
+   kept: the_pit's_own_thinning.test.log
+   kept: the_state_the_law_starts_from.test.log
+   kept: the_stepped_read's_own_water.test.log
+   kept: the_tick_count.test.log

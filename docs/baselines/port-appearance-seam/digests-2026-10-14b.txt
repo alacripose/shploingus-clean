@@ -1,0 +1,13 @@
+a766d48a5aa267b3b51b4aefbceb8e1cc6dfa62019c6d76087ff93bc46b4e6e2 *src/chunk.rs
+ea126e009bf9592fb90f0a7727d8c92e41d96282f1820393478ae0f1d41f0d10 *src/port/mod.rs
+b960f1037995bd6b3ec8d5e71d0ca946e143ac240887590f62145e1663bd4189 *src/port/tests.rs
+d878c8d59c545c60f1482c169b6290afdb69a2e757851339c0987fc79d7e196d *README.md
+# dated addendum, 2026-10-14b+1 — corrections found *after* the digest above was taken, appended rather than
+# folded into the head. The clean room's note for this pass carried two defects against the bytes it
+# describes: the suite's own split (written as 337 library + 97 integration, where the measured run is
+# 341 + 93 — 434 either way, from `cargo test --offline -j 2` → exit 0, 18 suites, 0 failed, 0 error lines),
+# and an identity claim about the port's block that cited §8's 249-line capture as its source (see this
+# directory's README.txt §9 and block-identity-2026-10-14b.txt for what the commands actually verify). The
+# three code files are untouched by the correction — their digests above still verify as they stand. README.md
+# now reads:
+8a4b31fca658bbdbea4774f81b3da9ba973a6d7dc084cf11a235242ad33c1518 *README.md

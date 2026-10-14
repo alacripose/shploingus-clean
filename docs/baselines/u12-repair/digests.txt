@@ -1,0 +1,41 @@
+# U12's repair — the record brought to the bytes that exist (2026-10-13, plan §33)
+#
+# Captures, both taken from the built binary (target/debug/shploingus-clean-room):
+   504 docs/baselines/u12-repair/pre-stdout.txt
+     1 docs/baselines/u12-repair/pre-stderr.txt
+   504 docs/baselines/u12-repair/final-stdout.txt
+     1 docs/baselines/u12-repair/final-stderr.txt
+  1010 total
+6bf8c2d01918fcb35448e25db2d69ae53c205fb1397bb484d2610d4391e96328 *docs/baselines/u12-repair/pre-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u12-repair/pre-stderr.txt
+5f4d5c80292781c81ba4665eea2d45f51899e052480f846b891bb6f09bd3b362 *docs/baselines/u12-repair/final-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u12-repair/final-stderr.txt
+# The pre pair is **§32's own final pair** (b8203cbc… was §31's), so this pass began exactly where §32's
+# account ended. Two runs of the final binary are byte-identical (5f4d5c80… twice), and the one stderr line
+# did not move at all: `pre-stderr.txt` and `final-stderr.txt` are the same bytes (f583ca18…).
+#
+# The sources this pass touched, as they stand after the harness restored them:
+613b1229891989762b301529e3398cfc07957fdcffc7d896920d3ed66d262814 *src/being.rs
+1de78b22f2facf6cec717dbf43f098777e10d5561bc51ad44f2c1d9bc9318fc4 *src/evidence.rs
+ea8bc83a38c1c848f23679bb3dd4db9fbdcebedb1bf35e098e533ced2c991842 *tests/u12_being.rs
+# `src/refusal.rs` (25984677…), `src/chain.rs` (60d56a24…), `src/systems.rs` (72dc8ef5…), `src/main.rs`
+# (951081f5…), `src/lib.rs` (8ca618a3…) and `tests/u5_measure.rs` (f9b19f45…) are **unchanged by this pass**
+# — the same digests §32 recorded — and the two records the cascade moved (`clean-room/README.md`,
+# `specs/006-world-saves-and-seeds/quickstart.md`) are recorded in `source-digests.txt` beside this file.
+#
+# The nine guard logs under docs/baselines/u12-first-mob/, as they stand after this pass's re-run of
+# [`run-guards.sh`](../../baselines/u12-first-mob/run-guards.sh): a re-run **rewrites** them (each carries its
+# own run's test-thread PIDs and cargo timings), so §32's original nine bytes cannot be restored and these are
+# the digests of the bytes on disk. §33's run is also kept whole in `proof.txt`, beside this file.
+1cf2740f2290d9094058818ddc905be8889db1c696aff8898f4e5c274f2fada0 *docs/baselines/u12-first-mob/the_being's_own_reach.test.log
+facd42c2c46629904892466f3b688e970ee0128c5bf1d22d8010ddd0f72ab91f *docs/baselines/u12-first-mob/the_charter's_declared_floor.test.log
+52e7dbdd1aaf95382ace8a82d162cd578333c2d3dbb7e4bfe16876947a4e6c87 *docs/baselines/u12-first-mob/the_denial_recorded.test.log
+80a1427d33ff93718d5cdb081c16516d3921e73a89ce04dd992fc84ee168b875 *docs/baselines/u12-first-mob/the_game's_own_flow_step.test.log
+9ffc40fc21763bcb90fb04f6172b18bc371e2cde1d0c2b2b3a685f67f5c6bf13 *docs/baselines/u12-first-mob/the_refusal's_own_name__stage_below_floor_.test.log
+9efaa386af6eae3ff4706d508444aaa1c4bf9070374ebd325f9920ea5c0fc38c *docs/baselines/u12-first-mob/the_refusal's_own_name__water_unreachable_.test.log
+3fe71d091a39eb7cbb7ee89f9ce672ff9f107e3b2768413d348a8d01068cc225 *docs/baselines/u12-first-mob/the_stage_comparison.test.log
+839f7f08823fb8697a2fd345f6b8402743315b52d4f114dbf4f673f6bd44d7ce *docs/baselines/u12-first-mob/the_unsouled_refusal.test.log
+b1f0d92bfa063d3e59d51725b6fe85ccd5e2e0207b06bcb092e55c26f9941a70 *docs/baselines/u12-first-mob/the_world's_own_water_read.test.log
+# These nine are the re-run's, not §32's: the harness's own proof output that produced them is `proof.txt`
+# beside this file, and §32's run's output is kept there too, dated, because its panic line numbers describe
+# §32's bytes (being.rs was 907 lines then; the repaired file is 928).

@@ -102,6 +102,37 @@ pub fn elevation_m(spec: &WorldSpec, x: f64, z: f64) -> f64 {
     cfg.base_elevation_m + cont * cfg.relief_m * 0.5 + plate.uplift_m + mountains
 }
 
+/// The **continental term** of the elevation law at a column, in metres: exactly the
+/// `cont · relief_m · 0.5` contribution [`elevation_m`] adds, from the same fractal, the
+/// same seed and the same frequency.
+///
+/// **Why this is public, and not a second field.** The `earth_biomes_subbiomes_continentalness_mountains.pdf`
+/// atlas asks a climate for *continentalness* — how deep inside a landmass a column sits — and the only
+/// honest source of that here is the field that already decides where the land **is**. A reader that
+/// re-derived it from a new fractal would be a second, unrelated coastline (the WG-Q5 failure this
+/// crate's rules name). So the term is exposed where it is computed, and [`crate::climate::continentality`]
+/// reads it. It carries the tectonic uplift and the ridged mountains **not at all**: those are local
+/// relief, and continentalness is the regional question of where the ocean is.
+pub fn continental_field_m(spec: &WorldSpec, x: f64, z: f64) -> f64 {
+    let cfg = &spec.config;
+    let f = cfg.continent_frequency;
+    continental(spec).fbm(
+        spec.stationary_stage_seed("terrain"),
+        Vec3::new(x * f, 0.0, z * f),
+    ) * cfg.relief_m
+        * 0.5
+}
+
+/// Whether the **regional** terrain at a column is sea: the continental term plus the base
+/// elevation, against the sea line, with uplift and mountains left out on purpose.
+///
+/// This is the test [`crate::climate::continentality`] runs to its horizon. It is coarser than
+/// [`is_solid`] at a voxel — a delta or a lagoon reads as land here — and that is the scale the
+/// question is asked at: a coastline is a regional shape, not a voxel.
+pub fn is_regional_sea(spec: &WorldSpec, x: f64, z: f64) -> bool {
+    spec.config.base_elevation_m + continental_field_m(spec, x, z) < spec.config.sea_level_m
+}
+
 /// Sample a column: elevation plus the derived slope and normal.
 pub fn sample(spec: &WorldSpec, x: f64, z: f64) -> TerrainSample {
     let elev = elevation_m(spec, x, z);
@@ -354,7 +385,7 @@ mod tests {
             let zi = z as i32;
             let mut top = None;
             for y in (0..64).rev() {
-                let m = crate::column::generated_material_at(&s, 0, y, zi).unwrap();
+                let m = crate::chunk_fields::material_at(&s, 0, y, zi).unwrap();
                 if !m.is_empty() {
                     top = Some((y, m));
                     break;

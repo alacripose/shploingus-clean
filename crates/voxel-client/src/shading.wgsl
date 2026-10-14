@@ -1,17 +1,4 @@
-// The Valve Source 2 stylisation, as `voxel-appearance`'s `npr::shade` states
-// it -- written a second time, in WGSL, because a shader cannot call Rust.
-//
-// This file is a *transcription*, and it is held to the original by
-// `renderer::tests::the_gpu_shades_a_surface_exactly_as_the_crate_does`, which
-// renders stated normals and compares the pixels against `npr::shade`. The
-// branch order, the exact expressions, and the `_present` flags are all copied
-// deliberately: a "nicer" formulation here would be a second model, and two
-// models is how shading drifts.
-//
-// The one line that must NOT be simplified: `if (base_present > 0.5)`. An
-// absent albedo removes the diffuse lobe. Reading it as black instead would
-// change `Terms`, and `Terms` is what the FMA bar's band count is reported
-// against.
+// the Valve Source 2 stylisation, transcribed into WGSL — docs/lighting-sky-and-moon.md
 
 struct Light {
     direction: vec4<f32>,   // xyz toward the light, w intensity
@@ -49,9 +36,12 @@ struct View {
     // target's own quantisation calls for (C-166), `0` for a float target and `1`
     // for the 8-bit `sRGB` surface the window presents; `z` is whether this target
     // is a **display**, and so whether a scene-referred value is compressed into
-    // one it can present (C-167), `0` for the offscreen measurement target. `w`
-    // stays reserved. This is a viewport number rather than a world one, so it
-    // travels with the camera.
+    // one it can present (C-167), `0` for the offscreen measurement target.
+    //
+    // `w` is **the cloud's cross-fade weight** (C-183), the newer tree's share of the sky, read
+    // off the world's ticks by `cloud_cubes::fade_weight`. The interpolation is here rather than
+    // baked into the veils because it is one number a frame (`docs/LEDGER.md` §183), and it is a
+    // viewport number rather than a world one, so it travels with the camera.
     //
     // **The two are separate flags on purpose, though the same target sets both
     // today.** Dithering is a statement about how many steps a target has; the
@@ -61,15 +51,17 @@ struct View {
     // and neither on the world pass. One flag would have to be split then, and
     // splitting it later is how two meanings come to share one bit.
     screen: vec4<f32>,
-    // **The dome table's own grid, and the water boundary's reflectance** (C-177): `x`
-    // azimuths, `y` elevations, `z` `voxel_appearance::fluid::WATER_F0`, `w` reserved.
+    // **The water boundary's reflectance, and the cloud's albedo** — `z` is
+    // `voxel_appearance::fluid::WATER_F0` and `w` `cloud_field::CLOUD_ALBEDO` (C-177, C-179),
+    // both sent rather than typed here for the reason `lattice` and `rates` are:
+    // `fluid::schlick` is called with `WATER_F0` on the CPU and `cloud_row` with `CLOUD_ALBEDO`,
+    // and a shader holding its own `0.0204` or `0.99` would be a second statement of each.
     //
-    // The world pass reads the same table the sky pass draws — a fluid surface *is* the
-    // sky, seen off a dielectric boundary — and the two numbers it indexes with are
-    // `skylight::SKY_DOME_AZIMUTHS`/`SKY_DOME_ELEVATIONS`, sent rather than typed here for
-    // the reason `lattice` and `rates` are. The reflectance likewise: `fluid::schlick` is
-    // called with `WATER_F0` on the CPU, and a shader holding its own `0.0204` would be a
-    // second statement of the water's boundary.
+    // **`x` and `y` used to be the dome's grid** — its azimuth and elevation counts, which this
+    // pass read to index the sky for a fluid's reflection. The dome is gone: the reflection is
+    // `atmosphere.wgsl`'s transport now, evaluated at the mirror ray's own direction, and the
+    // transport carries its own band count. The two slots are reserves, and whether a sky is
+    // present at all is the model's own row count rather than a positive grid side.
     sky_grid: vec4<f32>,
 };
 
@@ -128,7 +120,15 @@ struct QuadRecord {
     uv: u32,        // uv.x in the low 16 bits, uv.y in the high
     extent: u32,    // extent.x in the low 16 bits, extent.y in the high
     chunk: u32,     // an index into `origins`
+    // **A body's light direction, `y` and `z`** (C-184), and a rectangle's two unused slots: for a
+    // body the six slots after `face` and `chunk` are its radiance's three channels, then `x`, `y`, `z`
+    // of the direction that lights it, each an `f32`'s bits.
+    light_y: u32,
+    light_z: u32,
 };
+
+// The record's own discriminant for a body (C-184): `voxel_client::quad::BODY_KIND`.
+const BODY_KIND: u32 = 6u;
 
 @group(0) @binding(3) var<storage, read> quads: array<QuadRecord>;
 // One chunk's origin **relative to the eye**, in metres, computed on the CPU in
@@ -136,11 +136,11 @@ struct QuadRecord {
 // vertex, and the reason a rectangle can be reused across frames while a vertex
 // cannot. A `vec4` because a storage array's stride is 16 bytes.
 @group(0) @binding(4) var<storage, read> origins: array<vec4<f32>>;
-// **The sky pass's own table, bound to this pass too** (C-177). Same buffer, same
-// row-major grid (elevation * azimuths + azimuth), same bilinear read — a fluid reflects
-// the sky that is overhead, and the only way for that to be true by construction rather
-// than by agreement is for both passes to read one buffer.
-@group(0) @binding(5) var<storage, read> sky_table: array<vec4<f32>>;
+// **`sky_model`, at binding 5, is `atmosphere.wgsl`'s** — the same buffer the sky pass binds, so
+// a fluid reflects the sky that is overhead by construction rather than by agreement (C-177). It
+// is *that file's* declaration rather than one here, because this pass and the sky pass hold one
+// transport: a second declaration of the array and a second transcription of the integral is how
+// the sky a frame draws and the sky a fluid reflects come to be two skies.
 
 struct VsIn {
     @location(0) position: vec3<f32>,
@@ -185,14 +185,15 @@ struct VsOut {
     // not a quantity to blend: a fragment half-covered by the field would get a
     // half-present light, which is a third state nobody declared.
     @location(8) @interpolate(flat) light_present: u32,
-    // **The cloud's veil** (C-178/C-179): the fraction of the beam this cell's own column
-    // passes, from `cloud_cubes` through the origin's `w`. `0` for every surface, which is
-    // terrain — the world never wrote that float before, so nothing that was drawn before
-    // clouds existed can read as one.
-    //
-    // Flat, for the reason `light_present` is: it is a property of the cell and not a
-    // quantity to blend, and every corner of one cell carries the same one anyway.
+    // The cloud's veil — docs/lighting-sky-and-moon.md
     @location(9) @interpolate(flat) veil: f32,
+    // **Whether this corner carries a lattice sample at all.** The vertex format samples the
+    // lattice once per corner and answers `1`; the **record** format has no room for one and
+    // answers `0` — which is a different claim from "the lattice said zero", and the fragment
+    // has to tell the two apart to know when to read the Sun's angle instead
+    // (`lod_reflectance_delta`). Flat, for the reason `light_present` is: it is a property of
+    // the vertex's own format and not a quantity to blend.
+    @location(10) @interpolate(flat) sample_present: u32,
 };
 
 @vertex
@@ -218,6 +219,9 @@ fn vs_main(in: VsIn) -> VsOut {
     // measurement attaches to a cell of the world rather than to a medium, so this path is
     // terrain by construction and its veil is zero.
     out.veil = 0.0;
+    // This format **does** carry a sample: `Scene::build_with` reads the lattice once per
+    // corner and puts it in `detail_roughness`/`detail_reflectance`.
+    out.sample_present = 1u;
     return out;
 }
 
@@ -251,12 +255,15 @@ fn winding_flips(face: u32) -> bool {
     return positive != (face_axis(face) != 1u);
 }
 
-@vertex
-fn vs_quad(@builtin(vertex_index) vertex_index: u32) -> VsOut {
-    let quad = quads[vertex_index / 6u];
-    // The two triangles `Scene` used to emit as `[0, 1, 2, 0, 2, 3]`.
-    var order = array<u32, 6>(0u, 1u, 2u, 0u, 2u, 3u);
-    var corner = order[vertex_index % 6u];
+/// **One corner of one record, in metres and eye-relative** — the quad format's whole
+/// expansion, stated once so the shaded rectangle and its own outline cannot disagree about
+/// where the rectangle is.
+///
+/// `corner` is `0..3` in `Quad::corners`' own order, and the winding flip is applied here rather
+/// than by either caller.
+fn quad_corner_m(quad_index: u32, corner_in: u32) -> vec3<f32> {
+    let quad = quads[quad_index];
+    var corner = corner_in;
     if (winding_flips(quad.face)) {
         corner = 3u - corner;
     }
@@ -281,7 +288,17 @@ fn vs_quad(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     }
     // Subvoxels to metres, from the rate the camera already carries — one metre a
     // voxel, `SUBVOXEL_SIDE` cells across it — and then the chunk's own origin.
-    let p = sub / f32(camera.rates.x) + origins[quad.chunk].xyz;
+    //
+    // **The face is the tree's own plane**, so a flat boundary is one rectangle and two derivations of a tree draw the same bytes.
+    return sub / f32(camera.rates.x) + origins[quad.chunk].xyz;
+}
+
+@vertex
+fn vs_quad(@builtin(vertex_index) vertex_index: u32) -> VsOut {
+    let quad = quads[vertex_index / 6u];
+    // The two triangles `Scene` used to emit as `[0, 1, 2, 0, 2, 3]`.
+    var order = array<u32, 6>(0u, 1u, 2u, 0u, 2u, 3u);
+    let p = quad_corner_m(vertex_index / 6u, order[vertex_index % 6u]);
 
     var out: VsOut;
     out.clip = camera.vp * vec4<f32>(p, 1.0);
@@ -289,25 +306,13 @@ fn vs_quad(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     // The eye is the origin here, exactly as in `vs_main`: the geometry arrived
     // already relative to it.
     out.to_eye = -p;
-    // The fragment reads the composition here, not the quad's own material id.
-    // The quad's own material is the selected one, so for a single-material quad
-    // this is the same id the fragment shades from; for a genuinely mixed selection
-    // The fragment reads the composition here, not the quad's own material id.
-    // The quad's own material is the selected one, so for a single-material quad
-    // this is the same id the fragment shades from; for a genuinely mixed selection
-    // the composition is the face blend, and the shader blends the selected materials
-    // instead of looking up one id's row.
+    // The fragment reads the composition here, not the quad's own material id — docs/lighting-sky-and-moon.md
     out.material = quad.composition & 0xFFFFu;
     out.eye_rel = p;
-    // **No per-vertex lattice sample and no per-vertex light.** A record has no
-    // room for either, and neither is lost: the fragment's own ladder is the
-    // whole address law for this geometry (C-161..C-164), and a light field is a
-    // per-cell measurement, which is what `Scene::build_with_light`'s vertex
-    // format exists to carry. `light_present = 0` is therefore not "a field of
-    // zero here" but "this format carries no field", which is the rig path —
-    // what every frame was lit by before a field existed.
+    // No per-vertex lattice sample and no per-vertex light — docs/lighting-sky-and-moon.md
     out.detail_roughness = 0.0;
     out.detail_reflectance = 0.0;
+    out.sample_present = 0u;
     out.light_direct = vec3<f32>(0.0);
     out.light_diffuse = vec3<f32>(0.0);
     out.light_present = 0u;
@@ -318,35 +323,220 @@ fn vs_quad(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     return out;
 }
 
-// ---- the pattern's own arithmetic (C-161, C-162, laddered by C-163) ----------
+// ---- the astronomical body (C-184) ------------------------------------------
 //
-// A material's 256-level detail is **addressed, never stored** (C-2), so a
-// greedy-merged rectangle can still show its blocks: the fragment's own **world
-// subvoxel** addresses the lattice, its material's **shaper** shapes the noise
-// into that material's pattern, and the result modulates the row the quad's
-// material slot already fetched. No geometry is added — that is the whole point
-// (C-122, C-91). The first form of this section addressed the subvoxel inside its
-// *block*, which stamps the same pattern into every block (the eye-check's
-// tiling); the world cell is the correction.
+// A body's record is a rectangle's own stride. `vs_body` plots it at the far plane and `fs_body` gives
+// every pixel the **sphere's** own normal, which is what draws a phase. The plot, and the reason a body
+// is a sphere here where the model's own is a cuboid, are under *The astronomical body* in
+// `docs/lighting-sky-and-moon.md`.
+
+struct BodyOut {
+    @builtin(position) clip: vec4<f32>,
+    // Where in the body's face this pixel is, in `[-1, 1]`: `dot(offset, offset) > 1` is off the disc.
+    @location(0) offset: vec2<f32>,
+    @location(1) @interpolate(flat) to_body: vec3<f32>,
+    @location(2) @interpolate(flat) radiance: vec3<f32>,
+    @location(3) @interpolate(flat) light: vec3<f32>,
+    // The two numbers the vertex stage plotted with, so the fragment can rebuild this pixel's own world
+    // ray and ask the air what it carried before the body. See `fs_body`.
+    @location(4) @interpolate(flat) drawn_m: f32,
+    @location(5) @interpolate(flat) half_m: f32,
+};
+
+// The body's own basis: `right`, `up`, and the direction to it. `helper` is the world axis the body
+// is furthest from, so a body at the zenith still has one.
+fn body_basis(to_body: vec3<f32>) -> mat3x3<f32> {
+    let helper = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(to_body.y) > 0.9);
+    let right = normalize(cross(helper, to_body));
+    return mat3x3<f32>(right, cross(to_body, right), to_body);
+}
+
+@vertex
+fn vs_body(@builtin(vertex_index) vertex_index: u32) -> BodyOut {
+    let record = quads[vertex_index / 6u];
+    let rel = origins[record.chunk].xyz;
+    // The body's own half-extent, scaled to the distance it is drawn at, so what it subtends is what
+    // the model says it subtends and not an angle chosen for the picture.
+    let distance_m = max(length(rel), 1.0);
+    // `sky_grid.x` is a distance **inside** the far plane rather than the plane itself
+    // (`camera::BODY_PLOT_M`): a body exactly on the plane is discarded by the depth test, and the
+    // reason is that number's own.
+    let drawn_m = max(camera.sky_grid.x, 1.0);
+    let to_body = rel / distance_m;
+    let half_m = origins[record.chunk].w * drawn_m / distance_m;
+    let basis = body_basis(to_body);
+    var order = array<u32, 6>(0u, 1u, 2u, 0u, 2u, 3u);
+    let corner = order[vertex_index % 6u];
+    let offset = vec2<f32>(
+        select(-1.0, 1.0, corner == 1u || corner == 2u),
+        select(-1.0, 1.0, corner == 2u || corner == 3u),
+    );
+    let centre = to_body * drawn_m + (basis[0] * offset.x + basis[1] * offset.y) * half_m;
+
+    var out: BodyOut;
+    let clip = camera.vp * vec4<f32>(centre, 1.0);
+    // **The plane's own depth, written rather than computed.** A body is plotted at the far plane
+    // (`camera::BODY_PLOT_M`), and the projection's own `z/w` there is `1.0` — the value `camera.vp`'s
+    // product only *approximates*, landing a few `f32` steps either side of it, which is how a body came
+    // out drawn in part where the rounding fell below the clear value. `clip.z = clip.w` is the plane as
+    // exactly as `f32` can hold it, and `fs_body`'s `LessEqual` is what draws it there.
+    out.clip = vec4<f32>(clip.x, clip.y, clip.w, clip.w);
+    out.offset = offset;
+    out.to_body = to_body;
+    out.drawn_m = drawn_m;
+    out.half_m = half_m;
+    // **The radiance rides the rectangle's own composition slot** (C-184): the record is one stride for
+    // both units, so a body's three channels are the three slots `vs_quad` spends on a material id, a
+    // slice and a `uv` — read here as `f32` bits rather than as the integers they are there.
+    out.radiance = vec3<f32>(
+        bitcast<f32>(record.composition),
+        bitcast<f32>(record.slice),
+        bitcast<f32>(record.uv),
+    );
+    out.light = vec3<f32>(
+        bitcast<f32>(record.extent),
+        bitcast<f32>(record.light_y),
+        bitcast<f32>(record.light_z),
+    );
+    return out;
+}
+
+@fragment
+fn fs_body(in: BodyOut) -> @location(0) vec4<f32> {
+    let r2 = dot(in.offset, in.offset);
+    if (r2 > 1.0) {
+        discard;
+    }
+    // The sphere's own outward normal at this pixel, in the body's basis: the sub-eye point of a body
+    // faces the eye, which is why the normal is the negative of the offset plus the remaining axis.
+    let basis = body_basis(in.to_body);
+    let n = -(
+        basis[0] * in.offset.x
+        + basis[1] * in.offset.y
+        + basis[2] * sqrt(max(1.0 - r2, 0.0))
+    );
+    // **A body is shaded by the material's own illumination terms, and this is where it was not.**
+    // The line here was `in.radiance * max(dot(n, in.light), 0.0)` — a Lambert term of the body's
+    // own, a **second and poorer shading model** for the two astronomical bodies, reached without
+    // `materials`, without `npr`, and without the rim. A Lambert term is `0` across the whole
+    // visible disc of a **new moon** (the Sun is behind it), so the body's own radiance — the
+    // night's only light on the sky — drew a black disc over a black sky, which is the invisibility
+    // this repairs. It is the same defect class the frame has paid for twice: one law written out
+    // in two places, and the second copy is the one nobody checks.
+    //
+    // The two terms are `fs_main`'s own, **at its own powers** — the substrate's share and the rim,
+    // which is *not* a decoration here: `beam_share` is `F(theta_L)`'s boundary share, so a light
+    // **behind** the body (a new moon, exactly) still puts `radiance` on its limb and a body is
+    // visible against a sky it is darker than. `fs_main` names them "the same power, so the two
+    // terms are one law read at two angles"; this is that law, at a sphere's normal rather than a
+    // quad's.
+    //
+    // The eye direction is `-to_body`, which is the normal at the disc's own centre — so a body's
+    // sub-eye point has `ndotv = 1` and its limb `0`, and the silhouette term is a rim and not a
+    // haze.
+    var lit = in.radiance;
+    if (dot(in.light, in.light) > 0.0) {
+        let eye = -in.to_body;
+        let ndotv = clamp(dot(n, eye), 0.0, 1.0);
+        let ndotl = clamp(dot(n, normalize(in.light)), -1.0, 1.0);
+        let substrate = clamp(ndotl, 0.0, 1.0);
+        let beam_share = pow(1.0 - clamp(ndotl, 0.0, 1.0), 5.0);
+        let silhouette = pow(1.0 - ndotv, 5.0);
+        lit = in.radiance * (substrate + beam_share * silhouette);
+    }
+    // **The body stands in air, and the air is not blanked by it.** A body is beyond every metre of the
+    // atmosphere, so the pixel is what the ray carried before the body *plus* what the body sends — the
+    // same `sky_radiance_rgb` the sky pass and a fluid's reflection evaluate, at this pixel's own ray. A
+    // body's radiance alone would leave an unlit disc as a black orb over a lit sky, and `Rgba32Float`
+    // has no blend, so the sum is taken here.
+    let ray = normalize(
+        in.to_body * in.drawn_m + (basis[0] * in.offset.x + basis[1] * in.offset.y) * in.half_m
+    );
+    var presentable = sky_radiance_rgb(ray) + lit;
+    if (camera.screen.z > 0.0) {
+        presentable = tone_map(presentable);
+    }
+    return vec4<f32>(dithered(presentable, in.clip.xy, camera.screen.y), 0.0);
+}
+
+// ---- the debug wireframe (F4): the merge's own rectangles, outlined ---------
 //
-// The 256 level is the **live** one: this read is static today, but the address,
-// the shaper and the rungs are exactly what a fluid will animate (its cells
-// interpolated between addresses) while a solid's non-addressed properties stay
-// this same static read — foam on the surface, caustics through the body, and a
-// shaded edge where a material leaves its block (the user's ruling, recorded in
-// `pattern.rs`).
+// The debug view of the geometry, and not a second shading model: the caller withholds
+// the world's own materials, so the frame is the sky and these lines. Each line is the
+// record's own border — the expansion above, so an outline cannot sit anywhere but on
+// the rectangle it outlines — and the depth cue is the distance, graded through the
+// artists' wheel as the user asked (2026-10-04: a first white ink read poorly against
+// the world).
 //
-// The rungs are the model's **ladder** (C-163): the same field read in cells of
-// `2^octave`, each drawn only while the pixel's footprint is under half its cell,
-// summed with fBm gains and normalised — so a surface keeps structure at the scale
-// it can draw, and the flat patches of the retired placeholder tone are gone.
-//
-// This section is a **transcription** of `voxel-appearance/src/detail.rs` and
-// `voxel-client/src/pattern.rs`, held to them by
-// `renderer::tests::the_pattern_is_drawn_where_the_greedy_mesh_has_no_geometry`.
-// WGSL has no `u64`, so splitmix64 travels as (low, high) `u32` pairs; every
-// operation below is exact integer arithmetic, and the only difference from the
-// Rust is `f32` versus `f64` at the very end.
+// **This lives in the record format's own module, and that is the point.** The shipped
+// frame is the quad format, which carries records and no corner vertex at all: a
+// wireframe drawn from corner vertices would have had nothing to draw, which is what the
+// retired `wire.wgsl` was — a `LineList` over geometry the game never builds.
+
+/// The gradient's declared range and sweep: hue `WIRE_NEAR_HUE` at `WIRE_NEAR_M`,
+/// `WIRE_FAR_HUE` `WIRE_OCTAVES` doublings further out.
+///
+/// **The ramp is in octaves, because one frame carries two scales.** `F4` outlines the terrain
+/// *and* the cloud — `Scene::build_with_detail` puts both in the same record list, and the game
+/// appends the cloud to it — and they do not live in the same range of distances: a mesa is 4 m to
+/// a few hundred metres away and a cumulus is 500 m to 6 km. A **linear** ramp cannot hold both.
+/// The retired `wire.wgsl` swept 4 m to 256 m, which suit the mesh the terrain draws and spends
+/// itself long before the sky: every cloud line arrived one flat violet, measured on the shipped
+/// field at the shipped tick as a frame with no depth cue in it at all. Widening that ramp's far
+/// end to the field's 8 km then flattened the *terrain* instead — a hill 30 m away and a ridge
+/// 300 m away became the same red — which is the same fault from the other side.
+///
+/// The ladder is what makes a logarithmic ramp the honest one: **every distance in this view that
+/// matters is a power of two from the last**, because the rung the rectangle was drawn at is
+/// chosen by distance and doubles (`cloud_cubes::rung_for`, `pattern`'s own ladder). One sweep in
+/// octaves therefore reads the rung rather than the metre: red at `WIRE_NEAR_M` where the finest
+/// cells are, violet at the far edge of the field where they are coarsest, and a terrain face and
+/// a cloud face at the same *rung* share a hue however far apart they are.
+const WIRE_NEAR_M: f32 = 4.0;
+/// `4 m · 2^11 = 8192 m` — the cloud field's own span, and the far end of the drawn ladder.
+const WIRE_OCTAVES: f32 = 11.0;
+const WIRE_NEAR_HUE: f32 = 0.0;
+const WIRE_FAR_HUE: f32 = 0.7;
+
+/// The artists' wheel at full saturation and value, as a closed form: red at 0,
+/// through yellow, green and cyan, to blue near 2/3. (Inigo Quilez's polynomial,
+/// the same one every shader palette uses; written out rather than sampled from
+/// a table because there is no table to sample.)
+fn hue_rgb(h: f32) -> vec3<f32> {
+    let x = h * 6.0 + vec3<f32>(0.0, 4.0, 2.0);
+    let k = x - 6.0 * floor(x / 6.0);
+    return clamp(abs(k - 3.0) - 1.0, vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+struct WireOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) distance_m: f32,
+};
+
+/// **Four border edges per rectangle and no diagonal**, so what is outlined is the greedy
+/// merge's answer rather than the triangulation's: eight line vertices a record, walking
+/// `0-1-1-2-2-3-3-0` around the four corners.
+@vertex
+fn vs_wire(@builtin(vertex_index) vertex_index: u32) -> WireOut {
+    var order = array<u32, 8>(0u, 1u, 1u, 2u, 2u, 3u, 3u, 0u);
+    let p = quad_corner_m(vertex_index / 8u, order[vertex_index % 8u]);
+    var out: WireOut;
+    out.clip = camera.vp * vec4<f32>(p, 1.0);
+    // The geometry arrives eye-relative, so the eye is the origin here and the distance is
+    // the length of the position itself — the same fact `vs_quad` relies on, and no uniform
+    // to disagree with it.
+    out.distance_m = length(p);
+    return out;
+}
+
+@fragment
+fn fs_wire(in: WireOut) -> @location(0) vec4<f32> {
+    let octaves = log2(max(in.distance_m, WIRE_NEAR_M) / WIRE_NEAR_M);
+    let t = clamp(octaves / WIRE_OCTAVES, 0.0, 1.0);
+    return vec4<f32>(hue_rgb(mix(WIRE_NEAR_HUE, WIRE_FAR_HUE, t)), 1.0);
+}
+
+// the pattern's own arithmetic (C-161, C-162, laddered by C-163) — docs/lighting-sky-and-moon.md
 
 fn u64_add(a: vec2<u32>, b: vec2<u32>) -> vec2<u32> {
     let lo = a.x + b.x;
@@ -423,7 +613,9 @@ fn lattice_domain(seed: vec2<u32>, tag: vec2<u32>, material: u32, cell: vec3<i32
 
 // One channel of the lattice at one address: `channel` is 1 for roughness and 2
 // for reflectance (`detail.rs`'s domain tags), `cell` is the world subvoxel, and
-// `address` is `x | y << 8 | z << 16` — `x` is the fast axis.
+// `address` is `x | y << bits | z << (2 * bits)` — `x` is the fast axis, packed at
+// the side's own bit width (`DetailLattice::flat`, four bits an axis at 16 samples
+// a side), which the caller derives from the uniform rather than stating.
 fn lattice_sample(
     seed: vec2<u32>,
     tag: vec2<u32>,
@@ -517,17 +709,7 @@ fn octave_weight(footprint: f32, cell: f32) -> f32 {
     let plateau = 1.0 - pow(1.0 - t, OCTAVE_FADE_WIDTH);
     return plateau * plateau * (3.0 - 2.0 * plateau);
 }
-// `pattern::octave_weight_staged` (C-171 route a): the smoothstep is replaced by
-// its own single drawn point — a rung is **fully on** while the footprint is
-// strictly below the rung's Nyquist floor (cell/4, where the plain weight first
-// reaches 1) and **fully off** at or above it (the plain weight is already 0 at
-// the floor, so step and smoothstep agree at the boundary). A walk-sized step
-// moves the weight only across that one threshold, and the footprint is smooth,
-// so a rung flips as a coherent region crossing the eye's distance — the C-163
-// boil was a per-2×2-quad *derivative* artifact, and there is none of that left
-// here. Wider stages were measured to break the ladder: flooring raised weights
-// past the ceiling; ceilinging to quarter-cells or to powers of two blanked rungs
-// the plain weight still draws.
+// `pattern::octave_weight_staged`, route a (C-171) — docs/lighting-sky-and-moon.md
 fn octave_weight_staged(footprint: f32, cell: f32) -> f32 {
     let floor = cell / 4.0;
     return select(0.0, 1.0, footprint < floor);
@@ -575,16 +757,7 @@ fn eye_footprint(p_rel: vec3<f32>, n: vec3<f32>, v: vec3<f32>) -> f32 {
     return distance * camera.screen.x / cos_face;
 }
 
-// The deviation this fragment shows, with its material's gains applied and its
-// shaper shaping the noise — at the footprint the caller derived from the eye's own
-// geometry (`eye_footprint`): the whole of what C-161 draws, as C-162 corrected it
-// and C-163 smoothed.
-// Returns `(roughness, reflectance, coverage, 0)`. **`coverage` is the third
-// component on purpose**: the caller has to know whether any rung could be drawn
-// at all, because the answer \"no rung\" is not \"no detail\" — the per-vertex sample
-// answers there instead — and a caller that read only the first two components
-// could not tell the two apart. It is a `vec4` rather than a struct because WGSL
-// returns it by value either way and the padding is explicit.
+// the deviation this fragment shows, with its gains applied — docs/lighting-sky-and-moon.md
 fn pattern_deviation(material: u32, m: Material, p_rel: vec3<f32>, footprint: f32) -> vec4<f32> {
     let roughness_gain = m.pattern.x;
     let reflectance_gain = m.pattern.y;
@@ -701,8 +874,6 @@ fn vary(value: f32, delta: f32) -> f32 {
 }
 
 
-const DEGREES_PER_RADIAN: f32 = 57.29577951308232;
-
 /// **Schlick's approximation at one angle**: `F0 + (1 − F0)·(1 − cos θ)⁵` — the reflectance
 /// of a boundary, which is also the weight the fluid reflection mixes with.
 ///
@@ -712,38 +883,6 @@ const DEGREES_PER_RADIAN: f32 = 57.29577951308232;
 fn schlick(cos_theta: f32, f0: f32) -> f32 {
     let c = clamp(cos_theta, 0.0, 1.0);
     return f0 + (1.0 - f0) * pow(1.0 - c, 5.0);
-}
-
-/// **The dome table read at a direction**: `(elevation, azimuth)` in degrees, bilinear with
-/// the azimuth axis wrapped — the same interpolation `skylight::sky_dome_lookup` performs on
-/// the CPU and `sky.wgsl` draws with in the sky pass.
-///
-/// `grid` is `(azimuths, elevations)`, which is the table's own shape rather than either
-/// reader's idea of it: a table that does not cover the grid it was handed is refused here
-/// (no reflection) rather than read past its end, the same "refuse rather than invent" rule
-/// the sky pass applies when it has been given no table at all.
-fn dome_lookup(elevation: f32, azimuth: f32, grid: vec2<f32>) -> vec3<f32> {
-    let azimuths = u32(grid.x);
-    let elevations = u32(grid.y);
-    if (azimuths < 2u || elevations < 2u || arrayLength(&sky_table) < azimuths * elevations) {
-        return vec3<f32>(0.0);
-    }
-    // Elevation is measured from the horizon up over 90°, and the table's rows run the same
-    // way; the azimuth axis is periodic over 360°, which is why it wraps and the elevation
-    // axis does not.
-    let ef = clamp(elevation, 0.0, 90.0) / 90.0 * (grid.y - 1.0);
-    let e0 = min(u32(floor(ef)), elevations - 2u);
-    let efrac = ef - floor(ef);
-    var af = azimuth - 360.0 * floor(azimuth / 360.0);
-    af = af / 360.0 * grid.x;
-    let a0 = u32(floor(af)) % azimuths;
-    let a1 = (a0 + 1u) % azimuths;
-    let afrac = af - floor(af);
-    let row0 = e0 * azimuths;
-    let row1 = row0 + azimuths;
-    let low = mix(sky_table[row0 + a0].rgb, sky_table[row0 + a1].rgb, afrac);
-    let high = mix(sky_table[row1 + a0].rgb, sky_table[row1 + a1].rgb, afrac);
-    return mix(low, high, efrac);
 }
 
 /// The cloud's own row, from the two numbers a **medium** has and a surface does not.
@@ -767,6 +906,25 @@ fn cloud_row(albedo: f32) -> Material {
     return m;
 }
 
+// the LODs: a reflectance that is a function of the Sun's angle — docs/lighting-sky-and-moon.md
+const LOD_REFLECTANCE_GAIN: f32 = 1.0;
+
+/// The reflectance deviation a fragment with **no address to read** shows, from the Sun's own
+/// angle: `0` where the face meets both the beam and the eye head-on, `1` at a doubly grazing
+/// incidence, continuous between. `reflectance_gain` is the material's own, so a material the
+/// world does not vary stays unvaried here too (`ShadingField::gain`).
+fn lod_reflectance_delta(n: vec3<f32>, v: vec3<f32>, reflectance_gain: f32) -> f32 {
+    let beam = normalize(rig.lights[0].direction.xyz);
+    let cos_beam = clamp(dot(n, beam), 0.0, 1.0);
+    let cos_view = clamp(dot(n, v), 0.0, 1.0);
+    let at_beam = pow(1.0 - cos_beam, 5.0);
+    let at_view = pow(1.0 - cos_view, 5.0);
+    // Union rather than product: a face the *beam* grazes reflects the beam whether or not the
+    // eye grazes it too, and a face the *eye* grazes shows more of whatever it reflects.
+    let share = at_beam + at_view - at_beam * at_view;
+    return clamp(LOD_REFLECTANCE_GAIN * share, 0.0, 1.0) * reflectance_gain;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (in.material >= arrayLength(&materials)) {
@@ -775,49 +933,43 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
 
+    // **A cloud's side and its veil in one signed number** (C-183): `±(1 + opacity)`, positive for
+    // the newer tree a frame is joining, negative for the older, `0` for terrain — so the side needs
+    // no second attribute, and a cloud, whose encoding is never zero, cannot be read as a surface.
+    let is_cloud = in.veil != 0.0;
+    // **The weight is eased** (C-183), with the built-in `smoothstep`, which is symmetric — so the two sides stay complementary.
+    let cloud_weight = select(
+        1.0 - smoothstep(0.0, 1.0, camera.screen.w),
+        smoothstep(0.0, 1.0, camera.screen.w),
+        in.veil > 0.0,
+    );
+    // **The interpolation, once per pixel**: a veil is a transmittance, so it fades in *opacity* —
+    // `veil · w` would move a wisp and a core by one number of thousandths, not one fraction.
+    let cloud_veil = 1.0 - (abs(in.veil) - 1.0) * cloud_weight;
     // **A cloud has no row because it has no surface** (C-178). Its record carries the empty
     // material id, so the row is built from the medium's own two numbers — its albedo and its
     // transmittance, both sent — and the *same* terms below shade it. Nothing about the look is
     // written twice; only where the row came from differs.
     var m = materials[in.material];
-    if (in.veil > 0.0) {
+    if (is_cloud) {
         m = cloud_row(camera.sky_grid.w);
     }
     let n = normalize(in.normal);
     let v = normalize(in.to_eye);
     let ndotv = clamp(dot(n, v), 0.0, 1.0);
 
-    // The material's own pattern, read at this fragment's address: the block grid
-    // and subvoxel grid a greedy-merged quad cannot carry as geometry (C-161).
-    // **The footprint is the eye's own geometry, not a derivative.** `fwidth` is
-    // estimated per 2×2 quad, so on a face the camera sees at an angle its estimate steps from
-    // quad to quad; the ladder's weights stepped with it and the face boiled as the
-    // camera moved (C-163). This is a function of the fragment alone.
-    //
-    // The per-vertex detail is the lattice sampled once at the corner's own world
-    // address (C-161), and the ladder below reads rungs from the fragment's own
-    // footprint — so a merged quad shows sub-pixel detail while the vertex cost
-    // stays constant. Which of the two the fragment shows is decided a few lines
-    // down, by what the pixel can actually draw.
+    // the material's own pattern, read at this fragment's address — docs/lighting-sky-and-moon.md
     let footprint = eye_footprint(in.eye_rel, n, v);
-    // **The ladder speaks where it can, and the vertex speaks where it cannot.**
-    // The ladder is a weighted mean over rungs a pixel of this footprint can draw,
-    // and it is deliberately *silent* past its ceiling rather than aliasing
-    // (C-163): at that distance four shared corners are all the detail there is.
-    // The per-vertex sample is that detail — one lattice value per corner, at the
-    // corner's own world address, interpolated across the quad — which is the new
-    // architecture's contribution to a surface the old one left bare. Adding the
-    // two would count one address twice; `mix` at the ladder's own coverage keeps
-    // the rung blend exactly as it was wherever the ladder draws, so a material
-    // that shows its pattern today shows the same one.
-    //
-    // Both sides carry the material's own gains (`ShadingField::gain`): the ladder
-    // applies them to its normalised mean, and here to the vertex sample, so a
-    // material the world does not vary reads as unvaried either way.
+    // The ladder speaks where it can, and the vertex speaks where it cannot — docs/lighting-sky-and-moon.md
     let vertex_deviation = vec2<f32>(in.detail_roughness, in.detail_reflectance)
         * vec2<f32>(m.pattern.x, m.pattern.y);
     let ladder = pattern_deviation(in.material, m, in.eye_rel, footprint);
-    let deviation = mix(vertex_deviation, ladder.xy, ladder.z);
+    // **What a corner with no sample of its own shows instead**: the Sun's own angle
+    // (`lod_reflectance_delta`). Roughness stays unvaried — it has no angle law here, and a
+    // roughness guessed from geometry would be an invention rather than a reading.
+    let lod = vec2<f32>(0.0, lod_reflectance_delta(n, v, m.pattern.y));
+    let with_a_sample = select(lod, vertex_deviation, in.sample_present != 0u);
+    let deviation = mix(with_a_sample, ladder.xy, ladder.z);
 
     let base_unvaried = m.base_color_and_present.xyz;
     let base_present = m.base_color_and_present.w;
@@ -846,15 +998,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let emission_present = m.spec_emission.w;
     let emission_rgb = m.emission_rgb_open.xyz;
     let open = m.emission_rgb_open.w;
-    // ---- the parameters the CPU's model reads and the GPU had nowhere to put -----
-    //
-    // `openpbr::derive` computes every one of these and `npr::shade` reads every one,
-    // and until this group existed they reached the row and stopped: the shader drew
-    // the boundary with no reflectance of its own, no coat, and no medium. The
-    // `_admitted` flags are the same "absent is not zero" rule every other slot
-    // follows, and each value's *use* is transcribed from `npr::shade` below —
-    // including `specular_f0`'s `unwrap_or(1.0)`, which is the model's statement and
-    // not this file's.
+    // the parameters the CPU's model reads and the GPU had nowhere to put — docs/lighting-sky-and-moon.md
     let f0_value = m.specular_boundary.x;
     let f0_admitted = m.specular_boundary.y > 0.5;
     let coat_weight = m.specular_boundary.z;
@@ -878,26 +1022,21 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     //    does. A transmissive surface receives light from every direction, and
     //    a face with holes receives less of everything.
     //
-    // The ambient always comes from the rig uniform: it is the sky's own term, a
-    // property of the atmosphere rather than of one cell, and no field has yet
-    // measured an ambient at an address. The directional and diffuse light is
-    // either the field's or the rig's — see the branch below.
+    // The ambient comes from the rig uniform: it is the sky's own term, a property of
+    // the atmosphere rather than of one cell, and the field's own measurement of it is
+    // **not yet commensurable** — the whole of this term lives in the horizon band and
+    // the field's stencil does not see it, by five thousand times (`skylight::daylight_of`,
+    // which carries the measured figures). So the field's sky is added *beside* this
+    // rather than instead of it, and the fallback is named rather than implicit: the
+    // directional and diffuse light is either the field's or the rig's — see the branch
+    // below — and until the sky away from the horizon exists, the rig's ambient stands.
     if (base_present > 0.5) {
         let transmitted = transmission * (1.0 - depth);
         let gain = (1.0 + transmitted) * (1.0 - open);
         colour += base * (rig.ambient.rgb * gain);
     }
 
-    // ---- which light: the world's field, or the rig --------------------------
-    //
-    // A corner says whether the shaper layer had a measurement for its cell
-    // (`light_present`). Where it did, the surface is lit by **the light that
-    // reached it** — the field's own beam and sky, per band — which is what makes
-    // a covered cell dark and an open one bright without the shader inventing a
-    // shadow. Where it did not, the rig's lights stand in, which is the Source 2
-    // model this file transcribes and how every frame was lit before the field
-    // existed. The two are one `if`: a frame with no field is bit-for-bit the
-    // frame it was yesterday.
+    // which light: the world's field, or the rig — docs/lighting-sky-and-moon.md
     if (in.light_present == 1u) {
         // **A band triple is not yet a colour.** The bands arrive in band order
         // (B3, B4, B5) = blue, green, red, and the albedo is (r, g, b), so the
@@ -907,24 +1046,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let sky = vec3<f32>(in.light_diffuse.z, in.light_diffuse.y, in.light_diffuse.x);
         let opaque = (1.0 - metalness) * (1.0 - transmission);
 
-        // 1. Half-Lambert diffuse wrap on the beam, and the sky whole: the sky
-        //    arrives from every direction, so there is no angle for it to wrap at.
-        //
-        //    **The boundary's share comes out of the beam, at the beam's own angle**
-        //    (`OpenPBR_Energy_Conservation` §§5–6): `F(θ_L)` is the share of this beam the
-        //    interface reflects instead of transmitting, so it is what the substrate is drawn
-        //    from and what the rim below spends — together they can never exceed the light
-        //    that arrived. Reading that budget at the **view** angle instead would make a face
-        //    seen at a grazing angle lose its diffuse *whatever the Sun was doing*, which is
-        //    the "blocks are just lit by themselves" defect. The coat is a *layer* (§9), so
-        //    its own reflectance comes out of the base too. The sky is left whole on purpose:
-        //    it is a hemisphere, not one angle, so a single-angle Fresnel cannot state its
-        //    share — the spec's own `E[f_specular]` is an integrated albedo, and says so.
-        //
-        //    **The field carries radiance and no direction**, so the beam's direction comes
-        //    from the rig — the same source the warp below takes its direction from, and the
-        //    same world's Sun the shaper layer measured this radiance against. With no rig
-        //    light there is no angle to measure, and the view stands in.
+        // the illumination terms, in their order (1 — diffuse) — docs/lighting-sky-and-moon.md
         var beam_dir = vec3<f32>(0.0, 1.0, 0.0);
         var beam_known = false;
         if (rig.count.x > 0u) {
@@ -954,14 +1076,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             colour += base * (beams * (wrap * opaque * substrate) + sky * opaque);
         }
 
-        // 2. Rim: Schlick's exponent, view-facing, scaled by the beam's own
-        //    radiance at this cell **and by the block's own reflectance** — what reaches
-        //    the eye at a boundary is that boundary's reflectance, so the rim carries the
-        //    block's colour instead of overriding it. The `select` is `npr::shade`'s own
-        //    rule for a block nobody has a spectrum for: it reflects the light, not an
-        //    invented grey. **It spends this beam's budget rather than adding to it**: it is
-        //    the reflected share (`beam_share`), shaped by the silhouette — so a backlit face
-        //    is all rim and no diffuse, and substrate + rim can never exceed the light.
+        // the illumination terms (2 — rim) — docs/lighting-sky-and-moon.md
         let rim_reflectance = select(vec3<f32>(1.0), base, base_present > 0.5);
         colour += rim_reflectance * (beams * (beam_share * silhouette));
 
@@ -975,15 +1090,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             colour += beams * (coat * silhouette);
         }
 
-        // 3. The specular warp: a step, and the threshold is the material's own
-        //    roughness rather than a number this file picked.
-        //
-        //    **The direction comes from the rig, the magnitude from the field.**
-        //    The rig is this world's skylight — the same sun the shaper layer
-        //    measured the beam from — so its direction is the honest one, and the
-        //    field supplies how much of it arrived here. A radiance triple is not
-        //    a direction: `normalize(direct)` would point at whichever band is
-        //    brightest, which is a colour, not a place.
+        // the illumination terms (3 — the specular warp) — docs/lighting-sky-and-moon.md
         if (rough_present > 0.5 && weight_present > 0.5 && rig.count.x > 0u) {
             let toward_light = normalize(rig.lights[0].direction.xyz);
             let half_v = normalize(toward_light + v);
@@ -1055,25 +1162,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         colour += emission_rgb * emission_luminance;
     }
 
-    // ---- the fluid reflection: the sky, seen off the boundary ------------------
-    //
-    // **A fluid is not a matte sheet with a sheen on it.** Looking along water, most of
-    // what reaches the eye *is* the sky reflected, which is why `voxel_appearance::fluid`
-    // exists and why the sea read as a hole without it. `shading::fluid_surface_cpu` is the
-    // Rust side of exactly this composition and `fluid::surface_radiance` states the law:
-    // the body through the transmitted share, plus the sky's radiance from the mirror
-    // direction through the reflected share. This is that expression, transcribed.
-    //
-    // **What makes a material a fluid here is `transmission`**, its own OpenPBR parameter
-    // rather than a list of material ids in a shader: a boundary that transmits is one whose
-    // mirror image the eye sees, and a boundary that does not is not. The gate also keeps
-    // every stated-material comparison intact, since those carry no transmission.
-    //
-    // The mirror ray can point below the horizon — a steep face reflects the world, not the
-    // sky — and this model has no world in a reflection yet, so that case adds nothing: the
-    // reflected radiance is black and only the `(1 − F)` transmission of the body remains. The
-    // same guard, in the same words, as `fluid_surface_cpu`'s.
-    if (transmission > 0.0 && camera.sky_grid.x > 1.0 && camera.sky_grid.y > 1.0) {
+    // the fluid reflection: the sky, seen off the boundary — docs/lighting-sky-and-moon.md
+    if (transmission > 0.0 && arrayLength(&sky_model) >= SKY_MODEL_ROWS) {
         // `reflect(−v, n)` with WGSL's own arithmetic is `−v + 2·(v·n)·n`, which is
         // `fluid::reflected_ray`'s expression exactly — the same convention (`v` points from
         // the surface toward the eye) and the same result, so there is no sign for the two to
@@ -1081,15 +1171,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let ray = reflect(-v, n);
         var reflected = vec3<f32>(0.0);
         if (ray.y > 0.0) {
-            // The world frame is east-north-up with `x` east and `z` south, so the azimuth is
-            // `atan2(x, −z)` — the same mapping `sky.wgsl` turns a pixel into, and the same one
-            // `skylight::sky_direction_of` performs for the CPU side.
-            let elevation = clamp(asin(clamp(ray.y, -1.0, 1.0)) * DEGREES_PER_RADIAN, 0.0, 90.0);
-            var azimuth = atan2(ray.x, -ray.z) * DEGREES_PER_RADIAN;
-            if (azimuth < 0.0) {
-                azimuth = azimuth + 360.0;
-            }
-            reflected = dome_lookup(elevation, azimuth, camera.sky_grid.xy);
+            // **The transport, at the mirror ray's own direction** — one integral, the same one
+            // the sky pass evaluates for the pixel a mirror of this one would hold. There is no
+            // elevation and no azimuth to convert, because the model takes the world direction
+            // both passes already have.
+            reflected = sky_radiance_rgb(ray);
         }
         let fresnel = schlick(clamp(dot(n, v), 0.0, 1.0), camera.sky_grid.z);
         colour = colour * (1.0 - fresnel) + reflected * fresnel;
@@ -1108,10 +1194,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         presentable = tone_map(colour);
     }
     // **A cloud is a veil and not a surface** (C-179). The alpha is the share of this pixel
-    // that is *not* the sky standing behind it: `veil` is the cell's column transmittance, so
-    // `1 − veil` is exactly the share the cloud contributes — the same fraction the light
-    // sampler walks in `voxel-stream::light`, so the picture and the shadow cannot disagree.
-    // Terrain keeps `1.0`, which is alpha's existing meaning here: geometry is on this pixel.
-    let alpha = select(1.0, 1.0 - in.veil, in.veil > 0.0);
+    // that is *not* the sky standing behind it: `cloud_veil` is the cell's column transmittance
+    // at this frame's fade weight, so `1 − cloud_veil` is exactly the share the cloud contributes
+    // — the same fraction the light sampler walks in `voxel-stream::light`, so the picture and the
+    // shadow cannot disagree. Terrain keeps `1.0`, which is alpha's existing meaning here:
+    // geometry is on this pixel.
+    let alpha = select(1.0, 1.0 - cloud_veil, is_cloud);
     return vec4<f32>(dithered(presentable, in.clip.xy, camera.screen.y), alpha);
 }

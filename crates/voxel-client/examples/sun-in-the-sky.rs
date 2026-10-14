@@ -3,7 +3,7 @@
 //!
 //! # Why this exists when a test already measures the body
 //!
-//! `renderer::tests::the_sun_is_drawn_as_the_cuboid_the_model_says` compares the drawn pixels
+//! `renderer::tests::the_sun_is_drawn_as_the_disc_the_model_says` compares the drawn pixels
 //! against the model's own ray test, which is the stronger claim and the one that can fail. It
 //! is also a set of numbers. This is the same frame **written where a person can look at it**,
 //! which is what the crate's `png` dev-dependency is declared for and what no example did until
@@ -28,7 +28,7 @@ use voxel_client::camera::Camera;
 use voxel_client::renderer::Renderer;
 use voxel_client::scene::Scene;
 use voxel_client::shading::GpuRig;
-use voxel_client::skylight::{daylight_of, peak_sun_luminance, sky_dome_table, sun_direction};
+use voxel_client::skylight::{daylight_of, peak_sun_luminance, sun_direction};
 use voxel_client::sun::DrawnSun;
 use voxel_shapers::{Config, WorldSpec};
 
@@ -62,17 +62,26 @@ fn main() {
     camera.yaw_rad = d.x.atan2(d.z);
     camera.pitch_rad = d.y.clamp(-1.0, 1.0).asin();
 
-    let registry = voxel_shapers::column::materials::registry().expect("the registry");
+    let registry = voxel_shapers::materials::registry().expect("the registry");
     let materials =
-        voxel_client::shading::table(&registry, &voxel_shapers::column::materials::shading_field().expect("the world's shading field"))
+        voxel_client::shading::table(&registry, &voxel_shapers::materials::shading_field().expect("the world's shading field"))
             .expect("every admitted material derives");
     let rig = GpuRig::from_rig(&voxel_client::skylight::exposed(&day.rig)).expect("the rig fits");
     let mut renderer = Renderer::new(WIDTH, HEIGHT, &materials, &rig).expect("a GPU adapter");
+    // **The model the pass integrates**, over this column's own air: the Sun's bands through the
+    // droplets the world's weather carries, normalised by the world's own peak sun.
+    let air = voxel_client::sun::air_at(&spec, eye[0], eye[2], TICK);
     renderer
         .world()
-        .write_sky(&sky_dome_table(&day.sky, inputs, peak))
-        .expect("the sky table fits the pipeline");
-    renderer.world_mut().write_sun(Some(sun));
+        .write_sky_model(&voxel_client::skylight::SkyModel::of(
+            &day.sky,
+            &air,
+            peak,
+            &voxel_shapers::sky::moon_position(&spec, TICK, 0),
+        ));
+    // **The body is a record in the scene** (C-184), not a field of a uniform: what places it is the
+    // same array a chunk's own rectangles travel in.
+    let bodies = [sun.body_record(eye)];
     // The two the target's own format would have decided for a window, asked for deliberately:
     // this frame is going to an 8-bit file rather than to a measurement.
     renderer.world_mut().set_tonemap(1.0);
@@ -82,7 +91,8 @@ fn main() {
         Vec::<voxel_mesh::Mesh>::new().iter(),
         eye,
         &voxel_appearance::DetailLattice::new(0),
-    );
+    )
+    .with_bodies(&bodies);
     let frame = renderer.render(&scene, &camera).expect("a frame");
 
     let mut bytes = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
@@ -122,9 +132,10 @@ fn main() {
         std::env::current_dir().map(|d| d.join(path)).unwrap_or_else(|_| path.to_path_buf()).display()
     );
 
-    // **And the shape as text.** A PNG is where a person looks and a terminal is where a run is
-    // read, and the shape *is* the claim: a square whose corners stand outside the circle of the
-    // same radius. The window is the frame's centre, which is where the camera was aimed.
+    /// **And the shape as text.** A PNG is where a person looks and a terminal is where a run is
+    /// read, and the shape *is* the claim: a **disc** of the radius the body's own figures give it,
+    /// because the phase is a per-pixel normal and a cuboid has one normal per visible face. The
+    /// window is the frame's centre, which is where the camera was aimed.
     const CUT: f64 = 0.75;
     const HALF: i32 = 16;
     let (cx, cy) = ((WIDTH / 2) as i32, (HEIGHT / 2) as i32);

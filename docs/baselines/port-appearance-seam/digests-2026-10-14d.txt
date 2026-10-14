@@ -1,0 +1,17 @@
+f384c5ab88cc86ccef3a31668efdb362b9dc8cc3f7a7ef2aef9f45e17914481d *src/stream.rs
+9def730705d96d9d617380917daca9e8b4a8516946ec05780314500a22251724 *src/surface.rs
+451679d68ec08aa62b38c039508a24e436cc03b040b7f55b74db8d28353d06f8 *src/chunk.rs
+e3688b1f5d166fd96791ce2919e55b1a37a7f941dc79e9aaf060a47478845240 *src/evidence.rs
+2b3435da9c70ade03836d95f9f6fafd2c9074dbbc288e0ec501f951634bb55d7 *src/systems.rs
+af0f549831c2785bcb4a42ad182065ab3c9fa0c63534d47987cf425446fe1469 *src/port/tests.rs
+7234acf27df48ee821a8911bffc51392305ccb2c9d81222a5ce64b46097265dd *tests/u4_drawn.rs
+87efc1035817ebdf019407f2212a4c06f2c5789a653e68d910af0022f52ae02f *tests/u1_port_flicker.rs
+40bc4bfe53a3b0fad59c9972a9c5d7be9f2e227fc1efe2e70d0bfb7a871f5532 *README.md
+# 2026-10-14d — the nine files this pass touched in the clean room, verified from `clean-room/` with
+# `sha256sum -c`. The stream half of this pass is `src/stream.rs` + `src/surface.rs` + `src/evidence.rs`
+# (the residency over the world's own store, the drawn door's own subject, and the run's own lines); the
+# world's store gained its keyed door and its one refusal sentence in `src/chunk.rs`; the registry row moved
+# in `src/systems.rs`; and the two integration suites the drawn path's guards live in moved with it
+# (`tests/u4_drawn.rs`, `tests/u1_port_flicker.rs` — the drawn door now takes a residency, so both suites
+# build one through `surface::residency_of`). `src/lib.rs` did **not** move this pass (8d8ab1f8…, the same
+# digest §10 recorded), and neither did `src/mesh.rs` (2500ca24…) or `tests/u4_geometry.rs` (f28c2aff…).

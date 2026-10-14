@@ -1,0 +1,27 @@
+9b0f61f4ab868951c5f68f05fc2d1638a9585e950fe101fbc220d090d15ee364 *clean-room/src/being.rs
+25984677f415acf7e2ba0670ff22bfa0834db5b1f0f85de9f3ff9b9ad6afa155 *clean-room/src/refusal.rs
+60d56a24e30d2fd9f0bce6d480593d8c856b592b3e961fa01fe605ffcdb7dfc8 *clean-room/src/chain.rs
+f3acc27b66e472bd6f17b171128a7d4eece921f666f8e3aebd09aba5433ea845 *clean-room/src/evidence.rs
+72dc8ef5f1752bbebeaa2fe739a09b03a1227ece9abb4d346331cedde9a6468e *clean-room/src/systems.rs
+951081f59b38dd5ffb9daa472c5caf9ac2fadfad82b2e7fdc8fceb016c29a844 *clean-room/src/main.rs
+8ca618a357696b4ceb210ce1a8392f0064fb740bf09d45b1961c7ca38d4064c3 *clean-room/src/lib.rs
+2f5b2c7be4b2283b507415c0761bcfd9a67604222d809725b14b15dd73236ef1 *clean-room/tests/u12_being.rs
+f9b19f45e9e067e44f3e55a12fe2a7fc2b82f1c3a7fba94f453631ec44eb6c57 *clean-room/tests/u5_measure.rs
+5627aef537f720a432ea9270d634f4e77d2fb1ed7859c8e17c22fa7ed258ce03 *clean-room/README.md
+825de1b18ff013dfff11e5a5b9a7358db17a15a70ab927562f8f4d1d584ae805 *clean-room/specs/002-world/tasks.md
+59ad220044c987ef987d92c3a1d50dbb98b76230608daa030a8048f6d7d5228a *clean-room/specs/006-world-saves-and-seeds/quickstart.md
+1c2a4d47d983b9b435d1cf2821cd7166a3b37443a37587147fceda9cf52ae9e4 *docs/CLEAN-ROOM-PLAN-2026-10-11.md
+# ---- §33's repair (2026-10-13): the values above are §32's, and these are the tree's ----
+# Three of §32's sources moved under §33 (the second argmax's deletion, the declared-fact repair and the
+# printed run), and the rest are the same bytes; the current values are recorded in full, and expanded, in
+# docs/baselines/u12-repair/source-digests.txt.
+613b1229891989762b301529e3398cfc07957fdcffc7d896920d3ed66d262814 *clean-room/src/being.rs
+1de78b22f2facf6cec717dbf43f098777e10d5561bc51ad44f2c1d9bc9318fc4 *clean-room/src/evidence.rs
+ea8bc83a38c1c848f23679bb3dd4db9fbdcebedb1bf35e098e533ced2c991842 *clean-room/tests/u12_being.rs
+# unchanged, so §32's lines above are still the tree's: src/refusal.rs 25984677…, src/chain.rs 60d56a24…,
+# src/systems.rs 72dc8ef5…, src/main.rs 951081f5…, src/lib.rs 8ca618a3…, tests/u5_measure.rs f9b19f45…,
+# specs/002-world/tasks.md 825de1b1….
+# clean-room/README.md and specs/006-world-saves-and-seeds/quickstart.md moved only by §33's dated note
+# (new digests in docs/baselines/u12-repair/source-digests.txt), and docs/CLEAN-ROOM-PLAN-2026-10-11.md now
+# carries §33 itself. src/laya.rs is **new to this list**: §33 changed it (the chosen option's one owner,
+# `Answer::chosen()`) and §32 did not touch it — abc47749… as it stands.

@@ -1,0 +1,50 @@
+# U12's first mob — captures, sources and the guard proof (2026-10-13, plan §32)
+#
+# Captures, both taken from the built binary (target/debug/shploingus-clean-room):
+   498 docs/baselines/u12-first-mob/pre-stdout.txt
+     1 docs/baselines/u12-first-mob/pre-stderr.txt
+   504 docs/baselines/u12-first-mob/final-stdout.txt
+     1 docs/baselines/u12-first-mob/final-stderr.txt
+  1004 total
+b8203cbc8c649ff2eadf3781719ff1993e17f524a39a87990c4e82fbbcd53fda *docs/baselines/u12-first-mob/pre-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u12-first-mob/pre-stderr.txt
+6bf8c2d01918fcb35448e25db2d69ae53c205fb1397bb484d2610d4391e96328 *docs/baselines/u12-first-mob/final-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u12-first-mob/final-stderr.txt
+#
+# The sources this pass touched, as they stand after the harness restored them:
+9b0f61f4ab868951c5f68f05fc2d1638a9585e950fe101fbc220d090d15ee364 *src/being.rs
+25984677f415acf7e2ba0670ff22bfa0834db5b1f0f85de9f3ff9b9ad6afa155 *src/refusal.rs
+60d56a24e30d2fd9f0bce6d480593d8c856b592b3e961fa01fe605ffcdb7dfc8 *src/chain.rs
+f3acc27b66e472bd6f17b171128a7d4eece921f666f8e3aebd09aba5433ea845 *src/evidence.rs
+72dc8ef5f1752bbebeaa2fe739a09b03a1227ece9abb4d346331cedde9a6468e *src/systems.rs
+951081f59b38dd5ffb9daa472c5caf9ac2fadfad82b2e7fdc8fceb016c29a844 *src/main.rs
+8ca618a357696b4ceb210ce1a8392f0064fb740bf09d45b1961c7ca38d4064c3 *src/lib.rs
+2f5b2c7be4b2283b507415c0761bcfd9a67604222d809725b14b15dd73236ef1 *tests/u12_being.rs
+f9b19f45e9e067e44f3e55a12fe2a7fc2b82f1c3a7fba94f453631ec44eb6c57 *tests/u5_measure.rs
+5627aef537f720a432ea9270d634f4e77d2fb1ed7859c8e17c22fa7ed258ce03 *README.md
+825de1b18ff013dfff11e5a5b9a7358db17a15a70ab927562f8f4d1d584ae805 *specs/002-world/tasks.md
+59ad220044c987ef987d92c3a1d50dbb98b76230608daa030a8048f6d7d5228a *specs/006-world-saves-and-seeds/quickstart.md
+1c2a4d47d983b9b435d1cf2821cd7166a3b37443a37587147fceda9cf52ae9e4 *CLEAN-ROOM-PLAN-2026-10-11.md
+#
+# ---- §33's repair (2026-10-13) ----
+#
+# The nine .test.log files this file's own run produced are **no longer §32's bytes**: re-running
+# run-guards.sh rewrites them (each carries its run's test-thread PIDs and cargo timings), so §32's original
+# nine are unrecoverable. These are the digests of the bytes on disk, from §33's re-run; that re-run's whole
+# output is docs/baselines/u12-repair/proof.txt beside §32's own run, and §33's capture pair is
+# docs/baselines/u12-repair/{pre,final}-stdout.txt.
+1cf2740f2290d9094058818ddc905be8889db1c696aff8898f4e5c274f2fada0 *the_being's_own_reach.test.log
+facd42c2c46629904892466f3b688e970ee0128c5bf1d22d8010ddd0f72ab91f *the_charter's_declared_floor.test.log
+52e7dbdd1aaf95382ace8a82d162cd578333c2d3dbb7e4bfe16876947a4e6c87 *the_denial_recorded.test.log
+80a1427d33ff93718d5cdb081c16516d3921e73a89ce04dd992fc84ee168b875 *the_game's_own_flow_step.test.log
+9ffc40fc21763bcb90fb04f6172b18bc371e2cde1d0c2b2b3a685f67f5c6bf13 *the_refusal's_own_name__stage_below_floor_.test.log
+9efaa386af6eae3ff4706d508444aaa1c4bf9070374ebd325f9920ea5c0fc38c *the_refusal's_own_name__water_unreachable_.test.log
+3fe71d091a39eb7cbb7ee89f9ce672ff9f107e3b2768413d348a8d01068cc225 *the_stage_comparison.test.log
+839f7f08823fb8697a2fd345f6b8402743315b52d4f114dbf4f673f6bd44d7ce *the_unsouled_refusal.test.log
+b1f0d92bfa063d3e59d51725b6fe85ccd5e2e0207b06bcb092e55c26f9941a70 *the_world's_own_water_read.test.log
+#
+# Of the sources listed above, three moved under §33 — src/being.rs 9b0f61f4… → 613b1229…, src/evidence.rs
+# f3acc27b… → 1de78b22…, tests/u12_being.rs 2f5b2c7b… → ea8bc83a… — and their current digests are in
+# docs/baselines/u12-repair/digests.txt. src/refusal.rs, src/chain.rs, src/lib.rs and tests/u5_measure.rs are
+# the same bytes §32 recorded; README.md and specs/006-world-saves-and-seeds/quickstart.md are §32's figures
+# with §33's dated note added, and docs/CLEAN-ROOM-PLAN-2026-10-11.md carries §33 itself.

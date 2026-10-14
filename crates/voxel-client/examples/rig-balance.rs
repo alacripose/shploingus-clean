@@ -38,8 +38,8 @@ fn main() {
     let spec = WorldSpec::new(2468, Config::default());
     let per_day = voxel_shapers::climate::TICKS_PER_DAY;
     let (x, z) = voxel_client::game::GAME_SPAWN_XZ;
-    let registry = voxel_shapers::column::materials::registry().expect("the admitted registry");
-    let rock = inputs_for(&registry, voxel_shapers::column::materials::REGOLITH)
+    let registry = voxel_shapers::materials::registry().expect("the admitted registry");
+    let rock = inputs_for(&registry, voxel_shapers::materials::REGOLITH)
         .expect("regolith derives");
 
     println!(

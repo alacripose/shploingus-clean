@@ -1,0 +1,29 @@
+# §38's own capture and the sources it was measured from (2026-10-13).
+# Verify with: (cd clean-room && sha256sum -c ../docs/baselines/u2-water-law-on-the-cells/digests.txt)
+beb30cc2bcf41088d67d5d7b6ea66a43c9f76915d7b61b53ea4dddcab9bd468a *src/automaton.rs
+ac376be7a96f1d8c01742ca6a1bf3af2e593f16428ad8c0c5d399e20e3feef74 *src/chunk.rs
+8b0b6e3759c86e3325044f9f1728d78fd8dbb80f1ae22b4cdd461458a5f6a2f0 *src/being.rs
+7bf46a73e5cf072db7218a620fb89b9a83c06871b8de763a8ab8f21e3855c0c1 *src/evidence.rs
+97e992331f28ae5b04e9b4cefaba29c6df0b6cce1a4d9b7768f35137a0f56b03 *src/surface.rs
+c75c861251a728833f8fcc70452b33e7b419b8f9e43a1476a4332933be2e3d43 *src/systems.rs
+350a154b9359d09aecce1d1e05cea74fa279d48497a3e3cf53f76b38032071e5 *src/lib.rs
+87fcbf25e203f8aecb0f8889f30f895c7224d682ef90aca45210b3a5c044dd5f *src/main.rs
+8b2e698d1e34f1a6bb132f3353f0eff836b3ffcdbbf48c7ba7920bbf7b238ea1 *src/field.rs
+e7132ee3773ea5414cc71c724b54cfaf84fae45e02884454bec86db0afc09004 *src/shapers/water.rs
+7e8cc2e8994ad079e758e7fb40ea06f20d5947fb410ccc4d42a18fe20299daaa *tests/u12_stepping.rs
+212e73f9907fa4b23ff9490da47a3abdc866f18173efb7f907dddecb20a22c8a *tests/u12_being.rs
+602d971dd5ed61e7e0c5a7c218918f5771e1ab6727fabda32206a53719a153d0 *tests/u1_surface.rs
+# (§39, 2026-10-13) — **this harness re-run on a later pass's bytes.** §38's twelve-case harness had not
+# been re-executed since its sources moved; this pass moved one of them (`src/evidence.rs`, 7bf46a73… →
+# 2e5e5aea…, this pass's instrument lines). It was re-run from the crate on 2026-10-13 and exited **0**:
+# twelve cases bit by name (34 fault lines), every touched file came back byte-exact, and the rebuilt
+# binary's stdout and stderr equal its own start-of-run capture byte for byte (ecd10f08…). The harness's
+# own report on §38's dated pair: *"the dated capture final-stdout.txt describes older bytes: a later pass
+# moved a printed line — that is the capture's business, not this check's"*. **The pair above is unchanged
+# on disk** and still verifies against `digests-captures.txt`; the re-run wrote nothing into §38's captures
+# and its own proof is kept beside them as `proof-2026-10-13-rerun.txt`.
+#
+# The `src/evidence.rs` line above is §38's own digest and no longer describes the file: it is kept as the
+# dated record of §38's bytes. The file's current digest, measured by the re-run, is
+# 2e5e5aeaf5bf2ea907a1bc9a8cf1301b5bcaed650d47820cbf2c076c8882fa50 (named in
+# `proof-2026-10-13-rerun.txt`'s own digest block, which is what §39's account quotes).

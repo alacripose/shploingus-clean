@@ -1,0 +1,37 @@
+# §40's own capture and the sources it was measured from (2026-10-13).
+# Verify with: (cd clean-room && sha256sum -c ../docs/baselines/u4-the-extent-contract/digests.txt)
+97637e6d2cc7a7199b4db278816d3174f45c75b1005137cda2b1c616750df78c *src/mesh.rs
+71302cfef65f8903befce04e5b3a8921b09bd613f1d8a9a372ef46b62bd84124 *src/evidence.rs
+de62834da3a9891a58a8c50ab835fa1c7b420323b7ebe22c8f6f0089a29b1996 *src/systems.rs
+04a6e2898a8a14dd5b554989b3d9a008d66aeeb43e59e9ce641db88e89b9d585 *src/world.rs
+4dd6bd5abfed27a6d8ace3e8a7e2aebc926ae0c8489b1f698b0e04bd386e9b6c *src/gameplay.rs
+f28c2aff13067df786cefdb5e9409fdaf2b88556c7e44afc0daff8f970bdab81 *tests/u4_geometry.rs
+8eca82b5784e913ee24f71995a4df8229ba0674cca39f048f64f17e4adad2941 *tests/u6_bridge.rs
+# The one **document** whose bytes moved and whose digest the tree declares by name: U10's rows read it in
+# place, so `gameplay.rs`'s `U4_QUICKSTART_DIGEST` had to move with it — the read-in-place guard that refused
+# this pass's own document edit (plan §40, `LEDGER.md` C-192 §192.8). The other documents §40's dated notes
+# moved (the 004 checklist/tasks, the 005 quickstart/checklist, the 006 seams/research, the 007 quickstart and
+# the 010 spec/quickstart/checklist/tasks) are not declared by digest anywhere in the tree, so they are named
+# rather than pinned: their movement is the §40 note each of them carries.
+ca00f1bef771d7394ab82a243b34257b031144d015ce5f4d1107abfb08d3d430 *specs/004-u4-mesh-stream-work/quickstart.md
+# Three of the files above moved without carrying a guard of their own, and the harness says which: `systems.rs`
+# (U4's status sentence — one word of the owed list), `world.rs` (a doc comment naming the mesh's digest) and
+# `tests/u6_bridge.rs` (the budget fixture's declared `1156` is the reading's own produced columns). They are
+# hashed and restored by `run-guards.sh` in the "every touched file" claim; the guards are `mesh.rs`'s,
+# `evidence.rs`'s, `u4_geometry.rs`'s and the declared quickstart digest's.
+# ---------------------------------------------------------------------------
+# **The incident behind this list's own `tests/u4_geometry.rs` line.** That file was destroyed mid-pass by a
+# `write_file` and rebuilt from the pass's own earlier read of it. The `clean-room/` tree is untracked
+# (`git ls-files clean-room` answers nothing), so nothing could restore it, and §39's bytes survive only as a
+# digest (`575a1cb7…`, §39's own `digests.txt` and `proof.txt`). The movement above — §39's `575a1cb7…` to this
+# pass's `f28c2aff…` — therefore carries a **rebuild** as well as the feature, and that cannot be undone from
+# disk. What is establishable: the rebuilt file is §39-era by content (it carries §39's third test, which exists
+# in no copy on disk) and the 2 → 3 → 4 test progression matches the record. What is not: byte-identity to the
+# lost file, and **a dropped assertion inside it**, the one failure mode with no witness. The closable part was
+# closed: the two tests the four `%TEMP%` copies share with this file were diffed line by line and no assertion
+# is missing (the `4 * quads` / `6 * quads` identity is the module's `six_indices_per_quad_exactly`, and
+# `Quad::cells()`' cross-check is now `mesh.area() == ledger.faces` beside the independent recount). The four
+# copies themselves — `%TEMP%/cr-baseline/tests/`, `%TEMP%/cr-base2/tests/`, `%TEMP%/u6audit/copy/tests/`,
+# `%TEMP%/u6audit/copy2/tests/` — are byte-identical at `47333a99…`, 319 lines, **two** tests: the §37-era file,
+# not this one. Written up in plan §40 and `LEDGER.md` C-192 §192.10; that this tree has no version control at
+# all is owed to the user to decide.

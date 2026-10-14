@@ -188,12 +188,31 @@ struct LoadedRow<'a> {
 }
 
 /// The declared derivation windows as exact fractions of a micrometre: B
-/// [0.38, 0.50), G [0.50, 0.60), R [0.60, 0.75). Lower bound inclusive,
+/// [0.38, 0.50), G [0.50, 0.60), R [0.60, 0.70). Lower bound inclusive,
 /// upper exclusive, so no channel is used twice.
+///
+/// **The red window ends at 0.70 µm, and it used to end at 0.75 — which is not
+/// red.** The last 0.05 µm of the old window is the *red edge*: the rise out of
+/// chlorophyll's red minimum toward the near-infrared plateau, where a leaf
+/// reflects most of the light it ever reflects. On the declared grass canopy the
+/// old red window held **73 channels, 31 of them at or above 0.68 µm, and those
+/// 31 alone average 0.291** — three times the green window — so the "red" of
+/// every vegetation sample was mostly an infrared leak. The consequence was
+/// measured on the shipped registry: **every** vegetation row derived
+/// red-dominant through the old windows (aspen green-top `r/g` 1.61, blue-spruce
+/// needles 1.25, gray-pine branch 1.75), which is why a world of grassland read
+/// brown, and why there was no green grass in it.
+///
+/// 0.70 µm is the conventional long-wavelength limit of photopic vision, and
+/// these windows are a claim about what an eye integrates rather than a claim
+/// about where an instrument stops. Narrowing it to the visible band moves the
+/// same rows to `r/g` 0.69 (aspen), 0.72 (spruce) and 0.94 (pine branch) — and
+/// the dry rows stay warm, because they are dry: golden dry grass 1.39, cheatgrass
+/// 1.59, and the mixed dry/green canopy the `GRASS` material is named for 1.07.
 const WINDOWS: [(u64, u64, u64, u64, &str); 3] = [
     (19, 50, 1, 2, "b"),
     (1, 2, 3, 5, "g"),
-    (3, 5, 3, 4, "r"),
+    (3, 5, 7, 10, "r"),
 ];
 
 fn spectra_module(materials: &Path) -> Result<SpectraModule, Vec<String>> {
@@ -585,7 +604,7 @@ fn sample_source_string(row: &SourceRow) -> String {
     format!(
         "USGS Spectral Library v7 (Kokaly et al. 2017), {} (record {}), {}: {} — the \
          visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R \
-         0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is \
+         0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is \
          retained",
         row.file, row.record, row.url, row.note
     )
@@ -664,14 +683,24 @@ pub struct Spectrum {
 
 /// The declared derivation windows, as (low, high) exact fractions of a
 /// micrometre, in B, G, R order; lower bound inclusive, upper exclusive.
+///
+/// **Emitted from the generator's own `WINDOWS`, which is also the list the
+/// arithmetic above fills every `visible` field from.** One declaration, so a
+/// window cannot move in the arithmetic and stand still in the emitted constant.
+/// It did exactly that once: the red window was narrowed to the visible band and
+/// this literal still said `3/4`, so the module's own reader disagreed with every
+/// row it was reading — caught by
+/// `the_visible_channels_are_exact_means_of_the_retained_spectrum`.
 pub const VISIBLE_WINDOWS: [(Ratio, Ratio); 3] = [
-    (Ratio::from_parts(19, 50), Ratio::from_parts(1, 2)),
-    (Ratio::from_parts(1, 2), Ratio::from_parts(3, 5)),
-    (Ratio::from_parts(3, 5), Ratio::from_parts(3, 4)),
-];
-
 ",
     );
+    for (low_numerator, low_denominator, high_numerator, high_denominator, _) in WINDOWS {
+        out.push_str(&format!(
+            "    (Ratio::from_parts({low_numerator}, {low_denominator}), \
+             Ratio::from_parts({high_numerator}, {high_denominator})),\n"
+        ));
+    }
+    out.push_str("];\n\n");
     for (instrument, grid) in grids {
         emit_array(
             &mut out,
@@ -898,113 +927,132 @@ fn emit(table: &Table) -> String {
          HeatKind, Hue, Mechanism, Process, Qty, Requires, Sink, Source, Substance, Table, Tag, \
          Tier, Unit, VocabKind, Vocabulary,\n};\n\n",
     );
-    out.push_str("/// The committed table, compiled rather than parsed.\npub fn table() -> Table {\n    let mut tiers = Vec::new();\n");
+    // **One `vec![]` literal per table, and not `Vec::new()` followed by a run of `push`es.**
+    // The emitted file is compiled under the workspace's own clippy bar (`-D warnings`), and
+    // `clippy::vec_init_then_push` refuses the two-step form — so the *generator* is what had to
+    // change, and it is the reason the defect stayed invisible: a hand edit of the table is
+    // refused by the digest gate, so the line the linter points at is the one line no one may
+    // touch. The generator is the only writer, so it is the only repair.
+    out.push_str("/// The committed table, compiled rather than parsed.\npub fn table() -> Table {\n    let tiers = vec![\n");
     for tier in &table.tiers {
         out.push_str(&format!(
-            "    tiers.push(Tier {{ name: {}.to_string(), ordinal: {}, note: {}.to_string() }});\n",
+            "        Tier {{ name: {}.to_string(), ordinal: {}, note: {}.to_string() }},\n",
             lit(&tier.name),
             tier.ordinal,
             lit(&tier.note)
         ));
     }
+    out.push_str("    ];\n");
 
-    out.push_str("    let mut substances = Vec::new();\n");
+    out.push_str("    let substances = vec![\n");
     for substance in table.substances.values() {
         let tags: Vec<&str> = substance.tags.iter().map(|t| tag(*t)).collect();
-        out.push_str("    substances.push(Substance {\n");
-        out.push_str(&format!("        name: {}.to_string(),\n", lit(&substance.name)));
-        out.push_str(&format!("        family: {},\n", family(substance.family)));
-        out.push_str(&format!("        hue: {},\n", hue(substance.hue)));
-        out.push_str(&format!("        unit: {},\n", unit(substance.unit)));
+        out.push_str("        Substance {\n");
+        out.push_str(&format!("            name: {}.to_string(),\n", lit(&substance.name)));
+        out.push_str(&format!("            family: {},\n", family(substance.family)));
+        out.push_str(&format!("            hue: {},\n", hue(substance.hue)));
+        out.push_str(&format!("            unit: {},\n", unit(substance.unit)));
         out.push_str(&format!(
-            "        density_g_ml: {},\n",
+            "            density_g_ml: {},\n",
             option_ratio(substance.density_g_ml)
         ));
         out.push_str(&format!(
-            "        unit_mass_g: {},\n",
+            "            unit_mass_g: {},\n",
             option_ratio(substance.unit_mass_g)
         ));
-        out.push_str(&format!("        rot_per_day: {},\n", ratio(substance.rot_per_day)));
-        out.push_str(&format!("        tags: vec![{}],\n", tags.join(", ")));
-        out.push_str(&format!("        source: {},\n", source(substance.source)));
-        out.push_str(&format!("        sink: {},\n", sink(substance.sink)));
         out.push_str(&format!(
-            "        display: ({}.to_string(), {}),\n",
+            "            rot_per_day: {},\n",
+            ratio(substance.rot_per_day)
+        ));
+        out.push_str(&format!("            tags: vec![{}],\n", tags.join(", ")));
+        out.push_str(&format!("            source: {},\n", source(substance.source)));
+        out.push_str(&format!("            sink: {},\n", sink(substance.sink)));
+        out.push_str(&format!(
+            "            display: ({}.to_string(), {}),\n",
             lit(&substance.display.0),
             option_ratio(substance.display.1)
         ));
-        out.push_str(&format!("        porosity: {},\n", option_ratio(substance.porosity)));
         out.push_str(&format!(
-            "        fluid_capacity: {},\n",
+            "            porosity: {},\n",
+            option_ratio(substance.porosity)
+        ));
+        out.push_str(&format!(
+            "            fluid_capacity: {},\n",
             option_ratio(substance.fluid_capacity)
         ));
         out.push_str(&format!(
-            "        provenance: {},\n",
+            "            provenance: {},\n",
             availability(substance.provenance)
         ));
-        out.push_str(&format!("        note: {}.to_string(),\n", lit(&substance.note)));
         out.push_str(&format!(
-            "        no_consumer: {},\n",
+            "            note: {}.to_string(),\n",
+            lit(&substance.note)
+        ));
+        out.push_str(&format!(
+            "            no_consumer: {},\n",
             option_string(&substance.no_consumer)
         ));
-        out.push_str("    });\n");
+        out.push_str("        },\n");
     }
+    out.push_str("    ];\n");
 
-    out.push_str("    let mut processes = Vec::new();\n");
+    out.push_str("    let processes = vec![\n");
     for process in &table.processes {
-        out.push_str("    processes.push(Process {\n");
-        out.push_str(&format!("        name: {}.to_string(),\n", lit(&process.name)));
-        out.push_str(&format!("        tier: {}.to_string(),\n", lit(&process.tier)));
-        out.push_str(&format!("        inputs: {},\n", side(&process.inputs)));
-        out.push_str(&format!("        outputs: {},\n", side(&process.outputs)));
-        out.push_str("        mechanism: Mechanism {\n");
+        out.push_str("        Process {\n");
+        out.push_str(&format!("            name: {}.to_string(),\n", lit(&process.name)));
+        out.push_str(&format!("            tier: {}.to_string(),\n", lit(&process.tier)));
+        out.push_str(&format!("            inputs: {},\n", side(&process.inputs)));
+        out.push_str(&format!("            outputs: {},\n", side(&process.outputs)));
+        out.push_str("            mechanism: Mechanism {\n");
         out.push_str(&format!(
-            "            heat_c: {},\n",
+            "                heat_c: {},\n",
             option_ratio(process.mechanism.heat_c)
         ));
         out.push_str(&format!(
-            "            heat_kind: {},\n",
+            "                heat_kind: {},\n",
             match process.mechanism.heat_kind {
                 Some(kind) => format!("Some({})", heat_kind(kind)),
                 None => "None".to_string(),
             }
         ));
         out.push_str(&format!(
-            "            hours: {},\n",
+            "                hours: {},\n",
             ratio(process.mechanism.hours)
         ));
         out.push_str(&format!(
-            "            labour_hours: {},\n",
+            "                labour_hours: {},\n",
             ratio(process.mechanism.labour_hours)
         ));
         out.push_str(&format!(
-            "            power_kw: {},\n",
+            "                power_kw: {},\n",
             ratio(process.mechanism.power_kw)
         ));
-        out.push_str("        },\n");
+        out.push_str("            },\n");
         out.push_str(&format!(
-            "        requires: Requires {{ structure: {}, tool: {}, skill: {} }},\n",
+            "            requires: Requires {{ structure: {}, tool: {}, skill: {} }},\n",
             option_string(&process.requires.structure),
             option_string(&process.requires.tool),
             option_string(&process.requires.skill)
         ));
         out.push_str(&format!(
-            "        provenance: {},\n",
+            "            provenance: {},\n",
             availability(process.provenance)
         ));
-        out.push_str(&format!("        note: {}.to_string(),\n", lit(&process.note)));
-        out.push_str("    });\n");
+        out.push_str(&format!("            note: {}.to_string(),\n", lit(&process.note)));
+        out.push_str("        },\n");
     }
+    out.push_str("    ];\n");
 
-    out.push_str("    let mut vocabulary = Vec::new();\n");
+    out.push_str("    let vocabulary = vec![\n");
     for entry in &table.vocabulary {
         out.push_str(&format!(
-            "    vocabulary.push(Vocabulary {{ kind: {}, name: {}.to_string(), note: {}.to_string() }});\n",
+            "        Vocabulary {{ kind: {}, name: {}.to_string(), note: {}.to_string() }},\n",
             vocab_kind(entry.kind),
             lit(&entry.name),
             lit(&entry.note)
         ));
     }
+    out.push_str("    ];\n");
 
     out.push_str("    Table::new(tiers, substances, processes, vocabulary)\n}\n");
     out

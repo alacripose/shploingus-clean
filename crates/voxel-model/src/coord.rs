@@ -7,7 +7,18 @@
 //! * **voxel** = 1 metre,
 //! * **chunk** = 32³ voxels,
 //! * **coordinates** = signed 32-bit,
-//! * **first playable band** = z ∈ [−16, +47], and *not* the long-term boundary.
+//! * **first playable band** = z ∈ [−16, +47] — the **starting column**, not a world
+//!   height.
+//!
+//! **The vertical extent is open, and that is a ruling (2026-10-10).** The band above was
+//! never a decision about how tall the world is; it is where the first playable column
+//! begins. Chunks are cubic and streamed in three axes ([`ChunkWindow::vertical_chunks`]
+//! is a *budget*, not a ceiling), so nothing here caps how high the world may reach — which
+//! is what lets an atmosphere eight times shorter than Earth's still stand kilometres tall,
+//! and later lets a mountain do the same. [`VoxelPos::in_playable_band`] is therefore
+//! advisory: a spawn helper, enforced nowhere.
+//!
+//! [`ChunkWindow::vertical_chunks`]: https://docs.rs/voxel-work
 //!
 //! Chunk and local coordinates use **Euclidean** division and remainder. Plain
 //! `/` and `%` in Rust truncate toward zero, which puts voxel `(-1, 0, 0)` in
@@ -110,7 +121,13 @@ impl VoxelPos {
         }
     }
 
-    /// True when this voxel is inside the first playable band (C-6).
+    /// True when this voxel is inside the first playable band (C-6) — the **starting
+    /// column**, not a world height.
+    ///
+    /// **Advisory, and it is enforced nowhere**: the world's vertical extent is open
+    /// (`coord`'s module doc), cubic chunks stream in three axes, and this predicate's only
+    /// callers are its own tests. Use it to ask "is this a sensible spawn height", never to
+    /// refuse a voxel.
     pub const fn in_playable_band(&self) -> bool {
         self.z >= BAND_MIN_Z && self.z < BAND_MAX_Z
     }

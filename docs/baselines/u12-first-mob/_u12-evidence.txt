@@ -1,0 +1,247 @@
+/// **U12 — the first mob: a member of an organisation, its need met through the world's own cells.**
+///
+/// The bar is `docs/CLEAN-ROOM-PLAN-2026-10-11.md` §5 row 12's own check — *an organisation's member acts
+/// only through the one tool table, and an act it may not do is refused by name and recorded* — plus this
+/// pass's own clause: the being's need is met through the game's **own** cellular law (the `hydrology` stage's
+/// cells), its choice is a **laya question read by von**, and every refusal is by name and recorded. Nothing
+/// here is a second path: the world is read through the one field plane, the flow direction is the shaper's
+/// own `d8_receivers`, the question is the calibrated stage question, and the acts go on U2's one `Chain`.
+pub fn check_u12() -> bool {
+    let organisation = being::Organisation::first();
+    let member: &'static str = "the first mob";
+    let dir = std::env::temp_dir().join(format!("shploingus-clean-u12-run-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::create_dir_all(&dir);
+
+    // --- the charter, read over the whole closed action vocabulary --------------------------------
+    let rows = match organisation.charter_read(member) {
+        Ok(rows) => rows,
+        Err(refusal) => {
+            eprintln!("U12: the charter is refused by name: {refusal}");
+            return false;
+        }
+    };
+    let allowed = rows.iter().filter(|(_, ok)| *ok).count();
+    let denied = rows.len() - allowed;
+    println!(
+        "U12 organisation: `{}`, charter `{}`, office `{}` — its rank ladder stays owed by name \
+         (`AxisKind::OrgRank`); the charter reads all {} declared action(s): {allowed} allowed, {denied} \
+         refused by name",
+        organisation.name(),
+        organisation.charter(),
+        organisation.office(),
+        rows.len()
+    );
+
+    // --- the world's own cells, and the being's own record -----------------------------------------
+    let roster = match process::roster() {
+        Ok(roster) => roster,
+        Err(refusals) => {
+            eprintln!("U12: the declared roster is refused by name: {refusals}");
+            return false;
+        }
+    };
+    let identity = match reference::identity() {
+        Ok(identity) => identity,
+        Err(refusal) => {
+            eprintln!("U12: the reference identity is refused by name: {refusal}");
+            return false;
+        }
+    };
+    let world = match being::WorldRead::of(
+        organisation,
+        member,
+        &roster,
+        identity,
+        Tick(0),
+        process::declared_request(),
+        1,
+    ) {
+        Ok(world) => world,
+        Err(refusal) => {
+            eprintln!("U12: the world's own cells are refused by name: {refusal}");
+            return false;
+        }
+    };
+    let record = dir.join("being.md");
+    let being_record = format!(
+        "---\nrecord: being\nbeing: {member}\norganisation: {}\ncell: 40\n---\n\nthis being is a member of {}. \
+         Its need is water, its acts are its own, and what it is, is what its records say.\n",
+        organisation.name(),
+        organisation.name()
+    );
+    if let Err(error) = std::fs::write(&record, being_record) {
+        eprintln!("U12: the being's record cannot be written: {error}");
+        return false;
+    }
+    let classifier = match Classifier::classified() {
+        Ok(classifier) => classifier,
+        Err(refusals) => {
+            eprintln!("U12: the sixteen readings do not calibrate: {refusals}");
+            return false;
+        }
+    };
+    let root = von::root();
+
+    // --- the drive: ticks along the game's own flow law until the need is met ----------------------
+    let (acts, digest, reading, stage_digest, features) =
+        match drive(organisation, member, &record, &dir.join("drafts"), 8, &world, &classifier, &root) {
+            Ok(parts) => parts,
+            Err(refusal) => {
+                eprintln!("U12: the first mob's drive is refused by name: {refusal}");
+                return false;
+            }
+        };
+    let walked = acts.iter().filter(|act| matches!(act, being::Act::Walk { .. })).count();
+    let Some((cell, depth_um)) = acts.iter().find_map(|act| match act {
+        being::Act::Drink { cell, depth_um } => Some((*cell, *depth_um)),
+        _ => None,
+    }) else {
+        eprintln!("U12: the mob's drive did not reach the world's own water");
+        return false;
+    };
+    // The being's own records, re-read for the numbers a reader checks: the need is a fold, so this is the
+    // same question the model asks — not a second counter agreeing with it.
+    let mut mob = match being::Being::of(member, organisation, &record, dir.join("drafts-again"), 8) {
+        Ok(mob) => mob,
+        Err(refusal) => {
+            eprintln!("U12: the being is refused by name on construction: {refusal}");
+            return false;
+        }
+    };
+    for _ in 0..8 {
+        match mob.tick(&world, &classifier, &root) {
+            Ok(being::Act::Drink { .. }) => break,
+            Ok(_) => {}
+            Err(refusal) => {
+                eprintln!("U12: the re-run's drive is refused by name: {refusal}");
+                return false;
+            }
+        }
+    }
+    let still_thirsty = mob.thirsty();
+    let chain_ok = mob.verify().is_ok();
+    let one_digest = being::chain_digest(mob.chain()) == digest;
+    let governed = mob.chain().len();
+    let recorded = mob.refusals();
+    println!(
+        "U12 first mob:    cell 40 of {} — {walked} step(s) along the game's own flow law, then drank at cell \
+         {cell} ({:.6} m of the world's own water); the need reads met = {}; the one chain carries {governed} \
+         event(s) ({recorded} refusal(s)) and verifies = {chain_ok}",
+        world.cells(),
+        depth_um as f64 / 1_000_000.0,
+        !still_thirsty
+    );
+    println!(
+        "U12 stage question: reads `{reading}` at the charter's floor `{}` (origin the proof's own) over {} — \
+         the being's draft read in place, digest {}; {features} declared feature(s) held",
+        organisation.floor(),
+        short_digest(stage_digest),
+        short_digest(digest)
+    );
+
+    // --- an act the office does not reach: refused by name, and recorded ---------------------------
+    let denial = mob.attempt_act_it_may_not_do().err();
+    let denial_name = denial.as_ref().map(|refusal| refusal.kind().name()).unwrap_or("allowed");
+    let quotes_the_list = denial
+        .as_ref()
+        .map(|refusal| refusal.detail().contains("may not") && refusal.detail().contains("declared scopes are"))
+        .unwrap_or(false);
+    let denial_recorded = mob.refusals() == recorded + 1;
+    println!(
+        "U12 governed act: `save_world` is refused `{denial_name}` to this member, the refusal quotes the \
+         list = {quotes_the_list}, and it is on the chain = {denial_recorded}"
+    );
+
+    // --- the three refusals this being's own drive can meet, each by name --------------------------
+    let mut stranded = match being::Being::of(member, organisation, &record, dir.join("stranded"), 0) {
+        Ok(being) => being,
+        Err(refusal) => {
+            eprintln!("U12: the stranded being is refused by name: {refusal}");
+            return false;
+        }
+    };
+    let unreachable = stranded
+        .tick(&world, &classifier, &root)
+        .err()
+        .map(|refusal| refusal.kind() == RefusalKind::WaterUnreachable && stranded.refusals() == 1)
+        .unwrap_or(false);
+    let mut guild =
+        match being::Being::of(member, being::Organisation::stricter(), &record, dir.join("guild"), 8) {
+            Ok(being) => being,
+            Err(refusal) => {
+                eprintln!("U12: the guild's being is refused by name: {refusal}");
+                return false;
+            }
+        };
+    let below_floor = guild
+        .tick(&world, &classifier, &root)
+        .err()
+        .map(|refusal| refusal.kind() == RefusalKind::StageBelowFloor && guild.refusals() == 1)
+        .unwrap_or(false);
+    let headless = dir.join("no-claim.md");
+    let _ = std::fs::write(&headless, "record: being\nno fence at all\n");
+    let unsouled = being::Being::of(member, organisation, &headless, dir.join("hollow"), 4)
+        .err()
+        .map(|refusal| refusal.kind() == RefusalKind::NoReading)
+        .unwrap_or(false);
+    println!(
+        "U12 refusals: a need the world cannot meet where the being may reach is refused \
+         `water_unreachable` and recorded = {unreachable}; an act below the charter's own floor ({}) is \
+         refused `stage_below_floor` and recorded = {below_floor}; a being whose records cannot be read is \
+         refused `no_reading` = {unsouled}",
+        being::Organisation::stricter().floor()
+    );
+    println!(
+        "U12 determinism:  two runs of the first mob produce one chain digest = {one_digest} ({}){}",
+        short_digest(digest),
+        if one_digest { "" } else { " — THE RUNS DIVERGED" }
+    );
+
+    rows.len() == policy::Action::ALL.len()
+        && allowed < rows.len()
+        && !still_thirsty
+        && walked > 0
+        && world.water_stands(cell)
+        && reading == organisation.floor()
+        && chain_ok
+        && quotes_the_list
+        && denial_recorded
+        && unreachable
+        && below_floor
+        && unsouled
+        && one_digest
+}
+
+/// The first mob's own run: build the being, drive it until its need is met or its reach is spent, and answer
+/// with its acts, its chain's digest, the stage reading of its last draft and that draft's own digest. Private
+/// to the evidence because it is *the run* rather than a surface: a second caller with its own loop would be a
+/// second drive.
+#[allow(clippy::too_many_arguments)]
+fn drive(
+    organisation: being::Organisation,
+    member: &'static str,
+    record: &std::path::Path,
+    drafts: &std::path::Path,
+    reach: usize,
+    world: &being::WorldRead,
+    classifier: &Classifier,
+    root: &std::path::Path,
+) -> Result<(Vec<being::Act>, Digest, String, Digest, usize), Refusal> {
+    let mut mob = being::Being::of(member, organisation, record, drafts.to_path_buf(), reach)?;
+    let mut acts = Vec::new();
+    let mut last_draft = mob.draft_path();
+    for _ in 0..=reach {
+        last_draft = mob.draft_path();
+        match mob.tick(world, classifier, root)? {
+            act @ being::Act::Drink { .. } => {
+                acts.push(act);
+                break;
+            }
+            act => acts.push(act),
+        }
+    }
+    let (reading, stage_digest, features) =
+        being::stage_of(organisation, member, &last_draft, classifier, root)?;
+    Ok((acts, being::chain_digest(mob.chain()), reading, stage_digest, features.len()))
+}

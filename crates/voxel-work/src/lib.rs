@@ -33,15 +33,24 @@
 //! a time. A charge that would cross the ceiling is refused and *named*, with the
 //! request, the total and the ceiling in the message. A mesh the budget cannot
 //! hold is dropped and counted, never stored and never silently charged.
+//!
+//! **The audit, 2026-10-10.** 3 907 lines, 5 modules, 112 public items, 64 tests; read by `client` and
+//! the binary. The one failure a full-workspace run surfaced here was a budget assertion that held
+//! only when a replacement mesh happened to be exactly the size of the one it replaced — a claim about
+//! arithmetic that silently depended on the world's geometry. Repaired to the exact exchange identity
+//! plus "the budget holds exactly the current meshes", and measured: **no leak.**
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 pub mod budget;
+pub mod objects;
 pub mod pool;
 pub mod stream;
 pub mod tick;
 
 pub use budget::Budget;
+pub use objects::{Body, BodyDeclaration, LoadedBody, ObjectLane, DECLARED};
 pub use pool::{Built, Collected, Pool, Request, Submitted, DEFAULT_QUEUE_CAPACITY};
 pub use stream::{chunks_touching, ChunkWindow, Frame, Pick, Streamer, DEFAULT_WINDOW};
 pub use tick::{CellBox, Planned, Scheduler, TickDriver, TickReceipt, UnitOfWork, HALO_VOXELS};

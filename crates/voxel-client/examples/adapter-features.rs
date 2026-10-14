@@ -85,7 +85,7 @@ fn main() {
     println!("offered    {} bits set", offered.iter_names().count());
     println!();
 
-    println!("{:<58} {}", "feature", "this adapter");
+    println!("{:<58} this adapter", "feature");
     for (feature, why) in WANTED {
         let held = offered.contains(*feature);
         println!(

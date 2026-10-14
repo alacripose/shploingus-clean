@@ -42,15 +42,26 @@
 //! named, not silently replaced by a plausible one — because a plausible
 //! substitute is indistinguishable from a correct one until much later, and by
 //! then it has been written into a world.
+//!
+//! **The audit, 2026-10-10.** 35 232 lines over 23 modules and **1 072 public items** — the largest
+//! public surface in the tree, six times the next largest — with 320 tests. The determinism claim is
+//! structurally true rather than asserted: no clock, file handle or GPU type is reachable from here,
+//! which is what makes a world generated in any thread and any order auditable. What is owed is the
+//! other side of that size: `chain`, `wire` and `identity` each hold a piece of the end-to-end
+//! determinism argument and no single place measures it whole. A 1 072-item surface is also the
+//! tree's largest reading burden, which is a cost rather than a defect.
 
 // Measured: this crate contains zero `unsafe`. That is a property worth having,
 // and a property that is worth defending rather than holding by coincidence.
 // `forbid` rather than `deny`, so no `#[allow]` anywhere can buy an exception.
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
+pub mod admission;
 pub mod axis;
 pub mod chain;
 pub mod laya;
+pub mod proof;
 pub mod conservation;
 pub mod envelope;
 pub mod grant;
@@ -66,6 +77,7 @@ pub mod refusal;
 pub mod shaper;
 pub mod subvoxel;
 pub mod wire;
+pub mod endian;
 // **The evidence producer at the commit point**: what a committed action was, in memory,
 // until the game side drains it to mint the gate's proofs of work (the user's plan,
 // 2026-10-02). It sits at the root like `world` does: the record it serves is not a

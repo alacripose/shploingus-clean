@@ -1,0 +1,38 @@
+# U12's stepping plane — captures, sources and the guard proof (2026-10-13, plan §34)
+#
+# Captures, both taken from the built binary (clean-room/target/debug/shploingus-clean-room.exe):
+   504 docs/baselines/u12-stepping/pre-stdout.txt
+     1 docs/baselines/u12-stepping/pre-stderr.txt
+   507 docs/baselines/u12-stepping/final-stdout.txt
+     1 docs/baselines/u12-stepping/final-stderr.txt
+#
+5f4d5c80292781c81ba4665eea2d45f51899e052480f846b891bb6f09bd3b362 *docs/baselines/u12-stepping/pre-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u12-stepping/pre-stderr.txt
+b094253135b41fb93ab22cf90dfcd00ded5af8402d110115c302087ff4778523 *docs/baselines/u12-stepping/final-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u12-stepping/final-stderr.txt
+#
+# The pre pair is §33's own final pair, so this pass began exactly where §33's account ended; the
+# binary's own stderr did not move at all (f583ca18… both sides).
+#
+# The sources this pass touched, as they stand after the harness restored them:
+1e4fa64744ff19da898993478dd88796f8e4cfdde014abfec9c79c21ec87ee11 *clean-room/src/automaton.rs
+74b34020877d4b0486dcb8d98d7da1db43c4c9525ef548693370ef3b18693cdb *clean-room/src/being.rs
+539bafbeb349e104806a22e39421e0a319c86de1a33c3b21e81ae7e0a8b659c6 *clean-room/src/lib.rs
+512b972d4b5b96231a0188ea1262da36d01f33c762d9b676618491c75e35f14b *clean-room/src/evidence.rs
+bbfb41d844218dbce2ddff3be5f2b808f149b48a6f604227571909dbf4947dfd *clean-room/src/main.rs
+661f03f7c4a847e83552a04bd40c116fd5d6bf73189ac69b328254b4c6d2ea4f *clean-room/src/systems.rs
+10aaeff87222691e9b32390b695a294bce893bc3198e1b09746d76e63696f0bf *clean-room/tests/u12_stepping.rs
+fd1fdbe18ab8aed8e33b2a155fe0cf8542f5dc6782e68eedf8b495d4e69edc37 *clean-room/tests/u12_being.rs
+e9bfd30c04587ab02eb79064dcc090be3be887b8ba58b4072c75e3e17a52d4d0 *clean-room/README.md
+5d8a64fbcaa39be918ecaebc6ca1f44ed4194143e6b08774b96494fbc81eadf6 *clean-room/specs/006-world-saves-and-seeds/quickstart.md
+9d8a12641fb541148c276106328a3cf4fc5c5bdab88a8f9006057931b53f42e8 *docs/CLEAN-ROOM-PLAN-2026-10-11.md
+#
+# The eight guard logs this pass's own harness run wrote, as they stand on disk:
+d39295c234b7392290d15e06a6a148d22d11dc9f2cc754775dbfc064990f12aa *docs/baselines/u12-stepping/the_being_reads_the_law's_state.test.log
+bccb61403b1a9a8a18d82dcdc51bb21b83e40394f7b00f4eb4f186bea55ed25f *docs/baselines/u12-stepping/the_declared_rain.test.log
+df35a64328307017b572d631f1132709207d6f96fb5c831198c75d6799722f60 *docs/baselines/u12-stepping/the_fraction_a_pit_keeps.test.log
+195db0b38db388236485cacf80ed1d88bb418cc9ce4983be7f3cfd128846196d *docs/baselines/u12-stepping/the_one-hop_transfer.test.log
+517181b4f158b34b92e51dde9adaed16188411b80efbaae60a5df7e340845add *docs/baselines/u12-stepping/the_pit's_own_thinning.test.log
+126569793d972785581f8c84aa2c34f296aed4fa3a304519baf36ddee42d12c0 *docs/baselines/u12-stepping/the_state_the_law_starts_from.test.log
+b2106e2a5372a8cd3fa99fd2899e970a10359488bc45ba88e76ff252f09264c8 *docs/baselines/u12-stepping/the_stepped_read's_own_water.test.log
+a4a36bd49ad9834e3a43391ac5c7a3b1bd58db1e1816c5b0b77885f6771831c0 *docs/baselines/u12-stepping/the_tick_count.test.log

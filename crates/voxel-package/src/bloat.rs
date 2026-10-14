@@ -315,6 +315,14 @@ pub struct Prose {
     pub total_bytes: usize,
     /// Bytes on lines whose first non-space characters are `//`.
     pub comment_bytes: usize,
+    /// Of [`Self::comment_bytes`], the bytes that are **rustdoc** (`///` or `//!`).
+    ///
+    /// **Documentation, not commentary.** The two are measured apart because they answer to
+    /// different rules: rustdoc is rendered by `cargo doc`, resolved on hover, and checked by the
+    /// compiler — it is where the reason for a value belongs, next to the value — while a plain `//`
+    /// comment is a note a reader can only find by standing in the file, and that is what
+    /// `census::PROSE_FRAME_PERCENT` and the prose ratchet cap.
+    pub doc_bytes: usize,
     /// Everything else.
     pub code_bytes: usize,
 }
@@ -338,6 +346,30 @@ impl Prose {
         Some((self.comment_bytes * 100) / self.total_bytes)
     }
 
+    /// The comment bytes that are **not** rustdoc: the commentary a reader has to be standing in the
+    /// file to find.
+    pub const fn plain_bytes(&self) -> usize {
+        self.comment_bytes.saturating_sub(self.doc_bytes)
+    }
+
+    /// **The share the prose frame is about**: plain comment bytes as a whole percent of the
+    /// source. Rustdoc is excluded, so writing documentation next to the value it explains — which
+    /// is where this project wants it — is not what this number punishes.
+    pub const fn plain_percent(&self) -> Option<usize> {
+        if !self.measured || self.total_bytes == 0 {
+            return None;
+        }
+        Some((self.plain_bytes() * 100) / self.total_bytes)
+    }
+
+    /// The rustdoc share: documentation the compiler and `cargo doc` carry, as a whole percent.
+    pub const fn doc_percent(&self) -> Option<usize> {
+        if !self.measured || self.total_bytes == 0 {
+            return None;
+        }
+        Some((self.doc_bytes * 100) / self.total_bytes)
+    }
+
     /// The gate's line for this measurement. The unmeasured branch prints no counts at all —
     /// a zero reads as a real zero, which is the defect this type exists to prevent.
     pub fn describe(&self) -> String {
@@ -351,8 +383,15 @@ impl Prose {
         out.push_str(&format!("code-prose-files\t{}\n", self.files));
         out.push_str(&format!("code-prose-total-bytes\t{}\n", self.total_bytes));
         out.push_str(&format!("code-prose-comment-bytes\t{}\n", self.comment_bytes));
+        out.push_str(&format!("code-prose-doc-bytes\t{}\n", self.doc_bytes));
         if let Some(percent) = self.comment_percent() {
             out.push_str(&format!("code-prose-comment-percent\t{percent}\n"));
+        }
+        if let Some(percent) = self.doc_percent() {
+            out.push_str(&format!("code-prose-doc-percent\t{percent}\n"));
+        }
+        if let Some(percent) = self.plain_percent() {
+            out.push_str(&format!("code-prose-plain-percent\t{percent}\n"));
         }
         out
     }
@@ -367,6 +406,29 @@ impl Prose {
 fn is_comment(line: &str) -> bool {
     line.trim_start().starts_with("//")
 }
+
+/// Whether one of those comment lines is **rustdoc**: `///` on an item, or `//!` inside one.
+///
+/// **The user's ruling, 2026-10-10:** *"I would prefer the actual documentation live inside rust
+/// docs. So when we study why some bullshit value is the way it is we know exactly what happened."*
+/// A value's reason belongs next to the value — `cargo doc` renders it, an editor shows it on hover,
+/// and the compiler is the thing that carries it — and that is a different artifact from a comment
+/// whose only reader is someone already standing in the file. Separator lines (`////`) are neither
+/// and count as neither, the same rule [`comment_lines`] already applies to the judge.
+fn is_rustdoc(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    (trimmed.starts_with("///") && !trimmed.starts_with("////")) || trimmed.starts_with("//!")
+}
+
+// **`crate_level_rustdoc` stood here until 2026-10-10, and it was removed rather than kept beside
+// the rule that outgrew it.** The `documented` axis asked this function whether the entry file
+// opened with a `//!` block — a reading of *has this crate made a claim* — and every crate had one,
+// so the axis was `active` for all sixteen and the `//!` blocks had been written from the same prose
+// the comment headers already carried. The axis now reads the compiler's own `missing_docs` count
+// (`census::MISSING_DOCS_PATH`), which counts the documentation itself, item by item. The same
+// lesson this module already carries for prose, applied to its first reader: **a header is a place to
+// look, not a thing measured.** The `//!` bytes are not lost — they are [`is_rustdoc`]'s and
+// [`Prose::doc_bytes`]'s reading, counted as documentation and kept out of the plain-comment frame.
 
 /// **The text of every comment line, markers stripped — the prose the doc stage reads.**
 ///
@@ -411,6 +473,7 @@ pub fn measure_prose(files: &[(std::path::PathBuf, String)]) -> Prose {
     }
     let mut total_bytes = 0usize;
     let mut comment_bytes = 0usize;
+    let mut doc_bytes = 0usize;
     for (_, text) in files {
         for line in text.lines() {
             // +1 for the newline the line consumed; counted in both totals so the share is a
@@ -419,6 +482,9 @@ pub fn measure_prose(files: &[(std::path::PathBuf, String)]) -> Prose {
             total_bytes += bytes;
             if is_comment(line) {
                 comment_bytes += bytes;
+                if is_rustdoc(line) {
+                    doc_bytes += bytes;
+                }
             }
         }
     }
@@ -428,6 +494,7 @@ pub fn measure_prose(files: &[(std::path::PathBuf, String)]) -> Prose {
         files: files.len(),
         total_bytes,
         comment_bytes,
+        doc_bytes,
         code_bytes: total_bytes.saturating_sub(comment_bytes),
     }
 }
@@ -479,6 +546,17 @@ fn collect_invented(root: &Path, dir: &Path, into: &mut Vec<InventedStore>) {
             continue;
         }
         if metadata.is_dir() {
+            // **The build output and the version-control store are not source, and they are the
+            // bulk of the tree**: 18,248 of its 20,897 files live under `target/` and `.git`
+            // between them, so a walk that descends into them measures the compiler once per
+            // census instead of the record. Skipped by name, and the names are the two no
+            // invented record may live in.
+            if matches!(
+                path.file_name().and_then(|name| name.to_str()),
+                Some("target") | Some(".git")
+            ) {
+                continue;
+            }
             collect_invented(root, &path, into);
             continue;
         }
@@ -500,8 +578,329 @@ fn collect_invented(root: &Path, dir: &Path, into: &mut Vec<InventedStore>) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The test stage: test code that lives inside a production module
+// ---------------------------------------------------------------------------
+
+/// **How much of a crate is tests, and where they live.** [`Prose`]'s two-number shape — what
+/// carries meaning against what carries the frame — applied to `#[test]`: the lines that carry a
+/// pass against the lines that carry behaviour.
+///
+/// # Why this is a measurement and not an opinion
+///
+/// The coverage axis reads `#[test]` with `str::contains` (`census.rs`), so a crate with one
+/// trivial test and a crate with a thousand score the same cell. That is a check that cannot
+/// fail, which is the failure mode `axis.rs` names when it refuses *"an opinion wearing a
+/// measurement's clothes"*. This type is the measurement the axis could not make: **where the
+/// test code is**, not whether a substring occurs.
+///
+/// The distinction that matters is not "too many tests". It is that a `#[cfg(test)]` module
+/// inside a production file makes the production file something other than a production file:
+/// `renderer.rs` is 2,577 test lines in a 2,860-line module and `notifications.rs` is 760 in 781.
+/// A module like that cannot be read as what it is, and a change to the look cannot be reviewed
+/// without scrolling past the tests for the *last* look.
+///
+/// # What this does not measure
+///
+/// Whether a test is *worth keeping*. This counts lines and functions, and a suite of a thousand
+/// vacuous tests scores exactly like a suite of a thousand good ones. That judgement is the
+/// judge's (`laya`), on its own axis, and a number here must not be read as a verdict.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TestBloat {
+    /// False means the counts below are not measurements. [`Self::why_unmeasured`] says why.
+    pub measured: bool,
+    /// Why there is no measurement. Present exactly when `measured` is false.
+    pub why_unmeasured: Option<String>,
+    /// Source files read.
+    pub files: usize,
+    /// Files carrying an inline `#[cfg(test)]` module — **the files that are two files**.
+    pub inline_files: usize,
+    /// `#[test]` and `#[tokio::test]` functions declared.
+    pub functions: usize,
+    /// Lines at or after the first inline marker, plus every line of a file under `tests/`.
+    pub test_lines: usize,
+    /// Everything else: the production lines a reader came for.
+    pub code_lines: usize,
+    /// The largest single inline test module, in lines. **The module that is not a module.**
+    pub largest_inline: usize,
+    /// Files that could not be decoded, and so are in no count above.
+    ///
+    /// **A partial measurement has to say it is partial** (D107). A missing file counted as
+    /// zero test lines would read as a clean file, which is the one reading it cannot support.
+    pub undecodable: usize,
+}
+
+impl TestBloat {
+    /// A measurement that did not happen, and why.
+    ///
+    /// All counts are zero and `measured` is false, which is the one place zeros are allowed —
+    /// because the flag beside them says they are not readings.
+    pub fn unmeasured(why: impl Into<String>) -> Self {
+        TestBloat { measured: false, why_unmeasured: Some(why.into()), ..TestBloat::default() }
+    }
+
+    /// Test lines as a whole percent of the source. `None` when unmeasured or empty, so a caller
+    /// cannot print a share of nothing.
+    pub const fn inline_percent(&self) -> Option<usize> {
+        let all = self.test_lines + self.code_lines;
+        if !self.measured || all == 0 {
+            return None;
+        }
+        Some((self.test_lines * 100) / all)
+    }
+
+    /// The gate's lines for this measurement. The unmeasured branch prints no count at all — a
+    /// zero reads as a real zero, which is the defect this type exists to prevent.
+    pub fn describe(&self) -> String {
+        if !self.measured {
+            return format!(
+                "test-bloat\tnot-measured\ntest-bloat-why\t{}",
+                self.why_unmeasured.as_deref().unwrap_or("no reason recorded")
+            );
+        }
+        let mut out = String::new();
+        out.push_str(&format!("test-bloat-files\t{}\n", self.files));
+        out.push_str(&format!("test-bloat-inline-files\t{}\n", self.inline_files));
+        out.push_str(&format!("test-bloat-functions\t{}\n", self.functions));
+        out.push_str(&format!("test-bloat-test-lines\t{}\n", self.test_lines));
+        out.push_str(&format!("test-bloat-code-lines\t{}\n", self.code_lines));
+        out.push_str(&format!("test-bloat-largest-inline\t{}\n", self.largest_inline));
+        if let Some(percent) = self.inline_percent() {
+            out.push_str(&format!("test-bloat-inline-percent\t{percent}\n"));
+        }
+        if self.undecodable > 0 {
+            out.push_str(&format!("test-bloat-undecodable\t{}\n", self.undecodable));
+        }
+        out
+    }
+}
+
+/// Whether this path is an integration test: a `.rs` under a directory named `tests`.
+///
+/// **The path decides, because `cargo` decides by path.** Reading it any other way would be a
+/// second rule about the same file, and the second rule is the one that comes to disagree with
+/// the build.
+fn is_integration_test(path: &Path) -> bool {
+    path.parent()
+        .and_then(|dir| dir.file_name())
+        .and_then(|name| name.to_str())
+        .map(|name| name == "tests")
+        .unwrap_or(false)
+}
+
+/// Whether a line opens an inline test module. **The marker, not the module's name** — a
+/// `#[cfg(test)]` module called anything at all is test code inside a production file.
+fn is_inline_test_marker(line: &str) -> bool {
+    line.trim_start().starts_with("#[cfg(test)]")
+}
+
+/// Whether a line declares a test function, in either form this tree uses.
+fn is_test_function(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("#[test]") || trimmed.starts_with("#[tokio::test]")
+}
+
+/// Measure the test share of source files that have already been read.
+///
+/// "Already read" is [`measure_prose`]'s convention and its reason: a crate's sources are read
+/// once by the census, and a second read here would be a second answer to what the crate
+/// contains.
+///
+/// **The first marker wins.** A file's second `#[cfg(test)]` is inside the first module, so
+/// counting to it again would count the same lines twice and report more tests than exist.
+pub fn measure_tests(files: &[(std::path::PathBuf, String)]) -> TestBloat {
+    if files.is_empty() {
+        return TestBloat::unmeasured("no source files were read, so no test share was measured");
+    }
+    let mut out = TestBloat { measured: true, files: files.len(), ..TestBloat::default() };
+    for (path, text) in files {
+        let lines: Vec<&str> = text.lines().collect();
+        // An integration test file is tests from its first line; a production file is tests only
+        // from its marker, and a production file with no marker has none.
+        let integration = is_integration_test(path);
+        let marker = if integration {
+            None
+        } else {
+            lines.iter().position(|line| is_inline_test_marker(line))
+        };
+        let test_start = match (integration, marker) {
+            (true, _) => 0,
+            (false, Some(index)) => index,
+            (false, None) => lines.len(),
+        };
+        let test_lines = lines.len() - test_start;
+        if !integration && test_start < lines.len() {
+            out.inline_files += 1;
+            out.largest_inline = out.largest_inline.max(test_lines);
+        }
+        out.test_lines += test_lines;
+        out.code_lines += test_start;
+        out.functions += lines.iter().filter(|line| is_test_function(line)).count();
+    }
+    out
+}
+
+/// **Measure this workspace's own tests: the audit's entry point.** One call, every `.rs` file
+/// under `crates/`, read once.
+///
+/// Only `.rs`, and only under `crates/`: a walk that descended into the build's output would
+/// measure the compiler, and one that took every file would measure the ledger — which already
+/// has [`measure_dir`]. A file that will not decode is **counted and said**, not skipped
+/// silently, because a file left out of a total is a total that reads cleaner than the tree is.
+pub fn measure_workspace_tests(root: &Path) -> TestBloat {
+    let crates = root.join("crates");
+    let mut read: Vec<(std::path::PathBuf, String)> = Vec::new();
+    let mut undecodable = 0usize;
+    collect_sources(&crates, &mut read, &mut undecodable);
+    read.sort();
+    if read.is_empty() {
+        return TestBloat::unmeasured(format!(
+            "no .rs file was found under {}; nothing was measured",
+            crates.display()
+        ));
+    }
+    let mut measured = measure_tests(&read);
+    measured.undecodable = undecodable;
+    measured
+}
+
+fn collect_sources(
+    dir: &Path,
+    into: &mut Vec<(std::path::PathBuf, String)>,
+    undecodable: &mut usize,
+) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut names: Vec<std::path::PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
+    names.sort();
+    for path in names {
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            // Recorded, never followed: following a directory symlink is an unbounded walk.
+            continue;
+        }
+        if metadata.is_dir() {
+            // The build's output is not source. Reading it would measure the compiler, and the
+            // first build to run would change the measurement.
+            if path.file_name().and_then(|name| name.to_str()) == Some("target") {
+                continue;
+            }
+            collect_sources(&path, into, undecodable);
+            continue;
+        }
+        if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
+            continue;
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(text) => into.push((path, text)),
+            Err(_) => *undecodable += 1,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    /// The audit's own fixture: four production lines, then a marker, then a module.
+    fn a_module_with_seven_test_lines() -> (std::path::PathBuf, String) {
+        (
+            std::path::PathBuf::from("crates/voxel-client/src/renderer.rs"),
+            concat!(
+                "//! The renderer.\n",
+                "pub fn one() {}\n",
+                "pub fn two() {}\n",
+                "pub fn three() {}\n",
+                "#[cfg(test)]\n",
+                "mod tests {\n",
+                "    #[test]\n",
+                "    fn a() {}\n",
+                "    #[test]\n",
+                "    fn b() {}\n",
+                "}\n",
+            )
+            .to_string(),
+        )
+    }
+
+    #[test]
+    fn a_test_measurement_that_did_not_run_prints_no_count() {
+        // D107 in the third measurement: an absent reading must not be printable as a zero, or a
+        // crate nobody measured reads as a crate with no bloat.
+        let nothing = measure_tests(&[]);
+        let report = nothing.describe();
+        assert!(report.contains("test-bloat\tnot-measured"), "{report}");
+        assert!(report.contains("test-bloat-why\t"), "{report}");
+        assert!(!report.contains("test-bloat-functions"), "{report}");
+        assert!(!report.contains("test-bloat-code-lines"), "{report}");
+    }
+
+    #[test]
+    fn an_inline_module_is_counted_from_its_marker_and_the_production_lines_are_not() {
+        let measured = measure_tests(&[a_module_with_seven_test_lines()]);
+        assert!(measured.measured, "{measured:?}");
+        assert_eq!(measured.files, 1);
+        assert_eq!(measured.inline_files, 1);
+        assert_eq!(measured.code_lines, 4, "the four lines above the marker are production");
+        assert_eq!(measured.test_lines, 7, "the marker and everything under it is test code");
+        assert_eq!(measured.functions, 2);
+        assert_eq!(measured.largest_inline, 7);
+        assert_eq!(measured.inline_percent(), Some(63));
+    }
+
+    #[test]
+    fn a_file_under_tests_is_test_lines_and_is_not_called_an_inline_module() {
+        // The other half of the same question: test code *outside* the module is not bloat in the
+        // module, and a measurement that called it inline would blame the wrong file.
+        let file = (
+            std::path::PathBuf::from("crates/voxel-package/tests/answer_audit.rs"),
+            "fn helper() {}\n#[test]\nfn a() {}\n".to_string(),
+        );
+        let measured = measure_tests(&[file]);
+        assert_eq!(measured.code_lines, 0);
+        assert_eq!(measured.test_lines, 3);
+        assert_eq!(measured.functions, 1);
+        assert_eq!(measured.inline_files, 0, "a tests/ file is not an inline module");
+        assert_eq!(measured.largest_inline, 0);
+    }
+
+    #[test]
+    fn a_second_marker_does_not_count_the_same_lines_twice() {
+        let nested = (
+            std::path::PathBuf::from("crates/x/src/a.rs"),
+            concat!(
+                "pub fn one() {}\n",
+                "#[cfg(test)]\n",
+                "mod tests {\n",
+                "    #[cfg(test)]\n",
+                "    mod inner {\n",
+                "    }\n",
+                "}\n",
+            )
+            .to_string(),
+        );
+        let measured = measure_tests(&[nested]);
+        assert_eq!(measured.code_lines, 1);
+        assert_eq!(measured.test_lines, 6, "six lines, not ten");
+        assert_eq!(measured.inline_files, 1);
+    }
+
+    #[test]
+    fn the_workspace_measurement_runs_over_this_tree_and_finds_more_than_one_test() {
+        // The audit instrument, exercised on the tree it audits: the measurement runs, it is not
+        // `not-measured`, and this workspace carries test code *inside* production modules. The
+        // floors are loose on purpose — a number pinned to today's count is a test that fails on
+        // every legitimate change, which is the defect this whole exercise is about.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        let measured = measure_workspace_tests(&root);
+        assert!(measured.measured, "{}", measured.why_unmeasured.clone().unwrap_or_default());
+        assert!(measured.files > 100, "{} files", measured.files);
+        assert!(measured.functions > 100, "{} test functions", measured.functions);
+        assert!(measured.inline_files > 0, "no inline test module was found and there are many");
+        println!("{}", measured.describe());
+    }
+
     use super::*;
 
     #[test]

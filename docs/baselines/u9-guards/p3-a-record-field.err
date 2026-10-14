@@ -1,0 +1,3 @@
+U6   NOT VERIFIED: 1 refusal(s): receipt_mismatch: this receipt carries record length = 3 and the document and the world establish record length = 2
+serve: 7 request(s): 5 answered, 2 refused by name
+Clean room FAILED: a measured bar is not met (U1=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=true, U5=true, U6=false, U7=true, U8=true, U9=false, U10=true).

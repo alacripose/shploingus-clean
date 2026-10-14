@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 //! The design system: **Material Design 1** with the **Human Interface
 //! Guidelines** overlay, and the four-bucket rule for every constant in it.
 //!
@@ -36,6 +37,12 @@
 //! **`prefers-reduced-motion`** with a *reduced alternative for meaningful
 //! motion* rather than merely shortening it, and a contrast floor measured
 //! **against the actual blurred backdrop** rather than against an ideal colour.
+//!
+//! **The audit, 2026-10-10.** 2 684 lines in **one** module, 136 public items, 41 tests; read by
+//! `client` and the binary. The crate argues deliberately for being one file — splitting it would keep
+//! the four-bucket rule's *intent* and lose its *enforcement* — and that argument holds. What is left
+//! is the cost it accepts: the largest single file a reader must hold at once anywhere in the UI path.
+//! **No finding beyond that size.**
 
 // ---------------------------------------------------------------------------
 // The four-bucket rule

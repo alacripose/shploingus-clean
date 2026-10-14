@@ -86,7 +86,7 @@ https://github.com/mezz/JustEnoughItems
 https://github.com/millennIumAMbiguity/no-more-knockback-latency
 https://github.com/astei/krypton
 https://github.com/samedifferent/Ecologics
-https://github.com/Deadlydiamond98/MinecraftFabricArchipelagoMod
+https://modrinth.com/datapack/archipelago
 https://github.com/Builderb0y/BigGlobe
 https://github.com/someaddons/biomemusic
 https://github.com/tnoctua/consistent-block-drops

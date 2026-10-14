@@ -1,0 +1,27 @@
+# The files §33's repair left changed, as they stand (2026-10-13). Root-relative, as §32's record kept
+# them; the five sources the guard harness perturbs are listed first because its own closure check
+# proved them byte-exact (§33's proof.txt). The nine .test.log files a re-run rewrites are listed in
+# digests.txt beside this file, with the run that produced them.
+#
+613b1229891989762b301529e3398cfc07957fdcffc7d896920d3ed66d262814 *clean-room/src/being.rs
+abc47749fcdc8883273578c46a5bfa915db70f1698c8a2b9bf6cfb2d3845381e *clean-room/src/laya.rs
+1de78b22f2facf6cec717dbf43f098777e10d5561bc51ad44f2c1d9bc9318fc4 *clean-room/src/evidence.rs
+ea8bc83a38c1c848f23679bb3dd4db9fbdcebedb1bf35e098e533ced2c991842 *clean-room/tests/u12_being.rs
+38eb11b99f4a6f288e7bc0615e1ab512deb8e62b063aa7385b2b2322cbabf33c *clean-room/README.md
+ee80bfd0c463f5e59f02988492833085acd66a275214843d3e39f7f70af512fc *clean-room/specs/006-world-saves-and-seeds/quickstart.md
+f0b04da87e3b4fab2d641a3e35b6d93a4f2c12c44862b339e1b366183e0e2e93 *docs/CLEAN-ROOM-PLAN-2026-10-11.md
+8806d520b4a4bf9b91d13ef142141233f02a9326c21d51d4f506c5ac602920a5 *docs/baselines/u12-first-mob/digests.txt
+d8bc86dcf2c77b89c25110ca4481ffb7afdafd60e104bd041aacf251db392fe7 *docs/baselines/u12-first-mob/proof.txt
+6bf8c2d01918fcb35448e25db2d69ae53c205fb1397bb484d2610d4391e96328 *docs/baselines/u12-repair/pre-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u12-repair/pre-stderr.txt
+5f4d5c80292781c81ba4665eea2d45f51899e052480f846b891bb6f09bd3b362 *docs/baselines/u12-repair/final-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u12-repair/final-stderr.txt
+f1a905584ee507ccf44fa832d7ad62292e46adff7f3b75c793021f8f99501ef2 *docs/baselines/u12-repair/proof.txt
+e74db7a998d3bd3cee2b3949e3f72d7be4536533d4b77fae5227aa55f1611e2d *docs/baselines/u12-repair/digests.txt
+#
+# Unchanged by this pass (same bytes §32 recorded): clean-room/src/refusal.rs 25984677…,
+# clean-room/src/chain.rs 60d56a24…, clean-room/src/systems.rs 72dc8ef5…, clean-room/src/main.rs 951081f5…,
+# clean-room/src/lib.rs 8ca618a3…, clean-room/tests/u5_measure.rs f9b19f45…, clean-room/specs/002-world/
+# tasks.md 825de1b1…. Nothing under crates/ was read or written (find crates -newermt 2026-10-12 23:59 is
+# empty), and the four U10 rulings, mc-ar-mod, the noul/score sets, the score rungs and §5 rows 8/11/13
+# are untouched.

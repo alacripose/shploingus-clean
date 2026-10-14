@@ -1,0 +1,140 @@
+## 32. U12's first mob — one being whose need the world's own cells meet, and every act a governed event (2026-10-13)
+
+This pass built **the civilian system's first mob** — the fake autonomous player — as the row's own sentence
+reads it. Reconnaissance first, and the record's own bar: **§5 row 12**'s check is *an organisation's member
+acts only through the one tool table, and an act it may not do is refused by name and recorded*; **§16**'s
+U12 entry names the interface (*an `Organisation` with declared membership and authority, and an actor that
+asks the one tool table what it may do, and whose every act is a governed event on the one `Chain`*) and the
+row's prerequisites (**U2's owed T016 vocabulary**, **U6's self-description**, **U7** — built, §25; the
+**policy matrix** — landed, §29); and **§16.2 row 12** orders it after those two. The mission's own updated
+component for this row adds three clauses: the being is **ensouled**, its **needs are met through the game's
+own cellular automata**, and it is **driven by the existing laya/von integration** rather than a need tick.
+The record did not order a different unblocked row first — U9 landed (§17/§28), U10 is in progress with its
+four rulings owed, U11 waits on U4's octree and a scale ruling, U13 is last by its own reasoning — so the row
+was taken, with its two owed prerequisites read rather than invented.
+
+### The readings this pass took rather than asking (each recorded as owed)
+
+1. **The civilian nouns (§27's citation, and T016's own subject).** Two ladders in `axis.rs` are **owed by
+   name**: `AxisKind::OrgRank` (an office rank) and `AxisKind::Certification` (the certification/resume bands),
+   both owed to `docs/CIVILIAN-PORT.md` — which is an **inventory** of the civilians' process (`gov/mod.rs`,
+   `resume.rs`) and **does not declare their tokens**. The smallest reading: **an office is the
+   organisation's own word for it** (`tidewarden`), a name the organisation uses with the scopes its charter
+   reaches, **never a fabricated rung**; the ladders stay owed and print owed. The restriction the record
+   states (*a ladder that is nearly right reads as checked*) is kept, and `specs/002-world/tasks.md` T016 is
+   annotated in place. **Recorded as owed**: the office rank's and the certification bands' tokens remain the
+   user's to rule.
+2. **The floor an act must reach.** The stage question's `passes` must be declared before any answer exists,
+   so the organisation's **charter** declares it: `ACT_FLOOR = "verified-internal"` — an act is taken only
+   where its own record has been read at the stage an *internal* act is at, because a member's act carries
+   nobody's approval. The reading was **measured, not guessed** (a head declaring no approval of its own reads
+   `verified-internal`; one declaring `approval: design-approved` reads `proposed`), and a **stricter
+   organisation** exists as a declared value (`applied-internal`, "the draught guild") so the below-floor
+   refusal is reachable rather than hypothetical.
+3. **The world's own cells.** The clean room has one water truth: U3's `hydrology` stage (`elevation`,
+   `water_level` — Priority-Flood's filled surface) and its flow routing (`d8_receivers`). The smallest
+   reading: the being's world **is** that — read through the one field plane, walked along the receivers, with
+   **no second needs model, scheduler or automaton**. Its need is a fold over its own acts (there is no need
+   tick anywhere in the tree), and the refusal when the world cannot meet it is by name and recorded.
+
+### What was built, one concern with one owner
+
+| file | what it owns, alone |
+|---|---|
+| `src/being.rs` *(new)* | the being: `Organisation` (name, charter, office, scopes, floor), `Act`, `WorldRead` (the field-plane read, the depth, the flow step), `Being` (its record's claim as its soul check, its need as a fold, its cell read off its records, its reach, `tick`), `stage_of` (the laya/von seam), `draft_record`, `start_cell`/`dry_sink`, `chosen_stage`, the digests |
+| `src/refusal.rs` | two new names, declared and tested: `water_unreachable`, `stage_below_floor` (90 → **92**) |
+| `src/chain.rs` | one new event kind, declared and tested: `being_acted` (6 → **7**) — the record's owner is the chain, so a being's act is a governed event there rather than in a ledger of its own |
+| `src/evidence.rs` | `check_u12`: the run the binary prints, and its bar |
+| `src/systems.rs` | the `[U12]` registry row, rewritten from `absent` to the first slice built |
+| `src/main.rs` | the wiring, and the failure line's own list |
+| `tests/u12_being.rs` *(new)* | the row's check through the public API: the member's acts, the named-and-recorded denial, the three refusals, the owed vocabulary, two runs one digest |
+| `clean-room/README.md`, `specs/002-world/tasks.md` | the figures this pass moved, and T016's annotation |
+
+**Nothing under `crates/` was read or written** (P7), the library's only dependency is still `sha2`, and no
+file outside `clean-room/` and `docs/` was touched by the build.
+
+### The capture before and after, and the movement accounted line by line
+
+| Capture | Stdout | Stderr |
+|---|---|---|
+| pre (`pre-stdout.txt` / `pre-stderr.txt`), **498 lines** | `b8203cbc…` | `f583ca18…` (1 line) |
+| **final** (`final-stdout.txt` / `final-stderr.txt`), **504 lines** | **`6bf8c2d0…`** | **`f583ca18…`** (1 line, unchanged) |
+
+The pre pair was taken from the built binary before the first edit, and it is byte-identical to §31's final
+pair (`b8203cbc…`), so this pass began exactly where §31's repair ended. The movement by `diff` is **one line
+rewritten and six added, none removed** (498 → 504, net +6), and each line is named:
+
+* **rewritten, line 83** — the registry's own `[U12]` row: `absent (admitted by §16; … the policy chokepoint
+  …)` → `**first slice built (2026-10-13, §32)**: **the first mob** (`src/being.rs`) …`;
+* **added, lines 498–503** — the six `U12` evidence lines (organisation, first mob, stage question, governed
+  act, refusals, determinism), inserted before the closing `Clean room OK:` line.
+
+Every other line, digest and count in the binary's output is unchanged — including U7's classifier readings,
+which the being's own question now asks beside the gate's demonstration. Two direct runs of the final binary
+are **byte-identical** (`6bf8c2d0…` twice).
+
+### The numbers, as the binary prints them
+
+```
+U12 organisation: `the undertow congregation`, charter `docs/CIVILIAN-PORT.md`, office `tidewarden` — its rank ladder stays owed by name (`AxisKind::OrgRank`); the charter reads all 13 declared action(s): 7 allowed, 6 refused by name
+U12 first mob:    cell 14 of 2304 — 4 step(s) along the game's own flow law, then drank at cell 159 (0.010996 m of the world's own water); the need reads met = true; the one chain carries 5 event(s) (0 refusal(s)) and verifies = true
+U12 stage question: reads `verified-internal` at the charter's floor `verified-internal` (origin the proof's own) over c957e3ab — the being's draft read in place, digest 979bf776; 1 declared feature(s) held
+U12 governed act: `save_world` is refused `policy_denied` to this member, the refusal quotes the list = true, and it is on the chain = true
+U12 refusals: a need the world cannot meet where the being may reach is refused `water_unreachable` and recorded = true (a dry sink) and = true (a reach spent on a cell the routing would carry); an act below the charter's own floor (applied-internal) is refused `stage_below_floor` and recorded = true; a being whose records cannot be read is refused `no_reading` = true
+U12 determinism:  two runs of the first mob produce one chain digest = true (979bf776)
+```
+
+The being's birthplace (cell 14) is the **world's own answer**, not a coordinate chosen here: it is the first
+dry cell whose flow path reaches standing water within the being's reach, found by `start_cell`. The walk is
+14 → 62 → 110 → 158 → 159, the drink is at the cell the world's own filled surface stands over, and the
+need's met/unmet reading is the fold over the being's own records rather than a counter beside it.
+
+### The guards, nine, each proved to bite by name
+
+[`run-guards.sh`](baselines/u12-first-mob/run-guards.sh) perturbs each new guard **in its own subject** and
+runs the bar: the world's own water read; the game's own flow step; the being's reach; `water_unreachable`'s
+own name; `stage_below_floor`'s own name; the charter's declared floor; the stage comparison; the recording
+of a denial; and the unsouled refusal. All nine bit by name, every touched file came back **byte-exact**
+(`sha256sum -c` against a snapshot taken before the first case, restored through a `trap`), and the harness's
+own output is kept in [`proof.txt`](baselines/u12-first-mob/proof.txt) with each case's test log beside it.
+The five source digests the harness restored to are recorded at its end and again in
+[`source-digests.txt`](baselines/u12-first-mob/source-digests.txt).
+
+### The done conditions, with exit statuses
+
+| Check | Exit | Measured on the final bytes |
+|---|---|---|
+| `cargo test --offline` | **0** | **374 passed / 0 failed** across 14 suites (300 lib + 74 integration); 365 → 374 is this pass's +9 (the being's five unit tests and four integration tests) |
+| `cargo clippy --offline --all-targets -- -D warnings` | **0** | no warnings |
+| `cargo run --offline` | **0** | 504 stdout lines (`6bf8c2d0…`), 1 stderr line (`f583ca18…`), two runs byte-identical |
+| the tree's own vocabulary | — | refusal names **90 → 92**, event kinds **6 → 7** (both declared, both tested, both named where they moved) |
+
+### The four graded dimensions, stated plainly
+
+| Dimension | Verdict |
+|---|---|
+| **Correctness** — the record's own rules refuse, and the refusal is the record's own | **graded and passed**: the member's charter read over all 13 declared actions (7 reached, 6 refused); an act it may not do refused `policy_denied` with the list quoted **and recorded**; a need the world cannot meet refused `water_unreachable` (both branches — the dry sink and the spent reach — proved separately); an act below its charter's floor refused `stage_below_floor`; a being without a claim refused `no_reading`, which is the reading layer's own word |
+| **The named claim** — the mission's three clauses land on existing seams, not beside them | **graded and passed**: the being's choice is `laya`'s stage question over `von`'s five declared stages with its floor declared in the charter; its world is the one field plane's `elevation`/`water_level` and `d8_receivers`; its acts are `policy`'s one call site and `chain`'s one ledger; **no second needs model, scheduler or cellular path** — the need is `thirsty()`, a fold over the being's own records (asserted by its tests), the only clock in the module is the world's own `Tick`, and `being.rs` computes no state of its own between ticks |
+| **Determinism and no partial state** — the plan's own bar | **graded and passed**: two runs of the first mob produce one chain digest (`979bf776…`); the binary's two runs are byte-identical; the being holds no mutable interior (its need, its cell and its steps are all reads off its chain), and a failed act is recorded rather than half-taken |
+| **Honesty and boundary** — what is claimed against what was run | **graded and passed**: every number here is a printed value, a measured digest or an exit status; the floor `verified-internal` is the **measured** reading of the being's own draft, and the stricter charter's `applied-internal` is how the below-floor case is reachable; the organisation's rank and certification ladders are **owed** by name and printed owed; the abbreviated digests above are the only elisions and each is expanded in the capture pair and in [`source-digests.txt`](baselines/u12-first-mob/source-digests.txt) |
+
+### Owed, and named
+
+**U6's self-describing protocol** (the verbs an autonomous actor discovers — this build's being *is* told by
+its charter, which is not the protocol the row names); **U2's T016 vocabulary** — the office rank and the
+certification bands, printed owed in `axis.rs`; **the other kinds of being** — a plant (a being that never
+acts), an incarnate pilot, a god's office; **ensoulment's own slice as the record orders it** (soul-energy
+accounting, the released essence, consent/rite/corruption — this pass read *von as the substrate the being is
+read on*, which is the smallest reading, not the accounting); **relations and the court** (grudges, debts,
+findings — a killing is not modelled here); **apprenticeship/tutoring**; **a population** (many beings, one
+world, and the picture of it); and, unchanged, §24's remainder (ozone, an azimuth, the per-cell frame
+format), §29's remainder, U1's remainder, the `noul`/`score` calibration sets, the **four U10 rulings**,
+`mc-ar-mod`, and §5 rows **8**, **11** and **13**. **This pass asked the user nothing**: the mission's own
+instruction was to take the smallest reading, record it as owed, and not stop.
+
+### The next buildable step
+
+The reconnaissance for the next step is this one's own remainder: **the second being** — one world with two
+mobs, whose needs race for the same cells (the first place a *relation* between beings can be read rather
+than asserted) — or the **self-describing protocol** the row names, which is what would let an autonomous
+actor discover its verbs rather than be told them by its charter.

@@ -54,8 +54,32 @@
 //! refused rather than wrapped; a measurement over zero views is refused rather
 //! than defaulted to one. And a parameter the model does not record is **absent**,
 //! with a name — never zero, because zero is a value somebody could believe.
+//!
+//! **The audit, 2026-10-10.** 5 226 lines over 11 modules, 108 tests, and the fullest documentation of
+//! any crate in this workspace — the mapping from `APPEARANCE.md` to the modules that implement it is
+//! the header this text sits in. Two measured facts are worth carrying:
+//!
+//! * **Subsurface scattering was drawn by both the CPU path and the shader and recorded by nothing.**
+//!   `response` could therefore not tell `subsurface_weight: Some(0.0)` from `None`, which is exactly
+//!   the distinction `Terms` exists to keep. Repaired: it is a fifth flag now, with a
+//!   present-vs-absent discriminator test of its own.
+//! * Derived materials carry **six of twelve** OpenPBR parameters. Until `base_color` began being
+//!   derived from an admitted reflectance there was no albedo at all — which is why there was no
+//!   green grass: the material exists, has its own USGS sample, and had no colour to be green with.
+//! * **The albedo was not the whole of it, and the second cause was the derivation's own red
+//!   window.** With the reflectance admitted the grass still read `(0.2086, 0.1393, 0.0654)` —
+//!   red-dominant — and so did *every* leaf and needle in the library (aspen green-top `r/g` 1.61,
+//!   blue-spruce needles 1.25, gray-pine branch 1.75), because the declared **R** window ran to
+//!   0.75 µm and so swallowed the *red edge*: the near-infrared rise where a leaf reflects most of
+//!   the light it ever reflects. Narrowed to the visible band (0.60–0.70 µm, `LEDGER.md` C-181) the
+//!   same rows read 0.69, 0.72 and 0.94 — green — **on the same spectra, with no material exchanged
+//!   for a greener one.** Both causes had to be fixed before anything green was drawn, and the
+//!   second was a property of the derivation's declared windows rather than of any sample. The
+//!   grassland cover itself stays a warm olive (`r/g` 1.07): its declared canopy is 40 % *dry* grass
+//!   by its own file name and its retained spectrum carries no chlorophyll dip in 0.60–0.68 µm.
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 pub mod composition;
 pub mod detail;

@@ -1,0 +1,47 @@
+   Compiling shploingus-clean-room v0.1.0 (C:\Users\ala\Documents\shploingus-clean\clean-room)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.80s
+     Running tests\u12_being.rs (target\debug\deps\u12_being-10da00f46ca9f228.exe)
+
+running 4 tests
+test the_organisations_vocabulary_stays_owed_by_name ... FAILED
+test a_member_acts_and_an_act_it_may_not_do_is_refused_by_name_and_recorded ... FAILED
+test two_runs_of_the_first_mob_produce_one_chain_digest ... FAILED
+test the_world_and_the_record_refuse_the_being_by_name ... FAILED
+
+failures:
+
+---- the_organisations_vocabulary_stays_owed_by_name stdout ----
+
+thread 'the_organisations_vocabulary_stays_owed_by_name' (9768) panicked at tests\u12_being.rs:229:5:
+assertion `left == right` failed
+  left: "approved"
+ right: "verified-internal"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_member_acts_and_an_act_it_may_not_do_is_refused_by_name_and_recorded stdout ----
+
+thread 'a_member_acts_and_an_act_it_may_not_do_is_refused_by_name_and_recorded' (21264) panicked at tests\u12_being.rs:92:52:
+the drive is not refused: Refusal { kind: StageBelowFloor, detail: "the being's act reads `verified-internal` where the charter's floor is `approved`: an act below the floor is not taken, and the being files it rather than acting on it" }
+
+---- two_runs_of_the_first_mob_produce_one_chain_digest stdout ----
+
+thread 'two_runs_of_the_first_mob_produce_one_chain_digest' (13196) panicked at tests\u12_being.rs:256:50:
+the drive is not refused: Refusal { kind: StageBelowFloor, detail: "the being's act reads `verified-internal` where the charter's floor is `approved`: an act below the floor is not taken, and the being files it rather than acting on it" }
+
+---- the_world_and_the_record_refuse_the_being_by_name stdout ----
+
+thread 'the_world_and_the_record_refuse_the_being_by_name' (17424) panicked at tests\u12_being.rs:190:5:
+assertion `left == right` failed
+  left: "verified-internal"
+ right: "approved"
+
+
+failures:
+    a_member_acts_and_an_act_it_may_not_do_is_refused_by_name_and_recorded
+    the_organisations_vocabulary_stays_owed_by_name
+    the_world_and_the_record_refuse_the_being_by_name
+    two_runs_of_the_first_mob_produce_one_chain_digest
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+error: test failed, to rerun pass `--test u12_being`

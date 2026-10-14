@@ -1,0 +1,115 @@
+The changed guards, each proven to bite — 2026-10-14f
+=====================================================
+
+Six bites. Each one perturbs a **changed guard's own subject** in the clean room's own bytes, runs the single
+test that guard lives in, records the exit status and the failure it produced, then restores the file and
+proves the restore **byte-exact** by `sha256sum` against a pre-bite copy (`restored byte-exact: <digest>` below
+is that check, and it is repeated over all files at the end). A guard whose subject can be broken without the
+guard noticing is not evidence, so this file is the pass's proof that its own guards are watching the thing
+they name.
+
+subject command: `cargo test --offline -j 2 --test <suite> <test> 2>&1` (the `presentation` bite runs
+`--lib presentation::tests::…`), from `clean-room/`
+
+---
+
+--- f-1 the material write door stops writing (src/chunk.rs)
+file: src/chunk.rs (was 5f21bd29f41e24a2e6e8a0e7c17414b0620d0f57fa29d946fcd13b02639ccee8)
+subject: cargo test --offline -j 2 --test u4_drawn one_cells_material_moves_the_frame_and_nothing_else_does 2>&1
+subject exit: 101
+  panicked at tests/u4_drawn.rs:467 — `assertion left == right failed`
+    left: Some(MaterialId(4))   right: Some(MaterialId(1))
+  (the cell the two worlds differ in was never written: the store's own read-back answers the old material,
+   so the one-cell differential cannot even be set up — the write door is the subject, and the guard is on it)
+restored byte-exact: 5f21bd29f41e24a2e6e8a0e7c17414b0620d0f57fa29d946fcd13b02639ccee8
+
+--- f-2 the sweep stops reading the cell's material (src/mesh.rs)
+file: src/mesh.rs (was 82cc2c54092b33b52f49b52a3c9be3500a948457533af73968c39d714a28fef9)
+subject: cargo test --offline -j 2 --test u4_drawn one_cells_material_moves_the_frame_and_nothing_else_does 2>&1
+subject exit: 101
+  panicked at tests/u4_drawn.rs:503 — `assertion left != right failed`:
+    "**and so does the picture** — the material a drawn frame shows is the cell's own"
+    left/right: the same frame digest (the frame ignored the cell: the sweep no longer carries the material
+    the cell holds into the rectangle it emits)
+restored byte-exact: 82cc2c54092b33b52f49b52a3c9be3500a948457533af73968c39d714a28fef9
+
+--- and f-2 again, on the **tightened** guard and the final test bytes
+The first f-2 run caught the perturbation at the frame-digest assertion. The guard was then tightened so the
+perturbation is caught **on the geometry itself**, and f-1 and f-2 were re-run against the final
+`tests/u4_drawn.rs` (`d0ba8e1e…`, the file's digest now) — both still bite, and f-2 now fails a different,
+stronger line:
+
+subject command (both bites): as above, from `clean-room/`
+  f-1: subject exit 101, restored byte-exact: 5f21bd29f41e24a2e6e8a0e7c17414b0620d0f57fa29d946fcd13b02639ccee8
+  f-2: subject exit 101, restored byte-exact: 82cc2c54092b33b52f49b52a3c9be3500a948457533af73968c39d714a28fef9
+  f-2's failure, verbatim:
+  panicked at tests/u4_drawn.rs:504 — `assertion left != right failed`:
+    "the geometry follows the cell: the face that changed is a different rectangle set"
+    left:  the unchanged world's rectangles (the face over the written cell still carries MaterialId(4))
+    right: the written world's rectangles
+  So the guard no longer passes on "the frame digest moved" alone: **the rectangles the mesh emits must move
+  with the cell**, which is what makes the sweep's read the guard's own subject.
+
+--- f-3 the plan reading stops taking the column's material from its cell (src/surface.rs)
+file: src/surface.rs (was 61776235353b9a422c53e99498c7a8ced165f590f2df0d8a31c44333ede98365)
+subject: cargo test --offline -j 2 --test u1_surface the_material_of_a_column_is_the_cell_s_own_and_water_is_the_palette_s 2>&1
+subject exit: 101
+  panicked at tests/u1_surface.rs:226 — `assertion left != right failed`:
+    "one cell's material is the frame's own: the picture follows the cell"
+    left/right: the same frame digest ("12feeb89…" twice)
+restored byte-exact: 61776235353b9a422c53e99498c7a8ced165f590f2df0d8a31c44333ede98365
+
+--- f-4 the read/cells patch guard is disabled (src/surface.rs)
+file: src/surface.rs (was 61776235353b9a422c53e99498c7a8ced165f590f2df0d8a31c44333ede98365)
+subject: cargo test --offline -j 2 --test u1_surface a_zoom_of_none_and_cells_that_are_not_the_read_s_own_are_refused_by_name 2>&1
+subject exit: 101
+  panicked at tests/u1_surface.rs:356 — the refusal the guard demands is gone and the run sails past it:
+    `parameter_out_of_range: (0, 0) is outside this world's own patch: it spans x 1..48, y 0..47`
+  (the test asserts the cells/read patch refusal **by its own name and sentence**; with the guard disabled a
+   different refusal from further down is what answers, so the guard is the subject it claims to be)
+restored byte-exact: 61776235353b9a422c53e99498c7a8ced165f590f2df0d8a31c44333ede98365
+
+--- f-5 the one conversion stops refusing a material with no reflectance (src/presentation.rs)
+file: src/presentation.rs (was fd07eb0aecde022252fe1d1339529eb54215c1af188c26a0d2a08fa4817fc5da)
+subject: cargo test --offline -j 2 --lib presentation::tests::the_one_conversion_refuses_a_material_that_derives_no_colour 2>&1
+subject exit: 101
+  panicked at src/presentation.rs:309 — `called Result::unwrap_err() on an Ok value:
+    Surface { reflectance: None, roughness: 0.55, metalness: 0.0 }`
+  (a material with no reflectance now converts: the frame would be handed a colour nobody recorded)
+restored byte-exact: fd07eb0aecde022252fe1d1339529eb54215c1af188c26a0d2a08fa4817fc5da
+
+--- f-6 the read/cells water agreement guard is disabled (src/surface.rs)
+file: src/surface.rs (was 61776235353b9a422c53e99498c7a8ced165f590f2df0d8a31c44333ede98365)
+subject: cargo test --offline -j 2 --test u1_surface a_read_and_cells_that_stand_different_water_are_refused_by_name 2>&1
+subject exit: 101
+  panicked at tests/u1_surface.rs:378 — the frame was drawn where it must be refused, and the test's own
+  message says what it caught: `the placed read and the settled cells do not stand the same water: Surface { … }`
+restored byte-exact: 61776235353b9a422c53e99498c7a8ced165f590f2df0d8a31c44333ede98365
+
+---
+
+=== the files after every bite ===
+
+Every restored file was checked again after all six bites, in one `sha256sum -c`, against the digests recorded
+before the first bite. All six lines OK:
+
+5f21bd29f41e24a2e6e8a0e7c17414b0620d0f57fa29d946fcd13b02639ccee8 */c/Users/ala/Documents/shploingus-clean/clean-room/src/chunk.rs
+82cc2c54092b33b52f49b52a3c9be3500a948457533af73968c39d714a28fef9 */c/Users/ala/Documents/shploingus-clean/clean-room/src/mesh.rs
+61776235353b9a422c53e99498c7a8ced165f590f2df0d8a31c44333ede98365 */c/Users/ala/Documents/shploingus-clean/clean-room/src/surface.rs
+fd07eb0aecde022252fe1d1339529eb54215c1af188c26a0d2a08fa4817fc5da */c/Users/ala/Documents/shploingus-clean/clean-room/src/presentation.rs
+861cecab732183f0b15f1c1b44a95d1fd9ce9228b2b43b77e615a1937c3a65f3 */c/Users/ala/Documents/shploingus-clean/clean-room/tests/u1_surface.rs
+d0ba8e1e5e2652e42f5949e15bc9172227d8ef2fd33769f94522ad16efd1fede */c/Users/ala/Documents/shploingus-clean/clean-room/tests/u4_drawn.rs
+
+`tests/u4_drawn.rs` carries the digest the file holds **now** (`d0ba8e1e…`): the tightening above is part of
+this pass's own bytes. The first f-2 run happened on the pre-tightening test file (`ab463e84…`), which is why
+this file records both: the bite's subject (the sweep) never changed, and the stronger assertion is the one the
+final bytes carry. The six non-test files' digests are the same before and after the tightening, so f-3..f-6
+(the `surface.rs` and `presentation.rs` bites) were run against bytes that are byte-identical to the ones on
+disk now.
+
+=== what these bites do not prove ===
+
+They do not re-measure the frame: `cell-material-gate-2026-10-14f.txt` is where the drawn frame's numbers are,
+and the six bites above are only the claim that each guard reacts to its own subject. And they prove nothing
+about `crates/`: no parent byte was read or written by this pass (`find crates -newermt '-400 minutes' -type f`
+-> 0 files; the pin re-verified below).

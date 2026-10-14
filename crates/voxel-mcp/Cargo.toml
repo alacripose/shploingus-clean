@@ -1,0 +1,21 @@
+[package]
+name = "voxel-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The gate's read surface: an MCP tool server over the census, the work list and the patch set."
+
+[dependencies]
+# The gate's own crates. This server measures nothing itself: every number it serves is
+# one `voxel-package` already computed, so a tool call cannot disagree with the build.
+voxel-package = { path = "../voxel-package" }
+voxel-model = { path = "../voxel-model" }
+# **The classifier, so the agent can judge its own work.** This is the one edge in this crate that
+# carries a model: it is here because the request is that the agent judges its work through the
+# surface, and it is *lazy* — the ONNX session is loaded on the first judgment, never at startup,
+# so a client that only reads the gate pays nothing for it.
+voxel-von = { path = "../voxel-von" }
+# The wire format an MCP client speaks, and the reason `serde_json` is named here and not in
+# the crates that are supposed to carry no external dependency.
+serde_json.workspace = true

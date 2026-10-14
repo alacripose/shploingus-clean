@@ -1,0 +1,64 @@
+# Every crate's prose budget: the most **plain comment** its own source may carry, as a percent.
+#
+# **What is declared here, exactly.** The share of a crate that is *commentary a reader can only find
+# by standing in the file* — lines opening `//`. **Rustdoc is not counted** (`///`, `//!`): the ruling
+# of 2026-10-10 is the user's, and is quoted in `crates/voxel-package/src/bloat.rs`'s `is_rustdoc` —
+# *"the actual documentation [should] live inside rust docs, so when we study why some bullshit value
+# is the way it is we know exactly what happened."* Documentation next to the value it explains is the
+# thing this project is asking for; a ratchet that charged for it would be charging for the work.
+#
+# **The numbers were re-declared 2026-10-10, and that was a change of definition, not progress.** The
+# frame used to be measured over *all* comment lines, so the declared numbers were 19–51. Measured
+# apart, the same bytes split into rustdoc and plain commentary — `voxel-model` 19 % is 15 % rustdoc
+# and 3 % plain; `shploingus` 51 % is 21 % and 29 % — and the table below is the plain column, which
+# is the only column this rule is about. Nothing was rewritten to earn the lower numbers: the prose is
+# the same prose, counted the way the ruling says to count it. The all-comment and rustdoc columns are
+# printed on every run by the instrument below, so the change can be checked rather than believed.
+#
+# **What this file is, and what it is not.** It is not a target and not a ruling that prose is bad. It
+# is the measurement of what each crate carried on the day the ratchet was switched on, declared as a
+# ceiling. The share **may fall and may not rise**. A crate over its number refuses the build; a crate
+# under it reports the slack, because slack is a budget that can still be lowered. Rustdoc is free,
+# plain commentary is capped, and the asymmetry is the point.
+#
+# **Why a ratchet and not the frame.** `census::PROSE_FRAME_PERCENT` is 10 and every crate is over it
+# (3–29 % plain). While the sixteen sections of crate documentation were owed, the `documented` axis
+# refused every crate against that frame and every refusal was accepted on
+# `accepted-refusals.txt` — a check firing into a list that always said yes — and the tree's own
+# 30–51 % comment headers became the example every later file matched. That is how *"the house rule is
+# heavy docs in the code"* outlived the ruling against it: nobody decided it, it was simply never
+# enforced. **Two things have since changed.** The retrofit landed in the crates' own rustdoc, and the
+# axis stopped taking a header's word for it: `census::Axis::Documented` reads the compiler's own
+# `missing_docs` count (`conformance/missing-docs.txt`), a measurement of each public item, and it no
+# longer consults this frame at all. That reading carries a **pin** per crate — a digest of the bytes
+# the count was taken over — so the gate can tell a current reading from one taken over a tree that
+# has since moved, and reports the second as `stale` rather than repeating the number. And this ratchet measures the plain share, so it is the only check
+# on commentary that is not documentation — with `PROSE_FRAME_PERCENT` above it as the frame the plain
+# column is measured against.
+#
+# **How to re-measure.** The numbers are a reading, not a guess, and the instrument prints its own:
+#
+#     cargo test -p voxel-package --lib census::tests::the_prose_frame_prints -- --nocapture
+#
+# `crates/voxel-package/src/census.rs` measures these bytes (`bloat::measure_prose` over
+# `provenance::covered_files`), and it is now the only reader of them among the axes: the `documented`
+# axis reads the compiler's count instead. Declared 2026-10-10; re-declared over the plain share the
+# same day.
+
+# crate	plain-percent	(the frame's own measurement; rustdoc excluded)
+voxel-model	3
+voxel-noise	7
+voxel-light	11
+voxel-mesh	10
+voxel-shapers	12
+voxel-audio	17
+voxel-stream	14
+voxel-instrument	5
+voxel-appearance	19
+voxel-work	15
+voxel-ui	8
+voxel-client	16
+voxel-package	13
+voxel-von	5
+voxel-mcp	9
+shploingus	29

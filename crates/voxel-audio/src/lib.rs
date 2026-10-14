@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 //! Rain you can hear: **pure synthesis, no device.**
 //!
@@ -15,8 +16,13 @@
 //! 1. **rodio is the output wheel, not the synth.** A crate that can open a device
 //!    cannot be tested headlessly, and the project rule is that the client is never
 //!    tested invisibly. So synthesis is arithmetic in a crate with no audio
-//!    dependency, and `voxel-client` turns the samples into sound. **Every claim in
-//!    this file is testable without a sound card**, and the tests below prove it.
+//!    dependency, and the samples are meant to reach sound through a wheel that
+//!    **does not exist yet**: this file said "`voxel-client` turns the samples into
+//!    sound" until `census::orphan_libraries` read the workspace's manifests and
+//!    reported this crate as a library nothing depends on. The sentence is true of
+//!    the design and false of the tree, and the tree is what a reader is owed. What
+//!    *is* verifiable is not affected and not excused by that: **every claim in this
+//!    file is testable without a sound card**, and the tests below prove it.
 //! 2. **Scope is the onset, and only the onset.** "All audio" would include an
 //!    ambient bed and music; neither is ruled and neither is here. A narrower thing
 //!    that is finished beats a broad thing that is started.
@@ -29,7 +35,7 @@
 //!   light rain is a low, soft hiss because each drop is far apart and the air
 //!   between them absorbs the high end; heavy rain is broadband because the drops
 //!   overlap. So the cutoff is a function of onset, not a constant, and that is
-//!    the difference between "more rain" and "different rain".
+//!   the difference between "more rain" and "different rain".
 //! * **Discrete drops** — one droplet, close enough to hear as an event. Their
 //!   *rate* rises with onset, because onset is a measure of how many drops fall.
 //!
@@ -44,6 +50,14 @@
 //! world's own `stage_seed`, so the same column in the same world rains the same way
 //! on every machine and every run — which is what lets a test assert anything about
 //! the waveform at all.
+//!
+//! **The audit, 2026-10-10.** 440 lines, 8 tests, and **read by nobody**: `census::orphan_libraries`
+//! prints this crate in every build receipt. Its two former claims — that the client "plays what this
+//! returns" and "turns the samples into sound" — were **false, and false when written**: no crate
+//! depends on this one and no code calls it. Both are corrected to say so rather than left flattering.
+//! **Owed:** the output wheel (rodio, R-33, marked unscoped in `docs/MODS-MAP.md`), or the ruling that
+//! the synthesis is complete and the wheel is only scheduled. Today the only thing that knows this
+//! crate is unreachable is one line in a build report.
 
 use voxel_shapers::spec::WorldSpec;
 use voxel_shapers::weather::{SILENT_ONSET, WET_ONSET};
@@ -259,6 +273,11 @@ pub fn audio_seed(spec: &WorldSpec) -> u64 {
 /// without depending on `voxel-shapers` directly and hard-coding the number.
 pub const WET: f64 = WET_ONSET;
 
+/// **A drop has to fit inside the buffer it is played from**, and both are constants — so the
+/// claim is a `const` assert rather than a test that could only ever pass. It sits with the
+/// numbers it constrains: change either so a drop outlasts its buffer and the build stops here.
+const _: () = assert!(DROP_SECONDS < BUFFER_SECONDS, "a drop outlasts the buffer it is in");
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,6 +446,5 @@ mod tests {
         // claim visible in the same place as the numbers.
         // A resolution would be a use, and a use is what the manifest forbids.
         assert_eq!(SAMPLE_RATE_HZ, 48_000);
-        assert!(DROP_SECONDS < BUFFER_SECONDS, "a drop outlasts the buffer it is in");
     }
 }

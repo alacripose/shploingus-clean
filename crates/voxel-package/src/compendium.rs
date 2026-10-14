@@ -1284,15 +1284,26 @@ mod tests {
             occurrence.title,
             &occurrence.body[..occurrence.body.len().min(200)]
         );
-        // Verbatim means the body is the record's own bytes, so the digest of
-        // the body is reproducible from the document on disk.
-        let document = std::fs::read_to_string(
-            real_root().join(occurrence.document),
-        )
-        .expect("the document reads");
+        // Verbatim means the body is the record's own characters, so the digest
+        // of the body is reproducible from the document on disk.
+        //
+        // **Line terminators are the checkout's, not the record's.** `compress`
+        // splits the document into lines and joins a body with `\n`, so its text
+        // carries LF regardless; a Windows checkout with `core.autocrlf=true`
+        // writes the same document with CRLF, and the two differ only in a
+        // translation Git applies on the way in and out. Comparing raw bytes here
+        // asserted that a working copy on one platform is byte-identical to a
+        // working copy on another — a fact about the checkout rather than about
+        // the record, and one this test failed on this machine while the reader
+        // was reporting R-62.2 correctly. The record's content is what is being
+        // checked, so the document is read the way the reader reads it: line
+        // endings normalised to LF, everything else untouched.
+        let document = std::fs::read_to_string(real_root().join(occurrence.document))
+            .expect("the document reads")
+            .replace("\r\n", "\n");
         assert!(
             document.contains(occurrence.body.trim()),
-            "the body is not a substring of its own document, so it is not verbatim"
+            "the body is not present in its own document, so it is not verbatim"
         );
     }
 

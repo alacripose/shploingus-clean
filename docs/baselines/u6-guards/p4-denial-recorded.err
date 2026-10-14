@@ -1,0 +1,6 @@
+   Compiling shploingus-clean-room v0.1.0 (C:\Users\ala\Documents\shploingus-clean\clean-room)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.94s
+     Running `target\debug\shploingus-clean-room.exe`
+serve: 7 request(s): 5 answered, 2 refused by name
+Clean room FAILED: a measured bar is not met (U1=true, U2 world=true, U2 shapes=true, U2 chain=true, U3=true, U4=true, U5=true, U6=false, U7=true, U8=true, U9=true, U10=true).
+error: process didn't exit successfully: `target\debug\shploingus-clean-room.exe` (exit code: 1)

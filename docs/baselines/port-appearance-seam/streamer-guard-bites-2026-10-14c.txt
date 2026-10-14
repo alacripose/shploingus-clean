@@ -1,0 +1,71 @@
+The streamed residency's guards, each proven to bite by perturbing its own subject — 2026-10-14c
+===========================================================================================
+
+Each perturbation was applied to the clean room's own bytes (`clean-room/src/stream.rs`), the subject test
+was run, and then the file was restored **byte-exact** from a copy taken before the first perturbation
+(`sha256sum -c` against it -> OK after every bite). No parent byte under `crates/` was touched.
+
+The five bites, in order, with what each one proves:
+  A  the horizon stops mattering (.filter(|_ignore| true))            -> the first-eviction guard fails
+  B  a resident chunk is never served (if false)                       -> the still-camera guard fails
+  C  the payload comes from the wrong key (chunk(anchor) for every key) -> the cells-equal guard fails
+  D  nothing is ever evicted (retain(|_key, _| true))                   -> the walk's eviction guard fails
+  E  the identity is blind to membership (iter().take(0))               -> the identity guard fails
+
+The file under test before the first bite:
+c72fc71df099e0934474a1be4b448870b7e9f22ffc04df27544036cc8610485f *src/stream.rs
+
+the file under test: c72fc71df099e0934474a1be4b448870b7e9f22ffc04df27544036cc8610485f *src/stream.rs
+
+--- bite A the horizon stops mattering  (subject: stream::tests::a_declared_horizon)
+thread 'stream::tests::a_declared_horizon_holds_every_chunk_of_this_world_and_a_narrower_one_evicts' (23236) panicked at src\stream.rs:306:9:
+one metre inside the far corner 45.2548 m, 4 of 4 chunk(s) are held — the first chunk is evicted
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+--
+error: test failed, to rerun pass `--lib`
+restored byte-exact: OK
+
+--- bite B a resident chunk is never served  (subject: stream::tests::a_still_camera)
+thread 'stream::tests::a_still_camera_derives_once_and_a_second_look_is_served' (21612) panicked at src\stream.rs:346:9:
+assertion `left == right` failed: a camera that did not move derives nothing again
+  left: 4
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--
+error: test failed, to rerun pass `--lib`
+restored byte-exact: OK
+
+--- bite C the payload comes from the wrong key  (subject: stream::tests::the_resident_chunks_are_the_worlds_own)
+thread 'stream::tests::the_resident_chunks_are_the_worlds_own_chunks_cell_for_cell' (23224) panicked at src\stream.rs:445:13:
+assertion `left == right` failed: the payload is the chunk its key names
+  left: ChunkKey { x: 0, y: 0, z: 2 }
+ right: ChunkKey { x: 0, y: 1, z: 2 }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--
+error: test failed, to rerun pass `--lib`
+restored byte-exact: OK
+
+--- bite D nothing is ever evicted  (subject: stream::tests::a_chunk_that_leaves_the_horizon)
+thread 'stream::tests::a_chunk_that_leaves_the_horizon_is_evicted_and_derived_again_when_the_camera_returns' (21696) panicked at src\stream.rs:379:9:
+moving the camera evicts what it left behind
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+--
+error: test failed, to rerun pass `--lib`
+restored byte-exact: OK
+
+--- bite E the identity is blind to membership  (subject: stream::tests::the_residencys_identity_moves)
+thread 'stream::tests::the_residencys_identity_moves_with_its_membership' (24080) panicked at src\stream.rs:480:9:
+assertion `left != right` failed: two residencies holding different chunks cannot share one identity
+  left: Digest([115, 74, 26, 136, 246, 203, 134, 13, 22, 100, 216, 29, 74, 201, 65, 14, 156, 227, 236, 80, 246, 212, 229, 244, 211, 64, 43, 163, 116, 175, 66, 20])
+ right: Digest([115, 74, 26, 136, 246, 203, 134, 13, 22, 100, 216, 29, 74, 201, 65, 14, 156, 227, 236, 80, 246, 212, 229, 244, 211, 64, 43, 163, 116, 175, 66, 20])
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+--
+error: test failed, to rerun pass `--lib`
+restored byte-exact: OK
+
+=== the file after every bite ===
+src/stream.rs: OK

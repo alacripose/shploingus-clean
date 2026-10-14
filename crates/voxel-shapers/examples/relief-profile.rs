@@ -172,7 +172,7 @@ fn main() {
     // ---- 6. is there dry land at the spawn, and how far is the nearest? ----
     //
     // This is the question a **colliding** camera asks and a floating one never
-    // did. `column::is_solid` already refuses water, so a walking body falls
+    // did. The field plane's solidity rule already refuses water, so a walking body falls
     // through the sea and rests on the sea floor: a spawn whose surface is below
     // sea level puts the player's head underwater, whatever the eye is set to.
     // So the number that decides the spawn is the elevation at the spawn, and the

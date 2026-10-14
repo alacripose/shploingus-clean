@@ -21,6 +21,7 @@
 //! is not what the world currently holds is a modification that **does not
 //! connect**, and it is refused. That is what makes the record an audit rather
 //! than a wish.
+use voxel_model::endian::LeBytes;
 
 use voxel_model::conservation::{Exact, Ledger, Mass, MassPumpDeclaration, Source};
 use voxel_model::world::{ActorId, PhysicalVerb, ReservationId, TaskId};
@@ -98,11 +99,11 @@ pub fn hand_change_id(
     Digest::of_fields(
         "shploingus/earthworks/hand-change/v1",
         &[
-            &x.to_be_bytes(),
-            &y.to_be_bytes(),
-            &z.to_be_bytes(),
-            &from.0.to_be_bytes(),
-            &to.0.to_be_bytes(),
+            &x.into_le_bytes(),
+            &y.into_le_bytes(),
+            &z.into_le_bytes(),
+            &from.0.into_le_bytes(),
+            &to.0.into_le_bytes(),
             actor.as_str().as_bytes(),
             verb.as_str().as_bytes(),
         ],
@@ -169,11 +170,11 @@ pub fn hand_change(change: HandChange) -> Refused<Modification> {
     // rather than pretending. `Pool::edit` adds the derived half: a lake is fluid
     // state with no material voxel (`fluid_state`), and an edit into one refuses too.
     for material in [from, to] {
-        if crate::column::is_fluid(material) {
+        if crate::materials::is_fluid(material) {
             return Err(crate::fluid_state::refuse_edit(x, y, z));
         }
     }
-    let registry = crate::column::materials::registry()?;
+    let registry = crate::materials::registry()?;
     let mass_of = |m: MaterialId| -> Option<Ratio> {
         if m.is_empty() {
             return None;
@@ -478,7 +479,7 @@ mod tests {
         // water — a fluid is world state, and the edit refuses instead of deleting
         // it (or minting one, which is the Minecraft source block the user ruled
         // out).
-        let water = crate::column::materials::WATER;
+        let water = crate::materials::WATER;
 
         let broken = hand_change(HandChange {
             x: 4,
@@ -533,7 +534,7 @@ mod tests {
     fn a_hand_change_carries_the_materials_own_mass_and_names_the_store() {
         // One cubic metre of igneous rock, at the registry's own density: the
         // number is the density, and the ledger audits.
-        let igneous = crate::column::materials::IGNEOUS;
+        let igneous = crate::materials::IGNEOUS;
         let m = hand_change(HandChange {
             x: 4,
             y: 5,
@@ -548,7 +549,7 @@ mod tests {
         let mut e = Earthworks::new();
         e.record(m.clone()).unwrap();
         assert!(e.audit().is_ok());
-        let density = crate::column::materials::registry()
+        let density = crate::materials::registry()
             .unwrap()
             .material(igneous)
             .unwrap()

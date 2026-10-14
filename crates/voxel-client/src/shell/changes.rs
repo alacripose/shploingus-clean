@@ -420,8 +420,8 @@ fn face_corners(cell: Cell, axis: usize, positive: bool) -> [Corner; 4] {
         }
     };
     let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
-    // **A ring, not a bit-pattern.** Consecutive corners have to be *adjacent*, or the fourth
-    // "edge" of the face is a diagonal and the outline gains an edge that is not on the shape.
+    /// **A ring, not a bit-pattern.** Consecutive corners have to be *adjacent*, or the fourth
+    /// "edge" of the face is a diagonal and the outline gains an edge that is not on the shape.
     const RING: [(i64, i64); 4] = [(0, 0), (1, 0), (1, 1), (0, 1)];
     let mut corners = [[0i64; 3]; 4];
     for (i, corner) in corners.iter_mut().enumerate() {

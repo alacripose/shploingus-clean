@@ -84,6 +84,13 @@ fn rows() -> &'static Mutex<Vec<CommittedAction>> {
     &ROWS
 }
 
+/// **Test-only lock, so a committed row survives until the test that committed
+/// it has read the book back.** The book is process-global, so without this a
+/// parallel test can drain a row before the committing test evaluates. Tests
+/// that commit-and-read hold this lock; production never sees it.
+#[cfg(test)]
+pub static BOOK_LOCK: Mutex<()> = Mutex::new(());
+
 /// Record one **accepted** governed act. Called only from the machine's single
 /// commit point, only after the receipt came back — see the module header.
 ///
@@ -125,6 +132,30 @@ pub fn record_committed_action(
 /// Hand over every row recorded so far and empty the book. The game side mints
 /// proof of work from what it takes; a row taken once is never offered again.
 pub fn drain_committed_actions() -> Vec<CommittedAction> {
+    #[cfg(test)]
+    {
+        let _book_guard = BOOK_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        return rows()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .drain(..)
+            .collect();
+    }
+    #[cfg(not(test))]
+    {
+        rows()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .drain(..)
+            .collect()
+    }
+}
+
+/// Drain the book **without** taking [`BOOK_LOCK`]. For tests that hold the
+/// lock across a commit-and-read sequence so a parallel test cannot drain the
+/// row in between. Production never calls this; it has no parallel readers.
+#[cfg(test)]
+pub fn drain_committed_actions_locked() -> Vec<CommittedAction> {
     rows()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -134,6 +165,8 @@ pub fn drain_committed_actions() -> Vec<CommittedAction> {
 
 /// How many rows are waiting. Read, not taken.
 pub fn pending_committed_actions() -> usize {
+    #[cfg(test)]
+    let _book_guard = BOOK_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     rows()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())

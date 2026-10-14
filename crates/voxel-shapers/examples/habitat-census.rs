@@ -1,8 +1,8 @@
 //! Habitat census — the sub-biome layer, counted and drawn.
 //! `cargo run -p voxel-shapers --example habitat-census`
 //!
-//! Reads the world the client streams (seed 2468) through [`column::profile`] — the same
-//! habitat the material paths read (C-160). Prints:
+//! Reads the world the client streams (seed 2468) straight from the shapers — the same
+//! slope, moisture and habitat the material law reads (C-160). Prints:
 //!
 //! * deciles of the two terrain inputs (slope, moisture) over the spawn window, so the
 //!   declared thresholds in `voxel_shapers::habitat` can be read against the world;
@@ -14,9 +14,23 @@
 
 use std::collections::BTreeMap;
 
-use voxel_shapers::column;
-use voxel_shapers::habitat::Habitat;
+use voxel_shapers::habitat::{self, Habitat};
 use voxel_shapers::spec::{Config, WorldSpec};
+use voxel_shapers::{climate, terrain};
+
+/// The three inputs the sub-biome layer reads, taken from the shapers themselves.
+///
+/// These are the same three calls `chunk_fields` makes when it classifies a column's
+/// habitat — read here directly rather than through a world representation kept
+/// alongside the shapers.
+///
+/// Returns `(slope, moisture, habitat)`.
+fn habitat_at(spec: &WorldSpec, x: f64, z: f64) -> (f64, f64, Habitat) {
+    let surface = terrain::elevation_m(spec, x, z);
+    let slope = terrain::sample(spec, x, z).slope;
+    let moisture = climate::moisture(spec, x, z);
+    (slope, moisture, habitat::habitat_of(spec, surface, slope, moisture))
+}
 
 fn main() {
     let spec = WorldSpec::new(2468, Config::default());
@@ -29,9 +43,9 @@ fn main() {
     let mut moistures = Vec::new();
     for z in (-half..=half).step_by(step as usize) {
         for x in (-half..=half).step_by(step as usize) {
-            let p = column::profile(&spec, x as f64 + 0.5, z as f64 + 0.5);
-            slopes.push(p.slope);
-            moistures.push(p.moisture);
+            let (slope, moisture, _) = habitat_at(&spec, x as f64 + 0.5, z as f64 + 0.5);
+            slopes.push(slope);
+            moistures.push(moisture);
         }
     }
     println!(
@@ -47,9 +61,9 @@ fn main() {
     for z in (-half..=half).step_by(step as usize) {
         let mut row = String::new();
         for x in (-half..=half).step_by(step as usize) {
-            let p = column::profile(&spec, x as f64 + 0.5, z as f64 + 0.5);
-            *counts.entry(p.habitat.name()).or_default() += 1;
-            row.push(letter_of(p.habitat));
+            let (_, _, h) = habitat_at(&spec, x as f64 + 0.5, z as f64 + 0.5);
+            *counts.entry(h.name()).or_default() += 1;
+            row.push(letter_of(h));
         }
         println!("  {row}");
     }
@@ -62,8 +76,8 @@ fn main() {
     while x <= 6000 {
         let mut z = -6000i32;
         while z <= 6000 {
-            let p = column::profile(&spec, x as f64 + 0.5, z as f64 + 0.5);
-            *world.entry(p.habitat.name()).or_default() += 1;
+            let (_, _, h) = habitat_at(&spec, x as f64 + 0.5, z as f64 + 0.5);
+            *world.entry(h.name()).or_default() += 1;
             z += 300;
         }
         x += 300;

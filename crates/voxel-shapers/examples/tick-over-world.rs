@@ -8,7 +8,7 @@
 
 use voxel_shapers::earthworks::Earthworks;
 use voxel_shapers::spec::{Config, WorldSpec};
-use voxel_shapers::{column, terrain};
+use voxel_shapers::{chunk_fields, terrain};
 
 fn main() {
     let spec = WorldSpec::new(2468, Config::default());
@@ -36,8 +36,8 @@ fn main() {
             let surface =
                 terrain::elevation_m(&spec, x as f64 + 0.5, z as f64 + 0.5).floor() as i32;
             for y in (surface - 2)..=(surface + 2) {
-                let a = column::material_at(&spec, &earthworks, x, y, z).unwrap();
-                let b = column::material_at(&later, &earthworks, x, y, z).unwrap();
+                let a = chunk_fields::material_at_composed(&spec, &earthworks, x, y, z).unwrap();
+                let b = chunk_fields::material_at_composed(&later, &earthworks, x, y, z).unwrap();
                 compared += 1;
                 if a != b {
                     differing += 1;

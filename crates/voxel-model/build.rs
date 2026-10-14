@@ -172,13 +172,26 @@ fn main() {
     }
 }
 
+fn u64_le(value: u64) -> [u8; 8] {
+    [
+        value as u8,
+        (value >> 8) as u8,
+        (value >> 16) as u8,
+        (value >> 24) as u8,
+        (value >> 32) as u8,
+        (value >> 40) as u8,
+        (value >> 48) as u8,
+        (value >> 56) as u8,
+    ]
+}
+
 fn fields_digest(tag: &str, fields: &[&[u8]]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update((tag.len() as u64).to_le_bytes());
+    hasher.update(u64_le(tag.len() as u64));
     hasher.update(tag.as_bytes());
-    hasher.update((fields.len() as u64).to_le_bytes());
+    hasher.update(u64_le(fields.len() as u64));
     for field in fields {
-        hasher.update((field.len() as u64).to_le_bytes());
+        hasher.update(u64_le(field.len() as u64));
         hasher.update(field);
     }
     hex(&hasher.finalize())

@@ -1,0 +1,49 @@
+   Compiling shploingus-clean-room v0.1.0 (C:\Users\ala\Documents\shploingus-clean\clean-room)
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\clean-room\target\debug\deps\libshploingus_clean_room-1120e90943ec2534.rmeta
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.45s
+     Running tests\u12_stepping.rs (target\debug\deps\u12_stepping-873ae90fd0e25781.exe)
+
+running 4 tests
+test the_plane_carries_state_from_tick_to_tick ... FAILED
+test the_reads_carry_one_water_truth ... FAILED
+test two_states_from_one_read_are_one_digest ... FAILED
+test a_rained_on_column_changes_the_beings_next_step ... FAILED
+
+failures:
+
+---- the_plane_carries_state_from_tick_to_tick stdout ----
+
+thread 'the_plane_carries_state_from_tick_to_tick' (8388) panicked at tests\u12_stepping.rs:137:5:
+assertion `left == right` failed: the read stands the law's water
+  left: 0
+ right: 4147
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- the_reads_carry_one_water_truth stdout ----
+
+thread 'the_reads_carry_one_water_truth' (24884) panicked at tests\u12_stepping.rs:212:5:
+assertion `left == right` failed: and the read's water is the law's own, column by column
+  left: 0
+ right: 4147
+
+---- two_states_from_one_read_are_one_digest stdout ----
+
+thread 'two_states_from_one_read_are_one_digest' (5176) panicked at tests\u12_stepping.rs:85:51:
+the drive is not refused: Refusal { kind: WaterUnreachable, detail: "cell 159 is a sink of the game's own flow law — no receiver carries it — and no water stands there: the being has nowhere the world's own routing can take it" }
+
+---- a_rained_on_column_changes_the_beings_next_step stdout ----
+
+thread 'a_rained_on_column_changes_the_beings_next_step' (18720) panicked at tests\u12_stepping.rs:85:51:
+the drive is not refused: Refusal { kind: WaterUnreachable, detail: "cell 159 is a sink of the game's own flow law — no receiver carries it — and no water stands there: the being has nowhere the world's own routing can take it" }
+
+
+failures:
+    a_rained_on_column_changes_the_beings_next_step
+    the_plane_carries_state_from_tick_to_tick
+    the_reads_carry_one_water_truth
+    two_states_from_one_read_are_one_digest
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+error: test failed, to rerun pass `--test u12_stepping`

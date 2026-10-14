@@ -1,0 +1,24 @@
+   Compiling shploingus-clean-room v0.1.0 (C:\Users\ala\Documents\shploingus-clean\clean-room)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.95s
+     Running unittests src\lib.rs (target\debug\deps\shploingus_clean_room-4324855fbab52049.exe)
+
+running 1 test
+test automaton::tests::the_law_is_a_pure_function_of_the_state_and_the_tick_count ... FAILED
+
+failures:
+
+---- automaton::tests::the_law_is_a_pure_function_of_the_state_and_the_tick_count stdout ----
+
+thread 'automaton::tests::the_law_is_a_pure_function_of_the_state_and_the_tick_count' (19148) panicked at src\automaton.rs:325:9:
+assertion `left == right` failed
+  left: 12
+ right: 6
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    automaton::tests::the_law_is_a_pure_function_of_the_state_and_the_tick_count
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 303 filtered out; finished in 0.13s
+
+error: test failed, to rerun pass `--lib`

@@ -26,14 +26,23 @@ use crate::camera::Camera;
 use crate::scene::{Scene, Vertex};
 use crate::quad::{origin_bytes, QuadRecord, ORIGIN_SIZE};
 use crate::shading::{GpuRig, MaterialParams};
-use crate::skylight::{SKY_DOME_AZIMUTHS, SKY_DOME_ELEVATIONS, SKY_DOME_ENTRIES};
+use crate::skylight::{admit_sky_rows, SkyModel, NO_SKY_ROWS, SKY_MODEL_BYTES, SKY_MODEL_ROWS};
 use crate::ClientError;
 
 /// The quad format's two storage buffers start at one page each: a scene with no
 /// geometry still binds a valid buffer, and `write_quads` doubles them only when
 /// a window grows past them.
 const QUAD_START_BYTES: u64 = 4096;
-use voxel_appearance::LinearRgb;
+
+/// **Nothing has been stated about the sky yet** — the value [`WorldPipeline`]'s own record holds
+/// until a caller uploads a model or states that there is none. It is not a row count, so it is
+/// the one `usize` a row count can never be.
+const SKY_NOT_STATED: usize = usize::MAX;
+
+/// **The rows of a stated absence**: the buffer's own layout, all zeros, which the shader's
+/// arithmetic answers with black ([`NO_SKY_ROWS`]).
+const ZERO_SKY_MODEL: [u8; SKY_MODEL_BYTES] = [0u8; SKY_MODEL_BYTES];
+
 
 /// **The one place a pass is handed the display stage**, and the reason this is a
 /// function rather than three `include_str!`s.
@@ -52,9 +61,26 @@ use voxel_appearance::LinearRgb;
 /// The passes that do **not** present — the merge compute pass, the wireframe — are not
 /// given it, because neither writes a colour into the target.
 /// `the_display_stage_is_one_file_and_every_presenting_pass_receives_it` is the witness.
+///
+/// **The same treatment, and the same reason, for the air.** `atmosphere.wgsl` holds the
+/// transport a sky is made of, the single-scatter integral, the phase, the air mass and the
+/// twilight's own curve, and the two passes that draw light through air are compiled with it:
+/// `sky.wgsl`, which draws it, and `shading.wgsl`, which reflects it off a fluid. The rows it
+/// reads are bound at **binding 5 in both**, so the sky a fluid reflects is the sky overhead by
+/// construction rather than by agreement.
+///
+/// **What that replaced was the same defect with a bigger blast radius.** The drawn sky was a
+/// 64x64 table of `voxel_appearance::sky`'s fit while the light rig was built from
+/// `voxel_light::solver`'s bands, so a frame and the world it stood in were lit by two
+/// different skies and nothing compared them. `the_transport_is_one_file_and_both_passes_receive_it`
+/// is the witness, beside this one.
 fn pass_source(pass: &str) -> String {
-    format!("{}
-{}", include_str!("display.wgsl"), pass)
+    format!(
+        "{}\n{}\n{}",
+        include_str!("display.wgsl"),
+        include_str!("atmosphere.wgsl"),
+        pass
+    )
 }
 
 /// Everything needed to draw the world into a colour target the caller owns.
@@ -106,25 +132,43 @@ pub struct WorldPipeline {
     /// be split then, and splitting a flag later is how two meanings come to share a
     /// bit. See [`WorldPipeline::set_tonemap`].
     tonemap: f32,
-    /// The sky pass: the table [`voxel_appearance::sky::Sky::dome_radiance`] filled on
-    /// the CPU, and the two numbers that turn a pixel into a direction.
+    /// **The cloud's cross-fade weight**: the share of the sky the newer of the two trees a frame
+    /// is joining owns, so `1 - this` is the older one's (C-183).
     ///
-    /// **The table lives here rather than being computed per frame in the shader**
-    /// because the scattering model exists once, in Rust. See `sky.wgsl`.
+    /// It is a **frame's** own number, like the pixel angle and unlike the two flags above: the
+    /// trees themselves say which side each rectangle is on
+    /// ([`crate::cloud_cubes::veil_with_side`]) and the GPU interpolates between them, so a
+    /// dissolve costs one uniform write per frame instead of a rebuilt veil per rectangle. `1.0`
+    /// is the whole of the sky on the newer side, which is what a frame with one tree in hand —
+    /// and every frame before clouds existed — is drawn at.
+    cloud_fade: f32,
+    /// The sky pass: the transport's rows, and the numbers that turn a pixel into a direction.
+    ///
+    /// **The rows and the integral both exist once.** The transport is `atmosphere.wgsl`'s — one
+    /// transcription, compiled into this pass and into the world pass, which binds the same buffer
+    /// at the same binding number — and the rows are the model the CPU assembled from the band
+    /// table and the shapers' own air ([`crate::skylight::SkyModel`]). Before this, the pass drew a
+    /// 64x64 table of `voxel_appearance::sky`'s fit, so the sky on screen and the sky the light rig
+    /// was built from were two models that nothing compared.
     sky_pipeline: wgpu::RenderPipeline,
     sky_bind_group: wgpu::BindGroup,
     sky_view: wgpu::Buffer,
-    sky_table: wgpu::Buffer,
-    /// **The Sun the sky pass draws** (C-176), held as the **world body** rather than as the
-    /// eye-relative numbers the uniform carries.
+    sky_model: wgpu::Buffer,
+    /// **The rows the sky's own buffer holds a sky in**, as the host stated them: `None` until
+    /// [`WorldPipeline::write_sky_model`] or [`WorldPipeline::write_no_sky_model`] says otherwise.
     ///
-    /// That is the whole reason this is a field and not an argument: the sky's own uniforms are
-    /// uploaded **per frame** with the camera, so the body has to survive from the tick that
-    /// derived it to the frames that draw it — and the body's centre relative to a moving eye
-    /// is a per-frame number while the body itself is not. `None` draws no sun.
-    sun: Option<crate::sun::DrawnSun>,
+    /// The buffer is the length `atmosphere.wgsl` declares from the moment it is created, so its
+    /// bytes cannot say whether a model ever arrived — a host that stated nothing and a host that
+    /// stated no sky hold the same zeros. This record is what tells those apart, and
+    /// [`WorldPipeline::admit_sky`] refuses a frame drawn out of the first.
+    sky_rows: std::sync::atomic::AtomicUsize,
+    /// **The astronomical body's own pipeline** (C-184): the same shader module, layout and record
+    /// and origin buffers the rectangles use, with `vs_body` and `fs_body`. The bodies are **records
+    /// in the scene** rather than fields here, exactly as a rectangle is — which is what lets the
+    /// streamer place one and what retired the sky pass's own uniform cuboid.
+    body_pipeline: wgpu::RenderPipeline,
     /// **The quad format's own pipeline** (C-168): the same fragment shader, with
-    /// a vertex stage that pulls a 24-byte rectangle out of a storage buffer and
+    /// a vertex stage that pulls a rectangle out of a storage buffer and
     /// expands it. See `shading.wgsl`'s `vs_quad`.
     quad_pipeline: wgpu::RenderPipeline,
     /// **The cloud's own pipeline state** (C-179): the *same* shader module, layout and
@@ -134,6 +178,11 @@ pub struct WorldPipeline {
     /// translucent box and a box that wrote depth would hide the cells behind it inside the
     /// same cloud.
     cloud_pipeline: wgpu::RenderPipeline,
+    /// **The debug wireframe's own pipeline** (F4): the merge's own records outlined as a
+    /// `LineList`. The *same* module, layout and record buffers the shaded draw reads, so a line
+    /// is the record's border by construction and not by a second expansion that could drift
+    /// from it. See `shading.wgsl`'s `vs_wire`/`fs_wire`.
+    wire_pipeline: wgpu::RenderPipeline,
     /// The rectangles, and one eye-relative origin per chunk they name. Both are
     /// held rather than created per frame, which is the point of the format: a
     /// rectangle does not change when the camera moves.
@@ -149,6 +198,8 @@ pub struct WorldPipeline {
     /// building and throwing away 1.13 MB of little-endian bytes every frame to
     /// discover that nothing moved.
     quad_record_last: Vec<QuadRecord>,
+    /// The bodies as they were last uploaded, so a frame that changes no body writes nothing.
+    body_record_last: Vec<QuadRecord>,
     /// The origins as uploaded, **with the veil in `w`** (C-179) — the array the comparison is
     /// against, and therefore the array whose type has to carry the veil.
     quad_origin_last: Vec<[f64; 4]>,
@@ -162,6 +213,21 @@ pub struct WorldPipeline {
     /// The world's bind group layout, kept so a grown quad buffer can be
     /// re-bound without reconstructing the pipeline.
     world_layout: wgpu::BindGroupLayout,
+}
+
+/// **How a frame is drawn, as opposed to what it is drawn from.** The two settings a caller
+/// chooses: which of the two views, and the eye's own angular pixel size — a property of the
+/// target rather than of the world, which is why the scene cannot state it.
+///
+/// They travel as one value because they are both *the frame's own settings*, and because the two
+/// wrappers below differ in exactly the first field: state them positionally and a reader has to
+/// check a literal against the parameter list to see which view is being asked for.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct DrawMode {
+    /// `F4`: outline the merge's records and withhold the world's own materials.
+    pub wireframe: bool,
+    /// One pixel's angular size, in radians — [`crate::pattern::pixel_angle_rad`]'s value.
+    pub pixel_angle_rad: f32,
 }
 
 impl WorldPipeline {
@@ -225,13 +291,14 @@ impl WorldPipeline {
                     },
                     count: None,
                 },
-                // **The same dome table the sky pass draws, bound to the world pass**
-                // (C-177). A fluid surface *is* the sky, seen off a dielectric boundary: the
-                // reflection is most of what water looks like, and until this binding existed
-                // the world pass could not see the table that `sky.wgsl` was already
-                // declaring a `fluid_f0` uniform for. Both passes bind the same buffer, so
-                // there is one sky and one evaluation of it — the reason `sky.wgsl`'s own
-                // doc gives for existing at all.
+                // **The sky's own transport, bound to the world pass** (C-177). A fluid
+                // surface *is* the sky, seen off a dielectric boundary: the reflection is most
+                // of what water looks like, and until this binding existed the world pass could
+                // not see the sky `sky.wgsl` was already drawing. Both passes bind **the same
+                // buffer at the same binding number (5)** — the model's rows, which
+                // `atmosphere.wgsl` declares once — and both evaluate them with that file's
+                // code, so there is one sky, one integral and one exposure rather than an
+                // agreement between two.
                 wgpu::BindGroupLayoutEntry {
                     binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -409,6 +476,53 @@ impl WorldPipeline {
             cache: None,
         });
 
+        // ---- the debug wireframe's own pipeline (F4) -------------------------
+        // **The one debug view of the geometry**: the merge's rectangles, outlined. It is the same
+        // module, the same layout and the same record buffers the shaded draw reads — only the
+        // entry points and the primitive differ — so the outline is the rectangle rather than a
+        // second statement of where the rectangle is.
+        //
+        // Depth is tested and **not written**: the world's own draws are skipped while this is on,
+        // so there is nothing to occlude, and a line that wrote depth would hide the lines behind
+        // it inside the same mesh being read.
+        let wire_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("world-wire"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_wire"),
+                // **No vertex buffers**, exactly as the quad pipeline: `vs_wire` addresses the
+                // record at `vertex_index / 8` out of the storage buffers above.
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: crate::DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs_wire"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+
         let view = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("view"),
             // The camera and the pattern: `vp` (64 bytes), the eye's fractional
@@ -429,6 +543,65 @@ impl WorldPipeline {
             mapped_at_creation: false,
         });
         queue.write_buffer(&materials_buffer, 0, &flatten_materials(materials));
+
+        // ---- the astronomical body's own pipeline (C-184) -------------------
+        // **One record, one body, and the phase out of the pixels.** `vs_body` plots a body's record at
+        // `camera::BODY_PLOT_M` — inside the plane's own reach, because the depth buffer cannot hold a
+        // body's own 1.87e10 m — and `fs_body` gives every pixel the normal of the sphere at that pixel,
+        // so a quarter moon is drawn as a lit part of a disc rather than as one face at one incidence.
+        //
+        // Depth is **written**, unlike the veil's: a body is opaque, and the cloud this pass draws after
+        // it has to be tested against it.
+        let body_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("world-bodies"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_body"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: crate::DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                // **`LessEqual`, and it is what draws a body at all.** A body is plotted on the far plane,
+                // where `vs_body` writes the plane's own depth by hand, and this pass clears depth to
+                // `1.0`: `Less` would discard a body exactly where it belongs. Equal is the plane, so a
+                // pixel the frame has drawn nothing on takes the body and a hill the terrain wrote a
+                // nearer depth on does not. A cloud, drawn after, is nearer than any body and so still
+                // veils it.
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs_body"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    // **Written through, not blended**, and the reason is the target rather than a
+                    // preference: `Rgba32Float` — the format the offscreen frames are measured in — is not
+                    // a blendable format at all, so an additive pipeline would be one wgpu refuses to
+                    // create. The alternative, blending only on the window's `sRGB` surface, would make the
+                    // composition of a frame depend on where it is being shown: the measurement and the
+                    // picture would be two sums, and every test in `renderer.rs` compares against the
+                    // measurement. So `fs_body` takes the sum itself — the air this ray carried, from the
+                    // same `sky_radiance_rgb` the sky pass uses, plus the body's own radiance through its
+                    // incidence — which is why an unlit disc is the sky it stands in and not a black orb.
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
 
         let rig_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("rig"),
@@ -453,21 +626,21 @@ impl WorldPipeline {
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-
-        // **The dome table, created before either pass that reads it.** Both the sky pass
+        // **The sky's transport, created before either pass that reads it.** Both the sky pass
         // (which draws it) and the world pass (which reflects it off a fluid, C-177) bind this
-        // one buffer, so it is made here rather than inside either pass's own section: a table
+        // one buffer, so it is made here rather than inside either pass's own section: a model
         // created for one of them and copied for the other would be two skies.
         //
-        // Zeroed, not left undefined: a caller that has not written a sky yet is owed the
-        // frame this pass drew before the sky existed, which is black.
-        let sky_table = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("sky-table"),
-            size: (SKY_DOME_ENTRIES * 16) as u64,
+        // Zeroed, and **that is the whole of what a caller that never states a sky gets**. The
+        // rows are the transport's arithmetic over nothing — the black this pass drew before a sky
+        // existed — and the record beside them is what says whether a host meant it.
+        let sky_model = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("sky-model"),
+            size: SKY_MODEL_BYTES as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        queue.write_buffer(&sky_table, 0, &vec![0u8; SKY_DOME_ENTRIES * 16]);
+        queue.write_buffer(&sky_model, 0, &ZERO_SKY_MODEL);
 
         // `write_quads` re-binds through the same function when a buffer grows,
         // so the six entries exist once.
@@ -479,7 +652,7 @@ impl WorldPipeline {
             &materials_buffer,
             &quad_records,
             &quad_origins,
-            &sky_table,
+            &sky_model,
         );
 
         // ---- the sky pass -------------------------------------------------
@@ -504,7 +677,7 @@ impl WorldPipeline {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 1,
+                    binding: 5,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Storage { read_only: true },
@@ -563,29 +736,31 @@ impl WorldPipeline {
 
         let sky_view = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("sky-view"),
-            // **Twenty `f32`, and the count is the shader's.** The first eight are
+            // **Thirty-two `f32`, and the count is the shader's.** The first eight are
             // the `SkyView` fields `sky.wgsl` was built with; the ninth is its dither
             // flag and the tenth its display flag, the same two the world pass
             // carries (C-166, C-167); the eleventh and twelfth are declared so the
             // first block is a whole number of `vec4`s rather than whatever `naga`
-            // would round it up to; and the last eight are the Sun's body and its
-            // radiance (C-176) — `vec3<f32>` and an `f32` twice over, so two more
-            // whole `vec4`s. `write_camera` writes exactly these bytes and asserts the
-            // length, so the shader and this upload cannot drift apart.
-            size: 80,
+            // would round it up to; the last sixteen are two bodies, each a `vec3<f32>`
+            // centre and an `f32` extent followed by a `vec3<f32>` radiance and an `f32`
+            // that closes the `vec4` — the Sun (C-176) and the Moon, which the shader
+            // lights itself from the third of its own `vec4`s, the direction toward the
+            // Sun. `write_camera` writes exactly these bytes and asserts the length, so
+            // the shader and this upload cannot drift apart.
+            size: 128,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         // **Zeroed, not left undefined.** A caller that never writes a sky gets a
         // black one, which is what the pass did before it existed — so adding the sky
         // cannot change a frame whose owner has not asked for a sky yet.
-        queue.write_buffer(&sky_view, 0, &[0u8; 80]);
+        queue.write_buffer(&sky_view, 0, &[0u8; 128]);
         let sky_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("sky"),
             layout: &sky_layout,
             entries: &[
                 wgpu::BindGroupEntry { binding: 0, resource: sky_view.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: sky_table.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 5, resource: sky_model.as_entire_binding() },
             ],
         });
 
@@ -597,6 +772,10 @@ impl WorldPipeline {
         // exact measurement — which is why this is `0.0` for the offscreen tests and
         // the whole pass is a no-op there rather than something they must tolerate.
         let dither = if format.is_srgb() { 1.0 } else { 0.0 };
+        // **One tree, whole, until a frame says otherwise.** A pipeline that has never been handed
+        // a fade draws exactly what it drew before the fade existed: the newer side at its own
+        // number, the older side — which a one-tree scene has none of — at nothing.
+        let cloud_fade = 1.0;
         // And the same target is also the one that cannot hold more than white, so
         // it is the one that needs the display transform. An 8-bit `sRGB` surface is
         // a display; `Rgba32Float` is a measurement, and a measurement that had been
@@ -616,18 +795,22 @@ impl WorldPipeline {
             rates: crate::shading::rates_uniform(),
             dither,
             tonemap,
+            cloud_fade,
             sky_pipeline,
             sky_bind_group,
             sky_view,
-            sky_table,
-            sun: None,
+            sky_model,
+            sky_rows: std::sync::atomic::AtomicUsize::new(SKY_NOT_STATED),
+            body_pipeline,
             quad_pipeline,
             cloud_pipeline,
+            wire_pipeline,
             quad_records,
             quad_origins,
             quad_record_capacity: QUAD_START_BYTES,
             quad_origin_capacity: QUAD_START_BYTES,
             quad_record_last: Vec::new(),
+            body_record_last: Vec::new(),
             quad_origin_last: Vec::new(),
             quad_origin_eye: None,
             materials: materials_buffer,
@@ -672,6 +855,30 @@ impl WorldPipeline {
         self.dither = amount.clamp(0.0, 1.0);
     }
 
+    /// **The cloud's cross-fade weight** (C-183): `1.0` is the newer tree whole — the value every
+    /// frame with one tree in hand is drawn at — and `0.0` is the older one whole, so the sky's
+    /// entrance from clear air and the dissolve between two derivations are one number.
+    ///
+    /// A caller sets it from the world's ticks, not from a stopwatch: `cloud_cubes::fade_weight`
+    /// reads the tick a tree was derived from against the tick being drawn, so the dissolve is
+    /// phase-locked to the cadence that produced it and a dropped frame cannot change the sky.
+    ///
+    /// An amount outside `0..=1` is clamped, and a non-finite amount is read as `1.0` — the newer
+    /// tree, which is the honest answer for a caller that could not measure its own fade, where a
+    /// NaN would reach every cloud fragment's alpha and make the sky disappear.
+    pub fn set_cloud_fade(&mut self, weight: f32) {
+        self.cloud_fade = if weight.is_finite() {
+            weight.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+    }
+
+    /// The cross-fade weight a frame would be drawn with, so a test can state its own input.
+    pub fn cloud_fade(&self) -> f32 {
+        self.cloud_fade
+    }
+
     /// **Turn the display transform on or off for the frames that follow.**
     ///
     /// `0.0` is off — the frame is the scene-referred value the model computed, which
@@ -710,35 +917,36 @@ impl WorldPipeline {
         let mut bytes = Vec::with_capacity(160);
         for column in camera.view_projection() {
             for v in column {
-                bytes.extend_from_slice(&v.to_le_bytes());
+                bytes.extend_from_slice(&voxel_model::endian::le_bytes(v));
             }
         }
         let phase = crate::pattern::eye_phase(camera.position_m);
         for v in [phase[0], phase[1], phase[2], 0.0f32] {
-            bytes.extend_from_slice(&v.to_le_bytes());
+            bytes.extend_from_slice(&voxel_model::endian::le_bytes(v));
         }
         let voxel = crate::pattern::eye_voxel(camera.position_m);
         for v in [voxel[0], voxel[1], voxel[2], 0i32] {
-            bytes.extend_from_slice(&v.to_le_bytes());
+            bytes.extend_from_slice(&voxel_model::endian::le_bytes(v));
         }
         for v in self.lattice {
-            bytes.extend_from_slice(&v.to_le_bytes());
+            bytes.extend_from_slice(&voxel_model::endian::le_bytes(v));
         }
         for v in self.rates {
-            bytes.extend_from_slice(&v.to_le_bytes());
+            bytes.extend_from_slice(&voxel_model::endian::le_bytes(v));
         }
         // `screen.xy`: one pixel's angular size, and the dither flag the fragment
-        // pass reads before it writes (C-163, C-166). The two reserved slots stay
-        // reserved, so the struct's size does not move when one is claimed.
-        for v in [pixel_angle_rad, self.dither, self.tonemap, 0.0] {
-            bytes.extend_from_slice(&v.to_le_bytes());
+        // pass reads before it writes (C-163, C-166). **`screen.w` is now claimed** by the
+        // cloud's cross-fade weight (C-183) — the reserved slot the struct left open for exactly
+        // this, so the layout and the struct's size do not move — and the display flag is `z`.
+        for v in [pixel_angle_rad, self.dither, self.tonemap, self.cloud_fade] {
+            bytes.extend_from_slice(&voxel_model::endian::le_bytes(v));
         }
-        // `sky_grid`: the dome table's two sides and the water boundary's own
-        // reflectance, which the world's fluid reflection reads (C-177). Sent rather
-        // than typed into `shading.wgsl` for the reason `lattice` and `rates` are: the
-        // grid is [`crate::skylight`]'s declaration and the reflectance is
-        // `voxel_appearance::fluid`'s, and a shader holding a second copy of either is
-        // a shader that can disagree with the table it is looking up.
+        // `sky_grid`: the water boundary's own reflectance and the cloud's albedo, which
+        // the world's fluid reflection and a cloud's own row read (C-177, C-179). Sent
+        // rather than typed into `shading.wgsl` for the reason `lattice` and `rates` are:
+        // the reflectance is `voxel_appearance::fluid`'s and the albedo is
+        // `cloud_field`'s, and a shader holding a second copy of either is a shader that
+        // can disagree with the model it is lighting.
         // **`w` is the cloud's own albedo** (C-179), the fourth number of this group and the
         // last slot `View` had left. A cloud has no material row — it has no surface, so there
         // is no row to have — and the one number its shading needs beyond the rig is how much
@@ -746,12 +954,27 @@ impl WorldPipeline {
         // a real figure for water droplets in the visible, and it is **sent** for the reason
         // every other constant here is: a shader holding a second copy of it could disagree.
         for v in [
-            SKY_DOME_AZIMUTHS as f32,
-            SKY_DOME_ELEVATIONS as f32,
+            // **`x` is how far a drawn astronomical body is plotted** (C-184) — `camera::BODY_PLOT_M`,
+            // a distance *inside* the projection's own plane rather than the plane's own reach. **It is
+            // not where the body stands**: the record carries the world's own engine distance (4.805e7 m
+            // for the Moon, 1.87e10 m for the Sun), and `vs_body` plots that direction here and scales
+            // the half-extent by the same ratio, which leaves the subtended angle exactly the world's own.
+            //
+            // **The plot is inside the plane because a body on it is discarded.** Depth at exactly
+            // `FAR_M` is `1.0` in `f32`, the pass clears to `1.0` and tests `Less`, and a body out there
+            // fails that test — which is why no frame had a Moon in it when this read `FAR_M`. The margin
+            // and its own reasoning are `camera::BODY_PLOT_M`'s doc.
+            //
+            // It is sent rather than typed into the shader for the reason every constant here is: a
+            // shader holding a second copy can disagree with the projection it is drawn through.
+            //
+            // **The dome's two grid numbers used to be here**, and the second is still a reserve.
+            crate::camera::BODY_PLOT_M as f32,
+            0.0f32,
             voxel_appearance::fluid::WATER_F0 as f32,
             crate::cloud_field::CLOUD_ALBEDO as f32,
         ] {
-            bytes.extend_from_slice(&v.to_le_bytes());
+            bytes.extend_from_slice(&voxel_model::endian::le_bytes(v));
         }
         debug_assert_eq!(bytes.len(), 160, "View is forty f32");
         self.queue.write_buffer(&self.view, 0, &bytes);
@@ -765,8 +988,9 @@ impl WorldPipeline {
             (camera.fov_y_rad / 2.0).tan() as f32,
             camera.yaw_rad as f32,
             camera.aspect as f32,
-            SKY_DOME_AZIMUTHS as f32,
-            SKY_DOME_ELEVATIONS as f32,
+            // The water boundary's reflectance: written for the world pass's own fluid
+            // reflection, and declared here so the two structs stay the same size and
+            // layout — the reason that field's own doc gives.
             voxel_appearance::fluid::WATER_F0 as f32,
             // The sky's own dither flag, the same value the world pass carries in
             // `View::screen.y`: the sky is the largest smooth gradient on the
@@ -775,84 +999,86 @@ impl WorldPipeline {
             // And its display flag, `View::screen.z` — the sky is also the brightest
             // thing on the screen, and the one most likely to be more than white.
             self.tonemap,
-            // The two the struct declares to close out its third `vec4`. Nothing
-            // reads them; they exist so the shader's struct and this upload are the
-            // same twelve `f32` without either having to know the other's padding.
+            // **The five the struct declares to close out its first three `vec4`s.** The
+            // first two used to be the dome's grid — its azimuth and elevation counts — and
+            // the model carries its own band count now, so nothing reads any of the five:
+            // they exist so the shader's struct and this upload are the same twelve `f32`
+            // with no padding for either side to work out.
+            0.0f32,
+            0.0f32,
             0.0f32,
             0.0f32,
             0.0f32,
         ] {
-            sky_bytes.extend_from_slice(&v.to_le_bytes());
-        }
-        // **The Sun's body, relative to this camera** (C-176). The subtraction is made here
-        // rather than at the upload because it is the one part of the Sun that depends on the
-        // eye, and a caller that uploaded a body-relative-to-a-previous-eye would draw a sun
-        // whose parallax belongs to a camera that is no longer on screen. Zeroed when no body
-        // was written, and a zero half-extent is how the shader is told there is none — the
-        // same refusal-by-absence the table and the rig already use.
-        let (centre, half_extent, radiance) = match &self.sun {
-            Some(sun) => (
-                sun.centre_relative_to(camera.position_m),
-                sun.half_extent_f32(),
-                [sun.radiance.r as f32, sun.radiance.g as f32, sun.radiance.b as f32],
-            ),
-            None => ([0.0f32; 3], 0.0f32, [0.0f32; 3]),
-        };
-        for v in [centre[0], centre[1], centre[2], half_extent] {
-            sky_bytes.extend_from_slice(&v.to_le_bytes());
-        }
-        for v in [radiance[0], radiance[1], radiance[2], 0.0f32] {
-            sky_bytes.extend_from_slice(&v.to_le_bytes());
+            sky_bytes.extend_from_slice(&voxel_model::endian::le_bytes(v));
         }
         // The uniform is exactly the shader's `SkyView`, so the write is exactly the
-        // twenty `f32` the struct declares. This is asserted *before* the upload
-        // because a short or long write is a `wgpu` bounds refusal at runtime — the
-        // one that used to read "32 bytes into a buffer of size 16".
-        debug_assert_eq!(sky_bytes.len(), 80, "SkyView is twenty f32");
+        // twelve `f32` the struct declares — the camera and the air, and **no body** (C-184). This is
+        // asserted *before* the upload because a short or long write is a `wgpu` bounds refusal at
+        // runtime — the one that used to read "32 bytes into a buffer of size 16".
+        debug_assert_eq!(sky_bytes.len(), 48, "SkyView is twelve f32");
         self.queue.write_buffer(&self.sky_view, 0, &sky_bytes);
     }
 
-    /// **Put the Sun in the sky the frames that follow draw**, or take it out.
+    /// **Upload the sky's transport**: the rows both passes read
+    /// ([`crate::skylight::SkyModel`]), with [`crate::skylight::SKY_EXPOSURE`] already folded
+    /// into the model's own exposure row.
     ///
-    /// `None` is *no sun*, and it is what the pass draws until something asks for one — the
-    /// same "a frame whose owner has not asked for a sky is unchanged" rule the zeroed table
-    /// and the zeroed view already follow, which is what makes adding a body safe for every
-    /// existing caller rather than a change they must all opt into.
+    /// The exposure is applied **in the model**, where the CPU assembles the rows, for the same
+    /// reason it is applied to the rig at its upload and never inside the solver: the bands stay
+    /// physical and only the thing that reaches the swapchain is scaled. The shader then
+    /// multiplies the chromaticity by that exposure, which is the one number that makes the sky
+    /// this frame draws the sky the light rig was built from.
     ///
-    /// The body is kept as a **world** object and narrowed to the eye per frame in
-    /// [`WorldPipeline::write_camera`]; see the field's own doc for why.
-    pub fn write_sun(&mut self, sun: Option<crate::sun::DrawnSun>) {
-        self.sun = sun;
+    /// **Refused before the write, not after it.** `write_buffer` validates its own range and
+    /// panics naming a byte offset; this names the two counts, and a model longer than the buffer
+    /// `atmosphere.wgsl` reads is the one way this seam can be short of its layout.
+    pub fn write_sky_model(&self, model: &SkyModel) {
+        let bytes = model.bytes();
+        assert!(
+            bytes.len() as u64 <= self.sky_model.size(),
+            "the model is {} bytes and the sky's buffer holds {}: the layout atmosphere.wgsl \
+             declares is {SKY_MODEL_ROWS} rows of 16 bytes",
+            bytes.len(),
+            self.sky_model.size()
+        );
+        self.queue.write_buffer(&self.sky_model, 0, &bytes);
+        self.sky_rows.store(model.rows(), std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Whether a frame would draw a sun, so a test can state what it expects the last upload
-    /// to have decided rather than inferring it from pixels.
-    pub fn has_sun(&self) -> bool {
-        self.sun.is_some()
+    /// **State that this frame has no sky** — the atmosphere refused, say — rather than leaving
+    /// the last model standing.
+    ///
+    /// The rows are zeroed, because the shader reads the buffer and not this record: a stated
+    /// absence that left the previous tick's model in place would be that model again. Zero is no
+    /// model rather than a short one ([`NO_SKY_ROWS`]), so the frame is the black this pass drew
+    /// before a sky existed — and it is **stated**, which is what keeps a host that means it out
+    /// of [`WorldPipeline::admit_sky`]'s refusal.
+    pub fn write_no_sky_model(&self) {
+        self.queue.write_buffer(&self.sky_model, 0, &ZERO_SKY_MODEL);
+        self.sky_rows.store(NO_SKY_ROWS, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// **Upload the sky's radiance for every direction**, already scaled by
-    /// [`crate::skylight::SKY_EXPOSURE`].
+    /// The rows this host has stated, or `None` if it has stated nothing at all.
+    fn stated_sky_rows(&self) -> Option<usize> {
+        match self.sky_rows.load(std::sync::atomic::Ordering::Relaxed) {
+            SKY_NOT_STATED => None,
+            rows => Some(rows),
+        }
+    }
+
+    /// **The one place a frame asks whether there is a sky to read**, and it fails rather than
+    /// drawing one that was never stated.
     ///
-    /// The exposure is applied **here**, at the upload, for the same reason it is
-    /// applied to the rig at its upload and never inside [`crate::skylight::daylight_of`]:
-    /// the model stays physical and only the thing that reaches the swapchain is
-    /// scaled. A short table is refused rather than padded, because padding it would
-    /// mean drawing a sky nobody asked for at the far end of the dome.
-    pub fn write_sky(&self, table: &[LinearRgb]) -> Option<()> {
-        if table.is_empty() || table.len() > SKY_DOME_ENTRIES {
-            return None;
+    /// Both passes that read the rows — the sky pass and the fluid's reflection — do it through
+    /// the buffer this record describes, so a host that never called
+    /// [`WorldPipeline::write_sky_model`] is caught here, where its own omission is all there is
+    /// to see: the shader's `arrayLength` refusal cannot reach it, because the buffer it binds is
+    /// the declared length either way.
+    fn admit_sky(&self) {
+        if let Err(refusal) = admit_sky_rows(self.stated_sky_rows()) {
+            panic!("{refusal}");
         }
-        let mut bytes = Vec::with_capacity(table.len() * 16);
-        for c in table {
-            let exposed = crate::skylight::sky_exposed(*c);
-            bytes.extend_from_slice(&(exposed.r as f32).to_le_bytes());
-            bytes.extend_from_slice(&(exposed.g as f32).to_le_bytes());
-            bytes.extend_from_slice(&(exposed.b as f32).to_le_bytes());
-            bytes.extend_from_slice(&0.0f32.to_le_bytes());
-        }
-        self.queue.write_buffer(&self.sky_table, 0, &bytes);
-        Some(())
     }
 
     fn upload(&self, label: &str, bytes: &[u8], usage: wgpu::BufferUsages) -> wgpu::Buffer {
@@ -899,7 +1125,10 @@ impl WorldPipeline {
     /// grows pays one buffer creation rather than one per frame.
     pub fn write_quads(&mut self, scene: &Scene, eye_m: [f64; 3]) {
         let mut grew = false;
-        let wanted_records = (scene.records.len() * QuadRecord::SIZE as usize).max(4) as u64;
+        // **The bodies are the record array's own tail**, so the buffer is sized on both and the vertex
+        // index of a body's draw is its index in this one array (C-184).
+        let wanted_records =
+            ((scene.records.len() + scene.bodies.len()) * QuadRecord::SIZE as usize).max(4) as u64;
         if wanted_records > self.quad_record_capacity {
             self.quad_record_capacity = wanted_records.next_power_of_two();
             self.quad_records = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -930,15 +1159,22 @@ impl WorldPipeline {
                 &self.materials,
                 &self.quad_records,
                 &self.quad_origins,
-                &self.sky_table,
+                &self.sky_model,
             );
             self.bind_group = rebound;
         }
 
-        if scene.records != self.quad_record_last {
-            self.queue.write_buffer(&self.quad_records, 0, &QuadRecord::bytes(&scene.records));
+        // **A body is appended after the rectangles and in the same array**, so one buffer carries both
+        // and the body draw's first vertex is its own offset in it — the same trick the cloud's suffix
+        // uses, with the roles of "which pipeline" and "which range" swapped.
+        if scene.records != self.quad_record_last || scene.bodies != self.body_record_last {
+            let mut bytes = QuadRecord::bytes(&scene.records);
+            bytes.extend_from_slice(&QuadRecord::bytes(&scene.bodies));
+            self.queue.write_buffer(&self.quad_records, 0, &bytes);
             self.quad_record_last.clear();
             self.quad_record_last.extend_from_slice(&scene.records);
+            self.body_record_last.clear();
+            self.body_record_last.extend_from_slice(&scene.bodies);
         }
         // **The origins follow the eye, so the upload is keyed on the eye as well as on the
         // world-space array.** `scene.origins` are chunk origins in world metres and do not
@@ -975,22 +1211,34 @@ impl WorldPipeline {
         camera: &Camera,
         pixel_angle_rad: f32,
     ) {
-        self.draw_impl(encoder, colour, depth, scene, camera, false, pixel_angle_rad);
+        self.draw_impl(
+            encoder,
+            colour,
+            depth,
+            scene,
+            camera,
+            DrawMode { wireframe: false, pixel_angle_rad },
+        );
     }
 
     /// **The world meshes' own wireframe**: the frame [`WorldPipeline::draw`] would draw, with
     /// the world's own materials **withheld** so the merge's rectangles are the subject.
     ///
-    /// On `F4` in the game. The lines are the greedy merge's rectangles themselves —
-    /// [`Scene::quad_edge_bytes`]'s four border edges per quad, no triangulation diagonal —
-    /// shaded by `wire.wgsl`: a rainbow hue swept by distance (the user's own call, 2026-10-04,
-    /// after a first white ink read poorly against the world; `NEAR_M`/`FAR_M`/`NEAR_HUE`/
-    /// `FAR_HUE` are that shader's declared range). The sky still draws, so the lines have a
-    /// horizon; the solid world does not, so nothing occludes the mesh being read.
+    /// On `F4` in the game. The lines are the greedy merge's own records — the four border
+    /// edges of each rectangle and no triangulation diagonal, expanded by `shading.wgsl`'s
+    /// `vs_wire` from the very buffer the shaded draw reads, so a line cannot sit anywhere but on
+    /// the rectangle it outlines. Its hue is swept by distance (the user's own call, 2026-10-04,
+    /// after a first white ink read poorly against the world; `WIRE_*` are the shader's declared
+    /// range). The sky still draws, so the lines have a horizon; the solid world does not, so
+    /// nothing occludes the mesh being read.
+    ///
+    /// **A frame in the vertex format outlines nothing, and that is stated rather than silent**:
+    /// the outlines are the *records*, and [`Scene::build_with_light`]'s corner format carries
+    /// none. The shipped game draws the record format, which is the one this exists for.
     ///
     /// **Measuring is unaffected.** [`Renderer`](crate::Renderer) keeps calling
-    /// [`WorldPipeline::draw`], so a measured frame carries no wireframe; while this is on it
-    /// uploads the vertex buffer and one edge index buffer, and pays one indexed draw.
+    /// [`WorldPipeline::draw`], so a measured frame carries no wireframe; while this is on the
+    /// frame pays one line draw and no upload at all.
     pub fn draw_wireframe(
         &mut self,
         encoder: &mut wgpu::CommandEncoder,
@@ -1000,7 +1248,14 @@ impl WorldPipeline {
         camera: &Camera,
         pixel_angle_rad: f32,
     ) {
-        self.draw_impl(encoder, colour, depth, scene, camera, true, pixel_angle_rad);
+        self.draw_impl(
+            encoder,
+            colour,
+            depth,
+            scene,
+            camera,
+            DrawMode { wireframe: true, pixel_angle_rad },
+        );
     }
 
     fn draw_impl(
@@ -1010,9 +1265,12 @@ impl WorldPipeline {
         depth: &wgpu::TextureView,
         scene: &Scene,
         camera: &Camera,
-        wireframe: bool,
-        pixel_angle_rad: f32,
+        mode: DrawMode,
     ) {
+        let DrawMode { wireframe, pixel_angle_rad } = mode;
+        // **The sky is drawn or the frame is refused**, before any of it is uploaded: a host that
+        // never stated a sky has no frame to draw, and the refusal names what to call.
+        self.admit_sky();
         self.write_camera(camera, pixel_angle_rad);
         // **The rectangles and their origins, before the pass begins.** Both are
         // uploaded only when they changed — see [`WorldPipeline::write_quads`].
@@ -1058,7 +1316,21 @@ impl WorldPipeline {
         pass.set_bind_group(0, &self.sky_bind_group, &[]);
         pass.draw(0..3, 0..1);
 
-        if let (Some(vertex_buffer), Some(index_buffer)) = (&vertex_buffer, &index_buffer) {
+        // **The debug wireframe replaces the material draws below** (F4) rather than being drawn
+        // over them: the lines are the subject, and the sky the pass has already drawn is what
+        // they are read against. One `if` decides it, so no material draw can leak into the view
+        // that exists to replace it.
+        if wireframe {
+            let rectangles = scene.records.len() as u32;
+            if rectangles > 0 {
+                pass.set_pipeline(&self.wire_pipeline);
+                pass.set_bind_group(0, &self.bind_group, &[]);
+                // Eight line vertices a rectangle — its four border edges and no diagonal — with
+                // no vertex buffer and no index: `vs_wire` addresses the record at
+                // `vertex_index / 8`.
+                pass.draw(0..8 * rectangles, 0..1);
+            }
+        } else if let (Some(vertex_buffer), Some(index_buffer)) = (&vertex_buffer, &index_buffer) {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
@@ -1076,10 +1348,22 @@ impl WorldPipeline {
         // pipeline writes depth and blends nothing, so a veil drawn through it would be an
         // opaque box — and it would write depth, hiding the cells behind it.
         let world_records = scene.records.len() - scene.cloud_records;
-        if world_records > 0 {
+        if !wireframe && world_records > 0 {
             pass.set_pipeline(&self.quad_pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.draw(0..6 * world_records as u32, 0..1);
+        }
+
+        // **And the astronomical bodies, in the record array's own tail** (C-184). Drawn before the cloud
+        // so the veil is tested against a body's depth, and after the terrain so a hill in front of the
+        // Moon still hides it. The range begins at the last rectangle's index: the bodies are appended to
+        // the same array by `write_quads`, so no second buffer and no second binding is needed to place
+        // one — the record and its origin are what a body is.
+        if !wireframe && !scene.bodies.is_empty() {
+            let first = 6 * scene.records.len() as u32;
+            pass.set_pipeline(&self.body_pipeline);
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.draw(first..first + 6 * scene.bodies.len() as u32, 0..1);
         }
 
         // **And the cloud, last and blended** (C-179). Last, because the veil composites over
@@ -1091,7 +1375,7 @@ impl WorldPipeline {
         //
         // **A frame that carries no cloud is the frame it was.** The draw is inside this `if`,
         // so an empty cloud set is not a pass with nothing in it — it is no pass at all.
-        if scene.cloud_records > 0 {
+        if !wireframe && scene.cloud_records > 0 {
             let first = 6 * world_records as u32;
             pass.set_pipeline(&self.cloud_pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
@@ -1122,6 +1406,9 @@ impl WorldPipeline {
         camera: &Camera,
         pixel_angle_rad: f32,
     ) {
+        // The sky pass below is this pipeline's own, so this door refuses on the same terms as
+        // [`WorldPipeline::draw`].
+        self.admit_sky();
         self.write_camera(camera, pixel_angle_rad);
         let vertex_buffer =
             self.upload("vertices", &scene.vertex_bytes(), wgpu::BufferUsages::VERTEX);
@@ -1155,7 +1442,7 @@ impl WorldPipeline {
         });
         compute_pass.set_pipeline(&merge_pipeline);
         compute_pass.set_bind_group(0, &self.bind_group, &[]);
-        compute_pass.dispatch_workgroups((scene.quads as u32 + 63) / 64, 1, 1);
+        compute_pass.dispatch_workgroups((scene.quads as u32).div_ceil(64), 1, 1);
         drop(compute_pass);
 
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1226,6 +1513,9 @@ fn world_bind_group(
     })
 }
 
+/// **The cloud's field as the buffer holds it, past its two header elements**: one span per record,
+/// then the field's texels `[water, base, top, kind]`, indexed `j · columns + i`.
+/// The cloud's field in the buffer's own bytes: one `vec4` per element, little-endian.
 fn uniform_entry(binding: u32, visibility: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
@@ -1323,5 +1613,56 @@ mod tests {
 {error}");
             }
         }
+    }
+
+    /// **The row count on both sides of the wire is one number**, read through the shader's own
+    /// front end rather than matched as text: `atmosphere.wgsl` declares `SKY_MODEL_ROWS` and the
+    /// host indexes the same rows, and a change to either alone is not a build error but a black
+    /// sky — the shader's refusal answers a shorter model with no picture at all.
+    #[test]
+    fn the_sky_layout_is_one_row_count_declared_once_on_each_side() {
+        let composed = pass_source(include_str!("shading.wgsl"));
+        let module =
+            wgpu::naga::front::wgsl::parse_str(&composed).expect("the world pass assembles");
+        let (declared_by, declared) = module
+            .constants
+            .iter()
+            .find(|(_, constant)| constant.name.as_deref() == Some("SKY_MODEL_ROWS"))
+            .map(|(row_count, constant)| {
+                let rows = match &module.global_expressions[constant.init] {
+                    wgpu::naga::Expression::Literal(wgpu::naga::Literal::U32(rows)) => {
+                        u64::from(*rows)
+                    }
+                    wgpu::naga::Expression::Literal(wgpu::naga::Literal::AbstractInt(rows)) => {
+                        *rows as u64
+                    }
+                    other => panic!("`SKY_MODEL_ROWS` is not an integer literal: {other:?}"),
+                };
+                (row_count, rows)
+            })
+            .expect("atmosphere.wgsl declares the row count its refusal is written against");
+        // **Read, not merely declared.** A constant nothing computes is the shape the text a
+        // grep can find cannot tell apart from a refusal: what makes `arrayLength(&sky_model) <
+        // SKY_MODEL_ROWS` a guard is that a pass's own expressions carry the handle.
+        assert!(
+            module.functions.iter().any(|(_, function)| function
+                .expressions
+                .iter()
+                .any(|(_, expression)| matches!(
+                    expression,
+                    wgpu::naga::Expression::Constant(handle) if *handle == declared_by
+                ))),
+            "no pass computes the row count, so the shader's own refusal is a declaration"
+        );
+        assert_eq!(
+            declared as usize,
+            crate::skylight::SKY_MODEL_ROWS,
+            "the shader's row count and the host's are two answers to one question"
+        );
+        assert_eq!(
+            crate::skylight::SKY_MODEL_BYTES,
+            declared as usize * 16,
+            "the buffer the host binds is not the layout the shader's rows describe"
+        );
     }
 }

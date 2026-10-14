@@ -38,7 +38,7 @@
 //!
 //! Every input is a function of position and the world's seed, so a habitat does not
 //! move with the tick — the same ruling C-159.8 applied to the fields themselves. The
-//! material consequence is read at tick 0 through [`crate::column::ColumnProfile`], so a
+//! material consequence is read at tick 0 (the `Climate` field carries no tick), so a
 //! season cannot repaint the ground.
 
 use crate::spec::WorldSpec;

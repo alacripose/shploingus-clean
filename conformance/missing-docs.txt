@@ -1,0 +1,83 @@
+# What the compiler says about documentation: one `crate<TAB>missing<TAB>pin` line per crate.
+#
+# **This is the `documented` axis's reading, and it is a measurement rather than a claim.** `missing`
+# is how many public items the compiler reports without a doc comment, by the `missing_docs` lint
+# every crate root enables (`#![warn(missing_docs)]`). `pin` is the digest of the bytes the count was
+# taken over: `sha256:` over the crate's covered files — its `src/`, its `tests/`, its `build.rs`, its
+# `Cargo.toml` — each contributing its relative path and its bytes, sorted by path, under the domain
+# tag `shploingus/missing-docs` (`census::missing_docs_pin`, `census::MISSING_DOCS_DOMAIN`).
+#
+# The axis reads this file: a crate declaring 0 **with a matching pin** is `active`; a crate declaring
+# more is `inactive` with the number, reported every build; a crate whose pin no longer matches its
+# files is **`stale`**, which is its own state; and a crate with **no line here** is `refused`,
+# because a header saying a crate documents itself is a claim, and the axis asks the compiler instead.
+# A line with no pin is refused too: it is a count about an unknown tree, and there would be nothing
+# in this project to compare it against.
+#
+# **Why the pin, and what it changes.** `cargo check` cannot run from inside the gate's own build
+# script — it would recurse into the build that is running — so this count is a snapshot a person
+# takes. Hashing needs no compiler at all, so the gate re-takes the pin on every build, over the same
+# bytes it already reads for the prose measure, and renders a disagreement as `stale` instead of
+# printing the number as this build's answer. Without the pin the axis could only repeat whatever it
+# was last handed: **the count was always true of a tree, and never necessarily this one.** A stale
+# reading is reported — `crate-gap ... state=stale` in the gate's census section and
+# `conformance-stale` in its conformance section — and **does not fail the build**, because the
+# repair is to re-run the recipe below, which is a command and not an edit; a fatal state here would
+# refuse every build until somebody ran a compiler by hand, which is how a gate is routed around.
+#
+# **How to re-measure — both commands, in this order, after your last edit to a crate.**
+#
+#     touch crates/*/src/lib.rs crates/*/src/main.rs
+#     CARGO_INCREMENTAL=0 cargo check --offline -j 2 --workspace 2>&1 | awk '/^ +(Checking|Compiling) [a-z]/ { seen[$2] = 1 } /warning: missing documentation/ { want = 1; next } want && /--> crates/ { p = $2; sub(/^crates/, "", p); p = substr(p, 2); cut = index(p, "\\"); if (cut > 0) p = substr(p, 1, cut - 1); n[p]++; want = 0 } END { for (c in seen) printf "%s\t%d\n", c, n[c] + 0 }' | grep -E '^(voxel|shploingus)' | sort
+#     cargo test -p voxel-package --lib --offline census::tests::the_missing_docs_pins_print_so_the_reading_can_be_re_pinned -- --nocapture
+#
+# The first prints `crate<TAB>count` and the second prints `crate<TAB>sha256:…`; a row here is the two
+# pasted together. **A pin pasted without a fresh count is the one failure this file cannot detect by
+# itself** — the pin would match while the number stayed old, so the pin would be evidence for a
+# reading nobody re-took. Both commands are in this header for that reason, and neither is optional.
+#
+# **Neither step of the compiler half is decoration, and both were measured.** The `touch` is not
+# optional: cargo replays cached diagnostics for a crate it did not re-check, so without it a crate's
+# warnings are simply absent from the output and the reading would credit it with **zero**. Run it and
+# the instrument names every crate the run checked — including `Compiling`, not only `Checking`,
+# because a crate whose build script or binary target has work to do is compiled rather than merely
+# checked, and the first version of this recipe missed exactly those two crates (`voxel-model` 907
+# items, `shploingus`) until that was fixed. `CARGO_INCREMENTAL=0` is here because this machine's
+# volume runs near full and the gate's own size guard prunes the incremental cache, which makes rustc
+# fail to write its dep-graph mid-run (`failed to move dependency graph … os error 3`, exit 101); with
+# incremental off the same command exits 0. Both facts are from runs, not from reading about them.
+#
+# **A crate the run did not check is not a crate with zero**, which is why the rows below are exactly
+# the sixteen the last run named: a crate whose line is missing leaves this file without that line
+# rather than with a zero, and the axis then refuses it. That failure direction is deliberate — an
+# inaccurate zero would be a credential nobody earned.
+#
+# **What this file still cannot do.** The pin says whether the bytes have moved; it does not say the
+# count is *right*, and it cannot catch a count re-pasted unchanged beside a fresh pin. It also covers
+# only each crate's covered files — the same universe the prose measure uses, which is what this
+# project is written in — so a generated file under `target/` is outside it. Stated here rather than
+# discovered later; a malformed line, an unknown crate name, a missing or unparseable pin, or a
+# duplicate is a refusal of the whole census.
+#
+# Re-read 2026-10-10, pins added the same day by the recipe above: **2285 public items across sixteen
+# crates carry no doc comment**; three crates are at zero, and the largest single reading is
+# `voxel-model` at 907. The counts did not move when the pins were added, and the pins are the state
+# of the bytes that produced them.
+
+# crate	missing	sha256: (the pin over the crate's covered files, when the count was taken)
+shploingus	0	sha256:5ee08eef554e5e2115bc24cf49ac87a4d02c2d5228f3515562a09be3526800eb
+voxel-appearance	54	sha256:4944c09f954064e336408b9dca7d10ecf9dcd933de8b094b3e500e1055873cf6
+voxel-audio	1	sha256:3ea1edaaefc7b5e930ff254a7151bd8551f8545a749c2faccb1ccbb9e5bd2adf
+voxel-client	190	sha256:f399af3ae95337d603caab08a29994bfc39920ceb11a7cab73d6178028fc9ff5
+voxel-instrument	33	sha256:241e0fdc649b114e376f15f3c7aad67d64c83e51d48be20ee9a4e7e67ac44dc4
+voxel-light	6	sha256:48e9c70fe027d602484392b89bbc95f1428072eee1ca72ca32c6b858e89585d9
+voxel-mcp	0	sha256:9715586b665b9a8ed65f9b21d78bfe3dd35f73205cce952d575fdfc46ba95cf7
+voxel-mesh	40	sha256:a9e84c17e84b7f6bdc81b699424a0de59e1f6f79639ccd22633da4b6ea6fcfc6
+voxel-model	907	sha256:7eb76a30f1b02dd24617716eb5f04ce7bcda8685f0e954cc2968952c63f1fb4e
+voxel-noise	15	sha256:7abdb14ba34cab876ed3f29584b21227fbc2405e76a62fde9b41c10815e2f432
+voxel-package	340	sha256:abea3aeafe71ed1efb39dc29c956ee288b0b5e12eb7df752e0c32b5c33c3f8d1
+voxel-shapers	464	sha256:55f4f2d8395763bc7491bb28befea0f531aef2b632f5dba8738b5ddd57859f88
+voxel-stream	22	sha256:f2808cb8ed7404e42bf461a8a46fc420de588f9785c7acff6ddb0d681892ec4c
+voxel-ui	155	sha256:85646f3f4c646f8dca36db1293b6fc13412334a103335f696630ddf1bba27290
+voxel-von	0	sha256:b7f2cb28c34de0e0e99763b94be86f7ce627d750b4f5e0ad1f9d89eeab719ff8
+voxel-work	58	sha256:f233e05d6b880e19fef53631e82e567df97d50d1c0fadc09d13f97bb647c3cc2

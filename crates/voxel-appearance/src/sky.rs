@@ -410,8 +410,10 @@ impl Sky {
         let phase = celestial::SkyPhase::of(position.altitude_deg);
 
         let sun = Sky::sun_light(&position, inputs);
-        let moon_phase = celestial::moon_phase_fraction(tick, new_moon_tick);
-        let moon = Sky::moon_light(&position, moon_phase, inputs);
+        // **The Moon is a body on its own orbit**, so its light is read at *its own* position
+        // rather than at the Sun's: the altitude it is attenuated through is the one it is at,
+        // and the phase comes from the same elongation the orbit gives.
+        let moon = Sky::moon_light(&celestial::moon_position(spec, tick, new_moon_tick), inputs);
 
         Some(Sky {
             sun,
@@ -432,16 +434,34 @@ impl Sky {
     /// sunset's orange is the `1/λ⁴` law arriving at a conclusion, not a colour
     /// somebody picked to look like a sunset. This is the claim the
     /// `the_sun_reddens_rather_than_being_tinted` test makes.
+    /// **The Sun's own output, and not what this ground can see of it.** These used to be one
+    /// question — the function returned `BLACK` the moment the Sun crossed the horizon — and
+    /// that made the Sun a lamp with a switch where the world has one with a horizon. Two things
+    /// were wrong with it and both are the same mistake: **the Moon is lit by this** (its light
+    /// is the solar constant reflected, so a Sun that goes out takes the Night with it), and the
+    /// *frame* stepped, because a source that returns `0.0` in one update is a step no exposure
+    /// can follow.
+    ///
+    /// So the column is read at the Sun's own altitude, **frozen at the horizon below it**: a
+    /// depressed Sun's light does not cross a longer path, it crosses the horizon's own path in a
+    /// sky whose lit air is shrinking. That is the same rule `crates/voxel-client/src/
+    /// atmosphere.wgsl` and [`SkyModel::of_graded`] already carry, so one atmosphere now has one
+    /// answer in all three places rather than three — this one previously said `0.0` where the
+    /// shader said `air_mass(0)`.
+    ///
+    /// **Whether the direct beam reaches the *ground* is `voxel_client::skylight::daylight_of`'s
+    /// decision**, and it makes it with the twilight share: a surface under this sky sees the
+    /// Sun's light decay through civil, nautical and astronomical twilight rather than stop. What
+    /// is here is therefore the light the Moon reflects, at every hour, which is what the
+    /// doc comment on [`Sky::moon_light`] always claimed and could not get.
+
     fn sun_light(
         position: &celestial::SolarPosition,
         inputs: SkyInputs,
     ) -> LinearRgb {
-        if !celestial::SkyPhase::sun_is_up(position.altitude_deg) {
-            // Below the horizon there is no beam. A small number here would be a
-            // lie a rig could not see, so it is exactly nothing.
-            return LinearRgb::BLACK;
-        }
-        Sky::total_direct_normal_w_m2() * air_column(position.altitude_deg, inputs)
+        // The rule and the three places that carry it: docs/lighting-sky-and-moon.md
+        let elevation = position.altitude_deg.max(0.0);
+        Sky::total_direct_normal_w_m2() * air_column(elevation, inputs)
     }
 
     /// The Moon's own colour, W/m² per channel.
@@ -459,6 +479,15 @@ impl Sky {
     /// never read. Both defects are the same one — the air column was written out
     /// twice — and both are gone because there is now one [`air_column`].
     ///
+    /// **The air is the Moon's own column, and it was the Sun's.** The altitude here used to be
+    /// the *Sun's* — the Moon was placed where the Sun was, which the previous comment on this
+    /// function called wrong "at every hour except midnight". Two things were wrong with that and
+    /// the orbit fixed both: a crescent low in the west was as bright as the same body overhead,
+    /// and a Moon below the horizon lit the world. Both terms are now read at
+    /// [`celestial::MoonPosition::altitude_deg`], so a setting Moon reddens and a set one is
+    /// **exactly** black ([`celestial::moon_illuminance_w_m2`] refuses a body below the
+    /// horizon rather than extrapolating one).
+    ///
     /// **What is still not modelled, and is not fixed by this:** the Moon is still an
     /// independent emitter here rather than a *reflectance on a lit surface*. The
     /// user's own ruling — *"the moon's light is actually the light reflected off the
@@ -467,21 +496,14 @@ impl Sky {
     /// **after** the air column, because its value is attenuated back through this same
     /// path. This function is now on the shared column, which is the step the ruling
     /// ordered first. The reflectance itself is owed and is not pretended at here.
-    fn moon_light(
-        position: &celestial::SolarPosition,
-        phase_fraction: f64,
-        inputs: SkyInputs,
-    ) -> LinearRgb {
-        if !celestial::SkyPhase::sun_is_up(position.altitude_deg) && phase_fraction <= 0.0 {
-            return LinearRgb::BLACK;
-        }
-        // The Moon's own altitude is **not** modelled: this world has no lunar
-        // ephemeris, and the honest statement of that is a named debt rather than
-        // a moon glued to the sun's position. Until the ephemeris exists the Moon
-        // is placed where the Sun is, which is wrong at every hour except midnight
-        // and is recorded here because a caller cannot otherwise tell.
-        celestial::moon_illuminance_w_m2(90.0, phase_fraction)
-            * air_column(position.altitude_deg, inputs)
+    fn moon_light(moon: &celestial::MoonPosition, inputs: SkyInputs) -> LinearRgb {
+        // **Both factors are read at the Moon's own altitude and neither needs a guard.** The
+        // illuminance is exactly zero for a body below the horizon (the air mass is refused, not
+        // extrapolated) and for a new Moon (`phase_fraction` of zero), and the air column is zero
+        // there too — so a set Moon is black by arithmetic rather than by a branch somebody has to
+        // remember to write.
+        celestial::moon_illuminance_w_m2(moon.altitude_deg, moon.phase_fraction)
+            * air_column(moon.altitude_deg, inputs)
     }
 
     /// The direct normal irradiance above the atmosphere: the solar constant
@@ -663,14 +685,26 @@ mod tests {
             "a below-horizon column was thicker than one at the horizon"
         );
 
-        // **The exactly-zero rule is the source's, and it lives there.** The Sun is down,
-        // so there is no beam at all — a different fact from "the air would dim it".
+        // Pinned by `the_suns_own_light_is_not_a_switch_at_the_horizon`.
         let midnight = celestial::solar_position(&world, 0);
         if !celestial::SkyPhase::sun_is_up(midnight.altitude_deg) {
+            let horizon = Sky::total_direct_normal_w_m2() * air_column(0.0, clear);
+            let beam = Sky::sun_light(&midnight, clear);
             assert_eq!(
-                Sky::sun_light(&midnight, clear),
-                LinearRgb::BLACK,
-                "the sun was down and the beam was not nothing"
+                beam, horizon,
+                "the sun's own light below the horizon is not the horizon's own column"
+            );
+            assert!(
+                beam.luminance() > 0.0,
+                "the sun's own light is exactly zero below the horizon, so nothing can be lit by it"
+            );
+            let deeper = Sky::sun_light(
+                &celestial::SolarPosition { altitude_deg: -30.0, ..midnight },
+                clear,
+            );
+            assert_eq!(
+                deeper, horizon,
+                "a sun thirty degrees down crossed a different column from one at the horizon"
             );
         }
     }
@@ -690,6 +724,11 @@ mod tests {
         // what arrives, so moon/sun is invariant in turbidity. The moment the moon gets
         // its own transmittance again — any transmittance, even a correct one that is
         // not this one — the ratio drifts with haze and this fails.
+        //
+        // **The Moon is read at the Sun's altitude on purpose**, and that is now a choice the
+        // test has to make rather than one the signature made: the Moon has an altitude of its
+        // own (the orbit), and this test is about the *air column* and not about where the body
+        // is. Put the two bodies at one altitude and the ratio is what it always was.
         let world = spec();
         let noon = voxel_shapers::climate::TICKS_PER_DAY / 2;
         let position = celestial::solar_position(&world, noon);
@@ -701,7 +740,7 @@ mod tests {
 
         let ratio_at = |inputs: SkyInputs| {
             let sun = Sky::sun_light(&position, inputs);
-            let moon = Sky::moon_light(&position, 1.0, inputs);
+            let moon = Sky::moon_light(&a_full_moon_at(position.altitude_deg), inputs);
             assert!(sun.luminance() > 0.0, "the sun was black at {inputs:?}");
             assert!(moon.luminance() > 0.0, "the moon was black at {inputs:?}");
             moon.luminance() / sun.luminance()
@@ -720,10 +759,25 @@ mod tests {
         // false of the moon before.
         let hazy = SkyInputs { turbidity: 9.0, ..SkyInputs::default() };
         assert!(
-            Sky::moon_light(&position, 1.0, hazy).luminance()
-                < Sky::moon_light(&position, 1.0, SkyInputs::default()).luminance(),
+            Sky::moon_light(&a_full_moon_at(position.altitude_deg), hazy).luminance()
+                < Sky::moon_light(&a_full_moon_at(position.altitude_deg), SkyInputs::default())
+                    .luminance(),
             "a turbidity of 9 did not dim the moon"
         );
+    }
+
+    /// **A full Moon at a stated altitude**, for the tests that are about the air column, the
+    /// magnitude or the reddening rather than about the orbit. The orbit is read through
+    /// [`celestial::moon_position`]; a test that is comparing transmittances places both bodies at
+    /// one altitude so that the only thing left to vary is the air.
+    fn a_full_moon_at(altitude_deg: f64) -> celestial::MoonPosition {
+        celestial::MoonPosition {
+            altitude_deg,
+            azimuth_deg: 0.0,
+            elongation_deg: 180.0,
+            phase_fraction: 1.0,
+            hour_angle_deg: 0.0,
+        }
     }
 
     /// The tick at which this world's sun is highest: found by search rather
@@ -963,17 +1017,40 @@ mod tests {
     }
 
     #[test]
-    fn the_sun_is_black_below_the_horizon_and_nothing_extrapolates_a_dusk() {
-        // A rig built from a sun that keeps shining after sunset is a rig that
-        // lights a night. And the dome is black below the horizon too — the
-        // **named absence** on `dome_radiance`, because the twilight model is not
-        // built yet and returning a small number would be a dusk nobody computed.
+    /// **Why this test exists, and what it replaced** — docs/lighting-sky-and-moon.md.
+    fn the_suns_own_light_is_not_a_switch_at_the_horizon() {
         let world = spec();
         let night = Sky::at(&world, 0, SkyInputs::default(), 0).expect("a sky at midnight");
-        assert_eq!(night.sun, LinearRgb::BLACK, "the sun was lit at midnight");
+        let horizon = Sky::total_direct_normal_w_m2() * air_column(0.0, SkyInputs::default());
         assert_eq!(night.phase, celestial::SkyPhase::Night);
+        assert_eq!(
+            night.sun, horizon,
+            "the sun's own output at midnight is not the horizon column, so the body that lights \
+             the Moon is still being switched rather than attenuated"
+        );
+        assert!(
+            night.sun.luminance() > 0.0,
+            "the sun's own output is exactly zero below the horizon, so nothing can be lit by it"
+        );
+        // **And the dome is still the named absence it was.** Nothing here extrapolates a dusk:
+        // `dome_radiance` is a separate function and stays black below the horizon, which is the
+        // claim this test has always made about the *dome* rather than about the Sun.
         assert_eq!(night.zenith, LinearRgb::BLACK);
         assert_eq!(night.horizon, LinearRgb::BLACK);
+        // A day number must not have moved: the Sun above the horizon keeps its own column.
+        let noon = Sky::at(
+            &world,
+            voxel_shapers::climate::TICKS_PER_DAY / 2,
+            SkyInputs::default(),
+            0,
+        )
+        .expect("a sky at noon");
+        let position = celestial::solar_position(&world, voxel_shapers::climate::TICKS_PER_DAY / 2);
+        assert_eq!(noon.sun, Sky::sun_light(&position, SkyInputs::default()));
+        assert!(
+            noon.sun.luminance() > night.sun.luminance(),
+            "the sun at noon is not brighter than the horizon column it is above"
+        );
     }
 
     #[test]
@@ -984,7 +1061,7 @@ mod tests {
         let world = spec();
         let noon = voxel_shapers::climate::TICKS_PER_DAY / 2;
         let position = celestial::solar_position(&world, noon);
-        let full = Sky::moon_light(&position, 1.0, SkyInputs::default());
+        let full = Sky::moon_light(&a_full_moon_at(position.altitude_deg), SkyInputs::default());
         let sun = Sky::sun_light(&position, SkyInputs::default());
         assert!(full.luminance() > 0.0, "the full moon contributed nothing at noon");
         assert!(

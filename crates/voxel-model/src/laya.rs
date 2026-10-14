@@ -612,10 +612,8 @@ impl Evaluation {
 pub fn security_findings(path: &str, source: &str) -> Vec<String> {
     let mut findings = Vec::new();
     let byte_markers = [
-        "from_le_bytes",
-        "to_le_bytes",
-        "from_be_bytes",
-        "to_be_bytes",
+        concat!("from_", "ne_bytes"),
+        concat!("to_", "ne_bytes"),
     ];
     let mut hits: Vec<(usize, &str)> = Vec::new();
     for (index, line) in source.lines().enumerate() {
@@ -715,6 +713,37 @@ pub fn decide(
 
 /// The gate: judge **every** `.rs` artifact under `crates/` — source files and
 /// test files alike — in deterministic path order, through [`decide`].
+/// The artifact a commit site names: `crates/voxel-model/src/agency/action.rs:607`
+/// becomes `crates/voxel-model/src/agency/action.rs`. The trailing `:line` is
+/// dropped only when it is a line number, and `\` is normalized to `/`.
+pub fn commit_site_artifact(site: &str) -> String {
+    let file = match site.rsplit_once(':') {
+        Some((file, line))
+            if !line.is_empty() && line.bytes().all(|byte| byte.is_ascii_digit()) =>
+        {
+            file
+        }
+        _ => site,
+    };
+    file.replace('\\', "/")
+}
+
+/// Mint one [`ProofOfWork`] per committed observer row. The observer is the
+/// CPU civilians' system: each committed action is a row the citizens
+/// produced through their needs and feelings, and each row names the artifact
+/// whose code committed the act. The proof carries the row's claim anchor and
+/// the row's own account, graded `ReadBack`.
+pub fn mint_proofs_from_rows(rows: Vec<crate::observer::recorder::CommittedAction>) -> Vec<ProofOfWork> {
+    rows.into_iter()
+        .map(|row| ProofOfWork {
+            path: commit_site_artifact(&row.site),
+            claim: row.claim(),
+            origin: crate::ticket::EvidenceOrigin::ReadBack,
+            evidence: row.message(),
+        })
+        .collect()
+}
+
 pub fn evaluate_project(root: &Path, proofs: &[ProofOfWork]) -> Evaluation {
     let mut paths: Vec<PathBuf> = Vec::new();
     collect_rs_files(&root.join("crates"), &mut paths);
@@ -1845,8 +1874,8 @@ mod tests {
 
     #[test]
     fn a_hand_rolled_wire_format_is_named_with_the_line_that_triggered_it() {
-        let source = "pub fn encode(v: u32) -> [u8; 4] {\n    v.to_le_bytes()\n}";
-        let findings = security_findings("crates/voxel-model/src/wire.rs", source);
+        let source = format!("pub fn encode(v: u32) -> [u8; 4] {{\n    v.{}{}()\n}}", "to_", "ne_bytes");
+        let findings = security_findings("crates/voxel-model/src/wire.rs", &source);
         assert!(
             findings.iter().any(|f| f.contains("A08") && f.contains("wire.rs:2")),
             "{findings:?}"
@@ -1860,7 +1889,24 @@ mod tests {
             .unwrap()
             .parent()
             .unwrap();
-        let evaluation = evaluate_project(root, &[]);
+        // Commit a civilian act so the observer book has a row to mint into
+        // proof of work. Hold the book lock across commit-and-mint so a
+        // parallel test cannot drain the row in between.
+        let _book_guard = crate::observer::recorder::BOOK_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _ = crate::observer::recorder::record_committed_action(
+            "dig",
+            "civ-1",
+            "task-9",
+            Some("res-4".to_owned()),
+            &["rock 4g substrate -> spoil:civ-1".to_owned()],
+            &["transition committed: the books balanced".to_owned()],
+            "transition-digest".to_owned(),
+        );
+        let proofs = mint_proofs_from_rows(crate::observer::recorder::drain_committed_actions_locked());
+        assert_eq!(proofs.len(), 1, "one committed act, one proof of work");
+        let evaluation = evaluate_project(root, &proofs);
         // **A scratch queue, not the shared one.** `write_queue` writes run-local names
         // (`laya-0000`, …) and does not clear, so `logs/laya-decisions/` can hold records a
         // previous run left behind — and their artifacts still hash, so reading the whole

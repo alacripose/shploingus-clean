@@ -1,0 +1,86 @@
+# U1's visible client — the captures, the screenshot, the sources and the guard proof (2026-10-13, plan §36).
+#
+# **Verifying this file:** `sha256sum -c docs/baselines/u1-visible-client/digests.txt` from the repository root
+# checks every line below, because every hash line is bare and every path is relative to that root. (The plan,
+# the README and the spec documents are deliberately **not** listed: this pass edits them, so their digests
+# would be figures that move with the record that describes them. What this file pins is the artifact set.)
+#
+# Every capture below was taken from the built binary **directly**
+# (`clean-room/target/debug/shploingus-clean-room`) rather than through `cargo run`, so its stderr carries the
+# program's own line and no cargo timing. The windowed pair is the binary's own `window 200` run.
+# the binary's own output — line counts first, then the digests
+#   507  docs/baselines/u1-visible-client/pre-stdout.txt
+#     1  docs/baselines/u1-visible-client/pre-stderr.txt
+#   510  docs/baselines/u1-visible-client/final-stdout.txt
+#     1  docs/baselines/u1-visible-client/final-stderr.txt
+#     5  docs/baselines/u1-visible-client/window-stdout.txt
+#     0  docs/baselines/u1-visible-client/window-stderr.txt
+#
+# pre-stdout.txt is **§35's own final bytes**, inherited by digest rather than re-taken: `cmp` against
+# docs/baselines/u12-settled/final-stdout.txt says unmodified, and this is the value §35 recorded for them.
+# pre-stderr.txt and final-stderr.txt are the same one `serve:` line, unmoved since §32.
+# final-stdout.txt is a **re-take**, taken after `PATCH-040` landed: U7's vocabulary instrument reads every
+# `patches/*.md` record in the tree, in place, so the added record moved line 493 (records 39 → 40). §36
+# accounts that movement line by line, and the pre pair above is still §35's.
+# window-stderr.txt is **empty** — the digest below is the digest of no bytes, because nothing in a windowed
+# run writes to stderr.
+d14588a531bff5fefbc4f840c1a43cf7f40afb0fbbc50d256cd087fa379bf150 *docs/baselines/u1-visible-client/pre-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u1-visible-client/pre-stderr.txt
+3bd011350959d89a4a7b24798f63ba701a5e392d4b346da0b077ca9d4abb571d *docs/baselines/u1-visible-client/final-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *docs/baselines/u1-visible-client/final-stderr.txt
+59163d9c2201ed960860e3aa704638f5d3fca53613585fe7c201a467535cc45c *docs/baselines/u1-visible-client/window-stdout.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *docs/baselines/u1-visible-client/window-stderr.txt
+# the screenshot the bar asks for — 995 343 bytes: `P6\n576 576\n255\n` + the frame's own bytes
+#
+# Two windowed runs write this file byte for byte, and its first pixel is the surface's own first pixel in RGB
+# order — `[0x47, 0x58, 0x64]`, the surface's BGRA `[100, 88, 71]` read back, i.e. the red channel the run
+# prints as the frame's dark end. It is the screenshot `LEDGER.md` C-40's check asks for, and the bytes the
+# window was handed rather than a second drawing of the world.
+86daeaf318f56d3e7a31262cd4608712afe6f353309f0fe7defe85d8bfa1e2b8 *docs/baselines/u1-visible-client/frame.ppm
+# the guard proof — 107 lines: the harness's own output, with the header that dates it
+#
+# The twelve case logs are **not** here and not in the tree: they carry each run's test-thread PIDs and cargo
+# timings, so a re-run rewrites them, and §33 recorded that trap against §32's nine kept logs. That is also why
+# this file's own digest changes when the harness is re-run.
+f96483af54bf177048c9973b9efa2a46830bde6fb85ecef99f8f71c11a0873dc *docs/baselines/u1-visible-client/proof.txt
+# **§37's repair of this harness, proved (2026-10-13).** The harness was re-run after its last check was
+# repaired **at the cause** — it now snapshots the binary's own output at the start of the run and requires the
+# rebuilt binary to reproduce *that*, instead of comparing against `final-stdout.txt` above, a dated capture
+# that only describes the bytes until the next pass moves a printed line (§37 moved one label: `world
+# cells_digest` → `surface read digest`, `LEDGER.md` C-189 ruling 2 — every figure on the line unchanged).
+# The re-run's own output is kept here as a second, dated proof: **twelve cases bit by name**, every touched
+# file came back byte-exact, the rebuilt binary reproduced the start-of-run bytes (`b49dbd28…`, which is
+# `docs/baselines/u2-cubic-cells/final-stdout.txt`'s own digest — the same program, run twice) **and the dated
+# capture above was reported as older bytes**, which is the repair doing exactly what it was repaired to do.
+# (The proof file was re-taken once more the same day, after the repair itself gained a step: the run's build
+# now comes **before** the start snapshot, so the snapshot cannot be an older build's output — a defect the
+# new harness caught for real, and the proof's own final line records the run.) The captures, the screenshot
+# and `proof.txt` above are untouched by all of it.
+84fa42d867d267d40e44496942282adbc50205d417969c07ba6dbf1b59887d6e *docs/baselines/u1-visible-client/proof-2026-10-13-37.txt
+# the sources this pass touched, as they stood at §36's end — **moved under a dated comment on 2026-10-13**
+#
+# These nine digests were §36's own, printed by that pass's guard harness (`sha256sum -c`, through a `trap`),
+# so a reader could check the tree rather than the transcript. They are left here **as §36's figures** and are
+# commented out, because a hash line this file can no longer verify would be a claim rather than a check:
+# **§37** (`LEDGER.md` C-189) moved five of the nine — `surface.rs` (the rename, and the doc that names it a
+# plan-view instrument), `main.rs` (one printed label), `lib.rs` (the module and its list), `evidence.rs` (the
+# cubic slice), `systems.rs` (U2's row) — while `refusal.rs`, `reference.rs`, `tests/u1_surface.rs` and
+# `tests/u5_measure.rs` are untouched. **The sources as they stand now are pinned in
+# `docs/baselines/u2-cubic-cells/digests.txt`**, which is this pass's own baseline and whose pair
+# (`pre-stdout.txt` / `final-stdout.txt`) starts from this baseline's `final-stdout.txt` by digest: the
+# `U1 client:` line's own label moved (`world cells_digest` → `surface read digest`) and **every figure on it
+# did not**. This baseline's captures, screenshot and proof are untouched by that.
+# 70b9744bb8bc554060336b1d0067cda9d877ee52ee1c67873dc14a6133bdd0bd *clean-room/src/surface.rs
+# e134c77e0b800be1b4ee1b9a5d04287bb330ea94f71842d8d45be6e489e627fd *clean-room/src/main.rs
+# 1b0ab8a2cbeafca5b0f393f66cd8614bcfed472928a6ec2e18861fa63d3d6657 *clean-room/src/lib.rs
+# 098d6bb413413643722d967cb75b4b9584746075e2a8c8b004bc7c6978a454c9 *clean-room/src/refusal.rs
+# 968c6b77e3896c4a5198343feecea90412744580ae64e4a3d5f90dd85a5c3918 *clean-room/src/reference.rs
+# 16df8fe4f5ce655f8069125dd7b076f675ff0082c4c169c25dc1fb18f2180fec *clean-room/src/evidence.rs
+# c3b5e241e1401971d304d1c504609850e3512dd9cebf28e366cf87beff291c84 *clean-room/src/systems.rs
+# ddc54a9ea389ea830e6afba464a5b2d2aeea8194c24f4f3e53e47b9f00012ad0 *clean-room/tests/u1_surface.rs
+# fac97225f734637b108c7a483d1cdbafd45b4acedbbb223d1c7212e8cddf41a3 *clean-room/tests/u5_measure.rs
+# the frame's own figures (the pixels' digest, the world's cells digest, the plane's state digest at rest, and
+# the vocabulary line's own digest) are **printed by the two runs themselves** — the frame's three are on
+# window-stdout.txt's third line and on final-stdout.txt, and §36's "measured numbers" table carries all four
+# with the figures they belong to. They are not repeated here because there is no file behind them for
+# `sha256sum` to check, and a hash line this file cannot verify would be a claim rather than a check.

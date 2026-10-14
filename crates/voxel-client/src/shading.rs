@@ -89,7 +89,7 @@ pub struct MaterialParams {
     /// what makes `MaterialParams::from_inputs`'s stated rows shade exactly as
     /// they did before the pattern existed, and is why the probe tests could keep
     /// their `f64` references unchanged. The shaper id is
-    /// [`voxel_shapers::column::materials::SurfacePattern::index`], which
+    /// [`voxel_shapers::materials::SurfacePattern::index`], which
     /// `shading.wgsl` dispatches on (C-162).
     pub pattern: [f32; 4],
     /// `specular_f0`, `f0 admitted`, `coat_weight`, `coat_roughness`.
@@ -249,7 +249,7 @@ impl MaterialParams {
             self.medium_flags,
         ] {
             for v in group {
-                out[i..i + 4].copy_from_slice(&v.to_le_bytes());
+                out[i..i + 4].copy_from_slice(&voxel_model::endian::le_bytes(v));
                 i += 4;
             }
         }
@@ -322,16 +322,16 @@ impl GpuRig {
         let mut out = [0u8; 160];
         let mut i = 0usize;
         for v in self.ambient {
-            out[i..i + 4].copy_from_slice(&v.to_le_bytes());
+            out[i..i + 4].copy_from_slice(&voxel_model::endian::le_bytes(v));
             i += 4;
         }
         for v in self.count {
-            out[i..i + 4].copy_from_slice(&v.to_le_bytes());
+            out[i..i + 4].copy_from_slice(&voxel_model::endian::le_bytes(v));
             i += 4;
         }
         for light in self.lights {
             for v in light.direction.iter().chain(light.colour.iter()) {
-                out[i..i + 4].copy_from_slice(&v.to_le_bytes());
+                out[i..i + 4].copy_from_slice(&voxel_model::endian::le_bytes(*v));
                 i += 4;
             }
         }
@@ -358,7 +358,7 @@ pub fn table(registry: &MaterialRegistry, shading: &ShadingField) -> Result<Vec<
         // is a different claim from "varied by zero" and reaches the shader as
         // gains of zero — the material draws flat, as declared.
         let (roughness_gain, reflectance_gain) = shading.gain(m.id).unwrap_or((0.0, 0.0));
-        let surface = voxel_shapers::column::materials::pattern_of(m.id).index();
+        let surface = voxel_shapers::materials::pattern_of(m.id).index();
         out[m.id.0 as usize] =
             MaterialParams::from_inputs(&inputs, MESH_DOES_NOT_CARRY_OPEN).with_pattern(
                 roughness_gain,
@@ -379,10 +379,10 @@ pub fn table(registry: &MaterialRegistry, shading: &ShadingField) -> Result<Vec<
 /// world, and `table()` built from a *different* field would be a second world
 /// whose lattice this sentence would have to grow an argument for.
 ///
-/// [`materials::shading_field`]: voxel_shapers::column::materials::shading_field
-/// [`materials::SHADING_FIELD_DOMAIN`]: voxel_shapers::column::materials::SHADING_FIELD_DOMAIN
+/// [`materials::shading_field`]: voxel_shapers::materials::shading_field
+/// [`materials::SHADING_FIELD_DOMAIN`]: voxel_shapers::materials::SHADING_FIELD_DOMAIN
 pub fn world_lattice_uniform() -> [u32; 4] {
-    let seed = voxel_shapers::column::materials::SHADING_FIELD_DOMAIN;
+    let seed = voxel_shapers::materials::SHADING_FIELD_DOMAIN;
     let tag = voxel_appearance::provenance::LATTICE_DOMAIN_TAG;
     [seed as u32, (seed >> 32) as u32, tag as u32, (tag >> 32) as u32]
 }
@@ -427,13 +427,15 @@ pub fn shade_cpu(
 /// reflected by Fresnel — the Rust side of what `shading.wgsl` does in its
 /// `transmission` branch.
 ///
-/// `table` is the **exposed** directional dome the sky pass draws (what
-/// [`crate::WorldPipeline::write_sky`] puts on the GPU). The mirror ray is
+/// `model` is the sky's own transport — the rows
+/// [`crate::WorldPipeline::write_sky_model`] puts on the GPU, which the shader evaluates with
+/// `atmosphere.wgsl`'s `sky_radiance_rgb`. The mirror ray is
 /// [`voxel_appearance::fluid::reflected_ray`], the direction convention is
-/// [`crate::skylight::sky_direction_of`], the lookup is
-/// [`crate::skylight::sky_dome_lookup`], and the mix is
+/// [`crate::skylight::sky_direction_of`], the reading of the sky is
+/// [`crate::skylight::sky_exposed_at`], and the mix is
 /// [`voxel_appearance::fluid::surface_radiance`]. This function only joins them,
-/// which is why it can be compared against the shader pixel for pixel.
+/// which is why it can be compared against the shader pixel for pixel — and the sky it
+/// reflects is the one the shader reflects, from one model and one exposure.
 ///
 /// **Below the horizon the mirror ray reflects the world, not the sky** — and this
 /// model does not draw the world in a reflection yet, so that case is no reflection
@@ -444,13 +446,13 @@ pub fn fluid_surface_cpu(
     view: Vec3,
     open: f64,
     rig: &LightRig,
-    table: &[LinearRgb],
+    model: &crate::skylight::SkyModel,
 ) -> Result<(LinearRgb, Terms), voxel_model::RefusalSet> {
     let (body, terms) = shade_cpu(inputs, normal, view, open, rig)?;
     let ray = voxel_appearance::fluid::reflected_ray(view, normal);
     let reflected = if ray.y > 0.0 {
         let (elevation_deg, azimuth_deg) = crate::skylight::sky_direction_of(ray);
-        crate::skylight::sky_dome_lookup(table, elevation_deg, azimuth_deg)
+        crate::skylight::sky_exposed_at(model, elevation_deg, azimuth_deg)
     } else {
         LinearRgb::BLACK
     };
@@ -476,7 +478,7 @@ mod tests {
     #[test]
     fn no_material_loses_its_rim_to_arithmetic() {
         let registry =
-            voxel_shapers::column::materials::registry().expect("the materials registry");
+            voxel_shapers::materials::registry().expect("the materials registry");
         let rig = LightRig::standard();
 
         let normal = Vec3::new(0.0, 1.0, 0.0);
@@ -536,7 +538,7 @@ mod tests {
         use std::collections::BTreeMap;
         let declared = voxel_model::materials::generated::table();
         let registry =
-            voxel_shapers::column::materials::registry().expect("the materials registry");
+            voxel_shapers::materials::registry().expect("the materials registry");
 
         let admitted: BTreeMap<&str, &voxel_model::Material> = registry
             .materials()
@@ -622,20 +624,22 @@ mod tests {
         );
     }
 
-    // **The model half of the census**: no `OpenPbrInputs` term may be absent without a
-    // named reason.
-    //
-    // The list below is a table of **rules**, not of excuses. Five of the six absent terms
-    // are absent for *every* admitted row and for the *same* one reason, so a per-material
-    // entry would be 380 copies of one sentence — and a drifted copy is a lie that is harder
-    // to see than a rule that does not bite. Each rule carries its own scope as a predicate,
-    // so it cannot be stretched to cover a row it does not describe, and the two checks at
-    // the end are the ones that keep it honest: **every** absence must match a rule, and
-    // **every** rule must match an absence — a reason may not outlive the thing it explained.
+    /// **The model half of the census**: no `OpenPbrInputs` term may be absent without a
+    /// named reason.
+    ///
+    /// The list below is a table of **rules**, not of excuses. Five of the six absent terms
+    /// are absent for *every* admitted row and for the *same* one reason, so a per-material
+    /// entry would be 380 copies of one sentence — and a drifted copy is a lie that is harder
+    /// to see than a rule that does not bite. Each rule carries its own scope as a predicate,
+    /// so it cannot be stretched to cover a row it does not describe, and the two checks at
+    /// the end are the ones that keep it honest: **every** absence must match a rule, and
+    /// **every** rule must match an absence — a reason may not outlive the thing it explained.
     #[test]
     fn no_absent_openpbr_term_is_unexplained() {
-        // `(term, why it is legitimately absent, and the rows it is absent for)`.
-        let stated: [(&str, &str, fn(&voxel_model::Material) -> bool); 6] = [
+        /// One absent term: its name, why its absence is legitimate, and the rows it is absent for.
+        type Absence = (&'static str, &'static str, fn(&voxel_model::Material) -> bool);
+
+        let stated: [Absence; 6] = [
             (
                 "specular_roughness",
                 "a transmissive row's look is its Fresnel reflection (C-159.2), and a liquid's \
@@ -677,7 +681,7 @@ mod tests {
         ];
 
         let registry =
-            voxel_shapers::column::materials::registry().expect("the materials registry");
+            voxel_shapers::materials::registry().expect("the materials registry");
         let mut unexplained: Vec<String> = Vec::new();
         let mut explained = 0usize;
         let mut all: Vec<(&voxel_model::Material, Vec<&'static str>)> = Vec::new();
@@ -755,8 +759,11 @@ mod tests {
     /// carries it, without being edited.
     #[test]
     fn no_openpbr_term_is_silently_dropped_on_the_way_to_the_gpu() {
+        /// One term: its name and two setters whose difference must change the uploaded bytes.
+        type Probe = (&'static str, fn(&mut OpenPbrInputs), fn(&mut OpenPbrInputs));
+
         // Every term `OpenPbrInputs` carries, each with a second value to vary it to.
-        let probes: [(&str, fn(&mut OpenPbrInputs), fn(&mut OpenPbrInputs)); 11] = [
+        let probes: [Probe; 11] = [
             ("base_color", |i| i.base_color = Colour::Admitted(LinearRgb::WHITE), |i| i.base_color = Colour::Unadmitted),
             ("base_metalness", |i| i.base_metalness = 1.0, |i| i.base_metalness = 0.0),
             ("specular_roughness", |i| i.specular_roughness = Some(0.25), |i| i.specular_roughness = None),
@@ -786,9 +793,9 @@ mod tests {
 
         let mut dropped = Vec::new();
         for (name, set_a, set_b) in probes {
-            let mut a = base.clone();
+            let mut a = base;
             set_a(&mut a);
-            let mut b = base.clone();
+            let mut b = base;
             set_b(&mut b);
             if MaterialParams::from_inputs(&a, 0.0).bytes()
                 == MaterialParams::from_inputs(&b, 0.0).bytes()
@@ -806,7 +813,7 @@ mod tests {
     }
 
     fn registry() -> MaterialRegistry {
-        voxel_shapers::column::materials::registry().expect("the admitted registry builds")
+        voxel_shapers::materials::registry().expect("the admitted registry builds")
     }
 
     #[test]
@@ -885,7 +892,7 @@ mod tests {
     /// The world's own shading field — the same declaration the window builds its
     /// table from, so the gains these tests read are the gains the game draws (C-161).
     fn standing() -> ShadingField {
-        voxel_shapers::column::materials::shading_field()
+        voxel_shapers::materials::shading_field()
             .expect("the world's shading field declares for the world's own registry")
     }
 
@@ -903,23 +910,23 @@ mod tests {
         };
         let b = p.bytes();
         assert_eq!(b.len(), 128);
-        assert_eq!(&b[0..4], &1.0f32.to_le_bytes());
-        assert_eq!(&b[8..12], &3.0f32.to_le_bytes());
-        assert_eq!(&b[12..16], &1.0f32.to_le_bytes());
+        assert_eq!(&b[0..4], &voxel_model::endian::le_bytes(1.0f32));
+        assert_eq!(&b[8..12], &voxel_model::endian::le_bytes(3.0f32));
+        assert_eq!(&b[12..16], &voxel_model::endian::le_bytes(1.0f32));
         // The fifth `vec4` is the pattern's gains, and it travels after the four
         // OpenPBR groups rather than inside them.
-        assert_eq!(&b[64..68], &0.5f32.to_le_bytes());
-        assert_eq!(&b[68..72], &0.25f32.to_le_bytes());
+        assert_eq!(&b[64..68], &voxel_model::endian::le_bytes(0.5f32));
+        assert_eq!(&b[68..72], &voxel_model::endian::le_bytes(0.25f32));
         // And the three groups the shader could not read before follow it, in the
         // struct's own order — because a stride that disagreed with `shading.wgsl`
         // would put a coat weight where a medium depth is read.
-        assert_eq!(&b[80..84], &0.04f32.to_le_bytes());
-        assert_eq!(&b[84..88], &1.0f32.to_le_bytes());
+        assert_eq!(&b[80..84], &voxel_model::endian::le_bytes(0.04f32));
+        assert_eq!(&b[84..88], &voxel_model::endian::le_bytes(1.0f32));
         // `participating_medium`'s second and third slots: the medium's depth and
         // whether it is admitted — 100 and 104 bytes in, because the two groups
         // before it are full.
-        assert_eq!(&b[100..104], &0.3f32.to_le_bytes());
-        assert_eq!(&b[104..108], &1.0f32.to_le_bytes());
+        assert_eq!(&b[100..104], &voxel_model::endian::le_bytes(0.3f32));
+        assert_eq!(&b[104..108], &voxel_model::endian::le_bytes(1.0f32));
     }
 
     #[test]
@@ -935,7 +942,7 @@ mod tests {
             // was filled in": it cannot pass for a row that was never written.
             let inputs = inputs_for(&reg, m.id).unwrap();
             let (roughness_gain, reflectance_gain) = field.gain(m.id).unwrap_or((0.0, 0.0));
-            let surface = voxel_shapers::column::materials::pattern_of(m.id).index();
+            let surface = voxel_shapers::materials::pattern_of(m.id).index();
             assert_eq!(
                 t[m.id.0 as usize],
                 MaterialParams::from_inputs(&inputs, MESH_DOES_NOT_CARRY_OPEN).with_pattern(
@@ -957,7 +964,7 @@ mod tests {
         // exactly the flat blocks C-160 reported.
         assert!(varied > 0, "the shading field varies no material at all");
         assert_eq!(
-            t[voxel_shapers::column::materials::REGOLITH.0 as usize].pattern,
+            t[voxel_shapers::materials::REGOLITH.0 as usize].pattern,
             [0.5, 0.5, 0.0, 0.0],
             "regolith's row does not carry the standing gains"
         );
@@ -966,12 +973,12 @@ mod tests {
         // because the mapping is total: the fluid half of the 256 level (foam,
         // caustics, animated addressed cells) will read it, and until then the
         // zero gains are what keep the row flat (C-162).
-        let water = voxel_shapers::column::materials::WATER;
+        let water = voxel_shapers::materials::WATER;
         let water_row = t[water.0 as usize].pattern;
         assert_eq!(water_row[..2], [0.0, 0.0], "a transmissive material was given gains");
         assert_eq!(
             water_row[2],
-            voxel_shapers::column::materials::pattern_of(water).index() as f32,
+            voxel_shapers::materials::pattern_of(water).index() as f32,
             "the shaper id is part of every row, even a flat one"
         );
         // **The world's own thirteen, plus the corpus.** The registry declares fourteen

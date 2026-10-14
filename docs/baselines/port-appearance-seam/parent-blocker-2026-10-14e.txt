@@ -1,0 +1,82 @@
+The parent's controller, re-quoted from its own bytes rather than described — 2026-10-14e
+========================================================================================
+
+The question this pass had to answer: can this clean room **drive the parent's own controller** rather than
+re-declaring one? The signed answers it needs are all in the parent, and they were read here — but the
+blocker is **the crate**, not a signature: `voxel-client` is the only crate that holds `motion.rs` and
+`camera.rs`, and it is the crate the renderer lives in. Given by command, output unedited:
+
+command: grep -n 'pub struct Wish' -A 6 crates/voxel-client/src/motion.rs     (repository root, read-only)
+298:pub struct Wish {
+299-    /// Along the direction the camera faces: `+1` forward, `-1` back.
+300-    pub forward: f64,
+301-    /// To the camera's right: `+1` right, `-1` left.
+302-    pub strafe: f64,
+303-    /// Held: sneak, at [`SNEAK_SPEED`] — and the key trimping wants.
+304-    pub sneak: bool,
+
+command: grep -n 'MAX_PITCH_RAD|fn basis' crates/voxel-client/src/camera.rs
+52:pub const MAX_PITCH_RAD: f64 = 1.569_051_2;
+124:    pub fn basis(&self) -> ([f64; 3], [f64; 3], [f64; 3]) {
+125:        let pitch = self.pitch_rad.clamp(-MAX_PITCH_RAD, MAX_PITCH_RAD);
+
+command: grep -n 'FLY_M_PER_S' crates/shploingus/src/main.rs
+143:const FLY_M_PER_S: f64 = 18.0;
+3076:        let speed = if self.held.contains(&KeyCode::ShiftLeft) { FLY_M_PER_S * 4.0 } else { FLY_M_PER_S };
+
+command: grep -n 'forward: key' -B 3 -A 4 crates/shploingus/src/main.rs
+3035-        let wish = {
+3036-            let key = |k: KeyCode| if self.held.contains(&k) { 1.0 } else { 0.0 };
+3037-            voxel_client::motion::Wish {
+3038:                forward: key(KeyCode::KeyW) - key(KeyCode::KeyS),
+3039-                strafe: key(KeyCode::KeyD) - key(KeyCode::KeyA),
+
+The parent's `Wish` is a **body's** wish — `forward`, `strafe`, `sneak`, `sprint`, `jump`, at
+`SNEAK_SPEED` and a Squake trimp — and the parent's free flight is the bin's own (`FLY_M_PER_S`, above,
+moving `forward` along the camera's own axis). This clean room's controller is the **free-flying eye** the
+bin's doc describes (*"No physics. Moving is free flight, so the camera can pass through terrain"*,
+`crates/shploingus/src/main.rs` line 82), so what it re-uses from the parent is exactly three things, each
+read here and each named where it is declared: the intent's own shape and diagonal rule
+(`crates/voxel-client/src/motion.rs` lines 292-298), the pole (`MAX_PITCH_RAD`, above), and the speed
+(`FLY_M_PER_S`, above, over this client's own declared 30 frame(s)/s).
+
+command: sed -n '7,26p' crates/voxel-client/Cargo.toml     (the crate the two files live in)
+#   wgpu     — the only way this repository has to turn a `Mesh` into pixels.
+#              The offline registry cache already holds `wgpu 30.0.1` and its
+#              whole closure, so this is buildable with `--offline`.
+#   pollster — `wgpu 30` made adapter enumeration async.
+#   glyphon  — the text half of the HUD. ... `glyphon 0.12.0` and its whole
+#              closure (`cosmic-text`, `swash`, `etagere`, `fontdb`) are in the
+#              offline registry cache.
+
+So declaring `voxel-client` as a path dependency would add `wgpu`, `glyphon`, `pollster` and their closures
+to a manifest whose own rule is that it declares `sha2` alone (`clean-room/Cargo.toml`), while the recorded
+seam requires the ported call to be reachable without them. **That is the whole blocker**, and it is a
+crate-level one: there is no signature to quote, because there is nothing to call it on.
+
+What changed this pass is **the other end of the seam**, and it is the strongest footing this blocker has
+had. This clean room now has its own camera a person can drive — `clean-room/src/viewpoint.rs` (the one
+camera state: the eye and a stored unit look, the one intent vocabulary, the pole clamped from the
+parent's own number) and `clean-room/src/controller.rs` (the session on top of it: the law's own state, the
+streamer's own resident set, the person's own eye, and what each step cost) — and it is **measured against
+the parent's own rule rather than described**: eight steps west move the eye 4.80 m at the parent's own
+`18 m/s / 30 frame(s)/s = 0.60 m` a step, move the person's own chunk from `(1, 1, 2)` to `(0, 1, 2)`,
+change every frame's own digest, and eight steps east put the eye back **bit for bit** and draw the
+declared view's own frame again (`1333` rectangle(s), `147 808 of 331 776` pixel(s), digest `7816bf6a…`).
+The bar and the four lines that carry it are in the run's own stdout
+(`run-after-the-person-drives-the-client-2026-10-14e.txt`), and it bit on a perturbation of its own subject
+(`guard-bites-2026-10-14e.txt`, bite e-6: the built binary exits 1 and names the term that failed).
+
+**The smallest next step that would remove the blocker**, named rather than implied: split the parent's
+`motion.rs` and `camera.rs` — 1676 and 470 lines, and neither reads a pixel — into a crate with no GPU
+dependencies of its own, and declare *that* as the path dependency; the clean room's `viewpoint`/`controller`
+would then be able to call the parent's own `Wish`, `Motion` and `Camera::basis` instead of re-declaring
+them, and the divergence this pass had to keep honest by measurement would become a compile-time identity.
+Until then the parent's controller is a **source**, like the appearance and mesh seams before it, and this
+module says so where the mapping is declared.
+
+Nothing under `crates/` was written, and every path read here is pinned:
+command: sha256sum -c pinned-parent-bytes.txt | grep -c ': OK'
+  87 of 87 — every pinned line OK
+command: find crates -newermt '-300 minutes' -type f | wc -l
+  0 — files written under crates/ in the last five hours

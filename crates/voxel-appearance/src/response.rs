@@ -212,7 +212,12 @@ mod tests {
         // this line exists to be captured with `--nocapture`.
         println!("measured: {response:?}");
         assert_eq!(response.samples, 256);
-        assert_eq!(response.terms.count(), 4, "terms were {:?}", response.terms);
+        // **Five, and the fifth is not a stylisation.** The four Source 2 terms are still four;
+        // the fifth is the admitted `subsurface_weight` that changed the diffuse wrap. It was
+        // invisible here before, which made a term the client draws unmeasurable by the instrument
+        // this file exists to be.
+        assert_eq!(response.terms.count(), 5, "terms were {:?}", response.terms);
+        assert!(response.terms.subsurface);
         assert!(
             response.meets_bar(),
             "measured {} bands over {:.3}..{:.3}",
@@ -238,6 +243,21 @@ mod tests {
         let response = shading_response(&stated(), &rig, up(), 64).unwrap();
         assert_eq!(response.bands, 1);
         assert!(response.terms.ambient && response.terms.count() == 1);
+    }
+
+    #[test]
+    fn an_admitted_subsurface_weight_is_a_term_and_an_absent_one_is_not() {
+        // Presence is not value: `Some(0.0)` and `None` compute the same number and are different
+        // facts, which is the rule `Terms` exists to keep.
+        let absent = OpenPbrInputs { subsurface_weight: None, ..stated() };
+        let response = shading_response(&absent, &LightRig::standard(), up(), 64).unwrap();
+        assert!(
+            !response.terms.subsurface,
+            "an absent weight is not a drawn term: {:?}",
+            response.terms
+        );
+        let admitted = shading_response(&stated(), &LightRig::standard(), up(), 64).unwrap();
+        assert!(admitted.terms.subsurface, "the fixture admits the weight");
     }
 
     #[test]

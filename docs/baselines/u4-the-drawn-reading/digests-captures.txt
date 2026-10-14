@@ -1,0 +1,38 @@
+# §41's own captures, the frame, and the guard harness's own proof (2026-10-13).
+# Verify with: (cd docs/baselines/u4-the-drawn-reading && sha256sum -c digests-captures.txt)
+6c77b9adad8b6d2f63f250fa870eebde2d95f31a149705e0def58e6b88b68938 *pre-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *pre-stderr.txt
+25eb01eadbf45378bedead9d20f7e57e3e7d968f325dfb9aa1cdd4bc881546a1 *final-stdout.txt
+f583ca182bd264e20faced4580d386a8e1a88d3d9df8e1eb5bd8c0c799d3c87f *final-stderr.txt
+6b3d0de85c2245f595690c4ec3d540d79a22cda7e706267436e6e85427289252 *window-stdout.txt
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 *window-stderr.txt
+41df93b6163b085eedadef8f59c8bff4660d5307ff28dfef8636e7f51c47c4a1 *frame.ppm
+408f20a22be1766a45bd799b2a134780b79ef34c15f80f0fac58cfe6b99f4576 *run-guards.sh
+14d1d268e2a763f802f26df083b62fb287636b11e4e72820fb9bd8e054740250 *proof.txt
+# **What each capture is, and how it was re-verified on the final bytes.**
+# `pre-stdout.txt` is **522** lines and IS §40's own `final-stdout.txt` **by digest** (`6c77b9ad…`), so this
+# pass's movement is accounted between the record's own two ends. `final-stdout.txt` is **524** lines: two
+# added (the `U4 drawn:` pair), seven changed, none removed. A fresh `cargo run --offline` on the final bytes
+# reproduces it **byte for byte**, and the guard harness (which rebuilds the binary after restoring every file
+# it perturbs) reproduces the same bytes again.
+# `window-stdout.txt` is **9** lines: the real window's own run, captured with `frame.ppm` and re-verified on
+# the final bytes — a fresh run's nine lines differ from it **only** in the path the run is handed (an
+# argument, not a product), and the frame it wrote is byte-identical.
+# `window-stderr.txt` is **empty**: `e3b0c442…` is the digest of zero bytes. Nothing the `window` mode prints
+# goes to stderr; the binary's `serve: 7 request(s): 5 answered, 2 refused by name` line belongs to its
+# evidence mode, which is why `pre-stderr.txt` and `final-stderr.txt` are both `f583ca18…` and 51 bytes.
+# `frame.ppm` is **995 343** bytes = `15 + 576 · 576 · 3`: a P6 of the declared `576 × 576` client, the bytes
+# the window was handed rather than a second drawing of the world. Its **non-black pixels are 153 010**, which
+# is the coverage the run printed (`drew 153010 of 331776`) to the pixel, and its drawn palette is **8**
+# colours against the **30** luminance bands the run prints over its 339 shaded rectangles — both true, and
+# the plan says which is which.
+# `proof.txt` is the guard harness's own log for these bytes: **17 cases, 36 fault lines, exit 0**, every
+# touched file byte-exact, the rebuilt binary reproducing the run's own start bytes (`25eb01ea…`).
+# `run-guards.sh`'s own bytes (`408f20a2…`) predate the run they prove.
+# ---------------------------------------------------------------------------
+# **The window captures that were already on the record are left exactly as they were.** §36's
+# (`u1-visible-client/window-stdout.txt`, **5** lines, `59163d9c…`) and §37's (`u2-cubic-cells/window-stdout.txt`,
+# **6** lines, `4c53a0e8…`) stand unmodified in their own directories, with their own frames beside them —
+# `u1-visible-client/frame.ppm` (`86daeaf3…`) is the **plan** frame, and this pass's is the **drawn** one.
+# §38–§40 recorded no window capture of their own. A window capture is a dated record of the run that made it,
+# never a promise about later bytes.

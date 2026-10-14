@@ -21,6 +21,7 @@
 //! declared tolerance. Only **provably value-independent** metadata is split out.
 //! That is what makes a value-affecting generator change *refuse* instead of
 //! silently re-deriving a world that no longer matches its recorded evidence.
+use voxel_model::endian::LeBytes;
 
 use voxel_model::{Identity, Refusal, RefusalKind, Refused};
 use voxel_model::coord::CHUNK_SIDE;
@@ -191,15 +192,15 @@ impl FieldSpec {
             Some((0, _)) => tolerance[0] = 1,
             Some((n, d)) => {
                 tolerance[0] = 2;
-                tolerance[1..9].copy_from_slice(&n.to_le_bytes());
-                tolerance[9..17].copy_from_slice(&d.to_le_bytes());
+                tolerance[1..9].copy_from_slice(&n.into_le_bytes());
+                tolerance[9..17].copy_from_slice(&d.into_le_bytes());
             }
         }
         Identity::of_fields(
             "regional-field/v1",
             &[
                 self.kind.name().as_bytes(),
-                &self.levels.to_le_bytes(),
+                &self.levels.into_le_bytes(),
                 self.interpolation.name().as_bytes(),
                 self.provenance.as_bytes(),
                 &tolerance,

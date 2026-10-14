@@ -200,7 +200,13 @@ mod tests {
         let none = f.response(Terms::none()).unwrap();
         assert_eq!(none.terms, Terms::none());
         let all = f
-            .response(Terms { half_lambert: true, rim: true, specular_warp: true, ambient: true })
+            .response(Terms {
+                half_lambert: true,
+                rim: true,
+                specular_warp: true,
+                ambient: true,
+                subsurface: false,
+            })
             .unwrap();
         assert_eq!(all.terms.count(), 4);
         // and the pixels did not change because of it

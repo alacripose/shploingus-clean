@@ -48,6 +48,18 @@ impl Default for CaveParams {
     }
 }
 
+impl CaveParams {
+    /// The cave parameters a world's own configuration asks for.
+    ///
+    /// Derived from the spec rather than defaulted so they **travel with the world**:
+    /// two worlds with different dials carve different networks, and a caller reading
+    /// a voxel cannot accidentally use the library default and disagree with the
+    /// chunk build about where a void is.
+    pub fn for_spec(spec: &crate::spec::WorldSpec) -> Self {
+        CaveParams { threshold: spec.config.cave_threshold, ..CaveParams::default() }
+    }
+}
+
 /// What is at a cell underground.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Void {

@@ -65,7 +65,7 @@ const BANDS: [f32; 6] = [1e-4, 1.0 / 255.0, 0.02, 0.04, 0.08, 0.32];
 fn main() {
     // ---- a world, meshed -------------------------------------------------
     let source = WorldSource::new(WorldSpec::new(2468, Config::default()));
-    let registry = voxel_shapers::column::materials::registry().expect("the registry");
+    let registry = voxel_shapers::materials::registry().expect("the registry");
     let table = voxel_client::shading::table(&registry, &shading_field())
         .expect("every admitted material derives");
     let mesh_config = MeshConfig::from_registry(&registry).expect("a mesh config");
@@ -119,6 +119,9 @@ fn main() {
 
     let rig = GpuRig::from_rig(&LightRig::standard()).expect("the standard rig fits");
     let mut renderer = Renderer::new(WIDTH, HEIGHT, &table, &rig).expect("a GPU");
+    // **No sky in this measurement**: the subject is the pattern's footprint under a moving eye,
+    // and the frame says so rather than being refused for never having stated one.
+    renderer.world_mut().write_no_sky_model();
     let pixel_angle = voxel_client::pixel_angle_rad(camera.fov_y_rad, HEIGHT);
 
     println!(
@@ -139,13 +142,13 @@ fn main() {
         let scene = Scene::build(meshes.iter(), eye, &lattice, None, None);
         renderer.render(&scene, &camera).expect("a frame")
     };
-    // **The step size is the measurement, so it is swept.** Every number this file
-    // produced before the sweep was taken at `STEP_M` — one frame of a 0.3 m/s walk —
-    // while the user's report is about **jumping**, which moves the eye a metre and
-    // sweeps the footprint through several rung stages rather than nudging one. A
-    // walk's numbers cannot answer a jump's question. `HOLD` is the camera-held
-    // control, run at the smallest step only, because it is a bit-identity check
-    // rather than a flicker measurement.
+    /// **The step size is the measurement, so it is swept.** Every number this file
+    /// produced before the sweep was taken at `STEP_M` — one frame of a 0.3 m/s walk —
+    /// while the user's report is about **jumping**, which moves the eye a metre and
+    /// sweeps the footprint through several rung stages rather than nudging one. A
+    /// walk's numbers cannot answer a jump's question. `HOLD` is the camera-held
+    /// control, run at the smallest step only, because it is a bit-identity check
+    /// rather than a flicker measurement.
     const WALK_M: f64 = 0.05;
     const FAST_M: f64 = 0.25;
     const JUMP_M: f64 = 1.00;
@@ -221,6 +224,6 @@ fn report(name: &str, a: &Frame, b: &Frame) {
 
 /// The world's own shading field, so the material table belongs to this world's registry.
 fn shading_field() -> voxel_model::ShadingField {
-    voxel_shapers::column::materials::shading_field()
+    voxel_shapers::materials::shading_field()
         .expect("the world's shading field declares for the world's own registry")
 }

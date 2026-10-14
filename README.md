@@ -43,7 +43,7 @@ Start with `docs/HANDOFF.md`: current implementation, verified commands, the nex
 ## Documents
 
 - `docs/DESIGN-SPEC.md` — the authority for this repository.
-- `docs/MODS-MAP.md` — every URL in the mods `references.md`, classified.
+- `docs/MODS-MAP.md` — every reference the mods list names, classified (106 references; its header reconciles them against the 91-URL source file and this repo's 97-URL copy).
 - `docs/SHAPERS.md` — each shaper with the paper it is developed from.
 - `docs/APPEARANCE.md` — the OpenPBR + NPR appearance contract, 4×4×4 and 256×.
 - `docs/LEDGER.md` — the decisions taken in this repository, appended, never rewritten.

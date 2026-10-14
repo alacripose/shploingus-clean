@@ -305,13 +305,13 @@ impl WeighingGate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use voxel_shapers::column::materials;
+    use voxel_shapers::materials;
 
     // The starter registry lives in `voxel-shapers`. It is used here rather than
     // rebuilt, so the instrument layer cannot invent a material the world does
     // not have.
     fn registry() -> MaterialRegistry {
-        voxel_shapers::column::materials::registry().unwrap()
+        voxel_shapers::materials::registry().unwrap()
     }
 
     #[test]

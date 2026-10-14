@@ -15,10 +15,12 @@
 //!
 //! # What each number is
 //!
-//! * [`GAME_WINDOW`] — radius 5 is 11×11 chunks, 352 m across, and 2 chunks above
-//!   and below the eye. The band is 2 chunks tall, so 5 chunks of vertical extent
-//!   is more than the world has on purpose: it is what lets the player see the
-//!   whole playable column and the sky above it.
+//! * [`GAME_WINDOW`] — radius 5 is 11×11 chunks, 352 m across, and **2 chunks above
+//!   and below the eye**. `vertical_chunks` is a **streaming budget and not a world
+//!   height**: chunks are cubic and the world's vertical extent is open (2026-10-10), so
+//!   this number says how much of the column is held resident, not how tall the world may
+//!   be. A world whose atmosphere now stands ~1 375 m tall raises this budget to see it;
+//!   nothing clamps the sky to the window.
 //! * [`GAME_CEILING_BYTES`] — 256 MB against a measured **90,481 B** for a chunk
 //!   with terrain in it, so the window's 605 chunks cost about 0.8 MB of mesh and
 //!   the ceiling is not the binding constraint. That is the point of measuring
@@ -242,7 +244,7 @@ pub fn spawn_eye(world: &World) -> [f64; 3] {
 /// So when the streamer is up it is the authority, because it holds the edits. The
 /// generator is the **fallback**, for the frames before the world exists.
 ///
-/// The solidity rule itself is [`column::blocks_movement`] — one function, not two
+/// The solidity rule itself is [`materials::blocks_movement`] — one function, not two
 /// copies — so "solid" means the same thing to the mesh, the raycast and the feet.
 ///
 /// A **final refusal is answered `false`**: the voxel does not block. That is the
@@ -264,10 +266,12 @@ impl crate::motion::Solidity for Voxels<'_> {
     fn is_solid(&self, x: i32, y: i32, z: i32) -> bool {
         if let Some(streamer) = self.streamer {
             if let Ok(m) = streamer.material_at(x, y, z) {
-                return voxel_shapers::column::blocks_movement(m);
+                return voxel_shapers::materials::blocks_movement(m);
             }
         }
-        voxel_shapers::column::is_solid(self.spec, self.earthworks, x, y, z).unwrap_or(false)
+        voxel_shapers::chunk_fields::material_at_composed(self.spec, self.earthworks, x, y, z)
+            .map(voxel_shapers::materials::blocks_movement)
+            .unwrap_or(false)
     }
 
     /// **Water, the movement's own question, answered from the same record.** The
@@ -288,7 +292,7 @@ impl Voxels<'_> {
     /// about the world, so it belongs here and not in the HUD, which renders state
     /// rather than going looking for it.
     ///
-    /// The rule is [`voxel_shapers::column::is_fluid`] — one spelling of "water",
+    /// The rule is [`voxel_shapers::materials::is_fluid`] — one spelling of "water",
     /// shared with the edit refusal and the movement check — rather than a second
     /// `m == WATER` comparison. It asks the live **material** record: a lake is
     /// fluid state above the terrain (`voxel_shapers::fluid_state`) and is not a
@@ -298,10 +302,16 @@ impl Voxels<'_> {
     /// cached lake test rather than a second lake rule.
     pub fn is_water(&self, x: i32, y: i32, z: i32) -> bool {
         match self.streamer.and_then(|s| s.material_at(x, y, z).ok()) {
-            Some(m) => voxel_shapers::column::is_fluid(m),
-            None => voxel_shapers::column::material_at(self.spec, self.earthworks, x, y, z)
-                .map(voxel_shapers::column::is_fluid)
-                .unwrap_or(false),
+            Some(m) => voxel_shapers::materials::is_fluid(m),
+            None => voxel_shapers::chunk_fields::material_at_composed(
+                self.spec,
+                self.earthworks,
+                x,
+                y,
+                z,
+            )
+            .map(voxel_shapers::materials::is_fluid)
+            .unwrap_or(false),
         }
     }
 }
@@ -425,7 +435,7 @@ mod tests {
     #[test]
     fn the_collider_sees_the_players_own_edits() {
         use crate::motion::Solidity;
-        use voxel_shapers::column::materials;
+        use voxel_shapers::materials;
 
         let world = shipped();
         let earthworks = voxel_shapers::earthworks::Earthworks::new();

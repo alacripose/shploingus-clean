@@ -1,0 +1,4 @@
+   Compiling shploingus-clean-room v0.1.0 (C:\Users\ala\Documents\shploingus-clean\clean-room)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.57s
+     Running `target\debug\shploingus-clean-room.exe`
+serve: 7 request(s): 5 answered, 2 refused by name

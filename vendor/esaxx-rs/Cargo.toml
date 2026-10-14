@@ -1,0 +1,21 @@
+# Vendored copy of esaxx-rs 0.1.10, patched for this workspace.
+#
+# Upstream compiles its C++ with /MT (static CRT), which cannot link against the prebuilt
+# ONNX Runtime libraries that jigor downloads, because those are built with /MD. build.rs
+# here uses the dynamic CRT; nothing else about the crate is changed.
+
+[package]
+edition = "2018"
+name = "esaxx-rs"
+version = "0.1.10"
+description = "Wrapping around sentencepiece's esaxxx library."
+license = "Apache-2.0"
+repository = "https://github.com/Narsil/esaxx-rs"
+
+[build-dependencies.cc]
+version = "1.0"
+optional = true
+
+[features]
+cpp = ["cc"]
+default = ["cpp"]

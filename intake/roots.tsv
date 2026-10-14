@@ -1,0 +1,30 @@
+# The roots `voxel_package::ingest` is allowed to walk: `label <TAB> kind <TAB> path`.
+#
+# **Declared, not discovered.** A survey that picks its own roots is a survey that silently misses a
+# drive, and one that walks a whole volume cannot run at all — `F:` answered a naive `find` in 400
+# seconds in the session that wrote this file. So the corpus is named here, in one place, where a
+# reader can see what is in scope and what is not.
+#
+# **Kinds, and what each one is for.** `this-tree` is this workspace, measured the same way as
+# anything else so the lineage comparison has a side to compare against. `sibling` is the same
+# project at another time — the material for "how did a downstream change differ from an upstream
+# one". `upstream` is a tree this one learned from, read as reasons and never as requirements.
+# `corpus` is foreign source vendored as material. `other` is a project with its own decisions.
+#
+# **Every root here was measured before it was declared** (see PATCH-039), and a root that is absent
+# is reported absent rather than as a zero.
+#
+# What this file is NOT: an import list. Nothing here is consumed by being named — `ingest` reads
+# names and first pages, writes nothing, and a record only ever lands by a patch that says so.
+ours	this-tree	C:/Users/ala/Documents/shploingus-clean
+shploingus	sibling	C:/Users/ala/Documents/shploingus
+shploingus-game	sibling	C:/Users/ala/Documents/shploingus-game
+planet-shploingus	upstream	F:/planet-shploingus
+hyperskill-prototype	other	C:/Users/ala/.agents/skills/hyperskill-semantic-diffusion-prototype
+mod-sources	corpus	F:/shploingus-mod-sources
+awa3d	other	F:/Documents/AWA3D
+ala-system	other	F:/Documents/ala-system
+alacripose-landing	other	F:/Documents/alacripose-landing
+unstoppable-ref	other	F:/Documents/unstoppable-ref
+bonsai-demo	other	C:/Users/ala/Bonsai-demo
+llama-prism	other	C:/Users/ala/llama-prism

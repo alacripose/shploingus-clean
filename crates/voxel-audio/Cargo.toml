@@ -16,7 +16,16 @@ license.workspace = true
 # and already has the ignored-test convention, and this crate stays arithmetic.
 #
 #   does it do something we need?      yes — the onset is measurable but inaudible
-#   is it actually USED?               yes — voxel-client plays what this returns
+#   is it actually USED?               **no, and the tree now measures it.** This line read
+#                                      "yes — voxel-client plays what this returns" until
+#                                      `census::orphan_libraries` was written: it reads the
+#                                      workspace's own manifests, and no member depends on this
+#                                      one. The output wheel it describes does not exist yet, so
+#                                      the answer was false from the day it was typed — a
+#                                      resolve is not a use, which is this comment's own rule.
+#                                      The synthesis below is real and tested; the consumer is
+#                                      owed. Reported as `orphan-library\tvoxel-audio` in every
+#                                      build report until then.
 #
 # `voxel-model` is deliberately absent: nothing here is exact, so depending on the
 # exact set would be a resolve without a use.

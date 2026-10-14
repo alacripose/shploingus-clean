@@ -1,0 +1,24 @@
+pattern-flicker: 18 chunks, 5622 quads, meshed in 1710 ms; eye (48.00, 32.00, -24.00), 0.003890 rad a pixel, step 0.05 m
+this run measures the shader as compiled — a variant is an edit to `shading.wgsl`, and the numbers below only compare against another run of this binary
+
+=== walk: the eye moves 0.05 m ===
+vertical (+y): 22340 of 230400 pixels changed (9.7 %); total 360.2, mean 0.001564, worst 0.8695
+  bands:   208060 under 1e-4 |    16387 ≤1/255 |     3043 ≤0.02 |      333 ≤0.04 |      920 ≤0.08 |     1606 ≤0.32 |       51 above
+vertical (+y), camera held: 0 of 230400 pixels changed (0.0 %); total 0.0, mean 0.000000, worst 0.0000
+  bands:   230400 under 1e-4 |        0 ≤1/255 |        0 ≤0.02 |        0 ≤0.04 |        0 ≤0.08 |        0 ≤0.32 |        0 above
+horizontal (+x): 6662 of 230400 pixels changed (2.9 %); total 145.4, mean 0.000631, worst 1.0658
+  bands:   223738 under 1e-4 |     4378 ≤1/255 |      837 ≤0.02 |      384 ≤0.04 |      457 ≤0.08 |      584 ≤0.32 |       22 above
+horizontal (+x), camera held: 0 of 230400 pixels changed (0.0 %); total 0.0, mean 0.000000, worst 0.0000
+  bands:   230400 under 1e-4 |        0 ≤1/255 |        0 ≤0.02 |        0 ≤0.04 |        0 ≤0.08 |        0 ≤0.32 |        0 above
+
+=== fast: the eye moves 0.25 m ===
+vertical (+y): 49494 of 230400 pixels changed (21.5 %); total 1616.4, mean 0.007016, worst 0.8695
+  bands:   180906 under 1e-4 |    28776 ≤1/255 |     7559 ≤0.02 |     1439 ≤0.04 |     4236 ≤0.08 |     7214 ≤0.32 |      270 above
+horizontal (+x): 21888 of 230400 pixels changed (9.5 %); total 706.4, mean 0.003066, worst 0.8698
+  bands:   208512 under 1e-4 |    11564 ≤1/255 |     3577 ≤0.02 |     1641 ≤0.04 |     2136 ≤0.08 |     2849 ≤0.32 |      121 above
+
+=== jump: the eye moves 1 m ===
+vertical (+y): 72159 of 230400 pixels changed (31.3 %); total 4798.5, mean 0.020827, worst 0.8695
+  bands:   158241 under 1e-4 |    23547 ≤1/255 |    11439 ≤0.02 |     3875 ≤0.04 |     9959 ≤0.08 |    22638 ≤0.32 |      701 above
+horizontal (+x): 65976 of 230400 pixels changed (28.6 %); total 2511.8, mean 0.010902, worst 1.0564
+  bands:   164424 under 1e-4 |    31593 ≤1/255 |    12036 ≤0.02 |     4146 ≤0.04 |     7398 ≤0.08 |    10404 ≤0.32 |      399 above

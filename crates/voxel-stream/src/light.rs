@@ -50,6 +50,9 @@
 //! `0.0` and not `1.0`. An unmeasurable beam is not an unobstructed one, and a
 //! sampler that answered "fully lit" to a NaN would put a bright cell in a stone wall.
 
+use std::f64::consts::FRAC_1_SQRT_2;
+
+use voxel_mesh::octree::SparseVoxelOctree;
 use voxel_mesh::raycast::{Crossings, Ray};
 use voxel_model::{MaterialId, SubvoxelIndex, SUBVOXEL_SIDE};
 
@@ -95,6 +98,59 @@ pub trait Matter {
     }
 }
 
+/// **A chunk's own octree, answering [`Matter`]** — the provider that travels beside a tree.
+///
+/// A resident chunk's world *is* its tree: the tree carries the authored subvoxels (a dug voxel
+/// is absent from it), so it answers the addressing question without a second trip to the
+/// generator, and [`Matter::blocking`]'s own default — **matter stops the beam** — is the truth
+/// about records with no absorption in them (`APPEARANCE.md` §5).
+///
+/// `origin` is the chunk's own corner in **voxels**, because the addressing question is asked in
+/// world coordinates while the tree is a shape: this is the one place that subtraction lives, so
+/// no caller has to remember it twice.
+///
+/// `sigma` is the declared attenuating arm: `None` for the world's own rule, `Some(σ)` to charge a
+/// measured extinction per metre instead of stopping the beam. It exists because `Blocking`'s two
+/// arms are one law read twice and the walk must be held to both — a walk that only ever returned
+/// `0.0` or `1.0` would never do the arithmetic.
+pub struct ChunkMatter<'a> {
+    tree: &'a SparseVoxelOctree,
+    origin: [i32; 3],
+    sigma: Option<f64>,
+}
+
+impl<'a> ChunkMatter<'a> {
+    /// The world's own rule: matter stops the beam.
+    pub fn new(tree: &'a SparseVoxelOctree, origin: [i32; 3]) -> Self {
+        ChunkMatter { tree, origin, sigma: None }
+    }
+
+    /// The same provider, charging `sigma` per metre instead of stopping the beam.
+    pub fn attenuating(tree: &'a SparseVoxelOctree, origin: [i32; 3], sigma: f64) -> Self {
+        ChunkMatter { tree, origin, sigma: Some(sigma) }
+    }
+}
+
+impl Matter for ChunkMatter<'_> {
+    fn subvoxel(&self, world: [i32; 3], at: SubvoxelIndex) -> Option<MaterialId> {
+        let local = voxel_mesh::octree::local_from([
+            world[0] - self.origin[0],
+            world[1] - self.origin[1],
+            world[2] - self.origin[2],
+        ])
+        .ok()?;
+        let material = self.tree.material_at(local, at);
+        (!material.is_empty()).then_some(material)
+    }
+
+    fn blocking(&self, _material: MaterialId) -> Blocking {
+        match self.sigma {
+            Some(sigma) => Blocking::Attenuates(sigma),
+            None => Blocking::Stops,
+        }
+    }
+}
+
 /// Any closure is a provider, so a test (or a caller with its own resident chunks) can
 /// inline one.
 impl<F> Matter for F
@@ -123,13 +179,15 @@ pub enum Blocking {
 /// hemisphere, and saying so is the point: this is a declared sample, not an integral,
 /// and every cell in the world is measured with the *same* stencil so two cells' skies
 /// are comparable. The four tilted rays carry `1/√2` in the horizontal and vertical
-/// components, which is 45° above the horizon.
+/// components, which is 45° above the horizon — and it is written as [`FRAC_1_SQRT_2`] rather
+/// than as its decimal, so the value *is* the quantity the sentence above names instead of a
+/// sixteen-digit string that happens to equal it.
 pub const SKY_STENCIL: [[f64; 3]; 5] = [
     [0.0, 1.0, 0.0],
-    [0.707_106_781_186_547_6, 0.707_106_781_186_547_6, 0.0],
-    [0.0, 0.707_106_781_186_547_6, 0.707_106_781_186_547_6],
-    [-0.707_106_781_186_547_6, 0.707_106_781_186_547_6, 0.0],
-    [0.0, 0.707_106_781_186_547_6, -0.707_106_781_186_547_6],
+    [FRAC_1_SQRT_2, FRAC_1_SQRT_2, 0.0],
+    [0.0, FRAC_1_SQRT_2, FRAC_1_SQRT_2],
+    [-FRAC_1_SQRT_2, FRAC_1_SQRT_2, 0.0],
+    [0.0, FRAC_1_SQRT_2, -FRAC_1_SQRT_2],
 ];
 
 /// One cell's own light, as fractions of what the sky above it delivers.
@@ -183,6 +241,23 @@ impl Sampler {
     /// `1.0` clear, `0.0` stopped.
     pub fn beam(&self, matter: &impl Matter, from_m: [f64; 3]) -> f64 {
         transmittance(matter, from_m, self.toward_sun, self.reach_m)
+    }
+
+    /// **The same beam, with the tree's own hierarchy doing the walking**
+    /// ([`transmittance_tree`]).
+    ///
+    /// The sampler is aimed at whatever light this world's beam is: by day the Sun's own
+    /// direction, and at night the Moon's — one call, because the direction is the sampler's and
+    /// not the walk's.
+    ///
+    /// `from_tree_m` is in the **tree's** own coordinates; see [`transmittance_tree`].
+    pub fn beam_tree(
+        &self,
+        matter: &impl Matter,
+        tree: &SparseVoxelOctree,
+        from_tree_m: [f64; 3],
+    ) -> f64 {
+        transmittance_tree(matter, tree, from_tree_m, self.toward_sun, self.reach_m)
     }
 
     /// The **sky's** own visibility at a cell: the mean transmittance of
@@ -277,6 +352,137 @@ pub fn transmittance(
             return 0.0;
         };
         through = reached;
+    }
+    through
+}
+
+/// **The same beam, marched by the tree's own hierarchy** — `transmittance`, at the cost of what
+/// the ray meets instead of what it passes.
+///
+/// [`transmittance`] walks the grid a voxel at a time because the matter it asks about is a
+/// per-address question ([`Matter::subvoxel`]): the only structure it has is the walk itself. Where
+/// the matter **is** an octree — a resident chunk, at the world's own addresses — the tree already
+/// knows which stretches of the path hold one material and which hold nothing, and
+/// [`SparseVoxelOctree::spans`] yields exactly those. So an empty metre costs a slab test rather
+/// than a crossing, and a solid block costs one charge rather than one per voxel: **the shadow ray
+/// is walked by the same structure the world is meshed from.**
+///
+/// # It is the same law, and `the_tree_walk_and_the_voxel_walk_are_one_measurement` holds the two
+/// together over a battery of rays through a generated chunk: the same transmittance to `1e-12`.
+/// What is identical is not the bookkeeping but the arithmetic — Beer-Lambert over a segment,
+/// `exp(-σ·d)`, which composes over a span exactly as it composes over the voxels in it.
+///
+/// # The two things that are this walk's own, said rather than implied
+///
+/// * **The cell's own voxel is still not charged**, the rule [`transmittance`] states: the ray's
+///   first crossing is the voxel it starts in and counting it would make every surface shadow
+///   itself. The first span can be a *block* of many voxels, so the exclusion is taken to the
+///   first crossing after the start rather than to the first span, or a ray inside a solid block
+///   would be missing a block's worth of path.
+/// * **A medium is not asked**, because this walk's matter is the tree's and a medium is not in
+///   it: a cloud is a field over the world ([`Matter::medium`]'s own note), so a caller that wants
+///   it adds its own transmittance — which `voxel_client::cloud_field` already measures in closed
+///   form. Charging the cloud inside this walk would be asking the hierarchy a question it cannot
+///   answer per address.
+///
+/// # The frame, which is the tree's and not the world's
+///
+/// `from_tree_m` and `direction` are in the **tree's own coordinates** — the box its root covers,
+/// which for a chunk is `[0, 32)` on each axis. A caller holding a world point and a chunk's tree
+/// subtracts the chunk's own origin first. That subtraction is the caller's rather than this
+/// function's because a `SparseVoxelOctree` is a **shape and not a place**: the same tree is a
+/// chunk here and a cloud cell at a kilometre's scale there (`SparseVoxelOctree::with_levels`),
+/// and it does not carry which of them it is. The names say so rather than leaving it to be
+/// inferred from a wrong answer.
+///
+/// `reach_m` is the caller's, and **what lies beyond the tree is not this walk's**: a ray that
+/// leaves the box is charged to the box's edge and no further, which is the honest answer for a
+/// measurement of one tree. A caller marching across chunks clips the reach to each one.
+///
+/// **The cell the ray starts in is excluded, exactly as the per-voxel walk excludes it**: the
+/// walk begins charging at the second crossing of the grid — the far side of the caller's own
+/// voxel — so a beam out of a cell is not charged for the cell it came from. One crossing is
+/// asked for, which is a step rather than a march.
+///
+/// **A degenerate ray is `0.0` and not `1.0`** — a NaN coordinate, a zero direction — which is
+/// the same refusal [`transmittance`] makes: an unmeasurable beam is not an unobstructed one.
+///
+/// Everything is charged **per span and never per address**: a `Uniform` node is one material by
+/// construction and a leaf is one voxel, so the span's own entry address is the whole of the
+/// address question and one call to [`Matter::blocking`] settles `2^level` voxels of it. A
+/// material that [`Blocking::Stops`] ends the march with `0.0` — the trait's own default, and the
+/// same answer the per-voxel walk gives for the same address.
+pub fn transmittance_tree(
+    matter: &impl Matter,
+    tree: &SparseVoxelOctree,
+    from_tree_m: [f64; 3],
+    direction: [f64; 3],
+    reach_m: f64,
+) -> f64 {
+    march_tree(matter, tree, from_tree_m, direction, reach_m, true)
+}
+
+/// **The same march with the voxel the ray starts in charged too.**
+///
+/// [`transmittance_tree`] excludes it, which is right for a measurement of a *cell's* light — the
+/// beam is not charged for the cell it came from. It is wrong for a march that **resumes at a chunk
+/// boundary**: the first voxel of the next chunk is matter the beam is inside, and skipping it
+/// would let a wall standing exactly on a boundary leak its light. A cross-chunk march
+/// (`voxel_client::field`) is the caller, and the two rules are one law told where it began.
+pub fn transmittance_tree_charging_the_start(
+    matter: &impl Matter,
+    tree: &SparseVoxelOctree,
+    from_tree_m: [f64; 3],
+    direction: [f64; 3],
+    reach_m: f64,
+) -> f64 {
+    march_tree(matter, tree, from_tree_m, direction, reach_m, false)
+}
+
+/// The span march both rules above are: `skip_own_voxel` decides whether the stretch inside the
+/// voxel the ray starts in is charged.
+fn march_tree(
+    matter: &impl Matter,
+    tree: &SparseVoxelOctree,
+    from_tree_m: [f64; 3],
+    direction: [f64; 3],
+    reach_m: f64,
+    skip_own_voxel: bool,
+) -> f64 {
+    let Some(spans) = tree.spans(&Ray::new(from_tree_m, direction), reach_m) else {
+        return 0.0;
+    };
+    let start_exit = if skip_own_voxel {
+        // Where the ray's own voxel ends: the second crossing of the grid walk. One crossing to
+        // find, so this costs a step and not a march.
+        let mut walk = match Crossings::new(&Ray::new(from_tree_m, direction), reach_m) {
+            Some(walk) => walk,
+            None => return 0.0,
+        };
+        walk.next();
+        walk.next().map(|crossing| crossing.t).unwrap_or(reach_m)
+    } else {
+        0.0
+    };
+    let mut through = 1.0;
+    for span in spans {
+        let entry = span.entry_t.max(start_exit);
+        let path_m = span.exit_t - entry;
+        if path_m <= 0.0 {
+            continue;
+        }
+        let Some(material) = span.material_at_entry() else {
+            continue;
+        };
+        match matter.blocking(material) {
+            Blocking::Stops => return 0.0,
+            Blocking::Attenuates(sigma) => {
+                let Some(reached) = attenuate(sigma, path_m, through) else {
+                    return 0.0;
+                };
+                through = reached;
+            }
+        }
     }
     through
 }
@@ -746,9 +952,9 @@ mod tests {
         }
         let surface_y = surface_y.expect("the spawn column has ground under it");
         let chunk = ChunkPos::new(
-            SPAWN_X.div_euclid(CHUNK_SIDE as i32),
-            surface_y.div_euclid(CHUNK_SIDE as i32),
-            SPAWN_Z.div_euclid(CHUNK_SIDE as i32),
+            SPAWN_X.div_euclid(CHUNK_SIDE),
+            surface_y.div_euclid(CHUNK_SIDE),
+            SPAWN_Z.div_euclid(CHUNK_SIDE),
         );
         let tree: SparseVoxelOctree = source.build_chunk(chunk).expect("a chunk of the world");
         let origin = chunk.origin();
@@ -781,7 +987,7 @@ mod tests {
         // column is), and an address outside the chunk answers air — so a column at the
         // centre is where the answer is about the world rather than about the boundary.
         // One voxel is one metre, so the cell's centre is `world + 0.5`.
-        let column = [CHUNK_SIDE as i32 / 2, CHUNK_SIDE as i32 / 2];
+        let column = [CHUNK_SIDE / 2, CHUNK_SIDE / 2];
         let centre = |local_y: i32| {
             [
                 (origin.x + column[0]) as f64 + 0.5,
@@ -824,5 +1030,265 @@ mod tests {
         assert_eq!(buried.sky, 0.0, "a cell inside the rock saw the sky");
         assert!(open.beam > 0.0, "a cell in the open was shadowed");
         assert!(open.sky > 0.0, "a cell in the open saw none of the dome");
+    }
+
+
+    /// Find the chunk the spawn column stands on, the way the module's own end-to-end test does:
+    /// **which chunk to build is a question about the world**, so it is asked rather than picked.
+    fn a_generated_chunk() -> (SparseVoxelOctree, voxel_model::ChunkPos) {
+        use crate::world_source::WorldSource;
+        use voxel_model::CHUNK_SIDE;
+
+        const SPAWN_X: i32 = 0;
+        const SPAWN_Z: i32 = -95;
+        let spec = voxel_shapers::WorldSpec::new(2468, voxel_shapers::Config::default());
+        let source = WorldSource::new(spec);
+        let mut surface_y = None;
+        for y in -32..128 {
+            let solid = source
+                .material_at(SPAWN_X, y, SPAWN_Z)
+                .map(|material| !material.is_empty())
+                .unwrap_or(false);
+            if solid {
+                surface_y = Some(y);
+            }
+        }
+        let surface_y = surface_y.expect("the spawn column has ground under it");
+        let chunk = voxel_model::ChunkPos::new(
+            SPAWN_X.div_euclid(CHUNK_SIDE),
+            surface_y.div_euclid(CHUNK_SIDE),
+            SPAWN_Z.div_euclid(CHUNK_SIDE),
+        );
+        let tree = source.build_chunk(chunk).expect("a chunk of the world");
+        (tree, chunk)
+    }
+
+    /// The chunk's own tree answering `Matter`, so the tree and the provider are **one world**:
+    /// the equivalence below is between two walks and not between two worlds. The type is
+    /// [`ChunkMatter`]'s, so the client's field marches through the same provider this holds to
+    /// the grid walk.
+    fn tree_matter<'a>(tree: &'a SparseVoxelOctree, origin: [i32; 3], sigma: Option<f64>) -> ChunkMatter<'a> {
+        match sigma {
+            Some(sigma) => ChunkMatter::attenuating(tree, origin, sigma),
+            None => ChunkMatter::new(tree, origin),
+        }
+    }
+
+    /// Deterministic origins inside one chunk, from a linear congruential generator: a battery
+    /// over the whole chunk rather than the cells its author thought of, from `seed` so the case
+    /// is reproducible.
+    fn a_battery(origin: [i32; 3], count: usize, seed: u64) -> Vec<[f64; 3]> {
+        let mut state = seed | 1;
+        let mut next = move || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((state >> 33) as f64 / (1u64 << 31) as f64) * 30.0
+        };
+        (0..count)
+            .map(|_| {
+                [
+                    origin[0] as f64 + next() + 0.5,
+                    origin[1] as f64 + next() + 0.5,
+                    origin[2] as f64 + next() + 0.5,
+                ]
+            })
+            .collect()
+    }
+
+    /// **One measurement or two light models.** `transmittance_tree` marches the octree's own
+    /// hierarchy where `transmittance` steps the grid, and the comparison is made on a **generated
+    /// chunk** — the real world's own nodes at the world's own addresses — over an oblique Sun, so
+    /// the walk crosses voxels in two axes instead of sliding up one.
+    ///
+    /// **Both of `Blocking`'s arms, because they answer differently on purpose**: stopped matter is
+    /// `0.0`, while a rate is `0.0` only after an enormous optical depth. And **the battery is a
+    /// battery**: it must meet rock, open sky and — with a rate — the arithmetic in between, since
+    /// a fixture where every ray returned the same answer would compare two walks that never walked.
+    #[test]
+    fn the_tree_walk_and_the_voxel_walk_are_one_measurement() {
+        let (tree, chunk) = a_generated_chunk();
+        let origin = chunk.origin();
+        let origin = [origin.x, origin.y, origin.z];
+        let direction = [0.5, 0.866_025_403_784_438_6, 0.0];
+        let reach = 20.0;
+
+        for sigma in [None, Some(0.4)] {
+            let matter = tree_matter(&tree, origin, sigma);
+            let mut stopped = 0usize;
+            let mut partial = 0usize;
+            let mut clear = 0usize;
+            for from in a_battery(origin, 200, 0x1f2e_3d4c) {
+                let in_tree = [
+                    from[0] - origin[0] as f64,
+                    from[1] - origin[1] as f64,
+                    from[2] - origin[2] as f64,
+                ];
+                let stepped = transmittance(&matter, from, direction, reach);
+                let descended = transmittance_tree(&matter, &tree, in_tree, direction, reach);
+                assert!(
+                    (stepped - descended).abs() < 1e-12,
+                    "the two walks measure different light at {from:?}: grid {stepped}, tree \
+                     {descended} (sigma {sigma:?})"
+                );
+                if stepped == 0.0 {
+                    stopped += 1;
+                } else if stepped == 1.0 {
+                    clear += 1;
+                } else {
+                    partial += 1;
+                }
+            }
+            assert!(stopped + clear > 20, "the battery measured one answer: {stopped}/{clear}");
+            match sigma {
+                None => assert!(
+                    stopped > 20 && clear > 20,
+                    "the fixture met only one kind of light: {stopped} shadowed, {clear} clear"
+                ),
+                Some(_) => assert!(
+                    partial > 20,
+                    "the attenuating arm was never reached: {partial} of 200"
+                ),
+            }
+            println!(
+                "chunk ({}, {}, {}), sigma {sigma:?}: {stopped} shadowed, {partial} dimmed, \
+                 {clear} clear",
+                chunk.x, chunk.y, chunk.z
+            );
+        }
+    }
+
+    /// **The measurement the hierarchy exists for**: a beam straight up out of the spawn column,
+    /// where the sky is not matter — so the grid walk steps through every voxel of it while the
+    /// tree walk has nothing at all to report, and the beam is clear either way.
+    #[test]
+    fn the_tree_walk_costs_the_nodes_it_meets_not_the_voxels_it_passes() {
+        let (tree, chunk) = a_generated_chunk();
+        let origin = chunk.origin();
+        let from = [
+            origin.x as f64 + 16.5,
+            origin.y as f64 + 30.5,
+            origin.z as f64 + 16.5,
+        ];
+        let up = [0.0, 1.0, 0.0];
+        let reach = 40.0;
+        let sky = ChunkMatter::new(&tree, [origin.x, origin.y, origin.z]);
+        let in_tree = [
+            from[0] - origin.x as f64,
+            from[1] - origin.y as f64,
+            from[2] - origin.z as f64,
+        ];
+        let voxels = Crossings::new(&Ray::new(in_tree, up), reach)
+            .expect("a ray")
+            .count();
+        let spans = tree.spans(&Ray::new(in_tree, up), reach).expect("a ray").count();
+        assert_eq!(spans, 0, "the space above the surface reported matter");
+        assert!(voxels >= 30, "the grid walk crossed hardly anything: {voxels}");
+        assert_eq!(transmittance(&sky, from, up, reach), 1.0);
+        assert_eq!(transmittance_tree(&sky, &tree, in_tree, up, reach), 1.0);
+        println!(
+            "a beam out of the spawn chunk's sky: {voxels} voxels stepped, {spans} spans descended"
+        );
+    }
+
+    /// **A roof eight metres up, filling the chunk's upward half.** A cell under it is dark for
+    /// both walks, and the same cell looking sideways along the roof's own underside is clear for
+    /// both — because neither walk is asked about the octree's shape, only about the light. The
+    /// region is `[0, 16, 0]` at level 4 (`16 = 2^4`), so it is one node: the walk's own block case.
+    #[test]
+    fn the_tree_walk_finds_the_wall_the_grid_walk_finds() {
+        let mut tree = SparseVoxelOctree::new();
+        tree.set_material_region([0, 16, 0], 4, MaterialId(7));
+        let matter = ChunkMatter::new(&tree, [0, 0, 0]);
+        let under = [4.5, 15.5, 4.5];
+        let overhead = Sampler::new([0.0, 1.0, 0.0], 64.0).expect("an overhead Sun");
+        assert_eq!(
+            overhead.beam(&matter, under),
+            0.0,
+            "the grid walk saw the Sun through a roof"
+        );
+        assert_eq!(
+            overhead.beam_tree(&matter, &tree, under),
+            0.0,
+            "the tree walk saw the Sun through the same roof"
+        );
+        let sideways = Sampler::new([1.0, 0.0, 0.0], 64.0).expect("a Sun along the roof");
+        assert_eq!(sideways.beam(&matter, under), 1.0);
+        assert_eq!(sideways.beam_tree(&matter, &tree, under), 1.0);
+        assert_eq!(overhead.beam_tree(&matter, &tree, [16.5, 15.5, 4.5]), 1.0);
+    }
+
+    /// **A cell walled in by rock reads nothing, in every direction.**
+    ///
+    /// The property the tree walk exists to have, and the one a picture cannot check: a cell whose
+    /// twenty-six neighbours are solid is *inside* the matter, so every ray out of it has met rock
+    /// before it has gone a metre. `voxel_client`'s `measured-light` example found cells that broke
+    /// it in a generated world — the diffuse bands came back at `3e-4` for a cell surrounded by
+    /// full voxels — which is either a hole in the world (a neighbour that is only partly filled,
+    /// which is a legal voxel of 64 subvoxels) or a walk that is not charging what it should.
+    ///
+    /// This is the half of that question the tree can answer on its own: **the world is entirely
+    /// full here**, twenty-six whole voxels of stone around an empty one, so a nonzero answer is
+    /// the walk's and not the world's.
+    #[test]
+    fn a_cell_walled_in_by_rock_reads_no_light_from_any_direction() {
+        const STONE: u16 = 6;
+        let mut tree = SparseVoxelOctree::new();
+        let cell = [16i32; 3];
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                for dz in -1..=1 {
+                    if (dx, dy, dz) == (0, 0, 0) {
+                        continue;
+                    }
+                    let local = voxel_model::LocalPos::new(
+                        (cell[0] + dx) as u32,
+                        (cell[1] + dy) as u32,
+                        (cell[2] + dz) as u32,
+                    )
+                    .expect("a local offset inside the chunk");
+                    tree.set_voxel(local, voxel_model::VoxelShape::solid(MaterialId(STONE)));
+                }
+            }
+        }
+        let matter = ChunkMatter::new(&tree, [0, 0, 0]);
+        let from = [16.5, 16.5, 16.5];
+        // The dome's own five rays, the vertical, and a fan of obliques — the direction a leak
+        // would hide in is the one nobody thought to aim.
+        let mut directions: Vec<[f64; 3]> = vec![[0.0, 1.0, 0.0]];
+        for direction in SKY_STENCIL {
+            directions.push(direction);
+        }
+        for step in 0..24 {
+            let angle = step as f64 * core::f64::consts::TAU / 24.0;
+            directions.push([angle.cos() * 0.3, 1.0, angle.sin() * 0.3]);
+            directions.push([angle.cos(), 0.4, angle.sin()]);
+            directions.push([0.0, -1.0, 0.0]);
+        }
+        for direction in directions {
+            let through = transmittance_tree(&matter, &tree, from, direction, 160.0);
+            assert_eq!(
+                through, 0.0,
+                "a cell walled in by rock let {through} of the beam through along {direction:?}"
+            );
+            let charging = transmittance_tree_charging_the_start(
+                &matter, &tree, from, direction, 160.0,
+            );
+            assert_eq!(
+                charging, 0.0,
+                "the cross-chunk rule let {charging} through along {direction:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_degenerate_ray_is_no_light_for_the_tree_walk_too() {
+        let tree = SparseVoxelOctree::new();
+        let matter = ChunkMatter::new(&tree, [0, 0, 0]);
+        assert_eq!(
+            transmittance_tree(&matter, &tree, [0.5; 3], [0.0; 3], 10.0),
+            0.0,
+            "a walk that cannot be aimed is not a clear one"
+        );
+        assert_eq!(transmittance_tree(&matter, &tree, [f64::NAN; 3], [0.0, 1.0, 0.0], 10.0), 0.0);
+        assert_eq!(transmittance_tree(&matter, &tree, [0.5; 3], [0.0, 1.0, 0.0], 0.0), 0.0);
     }
 }

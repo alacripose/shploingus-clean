@@ -75,6 +75,7 @@
 //! `MAX_WINDOWS` is **refused**, not truncated: a truncated arrangement is an arrangement that
 //! silently lost a window, and the whole point of the gate is that what is mounted is what was
 //! asked for.
+use voxel_model::endian::LeBytes;
 
 use std::path::Path;
 

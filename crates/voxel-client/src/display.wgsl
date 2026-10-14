@@ -140,6 +140,16 @@ const LUMINANCE_WEIGHTS: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
 /// Luminance is compressed and every channel is scaled by that same factor, so the
 /// picture's **chromaticity is untouched** — a grey stays grey, a warm wall stays warm, a
 /// blue sky stays blue while ceasing to be 1.886.
+/// **And it is not a bound**, which is the defect this function had: Rec. 709's weights are
+/// dominated by green, so a **red-dominant** colour takes a gain computed mostly from a channel it
+/// barely has and leaves the domain — the horizon at sunset is `(2.36, 0.78, 0.01)` after
+/// `EXPOSURE`, luminance `1.06`, gain `0.485`, red **`1.145`**. The 8-bit target clips it, and the
+/// redness is what is lost: `(1.0, 0.378)` presents a washed yellow where the sky computed orange.
+///
+/// The repair is one scalar gain, the smaller of the curve's own and the brightest channel's own
+/// bound, so chromaticity is still untouched and no channel can leave `[0, 1]`. The Rust form is
+/// `voxel_appearance::tonemap::tone_map` and the two are held together by
+/// `renderer::tests::the_gpu_presents_a_radiance_the_crate_says_it_does`.
 fn tone_map(colour: vec3<f32>) -> vec3<f32> {
     let l = dot(colour, LUMINANCE_WEIGHTS);
     // `!(l > 0.0)` rather than `l <= 0.0`: it is the same test for every finite value and
@@ -148,5 +158,6 @@ fn tone_map(colour: vec3<f32>) -> vec3<f32> {
     if (!(l > 0.0)) {
         return vec3<f32>(0.0);
     }
-    return colour / (1.0 + l);
+    let brightest = max(colour.r, max(colour.g, colour.b));
+    return colour * min(1.0 / (1.0 + l), 1.0 / brightest);
 }

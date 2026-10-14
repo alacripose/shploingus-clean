@@ -369,7 +369,7 @@ impl Event {
         detail: &str,
         previous: Linkage,
     ) -> Digest {
-        let year = index.to_le_bytes();
+        let year = crate::endian::le_bytes(index);
         let season = [namespace.season as u8];
         Digest::of_fields(
             CHAIN_DOMAIN,
@@ -377,7 +377,7 @@ impl Event {
                 CHAIN_FORMAT.as_bytes(),
                 &year,
                 namespace.world.as_bytes(),
-                &namespace.year.to_le_bytes(),
+                &crate::endian::le_bytes(namespace.year),
                 &season,
                 namespace.campaign.as_bytes(),
                 kind.name().as_bytes(),
@@ -511,11 +511,11 @@ impl Chain {
     /// its own fields, and a rewritten event changes the chain digest even if nothing else
     /// was touched. [`verify`] then also catches the mismatch on the event itself.
     pub fn digest(&self) -> Digest {
-        // Owned buffers, because `event.index.to_le_bytes()` is a temporary and borrowing
+        // Owned buffers, because crate::endian::le_bytes(`event.index)` is a temporary and borrowing
         // it into the field list would outlive the statement.
         let mut fields: Vec<Vec<u8>> = vec![CHAIN_FORMAT.as_bytes().to_vec()];
         for event in &self.events {
-            fields.push(event.index.to_le_bytes().to_vec());
+            fields.push(crate::endian::le_bytes(event.index).to_vec());
             let recomputed = Event::compute_digest(
                 event.index,
                 &event.namespace,

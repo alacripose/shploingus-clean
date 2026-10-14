@@ -1,0 +1,255 @@
+port-gate: 8 case(s) compared, 16558 unit face(s) the world owns on the parent's side, 15406 divergent face(s) and **every one of them named** — 0 unnamed
+port-bridge: water handed over as a full cube
+  the client's own world: patch origin (0, 0, 0) side 64, vertical span 64..96, 4 chunk(s) 
+             of 32³, 131072 cell(s), 44187 solid — measured chunk (0, 0, 2)
+  the 3 x 3 measurement fixture: patch origin (0, 0, 0) side 96, vertical span 64..96, 9 chunk(s) 
+             of 32³, 294912 cell(s), 98991 solid — measured chunk (1, 1, 2)
+  the client's own world, outside = World: the parent's own mesher REFUSED the chunk, in its own words: the parent's own mesher refused the chunk: [clean-room] (-1, 0, 64) is not in this world: its chunk (-1, 0, 2) is not one of the 4 this world owns
+  the client's own world, outside = WorldOrNothing:
+    mesh port differential, chunk (0, 0, 2), outside = WorldOrNothing, water handed over as a full cube: parent 11978 solid voxel(s) — 64688 subvoxel face(s), 508 quad(s) (127.34 faces/quad), 253 loop(s), 0 unaligned, 4043 block face(s) | clean room 339 quad(s), 2830 face(s), 2830 block face(s) | agree = false (parent only 1213, clean room only 0) | **the port's gate = true** (unnamed parent-only 0, unnamed clean-room-only 0) | halo queries the world could not answer: 4096
+  the parent only (1213 face(s)):
+    the world's own bound: 1082
+      solid/-z plane 64 u 0 v 0
+      solid/-z plane 64 u 0 v 1
+      solid/-z plane 64 u 0 v 2
+      solid/-z plane 64 u 0 v 3
+      solid/-z plane 64 u 0 v 4
+      solid/-z plane 64 u 0 v 5
+      solid/-z plane 64 u 0 v 6
+      solid/-z plane 64 u 0 v 7
+    the water level quantised: 131
+      water/-x plane 2 u 28 v 74
+      water/-x plane 3 u 29 v 74
+      water/-x plane 3 u 30 v 74
+      water/-x plane 4 u 31 v 74
+      water/-x plane 8 u 13 v 75
+      water/-x plane 9 u 14 v 75
+      water/-x plane 9 u 15 v 75
+      water/-x plane 10 u 20 v 75
+  the client's own world, outside = Nothing:
+    mesh port differential, chunk (0, 0, 2), outside = Nothing, water handed over as a full cube: parent 11978 solid voxel(s) — 76304 subvoxel face(s), 525 quad(s) (145.34 faces/quad), 266 loop(s), 0 unaligned, 4769 block face(s) | clean room 339 quad(s), 2830 face(s), 2830 block face(s) | agree = false (parent only 1939, clean room only 0) | **the port's gate = true** (unnamed parent-only 0, unnamed clean-room-only 0) | halo queries the world could not answer: 0
+  the parent only (1939 face(s)):
+    the world's own bound: 1082
+      solid/-z plane 64 u 0 v 0
+      solid/-z plane 64 u 0 v 1
+      solid/-z plane 64 u 0 v 2
+      solid/-z plane 64 u 0 v 3
+      solid/-z plane 64 u 0 v 4
+      solid/-z plane 64 u 0 v 5
+      solid/-z plane 64 u 0 v 6
+      solid/-z plane 64 u 0 v 7
+    the declared halo said air: 726
+      solid/+x plane 32 u 0 v 64
+      solid/+x plane 32 u 0 v 65
+      solid/+x plane 32 u 0 v 66
+      solid/+x plane 32 u 0 v 67
+      solid/+x plane 32 u 0 v 68
+      solid/+x plane 32 u 0 v 69
+      solid/+x plane 32 u 0 v 70
+      solid/+x plane 32 u 0 v 71
+    the water level quantised: 131
+      water/-x plane 2 u 28 v 74
+      water/-x plane 3 u 29 v 74
+      water/-x plane 3 u 30 v 74
+      water/-x plane 4 u 31 v 74
+      water/-x plane 8 u 13 v 75
+      water/-x plane 9 u 14 v 75
+      water/-x plane 9 u 15 v 75
+      water/-x plane 10 u 20 v 75
+  the 3 x 3 measurement fixture, outside = World: the parent's own mesher REFUSED the chunk, in its own words: the parent's own mesher refused the chunk: [clean-room] (32, 32, 63) is not in this world: its chunk (1, 1, 1) is not one of the 9 this world owns
+  the 3 x 3 measurement fixture, outside = WorldOrNothing:
+    mesh port differential, chunk (1, 1, 2), outside = WorldOrNothing, water handed over as a full cube: parent 11525 solid voxel(s) — 40592 subvoxel face(s), 488 quad(s) (83.18 faces/quad), 305 loop(s), 0 unaligned, 2537 block face(s) | clean room 290 quad(s), 1325 face(s), 1325 block face(s) | agree = false (parent only 1212, clean room only 0) | **the port's gate = true** (unnamed parent-only 0, unnamed clean-room-only 0) | halo queries the world could not answer: 2048
+  the parent only (1212 face(s)):
+    the world's own bound: 1024
+      solid/-z plane 64 u 32 v 32
+      solid/-z plane 64 u 32 v 33
+      solid/-z plane 64 u 32 v 34
+      solid/-z plane 64 u 32 v 35
+      solid/-z plane 64 u 32 v 36
+      solid/-z plane 64 u 32 v 37
+      solid/-z plane 64 u 32 v 38
+      solid/-z plane 64 u 32 v 39
+    the water level quantised: 188
+      water/-x plane 32 u 50 v 74
+      water/-x plane 34 u 42 v 74
+      water/-x plane 36 u 44 v 74
+      water/-x plane 37 u 45 v 74
+      water/-x plane 38 u 46 v 74
+      water/-x plane 38 u 52 v 74
+      water/-x plane 42 u 50 v 74
+      water/-x plane 42 u 62 v 75
+  the 3 x 3 measurement fixture, outside = Nothing:
+    mesh port differential, chunk (1, 1, 2), outside = Nothing, water handed over as a full cube: parent 11525 solid voxel(s) — 63472 subvoxel face(s), 512 quad(s) (123.97 faces/quad), 317 loop(s), 0 unaligned, 3967 block face(s) | clean room 290 quad(s), 1325 face(s), 1325 block face(s) | agree = false (parent only 2642, clean room only 0) | **the port's gate = true** (unnamed parent-only 0, unnamed clean-room-only 0) | halo queries the world could not answer: 0
+  the parent only (2642 face(s)):
+    the world's own bound: 1024
+      solid/-z plane 64 u 32 v 32
+      solid/-z plane 64 u 32 v 33
+      solid/-z plane 64 u 32 v 34
+      solid/-z plane 64 u 32 v 35
+      solid/-z plane 64 u 32 v 36
+      solid/-z plane 64 u 32 v 37
+      solid/-z plane 64 u 32 v 38
+      solid/-z plane 64 u 32 v 39
+    the declared halo said air: 1438
+      solid/-x plane 32 u 32 v 64
+      solid/-x plane 32 u 32 v 65
+      solid/-x plane 32 u 32 v 66
+      solid/-x plane 32 u 32 v 67
+      solid/-x plane 32 u 32 v 68
+      solid/-x plane 32 u 32 v 69
+      solid/-x plane 32 u 32 v 70
+      solid/-x plane 32 u 32 v 71
+    the water level quantised: 180
+      water/-x plane 34 u 42 v 74
+      water/-x plane 36 u 44 v 74
+      water/-x plane 37 u 45 v 74
+      water/-x plane 38 u 46 v 74
+      water/-x plane 38 u 52 v 74
+      water/-x plane 42 u 50 v 74
+      water/-x plane 42 u 62 v 75
+      water/-x plane 45 u 32 v 76
+port-bridge: water handed over as at the parent's own 1/4-cell resolution
+  the client's own world: patch origin (0, 0, 0) side 64, vertical span 64..96, 4 chunk(s) 
+             of 32³, 131072 cell(s), 44187 solid — measured chunk (0, 0, 2)
+  the 3 x 3 measurement fixture: patch origin (0, 0, 0) side 96, vertical span 64..96, 9 chunk(s) 
+             of 32³, 294912 cell(s), 98991 solid — measured chunk (1, 1, 2)
+  the client's own world, outside = World: the parent's own mesher REFUSED the chunk, in its own words: the parent's own mesher refused the chunk: [clean-room] (-1, 0, 64) is not in this world: its chunk (-1, 0, 2) is not one of the 4 this world owns
+  the client's own world, outside = WorldOrNothing:
+    mesh port differential, chunk (0, 0, 2), outside = WorldOrNothing, water handed over as at the parent's own 1/4-cell resolution: parent 11054 solid voxel(s) — 46880 subvoxel face(s), 336 quad(s) (139.52 faces/quad), 151 loop(s), 0 unaligned, 2930 block face(s) | clean room 339 quad(s), 2830 face(s), 2830 block face(s) | agree = false (parent only 1024, clean room only 924) | **the port's gate = true** (unnamed parent-only 0, unnamed clean-room-only 0) | halo queries the world could not answer: 4096
+  the parent only (1024 face(s)):
+    the world's own bound: 1024
+      solid/-z plane 64 u 0 v 0
+      solid/-z plane 64 u 0 v 1
+      solid/-z plane 64 u 0 v 2
+      solid/-z plane 64 u 0 v 3
+      solid/-z plane 64 u 0 v 4
+      solid/-z plane 64 u 0 v 5
+      solid/-z plane 64 u 0 v 6
+      solid/-z plane 64 u 0 v 7
+  this clean room only (924 face(s)):
+    the water level quantised: 924
+      water/+z plane 74 u 0 v 31
+      water/+z plane 74 u 1 v 29
+      water/+z plane 74 u 1 v 30
+      water/+z plane 74 u 1 v 31
+      water/+z plane 74 u 2 v 31
+      water/+z plane 75 u 0 v 22
+      water/+z plane 75 u 0 v 23
+      water/+z plane 75 u 0 v 24
+  the client's own world, outside = Nothing:
+    mesh port differential, chunk (0, 0, 2), outside = Nothing, water handed over as at the parent's own 1/4-cell resolution: parent 11054 solid voxel(s) — 57536 subvoxel face(s), 349 quad(s) (164.86 faces/quad), 160 loop(s), 0 unaligned, 3596 block face(s) | clean room 339 quad(s), 2830 face(s), 2830 block face(s) | agree = false (parent only 1690, clean room only 924) | **the port's gate = true** (unnamed parent-only 0, unnamed clean-room-only 0) | halo queries the world could not answer: 0
+  the parent only (1690 face(s)):
+    the world's own bound: 1024
+      solid/-z plane 64 u 0 v 0
+      solid/-z plane 64 u 0 v 1
+      solid/-z plane 64 u 0 v 2
+      solid/-z plane 64 u 0 v 3
+      solid/-z plane 64 u 0 v 4
+      solid/-z plane 64 u 0 v 5
+      solid/-z plane 64 u 0 v 6
+      solid/-z plane 64 u 0 v 7
+    the declared halo said air: 666
+      solid/+x plane 32 u 0 v 64
+      solid/+x plane 32 u 0 v 65
+      solid/+x plane 32 u 0 v 66
+      solid/+x plane 32 u 0 v 67
+      solid/+x plane 32 u 0 v 68
+      solid/+x plane 32 u 0 v 69
+      solid/+x plane 32 u 0 v 70
+      solid/+x plane 32 u 0 v 71
+  this clean room only (924 face(s)):
+    the water level quantised: 924
+      water/+z plane 74 u 0 v 31
+      water/+z plane 74 u 1 v 29
+      water/+z plane 74 u 1 v 30
+      water/+z plane 74 u 1 v 31
+      water/+z plane 74 u 2 v 31
+      water/+z plane 75 u 0 v 22
+      water/+z plane 75 u 0 v 23
+      water/+z plane 75 u 0 v 24
+  the 3 x 3 measurement fixture, outside = World: the parent's own mesher REFUSED the chunk, in its own words: the parent's own mesher refused the chunk: [clean-room] (32, 32, 63) is not in this world: its chunk (1, 1, 1) is not one of the 9 this world owns
+  the 3 x 3 measurement fixture, outside = WorldOrNothing:
+    mesh port differential, chunk (1, 1, 2), outside = WorldOrNothing, water handed over as at the parent's own 1/4-cell resolution: parent 11440 solid voxel(s) — 36464 subvoxel face(s), 378 quad(s) (96.47 faces/quad), 197 loop(s), 64 unaligned, 2264 block face(s) | clean room 290 quad(s), 1325 face(s), 1325 block face(s) | agree = false (parent only 1076, clean room only 137) | **the port's gate = true** (unnamed parent-only 0, unnamed clean-room-only 0) | halo queries the world could not answer: 2048
+  the parent only (1076 face(s)):
+    the world's own bound: 1024
+      solid/-z plane 64 u 32 v 32
+      solid/-z plane 64 u 32 v 33
+      solid/-z plane 64 u 32 v 34
+      solid/-z plane 64 u 32 v 35
+      solid/-z plane 64 u 32 v 36
+      solid/-z plane 64 u 32 v 37
+      solid/-z plane 64 u 32 v 38
+      solid/-z plane 64 u 32 v 39
+    the water level quantised: 52
+      water/+z plane 75 u 56 v 57
+      water/+z plane 75 u 57 v 56
+      water/+z plane 75 u 57 v 57
+      water/+z plane 75 u 57 v 58
+      water/+z plane 75 u 58 v 52
+      water/+z plane 75 u 58 v 55
+      water/+z plane 75 u 58 v 56
+      water/+z plane 75 u 58 v 57
+  this clean room only (137 face(s)):
+    the water level quantised: 137
+      water/+z plane 75 u 32 v 47
+      water/+z plane 75 u 32 v 48
+      water/+z plane 75 u 32 v 49
+      water/+z plane 75 u 32 v 50
+      water/+z plane 75 u 33 v 48
+      water/+z plane 75 u 33 v 49
+      water/+z plane 75 u 33 v 50
+      water/+z plane 75 u 34 v 42
+  the 3 x 3 measurement fixture, outside = Nothing:
+    mesh port differential, chunk (1, 1, 2), outside = Nothing, water handed over as at the parent's own 1/4-cell resolution: parent 11440 solid voxel(s) — 59104 subvoxel face(s), 400 quad(s) (147.76 faces/quad), 205 loop(s), 65 unaligned, 3676 block face(s) | clean room 290 quad(s), 1325 face(s), 1325 block face(s) | agree = false (parent only 2488, clean room only 137) | **the port's gate = true** (unnamed parent-only 0, unnamed clean-room-only 0) | halo queries the world could not answer: 0
+  the parent only (2488 face(s)):
+    the world's own bound: 1024
+      solid/-z plane 64 u 32 v 32
+      solid/-z plane 64 u 32 v 33
+      solid/-z plane 64 u 32 v 34
+      solid/-z plane 64 u 32 v 35
+      solid/-z plane 64 u 32 v 36
+      solid/-z plane 64 u 32 v 37
+      solid/-z plane 64 u 32 v 38
+      solid/-z plane 64 u 32 v 39
+    the declared halo said air: 1412
+      solid/-x plane 32 u 32 v 64
+      solid/-x plane 32 u 32 v 65
+      solid/-x plane 32 u 32 v 66
+      solid/-x plane 32 u 32 v 67
+      solid/-x plane 32 u 32 v 68
+      solid/-x plane 32 u 32 v 69
+      solid/-x plane 32 u 32 v 70
+      solid/-x plane 32 u 32 v 71
+    the water level quantised: 52
+      water/+z plane 75 u 56 v 57
+      water/+z plane 75 u 57 v 56
+      water/+z plane 75 u 57 v 57
+      water/+z plane 75 u 57 v 58
+      water/+z plane 75 u 58 v 52
+      water/+z plane 75 u 58 v 55
+      water/+z plane 75 u 58 v 56
+      water/+z plane 75 u 58 v 57
+  this clean room only (137 face(s)):
+    the water level quantised: 137
+      water/+z plane 75 u 32 v 47
+      water/+z plane 75 u 32 v 48
+      water/+z plane 75 u 32 v 49
+      water/+z plane 75 u 32 v 50
+      water/+z plane 75 u 33 v 48
+      water/+z plane 75 u 33 v 49
+      water/+z plane 75 u 33 v 50
+      water/+z plane 75 u 34 v 42
+stream-seam: the client's own world: patch origin (0, 0, 0) side 64, vertical span 64..96 = 1 chunk layer(s), 4 chunk(s) owned, 131072 cells, 44187 solid
+stream-seam: the 3 x 3 measurement fixture: patch origin (0, 0, 0) side 96, vertical span 64..96 = 1 chunk layer(s), 9 chunk(s) owned, 294912 cells, 98991 solid
+stream-seam: the parent's render horizon: radius 8 chunk(s) -> 4913 chunk(s) named around a viewer; this world owns 4 of them (0.0814%)
+stream-seam: the parent's simulation horizon: radius 12 chunk(s) -> 15625 chunk(s) named around a viewer; this world owns 4 of them (0.0256%)
+stream-seam: the parent's residency horizon: radius 24 chunk(s) -> 117649 chunk(s) named around a viewer; this world owns 4 of them (0.0034%)
+stream-seam: the parent's field horizon: radius 96 chunk(s) -> 7189057 chunk(s) named around a viewer; this world owns 4 of them (0.0001%)
+stream-seam: the parent's render horizon = 256 m: the streamer holds 4 of this world's 4 chunk(s) (131072 cell(s), 4 derived, 0 served) — the horizon is wider than the world, so nothing it names beyond those 4 can be held
+stream-seam: the parent's simulation horizon = 384 m: the streamer holds 4 of this world's 4 chunk(s) (131072 cell(s), 4 derived, 0 served) — the horizon is wider than the world, so nothing it names beyond those 4 can be held
+stream-seam: the parent's residency horizon = 768 m: the streamer holds 4 of this world's 4 chunk(s) (131072 cell(s), 4 derived, 0 served) — the horizon is wider than the world, so nothing it names beyond those 4 can be held
+stream-seam: the parent's field horizon = 3072 m: the streamer holds 4 of this world's 4 chunk(s) (131072 cell(s), 4 derived, 0 served) — the horizon is wider than the world, so nothing it names beyond those 4 can be held
+stream-seam: the first eviction: the world's furthest chunk from its own first chunk (0, 0, 2) is 45.2548 m away, so the streamer holds 4 of 4 chunk(s) at 46 m and 3 at 45 m; a walk from there: one chunk east evicts 1 and holds 3; back derives 1 and serves 2
+stream-seam: this world's own answer above its ceiling: (0, 0, 96) is not in this world: its chunk (0, 0, 3) is not one of the 4 this world owns
+stream-seam: the two keyed doors (2026-10-14d): the declared source names 4 chunk key(s) and answers any one of them alone (131072 cell(s), each chunk whole); the world this client *shows* has been stepped by the plane's own law (200 tick(s)) and is the door the camera's residency and the drawn frame read, so 3673 of its 131072 cell(s) differ between the two doors — the second path, measured, and not one the frame reads
+stream-seam: the parent's own `Resident` still cannot be driven from a per-chunk door — `pub fn new(source: WorldSource)` takes the parent's `WorldSpec` generator by type (crates/voxel-stream/src/resident.rs, pinned by sha256)

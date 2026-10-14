@@ -1,0 +1,54 @@
+The cell owns its material: the drawn frame exercised over two worlds that differ in one cell — 2026-10-14f
+=========================================================================================================
+
+The bar this pass was given, as written: *the drawn frame is exercised over two worlds differing only in one
+cell's material and its digest changes with that cell, with the existing gates still green.*
+
+The world's own store is the one owner of that difference, so the two worlds are built the same way and the
+**second one is the first one with exactly one cell written** — through the world's own write door
+(`CubicWorld::place_material`, cell-addressed), not by editing a field array, a class plane or a mesh:
+
+    let mut other = world.bare();                       // the same world, the same identity
+    assert_eq!(other.digest(), world.digest());          // ... and the same digest before the write
+    other.place_material(at, Some(MaterialId(1)))?;      // ONE cell: (26, 0, 75), material 4 -> 1
+
+Both worlds are then drawn through **the same call the window draws through** — same residency, same camera,
+same light, same registry — and the frames are compared.
+
+command: cargo test --offline -j 2 --test u4_drawn one_cells_material_moves_the_frame_and_nothing_else_does -- --nocapture
+subject exit: 0
+
+--- the guard's own line, verbatim (the only line the subject printed)
+
+U4 drawn: one cell (26, 0, 75) written 4 -> 1: frame 7816bf6a07dada5a3b7522c8ecf58fd933ecd37ace31662fc10b3c8d617dce69 -> 9cb6c6ca336f413943d24c64a861d022cbcfe3a8e03c574c40e7db95ce3995ed (147808 -> 147808 pixels drawn), mesh 24d61db2630f77aa79f18be66849e7270dc7ca52762280ea8b3451458c616dff -> 137335608da540f5131bc69588899e9c5eb2d80f21f47faa66747b1049667fd6, state 7675fd9242bf42abef714cd1f5aafe4debbce2447871b17cbf42a2a00bd9aace -> 940ff716b44e74fa0fb728433def77000b89acec4448cadeb43d46feb3ac190e
+
+--- what those numbers say, one clause at a time
+
+* **the frame's digest moves with the cell** — `7816bf6a…` -> `9cb6c6ca…`. The frame before the write is the
+  frame this tree drew before this pass (the drawn reading's own digest on the unchanged world, §11's own
+  `7816bf6a…`), so the moved digest is the moved cell and nothing else.
+* **the same number of pixels is drawn** — `147808 -> 147808`. A material is not a shape: the write changes
+  what a rectangle is *made of*, not which rectangles exist, so the picture's coverage is the invariant and its
+  colour is the variable. This is the flicker's own subject: a viewer sees a *colour* change on a *picture that
+  did not move*, which is exactly what the parent's per-column path could not keep still.
+* **the mesh's digest moves with it** — `24d61db2…` -> `13733560…`. The rectangle that covers the cell carries
+  its material (`Quad::material`), so a cell's material reaches the geometry's own bytes: the mesh is not a
+  second, stale copy of the same fact.
+* **the world's own identity moves with it** — `7675fd92…` -> `940ff716…`. The store's digest is over its
+  cells, material included, so a frame's mesh state is a *state* and not a camera.
+
+--- the guards that hold it, and that the two worlds are two
+
+The subject asserts, in order: the two worlds are the same world before the write (`digest` equal); the write
+touched exactly one cell (the store's `material_at` at that cell answers the new id and the old id is nowhere
+at it); the frame's digest **differs**; the mesh's rectangles **differ** (the changed face is a different
+rectangle set); the state digest **differs**; and the pixels drawn are **equal** — so neither "the frame
+ignored the cell" (a digest that does not move) nor "the write moved something else" (a coverage that does)
+could pass. Each of those asserts was proven to bite by perturbing the code it guards (`guard-bites-2026-10-14f.txt`,
+bites f-1 and f-2, on these exact bytes).
+
+--- and the frame was exercised through the path the window uses
+
+`drawn::draw` over `surface::region_mesh`'s residency, the same door `surface::present_world` presents and the
+same one the window's own line reports (`window-stdout-2026-10-14f.txt`: frame digest `7816bf6a…`, every pixel
+of the client area the frame's own bytes). The guard is a test of the drawn path, not of a helper beside it.

@@ -336,18 +336,13 @@ impl Loop {
 
     /// The loop's signed area in subvoxel faces, positive when it encloses
     /// material. A hole encloses air and is therefore negative.
+    ///
+    /// **One statement of the shoelace sum**, shared with the free [`signed_area`] the trace
+    /// tests read: two copies of one law is how the copy nobody runs becomes the one that is
+    /// wrong. The corners are the loop's own, so the two readers cannot disagree about what is
+    /// being measured.
     pub fn signed_area(&self) -> i64 {
-        let n = self.corners.len();
-        if n < 3 {
-            return 0;
-        }
-        let mut total = 0i64;
-        for i in 0..n {
-            let a = self.corners[i];
-            let b = self.corners[(i + 1) % n];
-            total += a[0] as i64 * b[1] as i64 - b[0] as i64 * a[1] as i64;
-        }
-        total / 2
+        signed_area(&self.corners)
     }
 
     /// The loop's area in subvoxel faces, holes included as positive.
@@ -434,18 +429,18 @@ impl Mesh {
     /// A content digest over the emitted quads, in emission order.
     pub fn digest(&self) -> Digest {
         let mut t = Vec::with_capacity(self.quads.len() * 13 + 16);
-        t.extend_from_slice(&self.chunk.x.to_le_bytes());
-        t.extend_from_slice(&self.chunk.y.to_le_bytes());
-        t.extend_from_slice(&self.chunk.z.to_le_bytes());
-        t.extend_from_slice(&(self.quads.len() as u64).to_le_bytes());
+        t.extend_from_slice(&voxel_model::endian::le_bytes(self.chunk.x));
+        t.extend_from_slice(&voxel_model::endian::le_bytes(self.chunk.y));
+        t.extend_from_slice(&voxel_model::endian::le_bytes(self.chunk.z));
+        t.extend_from_slice(&voxel_model::endian::le_bytes((self.quads.len() as u64)));
         for q in &self.quads {
             t.push(face_index(q.face));
-            t.extend_from_slice(&q.slice.to_le_bytes());
-            t.extend_from_slice(&q.uv[0].to_le_bytes());
-            t.extend_from_slice(&q.uv[1].to_le_bytes());
-            t.extend_from_slice(&q.extent[0].to_le_bytes());
-            t.extend_from_slice(&q.extent[1].to_le_bytes());
-            t.extend_from_slice(&q.material.0.to_le_bytes());
+            t.extend_from_slice(&voxel_model::endian::le_bytes(q.slice));
+            t.extend_from_slice(&voxel_model::endian::le_bytes(q.uv[0]));
+            t.extend_from_slice(&voxel_model::endian::le_bytes(q.uv[1]));
+            t.extend_from_slice(&voxel_model::endian::le_bytes(q.extent[0]));
+            t.extend_from_slice(&voxel_model::endian::le_bytes(q.extent[1]));
+            t.extend_from_slice(&voxel_model::endian::le_bytes(q.material.0));
         }
         Digest::of_fields("voxel-mesh/mesh", &[b"v1", t.as_slice()])
     }
@@ -817,7 +812,7 @@ impl Mesher {
     /// One loop per closed boundary, whatever its shape: a staircase that took a
     /// quad each is one loop here.
     fn polygonise(&self, face: Face, plane: u16, config: &MeshConfig, out: &mut Vec<Loop>) {
-        let side = SUBVOXEL_CHUNK_SIDE as i32;
+        let side = SUBVOXEL_CHUNK_SIDE;
         let step: i32 = if face.is_positive() { 1 } else { -1 };
         let axis = face.axis() as usize;
         let (su, sv) = field_strides(axis);
@@ -854,8 +849,19 @@ impl Mesher {
 /// The four unit steps in `(u, v)`, so `+1` is a left turn.
 const DIRS: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 
+/// One directed boundary edge leaving a vertex: its direction's index in [`DIRS`], the vertex it
+/// ends at, and the material on its left.
+type Edge = (usize, (i32, i32), MaterialId);
+
+/// The edges leaving each vertex, in the order the boundary walk inserted them.
+type Edges = BTreeMap<(i32, i32), Vec<Edge>>;
+
 /// A loop's signed area in `(u, v)`: positive when it runs the rectangle's way.
-fn signed_area(corners: &[[i16; 2]]) -> i64 {
+///
+/// The shoelace sum, and the **only** statement of it: [`Loop::signed_area`] delegates here, so a
+/// loop's winding is one computation read by the mesher and by its tests rather than two that
+/// happen to agree today.
+pub fn signed_area(corners: &[[i16; 2]]) -> i64 {
     let n = corners.len();
     if n < 3 {
         return 0;
@@ -878,7 +884,7 @@ fn signed_area(corners: &[[i16; 2]]) -> i64 {
 fn traces(covered: &BTreeMap<(i32, i32), MaterialId>) -> Vec<(MaterialId, Vec<[i16; 2]>)> {
     // Each edge carries its own direction's index in `DIRS`, because the turn
     // taken on arrival is what keeps two lobes apart at a pinch vertex.
-    let mut edges: BTreeMap<(i32, i32), Vec<(usize, (i32, i32), MaterialId)>> = BTreeMap::new();
+    let mut edges: Edges = BTreeMap::new();
     for (&(u, v), &material) in covered {
         for (index, (du, dv)) in DIRS.iter().enumerate() {
             if covered.get(&(u + du, v + dv)) == Some(&material) {
@@ -965,12 +971,12 @@ fn simplify(corners: Vec<[i16; 2]>) -> Vec<[i16; 2]> {
 /// as an index into the list: a vertex can carry several edges, and the list's
 /// order has nothing to do with the directions.
 fn next_edge(
-    edges: &BTreeMap<(i32, i32), Vec<(usize, (i32, i32), MaterialId)>>,
+    edges: &Edges,
     at: (i32, i32),
     arrived: usize,
     material: MaterialId,
     taken: &BTreeSet<((i32, i32), usize, MaterialId)>,
-) -> Option<(usize, (i32, i32), MaterialId)> {
+) -> Option<Edge> {
     let list = edges.get(&at)?;
     let mut best: Option<(u8, usize)> = None;
     for (i, (dir, _, m)) in list.iter().enumerate() {
@@ -978,10 +984,11 @@ fn next_edge(
             continue;
         }
         // Left, then straight, then right: the tightest turn hugs the material it
-        // is on, which is what keeps two lobes of a diagonal pinch apart.
-        let rank = if arrived == usize::MAX {
-            0
-        } else if *dir == (arrived + 1) % 4 {
+        // is on, which is what keeps two lobes of a diagonal pinch apart. A walk that
+        // has just started has no arrival direction to turn from, so it takes the
+        // leftmost edge — the same rank as a left turn, said in the same branch, which
+        // is why the two cases are one condition rather than two identical blocks.
+        let rank = if arrived == usize::MAX || *dir == (arrived + 1) % 4 {
             0
         } else if *dir == arrived {
             1

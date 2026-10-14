@@ -47,10 +47,18 @@ pub struct Spectrum {
 
 /// The declared derivation windows, as (low, high) exact fractions of a
 /// micrometre, in B, G, R order; lower bound inclusive, upper exclusive.
+///
+/// **Emitted from the generator's own `WINDOWS`, which is also the list the
+/// arithmetic above fills every `visible` field from.** One declaration, so a
+/// window cannot move in the arithmetic and stand still in the emitted constant.
+/// It did exactly that once: the red window was narrowed to the visible band and
+/// this literal still said `3/4`, so the module's own reader disagreed with every
+/// row it was reading — caught by
+/// `the_visible_channels_are_exact_means_of_the_retained_spectrum`.
 pub const VISIBLE_WINDOWS: [(Ratio, Ratio); 3] = [
     (Ratio::from_parts(19, 50), Ratio::from_parts(1, 2)),
     (Ratio::from_parts(1, 2), Ratio::from_parts(3, 5)),
-    (Ratio::from_parts(3, 5), Ratio::from_parts(3, 4)),
+    (Ratio::from_parts(3, 5), Ratio::from_parts(7, 10)),
 ];
 
 /// 2151 channels of `splib07a_Wavelengths_ASD_0.35-2.5_microns_2151_ch.txt`, micrometres as `raw × 10^-8`.
@@ -4858,8 +4866,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &SEAWATER_OPEN_OCEAN_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(15027878450, 730000000000), Ratio::from_parts(13140110000, 500000000000), Ratio::from_parts(23881249380, 540000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Seawater_Open_Ocean_SW2_lwch_BECKa_AREF.txt (record 13635), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: open-ocean seawater surface; role representative for the WATER placeholder (C-140) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(9992799400, 480000000000), Ratio::from_parts(13140110000, 500000000000), Ratio::from_parts(23881249380, 540000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Seawater_Open_Ocean_SW2_lwch_BECKa_AREF.txt (record 13635), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: open-ocean seawater surface; role representative for the WATER placeholder (C-140) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "limestone_cu02",
@@ -4872,8 +4880,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &LIMESTONE_CU02_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(3268049518, 15000000000), Ratio::from_parts(1899849673, 10000000000), Ratio::from_parts(1817957643, 12000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Limestone_CU02-11A_ASDFRa_AREF.txt (record 12770), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: light-coloured sedimentary rock; role representative for the SEDIMENTARY placeholder — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(2156519991, 10100000000), Ratio::from_parts(1899849673, 10000000000), Ratio::from_parts(1817957643, 12000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Limestone_CU02-11A_ASDFRa_AREF.txt (record 12770), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: light-coloured sedimentary rock; role representative for the SEDIMENTARY placeholder — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "actinolite_hornfels",
@@ -4886,8 +4894,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &ACTINOLITE_HORNFELS_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(7864661590, 73000000000), Ratio::from_parts(5740598880, 50000000000), Ratio::from_parts(4178436458, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Actinolite-Hornfels_BR93-5a_BECKc_AREF.txt (record 11621), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: foliated metamorphic rock; role representative for the METAMORPHIC placeholder — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(5216355710, 48000000000), Ratio::from_parts(5740598880, 50000000000), Ratio::from_parts(4178436458, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Actinolite-Hornfels_BR93-5a_BECKc_AREF.txt (record 11621), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: foliated metamorphic rock; role representative for the METAMORPHIC placeholder — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "basalt_fresh",
@@ -4900,8 +4908,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &BASALT_FRESH_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(7925793590, 73000000000), Ratio::from_parts(4597260195, 50000000000), Ratio::from_parts(4071897538, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Basalt_fresh_BR93-46B_BECKb_AREF.txt (record 11848), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: fresh dark mafic igneous rock; role representative for the IGNEOUS placeholder — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(5113085760, 48000000000), Ratio::from_parts(4597260195, 50000000000), Ratio::from_parts(4071897538, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Basalt_fresh_BR93-46B_BECKb_AREF.txt (record 11848), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: fresh dark mafic igneous rock; role representative for the IGNEOUS placeholder — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "magnetite_skarn",
@@ -4914,8 +4922,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &MAGNETITE_SKARN_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(8893472620, 73000000000), Ratio::from_parts(5714603890, 50000000000), Ratio::from_parts(4629561170, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Magnetite_skarn_BR93-5B_BECKb_AREF.txt (record 12825), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: dark iron-rich rock; role representative for the BEDROCK placeholder (user: \"A probably\" — tentative under the composition rule, C-141) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(5866313720, 48000000000), Ratio::from_parts(5714603890, 50000000000), Ratio::from_parts(4629561170, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Magnetite_skarn_BR93-5B_BECKb_AREF.txt (record 12825), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: dark iron-rich rock; role representative for the BEDROCK placeholder (user: \"A probably\" — tentative under the composition rule, C-141) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "stonewall_playa_dry_mud",
@@ -4928,8 +4936,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &STONEWALL_PLAYA_DRY_MUD_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(7353952272, 15000000000), Ratio::from_parts(3631928451, 10000000000), Ratio::from_parts(2673608072, 12000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Stonewall_Playa_Dry_Mud_2001_ASDFRa_AREF.txt (record 13304), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: dry playa soil surface; flagged role STAND-IN for the REGOLITH placeholder — regolith splits per parent composition when the library lands (C-141) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(4824739886, 10100000000), Ratio::from_parts(3631928451, 10000000000), Ratio::from_parts(2673608072, 12000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Stonewall_Playa_Dry_Mud_2001_ASDFRa_AREF.txt (record 13304), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: dry playa soil surface; flagged role STAND-IN for the REGOLITH placeholder — regolith splits per parent composition when the library lands (C-141) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "sand_dwo3",
@@ -4942,8 +4950,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &SAND_DWO3_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(3894677873, 15000000000), Ratio::from_parts(2161700466, 10000000000), Ratio::from_parts(1789058174, 12000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Sand_DWO-3-DEL2ar1_no_oil_ASDFRa_AREF.txt (record 13218), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: clean sand, no oil; role representative for the SAND surface material of deserts (it was retained as the alternate REGOLITH candidate and is now the desert's own surface) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(2567389346, 10100000000), Ratio::from_parts(2161700466, 10000000000), Ratio::from_parts(1789058174, 12000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Sand_DWO-3-DEL2ar1_no_oil_ASDFRa_AREF.txt (record 13218), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: clean sand, no oil; role representative for the SAND surface material of deserts (it was retained as the alternate REGOLITH candidate and is now the desert's own surface) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "grass_mixed_green",
@@ -4956,8 +4964,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &GRASS_MIXED_GREEN_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(152293449500, 730000000000), Ratio::from_parts(69649273200, 500000000000), Ratio::from_parts(33330819330, 510000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Grass_dry.4+.6green_AMX27_BECKa_AREF.txt (record 24163), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: mixed canopy, 40% dry and 60% green grass; role representative for the GRASS surface material (grassland) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(71630382700, 480000000000), Ratio::from_parts(69649273200, 500000000000), Ratio::from_parts(33330819330, 510000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Grass_dry.4+.6green_AMX27_BECKa_AREF.txt (record 24163), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: mixed canopy, 40% dry and 60% green grass; role representative for the GRASS surface material (grassland) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "grass_golden_dry",
@@ -4970,8 +4978,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &GRASS_GOLDEN_DRY_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(35873322350, 150000000000), Ratio::from_parts(16198887410, 100000000000), Ratio::from_parts(9397290770, 120000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Grass_Golden_Dry_GDS480_ASDFRa_AREF.txt (record 21213), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: dry golden grass; role representative for the DRY_GRASS surface material (tundra, subtropical scrub) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(22736587220, 101000000000), Ratio::from_parts(16198887410, 100000000000), Ratio::from_parts(9397290770, 120000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Grass_Golden_Dry_GDS480_ASDFRa_AREF.txt (record 21213), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: dry golden grass; role representative for the DRY_GRASS surface material (tundra, subtropical scrub) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "aspen_green_top",
@@ -4984,8 +4992,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &ASPEN_GREEN_TOP_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(23604687000, 150000000000), Ratio::from_parts(9800584306, 100000000000), Ratio::from_parts(4823448140, 86000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Aspen_Aspen-1_green-top_ASDFRa_AREF.txt (record 20865), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: aspen canopy, green top surface — what is seen from above the tree; role representative for the LEAF surface material (broadleaf forest) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(6841992330, 101000000000), Ratio::from_parts(9800584306, 100000000000), Ratio::from_parts(4823448140, 86000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Aspen_Aspen-1_green-top_ASDFRa_AREF.txt (record 20865), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: aspen canopy, green top surface — what is seen from above the tree; role representative for the LEAF surface material (broadleaf forest) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "spruce_needles",
@@ -4998,8 +5006,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &SPRUCE_NEEDLES_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(89825365030, 730000000000), Ratio::from_parts(49400892700, 500000000000), Ratio::from_parts(44966814740, 540000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Blue_Spruce_DW92-5_needles_BECKa_AREF.txt (record 20930), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: blue spruce needles; role representative for the CONIFER surface material (boreal forest) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(34073593950, 480000000000), Ratio::from_parts(49400892700, 500000000000), Ratio::from_parts(44966814740, 540000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Blue_Spruce_DW92-5_needles_BECKa_AREF.txt (record 20930), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: blue spruce needles; role representative for the CONIFER surface material (boreal forest) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "gray_pine_branch",
@@ -5012,8 +5020,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &GRAY_PINE_BRANCH_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(16923902133, 150000000000), Ratio::from_parts(6461700431, 100000000000), Ratio::from_parts(4297442753, 120000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Gray-Pine_CA01-PISA-1_branch_ASDFRa_AREF.txt (record 21247), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: gray pine branch — bark and wood of a standing conifer, not milled timber; role representative for the WOOD material (tree trunks) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(6103946593, 101000000000), Ratio::from_parts(6461700431, 100000000000), Ratio::from_parts(4297442753, 120000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Gray-Pine_CA01-PISA-1_branch_ASDFRa_AREF.txt (record 21247), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: gray pine branch — bark and wood of a standing conifer, not milled timber; role representative for the WOOD material (tree trunks) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "quartz",
@@ -5026,8 +5034,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &QUARTZ_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(12230582879, 15000000000), Ratio::from_parts(7978241177, 10000000000), Ratio::from_parts(9041977706, 12000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Quartz_HS32.2B_ASDFRc_AREF.txt (record 9338), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: quartz, the most common rock-forming mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(8217861575, 10100000000), Ratio::from_parts(7978241177, 10000000000), Ratio::from_parts(9041977706, 12000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Quartz_HS32.2B_ASDFRc_AREF.txt (record 9338), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: quartz, the most common rock-forming mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "plagioclase",
@@ -5040,8 +5048,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &PLAGIOCLASE_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(10120577828, 15000000000), Ratio::from_parts(6453916640, 10000000000), Ratio::from_parts(6893922692, 12000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Albite_HS143.1B_Plagioclase_ASDFRb_AREF.txt (record 322), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: plagioclase feldspar (albite end member), a rock-forming mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(6788491538, 10100000000), Ratio::from_parts(6453916640, 10000000000), Ratio::from_parts(6893922692, 12000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Albite_HS143.1B_Plagioclase_ASDFRb_AREF.txt (record 322), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: plagioclase feldspar (albite end member), a rock-forming mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "alkali_feldspar",
@@ -5054,8 +5062,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &ALKALI_FELDSPAR_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(10616977081, 15000000000), Ratio::from_parts(6793914453, 10000000000), Ratio::from_parts(7344190277, 12000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Microcline_HS103.1B_Feldspar_ASDFRc_AREF.txt (record 6844), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: alkali feldspar (microcline), a rock-forming mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(7122337311, 10100000000), Ratio::from_parts(6793914453, 10000000000), Ratio::from_parts(7344190277, 12000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Microcline_HS103.1B_Feldspar_ASDFRc_AREF.txt (record 6844), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: alkali feldspar (microcline), a rock-forming mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "biotite",
@@ -5068,8 +5076,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &BIOTITE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(8156446890, 73000000000), Ratio::from_parts(5358872169, 50000000000), Ratio::from_parts(2779585950, 32000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Biotite_HS28.3B_BECKa_AREF.txt (record 1958), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: biotite, the common mafic sheet silicate of granite — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(5436154090, 48000000000), Ratio::from_parts(5358872169, 50000000000), Ratio::from_parts(2779585950, 32000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Biotite_HS28.3B_BECKa_AREF.txt (record 1958), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: biotite, the common mafic sheet silicate of granite — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "muscovite",
@@ -5082,8 +5090,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &MUSCOVITE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(44539778730, 73000000000), Ratio::from_parts(26054321680, 50000000000), Ratio::from_parts(18185847480, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Muscovite_GDS107_BECKa_AREF.txt (record 7401), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: muscovite, the light mica — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(28410506480, 48000000000), Ratio::from_parts(26054321680, 50000000000), Ratio::from_parts(18185847480, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Muscovite_GDS107_BECKa_AREF.txt (record 7401), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: muscovite, the light mica — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "hornblende",
@@ -5096,8 +5104,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &HORNBLENDE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(4352247655, 73000000000), Ratio::from_parts(3026897492, 50000000000), Ratio::from_parts(3071924649, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Hornblende_HS16.3B_BECKb_AREF.txt (record 5078), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: amphibole (hornblende), the common mafic mineral of diorite and andesite — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(2859527947, 48000000000), Ratio::from_parts(3026897492, 50000000000), Ratio::from_parts(3071924649, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Hornblende_HS16.3B_BECKb_AREF.txt (record 5078), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: amphibole (hornblende), the common mafic mineral of diorite and andesite — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "pyroxene",
@@ -5110,8 +5118,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &PYROXENE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(20580749260, 73000000000), Ratio::from_parts(12555809080, 50000000000), Ratio::from_parts(10161588940, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Augite_NMNH120049_BECKb_AREF.txt (record 1704), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: clinopyroxene (augite), the common mafic mineral of gabbro and basalt — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(13299114970, 48000000000), Ratio::from_parts(12555809080, 50000000000), Ratio::from_parts(10161588940, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Augite_NMNH120049_BECKb_AREF.txt (record 1704), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: clinopyroxene (augite), the common mafic mineral of gabbro and basalt — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "olivine",
@@ -5124,8 +5132,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &OLIVINE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(25674444640, 73000000000), Ratio::from_parts(19221369700, 50000000000), Ratio::from_parts(12087566800, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Olivine_GDS70.a_Fo89_165um_BECKb_AREF.txt (record 8010), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: olivine (Fo89) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(17387199240, 48000000000), Ratio::from_parts(19221369700, 50000000000), Ratio::from_parts(12087566800, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Olivine_GDS70.a_Fo89_165um_BECKb_AREF.txt (record 8010), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: olivine (Fo89) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "calcite",
@@ -5138,8 +5146,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &CALCITE_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(6625773389, 7300000000), Ratio::from_parts(4413618923, 5000000000), Ratio::from_parts(4521542789, 5400000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Calcite_CO2004_BECKb_AREF.txt (record 2250), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: calcite, the mineral of limestone, chalk and marble — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(4335129387, 4800000000), Ratio::from_parts(4413618923, 5000000000), Ratio::from_parts(4521542789, 5400000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Calcite_CO2004_BECKb_AREF.txt (record 2250), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: calcite, the mineral of limestone, chalk and marble — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "dolomite",
@@ -5152,8 +5160,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &DOLOMITE_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(5189911861, 7300000000), Ratio::from_parts(3529693417, 5000000000), Ratio::from_parts(3747134431, 5400000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Dolomite_HS102.3B_BECKb_AREF.txt (record 3720), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: dolomite, the carbonate mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(3403965988, 4800000000), Ratio::from_parts(3529693417, 5000000000), Ratio::from_parts(3747134431, 5400000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Dolomite_HS102.3B_BECKb_AREF.txt (record 3720), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: dolomite, the carbonate mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "chlorite",
@@ -5166,8 +5174,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &CHLORITE_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(6391244197, 15000000000), Ratio::from_parts(3906818160, 10000000000), Ratio::from_parts(3625422085, 12000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Chlorite_HS179.1B_ASDFRb_AREF.txt (record 2614), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: chlorite, the green sheet silicate of slate and schist — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(4255903251, 10100000000), Ratio::from_parts(3906818160, 10000000000), Ratio::from_parts(3625422085, 12000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Chlorite_HS179.1B_ASDFRb_AREF.txt (record 2614), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: chlorite, the green sheet silicate of slate and schist — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "illite",
@@ -5180,8 +5188,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &ILLITE_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(129409308000, 730000000000), Ratio::from_parts(82057516900, 500000000000), Ratio::from_parts(78396796500, 540000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Illite_GDS4_Marblehead_BECKb_AREF.txt (record 5432), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: illite, a clay mineral of shale — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(83605066100, 480000000000), Ratio::from_parts(82057516900, 500000000000), Ratio::from_parts(78396796500, 540000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Illite_GDS4_Marblehead_BECKb_AREF.txt (record 5432), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: illite, a clay mineral of shale — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "kaolinite",
@@ -5194,8 +5202,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &KAOLINITE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(63126200230, 73000000000), Ratio::from_parts(39971374060, 50000000000), Ratio::from_parts(35950940410, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Kaolinite_CM3_BECKa_AREF.txt (record 5910), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: kaolinite, the reference clay mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(41039762580, 48000000000), Ratio::from_parts(39971374060, 50000000000), Ratio::from_parts(35950940410, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Kaolinite_CM3_BECKa_AREF.txt (record 5910), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: kaolinite, the reference clay mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "hematite",
@@ -5208,8 +5216,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &HEMATITE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(7456777224, 73000000000), Ratio::from_parts(3060896529, 50000000000), Ratio::from_parts(3165976360, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Hematite_FE2602_BECKb_AREF.txt (record 4858), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: hematite, Fe2O3 and the ore of iron — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(4268628084, 48000000000), Ratio::from_parts(3060896529, 50000000000), Ratio::from_parts(3165976360, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Hematite_FE2602_BECKb_AREF.txt (record 4858), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: hematite, Fe2O3 and the ore of iron — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "magnetite",
@@ -5222,8 +5230,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &MAGNETITE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(4210904931, 73000000000), Ratio::from_parts(2892608472, 50000000000), Ratio::from_parts(3199456774, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Magnetite_HS195.3B_BECKb_AREF.txt (record 6610), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: magnetite, Fe3O4 and the ore of iron — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(2788988903, 48000000000), Ratio::from_parts(2892608472, 50000000000), Ratio::from_parts(3199456774, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Magnetite_HS195.3B_BECKb_AREF.txt (record 6610), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: magnetite, Fe3O4 and the ore of iron — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "goethite",
@@ -5236,8 +5244,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &GOETHITE_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(165113738400, 730000000000), Ratio::from_parts(62179421460, 500000000000), Ratio::from_parts(17315988520, 540000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Goethite_WS219_(limonite)_BECKc_AREF.txt (record 4400), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: goethite, the crystalline iron oxide of limonite — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(101597899400, 480000000000), Ratio::from_parts(62179421460, 500000000000), Ratio::from_parts(17315988520, 540000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Goethite_WS219_(limonite)_BECKc_AREF.txt (record 4400), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: goethite, the crystalline iron oxide of limonite — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "garnet",
@@ -5250,8 +5258,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &GARNET_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(36861848770, 73000000000), Ratio::from_parts(15064943500, 50000000000), Ratio::from_parts(12499308850, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Almandine_HS114.3B_Garnet_BECKb_AREF.txt (record 515), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: almandine, the common garnet of schist and gneiss — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(22808336200, 48000000000), Ratio::from_parts(15064943500, 50000000000), Ratio::from_parts(12499308850, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Almandine_HS114.3B_Garnet_BECKb_AREF.txt (record 515), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: almandine, the common garnet of schist and gneiss — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "serpentine",
@@ -5264,8 +5272,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &SERPENTINE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(43989116450, 73000000000), Ratio::from_parts(26338844330, 50000000000), Ratio::from_parts(20092395110, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Lizardite_NMNHR4687.a_280um_BECKa_AREF.txt (record 6518), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: serpentine (lizardite) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(28388060620, 48000000000), Ratio::from_parts(26338844330, 50000000000), Ratio::from_parts(20092395110, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Lizardite_NMNHR4687.a_280um_BECKa_AREF.txt (record 6518), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: serpentine (lizardite) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "talc",
@@ -5278,8 +5286,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &TALC_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(40972704740, 73000000000), Ratio::from_parts(27470481800, 50000000000), Ratio::from_parts(25174162870, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Talc_GDS23_74-250um_fr_BECKa_AREF.txt (record 10429), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: talc — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(26867073690, 48000000000), Ratio::from_parts(27470481800, 50000000000), Ratio::from_parts(25174162870, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Talc_GDS23_74-250um_fr_BECKa_AREF.txt (record 10429), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: talc — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "gypsum",
@@ -5292,8 +5300,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &GYPSUM_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(676055016400, 730000000000), Ratio::from_parts(458621154600, 500000000000), Ratio::from_parts(485081628800, 540000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Gypsum_HS333.3B_(Selenite)_BECKa_AREF.txt (record 4570), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: gypsum (selenite) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(444040328900, 480000000000), Ratio::from_parts(458621154600, 500000000000), Ratio::from_parts(485081628800, 540000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Gypsum_HS333.3B_(Selenite)_BECKa_AREF.txt (record 4570), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: gypsum (selenite) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "pyrite",
@@ -5306,8 +5314,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &PYRITE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(7292001595, 150000000000), Ratio::from_parts(4682684473, 100000000000), Ratio::from_parts(4595345148, 120000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Pyrite_GDS483.c_30-60um_ASDFRc_AREF.txt (record 8972), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: pyrite, FeS2 — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(4899820474, 101000000000), Ratio::from_parts(4682684473, 100000000000), Ratio::from_parts(4595345148, 120000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Pyrite_GDS483.c_30-60um_ASDFRc_AREF.txt (record 8972), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: pyrite, FeS2 — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "carbon",
@@ -5320,8 +5328,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &CARBON_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(11242591120, 730000000000), Ratio::from_parts(7776081330, 500000000000), Ratio::from_parts(8565226140, 540000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Carbon_Black_GDS68_sm.ap._BECKa_AREF.txt (record 2316), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: amorphous carbon (lamp black) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(7367312160, 480000000000), Ratio::from_parts(7776081330, 500000000000), Ratio::from_parts(8565226140, 540000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Carbon_Black_GDS68_sm.ap._BECKa_AREF.txt (record 2316), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: amorphous carbon (lamp black) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "epidote",
@@ -5334,8 +5342,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &EPIDOTE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(13478000090, 73000000000), Ratio::from_parts(7716939550, 50000000000), Ratio::from_parts(4238698332, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Epidote_BR93-33a_BECKb_AREF.txt (record 3879), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: epidote, a metamorphic mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(8199426960, 48000000000), Ratio::from_parts(7716939550, 50000000000), Ratio::from_parts(4238698332, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Epidote_BR93-33a_BECKb_AREF.txt (record 3879), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: epidote, a metamorphic mineral — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "malachite",
@@ -5348,8 +5356,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &MALACHITE_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(100956787500, 730000000000), Ratio::from_parts(118633423900, 500000000000), Ratio::from_parts(93525022430, 540000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Malachite_HS254.3B_BECKb_AREF.txt (record 6701), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: malachite, the copper carbonate hydroxide ore — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(72253876100, 480000000000), Ratio::from_parts(118633423900, 500000000000), Ratio::from_parts(93525022430, 540000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Malachite_HS254.3B_BECKb_AREF.txt (record 6701), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: malachite, the copper carbonate hydroxide ore — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "cassiterite",
@@ -5362,8 +5370,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &CASSITERITE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(5723168097, 73000000000), Ratio::from_parts(3520819104, 50000000000), Ratio::from_parts(3408677398, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Cassiterite_HS279.3B_BECKc_AREF.txt (record 2411), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: cassiterite, the tin oxide ore — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(3686866097, 48000000000), Ratio::from_parts(3520819104, 50000000000), Ratio::from_parts(3408677398, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Cassiterite_HS279.3B_BECKc_AREF.txt (record 2411), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: cassiterite, the tin oxide ore — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "sphalerite",
@@ -5376,8 +5384,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &SPHALERITE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(15327813420, 73000000000), Ratio::from_parts(5969031555, 50000000000), Ratio::from_parts(3516452882, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Sphalerite_S26-34_BECKb_AREF.txt (record 10133), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: sphalerite, the zinc sulfide ore — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(9266916000, 48000000000), Ratio::from_parts(5969031555, 50000000000), Ratio::from_parts(3516452882, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Sphalerite_S26-34_BECKb_AREF.txt (record 10133), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: sphalerite, the zinc sulfide ore — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "cinnabar",
@@ -5390,8 +5398,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &CINNABAR_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(29658505320, 73000000000), Ratio::from_parts(5305187610, 50000000000), Ratio::from_parts(4615176858, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Cinnabar_HS133.3B_BECKc_AREF.txt (record 2888), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: cinnabar, the mercury sulfide ore — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(17858392970, 48000000000), Ratio::from_parts(5305187610, 50000000000), Ratio::from_parts(4615176858, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Cinnabar_HS133.3B_BECKc_AREF.txt (record 2888), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: cinnabar, the mercury sulfide ore — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "halite",
@@ -5404,8 +5412,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &HALITE_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(6421177997, 7300000000), Ratio::from_parts(4273518487, 5000000000), Ratio::from_parts(4373133252, 5400000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Halite_HS433.3B_BECKa_AREF.txt (record 4635), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: halite, rock salt — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(4205596077, 4800000000), Ratio::from_parts(4273518487, 5000000000), Ratio::from_parts(4373133252, 5400000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Halite_HS433.3B_BECKa_AREF.txt (record 4635), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: halite, rock salt — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "niter",
@@ -5418,8 +5426,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &NITER_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(61601428310, 73000000000), Ratio::from_parts(42037518200, 50000000000), Ratio::from_parts(44777348070, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Niter_GDS43_(K-Saltpeter)_BECKa_AREF.txt (record 7877), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: niter (K-saltpeter) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(40408229890, 48000000000), Ratio::from_parts(42037518200, 50000000000), Ratio::from_parts(44777348070, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Niter_GDS43_(K-Saltpeter)_BECKa_AREF.txt (record 7877), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: niter (K-saltpeter) — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "sulfur",
@@ -5432,8 +5440,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &SULFUR_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(60404875640, 73000000000), Ratio::from_parts(38831147130, 50000000000), Ratio::from_parts(16292988585, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Sulfur_GDS94_Reagent_BECKa_AREF.txt (record 10377), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: native sulfur — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(39560201770, 48000000000), Ratio::from_parts(38831147130, 50000000000), Ratio::from_parts(16292988585, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Sulfur_GDS94_Reagent_BECKa_AREF.txt (record 10377), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: native sulfur — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "beryl",
@@ -5446,8 +5454,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &BERYL_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(55834495160, 73000000000), Ratio::from_parts(44292397690, 50000000000), Ratio::from_parts(43493099030, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Beryl_HS180.3B_BECKa_AREF.txt (record 1917), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: beryl, the mineral species of emerald — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(40140312100, 48000000000), Ratio::from_parts(44292397690, 50000000000), Ratio::from_parts(43493099030, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Beryl_HS180.3B_BECKa_AREF.txt (record 1917), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: beryl, the mineral species of emerald — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "corundum",
@@ -5460,8 +5468,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &CORUNDUM_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(45251521880, 73000000000), Ratio::from_parts(29753829840, 50000000000), Ratio::from_parts(31113784250, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Corundum_HS283.3B_BECKc_AREF.txt (record 3294), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: corundum, the mineral species of ruby and sapphire — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(29283032540, 48000000000), Ratio::from_parts(29753829840, 50000000000), Ratio::from_parts(31113784250, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Corundum_HS283.3B_BECKc_AREF.txt (record 3294), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: corundum, the mineral species of ruby and sapphire — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "topaz",
@@ -5474,8 +5482,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &TOPAZ_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(5572040424, 7300000000), Ratio::from_parts(3718864598, 5000000000), Ratio::from_parts(3923991320, 5400000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Topaz_Cameron_Cone_#42_BECKb_AREF.txt (record 10681), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: topaz — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(3642774304, 4800000000), Ratio::from_parts(3718864598, 5000000000), Ratio::from_parts(3923991320, 5400000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Topaz_Cameron_Cone_#42_BECKb_AREF.txt (record 10681), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: topaz — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "opal",
@@ -5488,8 +5496,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &OPAL_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(296157450600, 730000000000), Ratio::from_parts(175377675000, 500000000000), Ratio::from_parts(136159252600, 540000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Opal_WS732_BECKa_AREF.txt (record 8431), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: opal, hydrated silica — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(193385890000, 480000000000), Ratio::from_parts(175377675000, 500000000000), Ratio::from_parts(136159252600, 540000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Opal_WS732_BECKa_AREF.txt (record 8431), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: opal, hydrated silica — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "limonite",
@@ -5502,8 +5510,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &LIMONITE_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(75658210470, 730000000000), Ratio::from_parts(31642765500, 500000000000), Ratio::from_parts(13935942270, 540000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Limonite_HS41.3_BECKb_AREF.txt (record 6497), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: limonite, the hydrated iron-oxide ore — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(47044527470, 480000000000), Ratio::from_parts(31642765500, 500000000000), Ratio::from_parts(13935942270, 540000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Limonite_HS41.3_BECKb_AREF.txt (record 6497), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: limonite, the hydrated iron-oxide ore — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "chert",
@@ -5516,8 +5524,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &CHERT_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(4257177089, 7300000000), Ratio::from_parts(2955581938, 5000000000), Ratio::from_parts(3076948422, 5400000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Chert_ANP90-6D_(White)_BECKa_AREF.txt (record 2572), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: chert, the microcrystalline silica stone the stone rung knaps — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(2831261901, 4800000000), Ratio::from_parts(2955581938, 5000000000), Ratio::from_parts(3076948422, 5400000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Chert_ANP90-6D_(White)_BECKa_AREF.txt (record 2572), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: chert, the microcrystalline silica stone the stone rung knaps — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "volcanic_tuff",
@@ -5530,8 +5538,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &VOLCANIC_TUFF_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(5907149515, 15000000000), Ratio::from_parts(3439114098, 10000000000), Ratio::from_parts(3033061433, 12000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Hydrated_Volc_Tuff_CU01-4A_ASDFRc_AREF.txt (record 12553), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: hydrated volcanic tuff — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(3909342858, 10100000000), Ratio::from_parts(3439114098, 10000000000), Ratio::from_parts(3033061433, 12000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Hydrated_Volc_Tuff_CU01-4A_ASDFRc_AREF.txt (record 12553), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: hydrated volcanic tuff — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "brick",
@@ -5544,8 +5552,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &BRICK_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(26324394910, 150000000000), Ratio::from_parts(8477981456, 100000000000), Ratio::from_parts(6664528081, 120000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Brick_GDS349_Paving_Red_ASDFRa_AREF.txt (record 18341), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: fired clay brick — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(17173116240, 101000000000), Ratio::from_parts(8477981456, 100000000000), Ratio::from_parts(6664528081, 120000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Brick_GDS349_Paving_Red_ASDFRa_AREF.txt (record 18341), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: fired clay brick — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "wood_beam",
@@ -5558,8 +5566,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &WOOD_BEAM_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(73206790570, 150000000000), Ratio::from_parts(32948007400, 100000000000), Ratio::from_parts(23714098311, 120000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Wood_Beam_GDS363_Nw_Pine_2X4_ASDFRa_AREF.txt (record 20779), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: sawn softwood beam — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(46509426660, 101000000000), Ratio::from_parts(32948007400, 100000000000), Ratio::from_parts(23714098311, 120000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Wood_Beam_GDS363_Nw_Pine_2X4_ASDFRa_AREF.txt (record 20779), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: sawn softwood beam — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "cotton_fabric",
@@ -5572,8 +5580,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &COTTON_FABRIC_VALUES,
         value_scale: 8,
-        visible: (Ratio::from_parts(9346697173, 15000000000), Ratio::from_parts(5986542009, 10000000000), Ratio::from_parts(6261226348, 12000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Cotton_Fabric_GDS437_White_ASDFRa_AREF.txt (record 18587), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: cotton fabric, a spun plant fibre — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(6243158471, 10100000000), Ratio::from_parts(5986542009, 10000000000), Ratio::from_parts(6261226348, 12000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Cotton_Fabric_GDS437_White_ASDFRa_AREF.txt (record 18587), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: cotton fabric, a spun plant fibre — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "cheatgrass",
@@ -5586,8 +5594,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &CHEATGRASS_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(11986698780, 73000000000), Ratio::from_parts(4301322407, 50000000000), Ratio::from_parts(2609802688, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Cheatgrass_ANP92-11A_BECKa_AREF.txt (record 21030), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: cheatgrass, a forage grass — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(6577502640, 48000000000), Ratio::from_parts(4301322407, 50000000000), Ratio::from_parts(2609802688, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Cheatgrass_ANP92-11A_BECKa_AREF.txt (record 21030), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: cheatgrass, a forage grass — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "kerogen",
@@ -5600,8 +5608,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &KEROGEN_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(1670676603, 73000000000), Ratio::from_parts(780571747, 50000000000), Ratio::from_parts(701149872, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Kerogen_BK-Cornell_BECKa_AREF.txt (record 18870), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: kerogen, the organic matter of coal — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(988681399, 48000000000), Ratio::from_parts(780571747, 50000000000), Ratio::from_parts(701149872, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Kerogen_BK-Cornell_BECKa_AREF.txt (record 18870), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: kerogen, the organic matter of coal — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "lazurite",
@@ -5614,8 +5622,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &LAZURITE_VALUES,
         value_scale: 9,
-        visible: (Ratio::from_parts(17017533480, 73000000000), Ratio::from_parts(9478580540, 50000000000), Ratio::from_parts(17854488680, 54000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Lazurite_HS418.3B_BECKb_AREF.txt (record 6322), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: lazurite, the blue sulfide mineral of lapis lazuli — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(8262364070, 48000000000), Ratio::from_parts(9478580540, 50000000000), Ratio::from_parts(17854488680, 54000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Lazurite_HS418.3B_BECKb_AREF.txt (record 6322), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: lazurite, the blue sulfide mineral of lapis lazuli — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
     Spectrum {
         id: "tincalconite",
@@ -5628,8 +5636,8 @@ pub static SAMPLES: &[Spectrum] = &[
         wavelength_scale: 8,
         values: &TINCALCONITE_VALUES,
         value_scale: 10,
-        visible: (Ratio::from_parts(685386741000, 730000000000), Ratio::from_parts(464899397400, 500000000000), Ratio::from_parts(481604755200, 540000000000)),
-        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Tincalconite_GDS142_BECKa_AREF.txt (record 10660), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: tincalconite, the dehydration product of borax — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.75 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
+        visible: (Ratio::from_parts(449253077400, 480000000000), Ratio::from_parts(464899397400, 500000000000), Ratio::from_parts(481604755200, 540000000000)),
+        source: "USGS Spectral Library v7 (Kokaly et al. 2017), splib07a_Tincalconite_GDS142_BECKa_AREF.txt (record 10660), https://www.sciencebase.gov/catalog/item/586e8c88e4b0f5ce109fccae: tincalconite, the dehydration product of borax — the visible-window mean over the sample's own channel grid (B 0.38–0.50, G 0.50–0.60, R 0.60–0.70 µm, lower bound inclusive), exact rationals; the whole sampled spectrum is retained",
     },
 ];
 

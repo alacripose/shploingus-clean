@@ -1,0 +1,137 @@
+== the side rule (a neighbour that is not solid)
+   subject: src/mesh.rs ::                     if solid_at(cube, footprint, x + dx, y + dy, z + dz)? {
+                        continue;
+                    }
+   bit: thread 'mesh::tests::a_flat_worlds_chunk_is_one_plane_and_its_edges_are_the_rings_business' (13712) panicked at src\mesh.rs:2093:9:
+   bit: assertion `left == right` failed: [Quad { layer: Solid, axis: X, facing: -1, plane: 0, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 1, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 2, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 3, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 4, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 5, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 6, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 7, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 8, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 9, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 10, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 11, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 12, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 13, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 14, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 15, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 16, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 17, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 18, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 19, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 20, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 21, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 22, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 23, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 24, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 25, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 26, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 27, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 28, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 29, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 30, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: -1, plane: 31, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 1, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 2, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 3, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 4, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 5, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 6, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 7, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 8, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 9, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 10, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 11, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 12, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 13, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 14, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 15, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 16, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 17, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 18, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 19, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 20, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 21, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 22, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 23, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 24, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 25, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 26, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 27, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 28, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 29, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 30, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 31, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: X, facing: 1, plane: 32, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 0, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 1, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 2, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 3, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 4, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 5, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 6, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 7, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 8, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 9, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 10, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 11, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 12, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 13, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 14, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 15, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 16, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 17, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 18, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 19, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 20, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 21, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 22, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 23, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 24, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 25, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 26, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 27, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 28, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 29, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 30, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: -1, plane: 31, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 1, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 2, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 3, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 4, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 5, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 6, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 7, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 8, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 9, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 10, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 11, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 12, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 13, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 14, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 15, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 16, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 17, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 18, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 19, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 20, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 21, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 22, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 23, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 24, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 25, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 26, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 27, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 28, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 29, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 30, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 31, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 32, u: 0, v: 0, span_u: 32, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Z, facing: -1, plane: 0, u: 0, v: 0, span_u: 32, span_v: 32, material: MaterialId(1) }, Quad { layer: Solid, axis: Z, facing: -1, plane: 1, u: 0, v: 0, span_u: 32, span_v: 32, material: MaterialId(1) }, Quad { layer: Solid, axis: Z, facing: -1, plane: 2, u: 0, v: 0, span_u: 32, span_v: 32, material: MaterialId(1) }, Quad { layer: Solid, axis: Z, facing: -1, plane: 3, u: 0, v: 0, span_u: 32, span_v: 32, material: MaterialId(1) }, Quad { layer: Solid, axis: Z, facing: 1, plane: 1, u: 0, v: 0, span_u: 32, span_v: 32, material: MaterialId(1) }, Quad { layer: Solid, axis: Z, facing: 1, plane: 2, u: 0, v: 0, span_u: 32, span_v: 32, material: MaterialId(1) }, Quad { layer: Solid, axis: Z, facing: 1, plane: 3, u: 0, v: 0, span_u: 32, span_v: 32, material: MaterialId(1) }, Quad { layer: Solid, axis: Z, facing: 1, plane: 4, u: 0, v: 0, span_u: 32, span_v: 32, material: MaterialId(1) }]
+   bit: error: test failed, to rerun pass `--lib`
+== the water's own surface (the cell above holds none)
+   subject: src/mesh.rs :: if cell.water_um > 0 && !water_at(cube, footprint, x, y, z + 1)? {
+   bit: thread 'mesh::tests::two_cells_merge_only_when_layer_plane_and_material_agree' (24264) panicked at src\mesh.rs:2194:9:
+   bit: assertion `left == right` failed: the water's own top is one rectangle: [Quad { layer: Water, axis: Z, facing: 1, plane: 5, u: 0, v: 0, span_u: 16, span_v: 32, material: MaterialId(5) }, Quad { layer: Water, axis: Z, facing: 1, plane: 6, u: 0, v: 0, span_u: 16, span_v: 32, material: MaterialId(5) }, Quad { layer: Water, axis: Z, facing: 1, plane: 7, u: 0, v: 0, span_u: 16, span_v: 32, material: MaterialId(5) }]
+   bit: error: test failed, to rerun pass `--lib`
+== the merge's group key (layer · axis · facing · plane · material)
+   subject: src/mesh.rs :: .entry((face.layer, face.axis, face.facing, face.plane, face.material))
+   bit: thread 'mesh::tests::a_step_is_a_wall_and_not_a_hole' (23556) panicked at src\mesh.rs:2142:32:
+   bit: error: test failed, to rerun pass `--lib`
+== the merge counts only rectangles that grew
+   subject: src/mesh.rs :: if (width as u64) * (depth as u64) > 1 {
+   bit: thread 'mesh::tests::merge_tiles_every_group_exactly_whatever_the_pattern' (3212) panicked at src\mesh.rs:2882:9:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--lib`
+== the columns the world owns (the contract's own refusal)
+   subject: src/mesh.rs :: let (Some(lowest_ground), Some(highest_cell)) = (lowest_ground, highest_cell) else {
+   bit: thread 'mesh::tests::a_chunk_with_no_column_under_the_world_is_refused_by_name' (12340) panicked at src\mesh.rs:2737:14:
+   bit: error: test failed, to rerun pass `--lib`
+== the key is the cells' own identity
+   subject: src/mesh.rs :: self.merge_into(GeometryKey::of_state(cube.digest(), chunk, level), faces, count, effort, done)
+   bit: thread 'mesh::tests::the_laws_own_step_re_keys_the_mesh_and_moves_no_ground_face' (22756) panicked at src\mesh.rs:2756:9:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--lib`
+== the render ladder does not coarsen a cell world
+   subject: src/mesh.rs :: if level != Level::ALL[0] {
+            ledger.refusals += 1;
+            return Err(cell_level_refusal(level));
+        }
+   bit: thread 'mesh::tests::a_level_above_zero_on_a_cell_world_is_refused_by_name' (26024) panicked at src\mesh.rs:2712:14:
+   bit: error: test failed, to rerun pass `--lib`
+== the ledger's face count is the sweep's
+   subject: src/mesh.rs :: done.faces += count.total_faces();
+   bit: thread 'mesh::tests::the_ledger_equals_an_independent_recount' (18832) panicked at src\mesh.rs:2488:9:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--lib`
+== the water face is the ladder's declared water
+   subject: src/mesh.rs ::                         material: water,
+                    });
+   bit: thread 'mesh::tests::two_cells_merge_only_when_layer_plane_and_material_agree' (7352) panicked at src\mesh.rs:2198:9:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--lib`
+== the quad ceiling is checked after the merge
+   subject: src/mesh.rs :: if done.quads > effort.budget.max_quads {
+   bit: thread 'mesh::tests::a_budget_that_cannot_be_met_is_refused_with_its_numbers' (10508) panicked at src\mesh.rs:2573:14:
+   bit: error: test failed, to rerun pass `--lib`
+== a NaN surface is refused with its own field
+   subject: src/mesh.rs :: if let Some(value) = plane.iter().find(|value| !value.is_finite()) {
+   bit: thread 'mesh::tests::a_stages_refusal_passes_through_the_mesh_seam' (16980) panicked at src\mesh.rs:2258:9:
+   bit: error: test failed, to rerun pass `--lib`
+== the reading's key is the world's own truth
+   subject: src/mesh.rs :: self.merge_into(GeometryKey::new(world, chunk, level), faces, count, effort, done)
+   bit: thread 'mesh::tests::a_stale_entry_is_rebuilt_and_never_served' (11268) panicked at src\mesh.rs:2301:9:
+   bit: assertion `left == right` failed
+   bit: error: test failed, to rerun pass `--lib`
+== the reading reads the ring it declares
+   subject: src/mesh.rs ::         let halo = Patch::new(
+            VoxelPos::new(origin.x - MESH_RING, origin.y - MESH_RING, origin.z),
+            CHUNK_SIDE as u32 + 2 * MESH_RING as u32,
+        )?;
+   bit: thread 'mesh::tests::a_flat_worlds_chunk_is_one_plane_and_its_edges_are_the_rings_business' (24372) panicked at src\mesh.rs:2093:9:
+   bit: assertion `left == right` failed: [Quad { layer: Solid, axis: X, facing: 1, plane: 31, u: 0, v: 0, span_u: 31, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Y, facing: 1, plane: 31, u: 0, v: 0, span_u: 31, span_v: 4, material: MaterialId(1) }, Quad { layer: Solid, axis: Z, facing: 1, plane: 4, u: 0, v: 0, span_u: 31, span_v: 31, material: MaterialId(1) }]
+   bit: error: test failed, to rerun pass `--lib`
+== halo_owned tells the truth about a world that is only the chunk
+   subject: src/mesh.rs ::                 if !columns_hold(own, x, y) {
+                    return false;
+                }
+   bit: thread 'mesh::tests::a_flat_worlds_chunk_is_one_plane_and_its_edges_are_the_rings_business' (17792) panicked at src\mesh.rs:2112:9:
+   bit: error: test failed, to rerun pass `--lib`
+== the footprint's own floor is interior by declaration
+   subject: src/mesh.rs ::     if z == footprint.floor_z() - MESH_RING {
+        return Ok(true);
+    }
+   bit: U4 face recount: ledger == an independent sweep of the same cells = false: 1024 column(s) swept, 11054 solid cell(s), 1177 solid + 112 water faces, 19
+   exit: 1
+== the span's ceiling is a band above the highest cell
+   subject: src/mesh.rs :: let ceiling_z = (highest_cell.div_euclid(CHUNK_SIDE) + 1) * CHUNK_SIDE;
+   bit: thread 'one_footprint_stitches_chunks_and_its_faces_ignore_the_world_beyond_the_ring' (2948) panicked at tests\u4_geometry.rs:629:5:
+   bit: error: test failed, to rerun pass `--test u4_geometry`
+== a region is one footprint over the rectangle
+   subject: src/mesh.rs :: let side = CHUNK_SIDE as u32 * chunks;
+   bit: thread 'one_footprint_stitches_chunks_and_its_faces_ignore_the_world_beyond_the_ring' (23488) panicked at tests\u4_geometry.rs:615:5:
+   bit: assertion `left == right` failed: every chunk's columns were swept once, in one pass
+   bit: error: test failed, to rerun pass `--test u4_geometry`
+== the cells' door meshes the chunk's own footprint
+   subject: src/mesh.rs :: let footprint = Footprint::over(cube, footprint)?;
+   bit: thread 'mesh::tests::a_step_is_a_wall_and_not_a_hole' (20024) panicked at src\mesh.rs:2162:9:
+   bit: assertion `left == right` failed: one world, two doors: the same list
+   bit: error: test failed, to rerun pass `--lib`
+== the two doors are compared over the reading's own world
+   subject: src/mesh.rs ::         let halo = Patch::new(
+            VoxelPos::new(origin.x - MESH_RING, origin.y - MESH_RING, origin.z),
+            CHUNK_SIDE as u32 + 2 * MESH_RING as u32,
+        )?;
+   bit: U4 one world, two doors: the same chunk of the world the reading reads through both doors = false; the reading swept 10399 cell(s) in 1859 faces, the 
+   exit: 1
+== both sides of the seam name the same world plane
+   subject: src/evidence.rs ::             .filter(|quad| {
+                (quad.axis == Axis::X && quad.plane == seam_x)
+                    || (quad.axis == Axis::Y && quad.plane == seam_y)
+            })
+   bit: U4 region seed=1592639215 tick=0 origin=(0, 0, 0) 2 chunk(s) level=0: footprint 64×64 span 64..96 (1 band(s), 131072 cell(s)) → 44187 cells swept �
+   exit: 1
+== a region's faces are the chunks' faces summed
+   subject: src/evidence.rs :: derive_cubic(
+            &region_world,
+            at,
+   bit: U4 region seed=1592639215 tick=0 origin=(0, 0, 0) 2 chunk(s) level=0: footprint 64×64 span 64..96 (1 band(s), 131072 cell(s)) → 44187 cells swept �
+   exit: 1
+== the declared quickstart digest is the document on disk
+   subject: src/gameplay.rs :: pub const U4_QUICKSTART_DIGEST: &str = "ca00f1be
+   bit: thread 'gameplay::tests::the_documents_the_rows_cite_are_the_ones_on_the_disk' (24568) panicked at src\gameplay.rs:1909:13:
+   bit: assertion `left == right` failed: clean-room/specs/004-u4-mesh-stream-work/quickstart.md is no longer the document the rows declare: the tree must refuse it by name
+   bit: error: test failed, to rerun pass `--lib`
+
+== the rebuilt binary, against the run's own start
+   exit: 0
+   its stdout and stderr are the start-of-run bytes byte for byte
+   6c77b9adad8b6d2f63f250fa870eebde2d95f31a149705e0def58e6b88b68938 */tmp/tmp.6oYjfHvM4l/rebuilt-stdout.txt
+   and the dated capture final-stdout.txt still describes these bytes exactly
+
+every guard bit by name, and every touched file came back byte-exact:
+97637e6d2cc7a7199b4db278816d3174f45c75b1005137cda2b1c616750df78c *src/mesh.rs
+71302cfef65f8903befce04e5b3a8921b09bd613f1d8a9a372ef46b62bd84124 *src/evidence.rs
+de62834da3a9891a58a8c50ab835fa1c7b420323b7ebe22c8f6f0089a29b1996 *src/systems.rs
+04a6e2898a8a14dd5b554989b3d9a008d66aeeb43e59e9ce641db88e89b9d585 *src/world.rs
+4dd6bd5abfed27a6d8ace3e8a7e2aebc926ae0c8489b1f698b0e04bd386e9b6c *src/gameplay.rs
+f28c2aff13067df786cefdb5e9409fdaf2b88556c7e44afc0daff8f970bdab81 *tests/u4_geometry.rs
+8eca82b5784e913ee24f71995a4df8229ba0674cca39f048f64f17e4adad2941 *tests/u6_bridge.rs
+case logs kept in the scratch directory (not copied into the tree): tmp.6oYjfHvM4l
+HARNESS EXIT: 0

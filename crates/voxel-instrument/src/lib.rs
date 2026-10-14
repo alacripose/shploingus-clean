@@ -30,8 +30,17 @@
 //! handed a reading about a **different material** is refused, because a gauge
 //! that silently compares the wrong item is indistinguishable from a correct one
 //! until somebody builds a factory on it.
+//!
+//! **The audit, 2026-10-10.** 1 417 lines, 4 modules, 69 public items, 33 tests, and **read by
+//! nobody**: `census::orphan_libraries` prints it in every build receipt, and its only mentions
+//! elsewhere in the tree are comments citing `Sensor` as "the one sensor concept". So this is 1 417
+//! lines and 33 tests that **no run in the game exercises**, on slots C-25 records as built early.
+//! The crate is not wrong; it is unreachable. **Owed:** a consumer, or the ruling that content may
+//! precede the world that uses it — said on the record, because today the only thing that knows is a
+//! build-report line.
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 pub mod band;
 pub mod gauge_wall;

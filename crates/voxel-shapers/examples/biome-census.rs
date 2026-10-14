@@ -1,20 +1,20 @@
 //! **PROTOTYPE — THROWAWAY.** Evidence for the ECO-0001 follow-up.
 //!
-//! Question: with the biome classified the way `column.rs` now does it — on
+//! Question: with the biome classified the way the world now does it — on
 //! **biotemperature** and **mean annual precipitation**, sampled from the ticked
 //! shapers — what biomes does the default world actually contain?
 //!
-//! `column::tests::the_pipeline_covers_biomes_and_lithologies_across_a_world` went
-//! red after ECO-0001: its 12 km diagonal saw `{Tundra, BorealForest}`. This
-//! sweeps the world as a grid and re-derives the warmest columns across ticks —
-//! **sampling the shapers, not re-deriving them analytically** — so the test's
-//! expectation is decided by what the world says, not by what a formula suggests.
+//! The coverage test this was written for went red after ECO-0001: its 12 km diagonal
+//! saw `{Tundra, BorealForest}`. This sweeps the world as a grid and re-derives the
+//! warmest columns across ticks — **sampling the shapers, not re-deriving them
+//! analytically** — so the answer is decided by what the world says, not by what a
+//! formula suggests.
 
 use std::collections::BTreeMap;
 use voxel_shapers::climate::YEAR_TICKS;
-use voxel_shapers::column::derive;
 use voxel_shapers::ecology::{self, Biome};
 use voxel_shapers::spec::{Config, WorldSpec};
+use voxel_shapers::terrain;
 
 /// What one pass over positions collected.
 struct Census {
@@ -39,16 +39,22 @@ impl Census {
         }
     }
 
-    fn push(&mut self, spec: &WorldSpec, x: f64, z: f64, tick: u64, hydro: usize) {
-        let c = derive(spec, x, z, tick, hydro);
+    /// One column, classified the way the world classifies it: the two Holdridge
+    /// aggregates, sampled from the ticked shapers, and the formation they name. This
+    /// is the composition the field plane's `Climate` law performs, read here directly
+    /// because a census is exactly the caller that wants the parts.
+    fn push(&mut self, spec: &WorldSpec, x: f64, z: f64, tick: u64) {
+        let elevation_m = terrain::elevation_m(spec, x, z);
         let (biotemperature_c, mean_annual_precipitation_mm) =
-            ecology::holdridge_inputs(spec, x, z, c.terrain.elevation_m, tick);
-        *self.biomes.entry(c.biome).or_insert(0) += 1;
+            ecology::holdridge_inputs(spec, x, z, elevation_m, tick);
+        let biome =
+            ecology::biome_at(spec, elevation_m, biotemperature_c, mean_annual_precipitation_mm);
+        *self.biomes.entry(biome).or_insert(0) += 1;
         self.min_biotemperature = self.min_biotemperature.min(biotemperature_c);
         self.max_biotemperature = self.max_biotemperature.max(biotemperature_c);
         self.min_map_mm = self.min_map_mm.min(mean_annual_precipitation_mm);
         self.max_map_mm = self.max_map_mm.max(mean_annual_precipitation_mm);
-        self.columns.push((biotemperature_c, mean_annual_precipitation_mm, x, z, c.biome));
+        self.columns.push((biotemperature_c, mean_annual_precipitation_mm, x, z, biome));
     }
 
     fn report(&mut self, label: &str, warmest: usize) {
@@ -79,13 +85,12 @@ impl Census {
 
 fn main() {
     let spec = WorldSpec::new(2468, Config::default());
-    let hydro = 2;
 
     // The failing test's probe, exactly.
     let mut line = Census::new();
     let mut x = -6000.0;
     while x < 6000.0 {
-        line.push(&spec, x, x * 0.7, 0, hydro);
+        line.push(&spec, x, x * 0.7, 0);
         x += 300.0;
     }
     line.report(
@@ -99,7 +104,7 @@ fn main() {
     while x <= 6000.0 {
         let mut z = -6000.0;
         while z <= 6000.0 {
-            grid.push(&spec, x, z, 0, hydro);
+            grid.push(&spec, x, z, 0);
             z += 300.0;
         }
         x += 300.0;
@@ -115,7 +120,7 @@ fn main() {
     while x <= 6000.0 {
         let mut z = -6000.0;
         while z <= 6000.0 {
-            fine.push(&spec, x, z, 0, hydro);
+            fine.push(&spec, x, z, 0);
             z += 100.0;
         }
         x += 100.0;
@@ -131,8 +136,16 @@ fn main() {
     for (bt, map, x, z, _) in held.iter().take(5) {
         let mut biomes = Vec::new();
         for tick in [0u64, YEAR_TICKS / 4, YEAR_TICKS / 2, YEAR_TICKS * 3 / 4, YEAR_TICKS * 4 + 7] {
-            let c = derive(&spec, *x, *z, tick, hydro);
-            biomes.push(c.biome.name());
+            let elevation_m = terrain::elevation_m(&spec, *x, *z);
+            let (biotemperature_c, mean_annual_precipitation_mm) =
+                ecology::holdridge_inputs(&spec, *x, *z, elevation_m, tick);
+            let biome = ecology::biome_at(
+                &spec,
+                elevation_m,
+                biotemperature_c,
+                mean_annual_precipitation_mm,
+            );
+            biomes.push(biome.name());
         }
         println!(
             "    ({x:>7.0}, {z:>7.0})  biotemperature {bt:>6.3} °C  MAP {map:>8.1} mm  biomes: {}",

@@ -94,12 +94,20 @@
 //!   design system's target floor and separation rule are enforced by
 //!   `voxel-ui`'s own tests and have no drawn consumer yet, which is recorded as
 //!   a debt rather than satisfied by drawing a button that does nothing.
+//!
+//! **The audit, 2026-10-10.** 2 990 lines of window, input and frame orchestration behind **one**
+//! test, in the crate that decides what the player sees. Its build script is the gate: it measures the
+//! sixteen crates, the record, the disk and the prose ratchet on every build and refuses the build when
+//! any of them is wrong. **Nothing measures this file's frame loop**, which is also the missing half of
+//! the "random hitches" report. **Owed:** a frame-timing measurement — an instrument, not a guess —
+//! because the one thing a player notices immediately is the one thing the gate cannot see.
 
 #![forbid(unsafe_code)]
+#![warn(missing_docs)]
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use voxel_appearance::{sky::SkyInputs, DetailLattice};
 use voxel_client::shell::notifications::{write_the_gate_queue, NotificationStream};
@@ -117,9 +125,9 @@ use voxel_client::{
     WorldPipeline, DEPTH_FORMAT,
 };
 use voxel_model::coord::CHUNK_SIDE;
-use voxel_model::{ChunkPos, Face, MaterialId};
-use voxel_mesh::raycast::Ray;
-use voxel_shapers::column::materials;
+use voxel_model::{ChunkPos, DisplacementField, Face, MaterialId};
+use voxel_mesh::{raycast::Ray, RefineConfig};
+use voxel_shapers::materials;
 use voxel_shapers::stages::Stage;
 use voxel_shapers::WorldSpec;
 use voxel_stream::WorldSource;
@@ -236,6 +244,25 @@ use voxel_client::game::{GAME_TICK as TICK, GAME_WINDOW as WINDOW};
 
 const SHELL_PACKAGE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/alpha-shell.shpkg"));
 const PACKAGE_GATE: &str = include_str!(concat!(env!("OUT_DIR"), "/alpha-shell.gate"));
+
+/// **The refinement's declared rate** (C-44): vertices along one edge of a **block's** face.
+///
+/// `4` is one sample per subvoxel, so a displaced face is drawn at the stored level's own
+/// resolution and every cell of the block is a cell of the picture. The addressed level's
+/// own 256 is reachable the same way and is refused by **price** rather than by policy:
+/// one block face at 256 samples a side is 131 072 triangles, which is a number to say out
+/// loud rather than to spend.
+const REFINE_SAMPLES_PER_BLOCK: u16 = 4;
+
+/// The most triangles one merged quad may refine to, and it is **derived rather than
+/// chosen**: the largest rectangle a chunk can hold is a whole chunk face,
+/// [`voxel_mesh::SUBVOXEL_CHUNK_SIDE`] subvoxels a side, and at the rate above that is
+/// `2·n²`. A cap below it would refuse a quad the merge can legitimately emit — a refusal
+/// with a name, but of something the world really has; a cap above it would be a number
+/// nobody ever spent.
+const REFINE_MAX_TRIANGLES_PER_QUAD: u32 = 2
+    * voxel_mesh::SUBVOXEL_CHUNK_SIDE as u32
+    * voxel_mesh::SUBVOXEL_CHUNK_SIDE as u32;
 
 fn main() {
     // Fail before opening the client if its required data package cannot load.
@@ -596,6 +623,17 @@ fn depth_target(
 struct App {
     graphics: Option<Graphics>,
     streamer: Option<Streamer>,
+    /// **The 256 level's physical declaration, and the rate it is refined at** (C-44).
+    ///
+    /// Both are declared properties of the pipeline in the sense sea level is, so they are
+    /// built once here rather than derived per frame: `Scene::build` reads them, and what
+    /// comes back is a frame whose planar rectangles stay 24-byte records and whose bent
+    /// faces pay vertices. Empty today, because the world is placed as whole voxels and
+    /// declaring relief it does not contain is the one thing this layer may not do — so the
+    /// stage is wired in and costs nothing, and the first shaper placed at generation time
+    /// reaches the picture without a change here.
+    displacement: DisplacementField,
+    refine: RefineConfig,
     /// The shell's window manager, mounted from the package `build.rs` compiled. It is not an
     /// `Option`: a window with no shell has no bar, no windows and no HUD — the HUD is the
     /// pinned subset of the same set (H-9.8) — so an app without one is an app with nothing
@@ -712,25 +750,86 @@ struct App {
     /// `Sky::at` per frame, and it made the world's light a function of the frame rate
     /// rather than of the tick.
     rig_at_tick: Option<u64>,
-    /// **The cloud field, held between atmosphere cadences** (C-179).
+    /// **The exposure grade the frame's light field is read at** — the `Daylight`'s own, kept
+    /// beside the field for the same reason the field is kept: the measurement is physical and the
+    /// grade is the frame's, so the two meet once, where the measurement becomes a vertex
+    /// ([`voxel_client::skylight::exposed_bands`]). `1.0` until the first `Daylight` lands, which is
+    /// the grade a boot frame's own sky is drawn at.
+    light_grade: f64,
+    /// **The world's own light, per cell, as the frame reads it** ([`voxel_client::CellField`]).
     ///
-    /// The model is the expensive half — a terrain, climate, weather and solar evaluation per
-    /// asked column — so it is refreshed on the same `Cadence::Water` the atmosphere is and
-    /// held in between, exactly as the rig and the sky table are. `None` until the first due
-    /// tick, which is why a first frame draws no cloud rather than an invented one.
-    clouds: Option<voxel_client::CloudField>,
-    /// **The cloud's own tree, held between the frames that can change it.**
+    /// The rig is a four-direction toy light; this is the measurement. It is rebuilt on the
+    /// atmosphere's cadence — the same tick the rig is — and **kept between cadences**, because a
+    /// shadow march is hundreds of octree spans and re-marching the visible world every frame would
+    /// make the picture's cost the frame rate's. `None` while the atmosphere is refused, which is
+    /// the rig's own refusal and not a second one: a world with no sky has no sky light to measure,
+    /// and the rig it falls back to is the light this game was lit by before the field existed.
     ///
-    /// The tree is a function of the held field, of the eye **snapped to the cloud domain's own
+    /// **A `RefCell` because a corner is where the measurement attaches**: `Scene::build_with_light`
+    /// asks a `Fn` for one cell at a time, and the field's own answers are a `&mut` cache. The
+    /// borrow is taken and dropped inside that one cell's lookup, so no `&mut` is held across the
+    /// scene build.
+    light_field: Option<std::cell::RefCell<voxel_client::CellField>>,
+    /// The field's own counters, summed since the last report: cells marched, corners answered from
+    /// the frame's own measurements, corners a step behind the light, corners rigged, and hops past
+    /// a chunk the streamer does not hold. Reset when they are printed.
+    light_totals: [u64; 5],
+    /// **The astronomical bodies the frame draws** (C-184), as records in the world's own units.
+    ///
+    /// They are held here rather than written into a uniform because a body is **geometry**: the same
+    /// array a chunk's rectangles travel in, drawn between the terrain and the cloud, with the phase
+    /// coming out of the pixels (`fs_body`'s sphere law). Written from the same `Daylight` the rig and
+    /// the sky model are, so the light, the sky and the body in it cannot describe different skies — and
+    /// **kept when a tick derives no daylight**, which is `write_rig`'s own hold rather than a black
+    /// frame.
+    bodies: Vec<voxel_client::quad::BodyRecord>,
+    /// **The cloud's own derivation, on its own thread** ([`CloudWorker`]).
+    ///
+    /// The field and the tree behind it are 4 225 model asks and an octree fill, both pure
+    /// functions of the key below. They used to be derived *by the frame that drew them*, every
+    /// four ticks, and measured 31–60 ms of every frame with stalls to 389 ms — the stutter the
+    /// player reported. The frame now asks and adopts; the cadence, the inputs and the values are
+    /// unchanged.
+    cloud_worker: CloudWorker,
+    /// **The cloud tree in hand, and the key it answers.**
+    ///
+    /// A tree is a function of the field's tick, of the eye **snapped to the cloud domain's own
     /// sample lattice** ([`voxel_client::CLOUD_SAMPLE_M`]) and of the pixel angle — not of the
     /// frame. Rebuilding it per frame is what made the first octree version the cost it was: a
     /// measured **1,658 ms** of the frame's own time, for a picture whose rectangles were already
-    /// cheaper than the lattice it replaced. So it is held the way the field, the rig and the sky
-    /// table are held, and rebuilt only when something it is a function of actually moves.
+    /// cheaper than the lattice it replaced. So it is held the way the rig and the sky table are
+    /// held, and rebuilt only when something it is a function of actually moves — and `None` until
+    /// the first tree is adopted, which is why a first frame draws no cloud rather than an
+    /// invented one.
     cloud_tree: Option<voxel_client::CloudCubes>,
-    /// What the held tree was built from: the field's own tick, the eye snapped to
+    /// **The tree the one above is replacing**, held for one cadence so the sky can be a *join* of
+    /// two derivations rather than a swap between them.
+    ///
+    /// A tree is asked for once per cloud cadence — [`voxel_client::cloud_cubes::cadence_ticks`],
+    /// the ladder's `Cadence::Sediment` — and drawn every frame, so the picture steps when a new
+    /// derivation lands rather than continuously: visible as a cloud that pops at the moment a
+    /// cell's water crosses the cut, and as a whole sky that jumps when the eye crosses a sample
+    /// cell or the rung changes. This is the outgoing half of that step. It is **one** tree and
+    /// never a queue:
+    /// the picture is the two most recent derivations, and an older one is a staler sky rather than
+    /// a third share of the light. The weights are read from the world's own ticks
+    /// ([`voxel_client::cloud_cubes::fade_weight`]) so a dropped frame cannot change the fade.
+    cloud_tree_previous: Option<voxel_client::CloudCubes>,
+    /// **The tick the tree in hand became the tree in hand** — the dissolve's own anchor.
+    ///
+    /// It used to be the key's tick (the atmosphere's cadence tick), and that was wrong in the
+    /// two cases the doc above names. The key moves for reasons that are *not* the tick — the eye
+    /// crossing a sample cell or the rung changing — and those derivations carry the **same**
+    /// cadence tick as the tree they replace. Read from that tick, the incoming tree's weight was
+    /// already what its predecessor's had reached, so it arrived at full weight on the frame it
+    /// landed: the cross-fade existed in the shader and never once ran. Measured from the adoption
+    /// instead, a tree always starts its dissolve at zero, and the dissolve ends as the next
+    /// derivation falls due — which is the phase lock the cadence was for, now kept even when the
+    /// worker is a tick or two behind.
+    cloud_tree_at_tick: Option<u64>,
+    /// What the tree in hand was built from: the field's own tick, the eye snapped to
     /// [`voxel_client::CLOUD_SAMPLE_M`] on each axis, and the pixel angle's own bits.
-    cloud_tree_key: Option<(u64, [i64; 3], u32)>,
+    cloud_tree_key: Option<CloudKey>,
     /// The sky's **turbidity**, sampled on [`voxel_shapers::stages::Stage::Weather`]'s
     /// cadence — `Cadence::Water`, every 4 ticks — and read from **the stage's rate**:
     /// the onset layer's answer, so a rain spell hazes the air it is falling through
@@ -773,7 +872,359 @@ struct App {
     console_dropped: usize,
     /// The last shell-drawing reading logged, so it is a record **when it changes** rather than
     /// once per frame: a number that is the same every frame is a noise floor, not a report.
+    /// **The frame-timing instrument**, off unless `SHPLOINGUS_FRAMES` asks for it
+    /// ([`FrameTiming`]). It is held here rather than in a side table so that a frame's own
+    /// report and the frame loop's own state share one owner.
+    timing: FrameTiming,
     drawing: Option<String>,
+}
+
+/// **The frame's own cost, split by what the frame loop does.**
+///
+/// This file's audit (2026-10-10) ends with the debt this pays: *"Nothing measures this
+/// file's frame loop… **Owed:** a frame-timing measurement — an instrument, not a guess."*
+/// The sections are the frame loop's own steps **in the order it runs them**, and each is
+/// timed around the code the running program executes rather than around a copy of it.
+#[derive(Clone, Copy, Default)]
+struct FrameCost {
+    /// The clock, the shell's tick, and the process roster — one step per tick.
+    roster: Duration,
+    /// The atmosphere inputs, `Daylight` derived and the rig written: the solar search and
+    /// the light's own upload.
+    sky_light: Duration,
+    /// **The dome table's 4 096 directional radiance evaluations**, and the two uploads that
+    /// follow them.
+    sky_dome: Duration,
+    /// The judgement stream and the live-reload package watch. *(Not the judge: `voxel-von`
+    /// ran in the gate pass, before the window opened.)*
+    judge: Duration,
+    /// The console's read-back onto this process's own output.
+    api: Duration,
+    /// The player's step, and the drawn eye placed from it.
+    walk: Duration,
+    /// The streamer's pump: what it asks for, takes, refuses and evicts.
+    stream: Duration,
+    /// **Every resident chunk's rectangles** copied into the frame's own record array, and the
+    /// ask that hands the cloud's own derivation to its worker. *(The cloud field and its tree
+    /// are no longer in this split: they are not this thread's work — see [`CloudWorker`].)*
+    ///
+    /// **And, when the world's light field is live, this is where every visible corner is
+    /// measured**: the shadow marches run inside the scene build, because a corner is the address a
+    /// per-cell measurement attaches to. So this step carries the field's cost as well as the
+    /// geometry's, and the field's own counters are printed beside the frame-rate line rather than
+    /// invented here.
+    scene: Duration,
+    /// The water query, the camera effects and the change view's own projection.
+    camera: Duration,
+    /// The swapchain image and the shell: the panels, the lanes, the HUD's preparation.
+    shell: Duration,
+    /// The passes, the submit and the present — the world's draw, the HUD's, and the wait.
+    draw: Duration,
+    /// The whole frame, from its first clock read to its present.
+    total: Duration,
+}
+
+impl FrameCost {
+    /// One duration, in milliseconds, as every line of this report prints it.
+    fn ms(d: Duration) -> f64 {
+        d.as_secs_f64() * 1000.0
+    }
+
+    /// The split as one line: **every section**, so a report is the whole of it rather than
+    /// the interesting half of it.
+    fn report(&self) -> String {
+        format!(
+            "roster {:.2} | sky-light {:.2} | sky-dome {:.2} | judge {:.2} \
+             | api {:.2} | walk {:.2} | stream {:.2} | scene {:.2} \
+             | camera {:.2} | shell {:.2} | draw {:.2}",
+            Self::ms(self.roster),
+            Self::ms(self.sky_light),
+            Self::ms(self.sky_dome),
+            Self::ms(self.judge),
+            Self::ms(self.api),
+            Self::ms(self.walk),
+            Self::ms(self.stream),
+            Self::ms(self.scene),
+            Self::ms(self.camera),
+            Self::ms(self.shell),
+            Self::ms(self.draw),
+        )
+    }
+}
+
+/// **The frame-timing instrument** (`SHPLOINGUS_FRAMES`), which is the audit's owed report.
+///
+/// Off by default, and **off costs one boolean test per frame**: a player who did not ask for a
+/// report does not get one, and an instrument that charges for existing would be measuring
+/// itself. Turned on, it prints a line for every frame longer than the stall threshold and
+/// folds the mean split into the frame-rate line the loop already prints once a second.
+#[derive(Default)]
+struct FrameTiming {
+    /// Whether `SHPLOINGUS_FRAMES` turned it on. The only field read when it is off.
+    on: bool,
+    /// What counts as a stall, in milliseconds: `SHPLOINGUS_STALL_MS`, defaulting to one 20 Hz
+    /// tick's own period, so a frame that misses a tick says so rather than averaging away.
+    stall_ms: f64,
+    /// Frames drawn since the last summary.
+    frames: u64,
+    /// Of those, how many were over the threshold.
+    stalls: u64,
+    /// The worst frame **of the run**, and the tick it was drawn at.
+    worst: Duration,
+    worst_at: u64,
+    /// The sections' own sums since the last summary.
+    sum: FrameCost,
+}
+
+impl FrameTiming {
+    /// Read the two variables. A malformed threshold leaves the instrument **off and says
+    /// why**, because a report made against a threshold the caller did not choose is not
+    /// their report.
+    fn from_env() -> Self {
+        let mut timing = FrameTiming { stall_ms: 25.0, ..FrameTiming::default() };
+        match std::env::var("SHPLOINGUS_FRAMES") {
+            Ok(text)
+                if !matches!(text.trim(), "" | "0" | "off" | "false") =>
+            {
+                match std::env::var("SHPLOINGUS_STALL_MS") {
+                    Err(_) => {}
+                    Ok(text) => match text.trim().parse::<f64>() {
+                        Ok(ms) if ms.is_finite() && ms > 0.0 => timing.stall_ms = ms,
+                        other => {
+                            eprintln!(
+                                "shploingus: SHPLOINGUS_STALL_MS must be a positive number of \
+                                 milliseconds, not {other:?}; the frame timer stays off"
+                            );
+                            return timing;
+                        }
+                    },
+                }
+                timing.on = true;
+                println!(
+                    "shploingus: SHPLOINGUS_FRAMES is on — a line for every frame over {:.0} ms, \
+                     and the mean split on the frame-rate line",
+                    timing.stall_ms
+                );
+            }
+            _ => {}
+        }
+        timing
+    }
+
+    /// Take one drawn frame: report it if it stalled, and fold it into the running sums.
+    fn take(&mut self, tick: u64, cost: &FrameCost) {
+        if !self.on {
+            return;
+        }
+        self.frames += 1;
+        self.sum.roster += cost.roster;
+        self.sum.sky_light += cost.sky_light;
+        self.sum.sky_dome += cost.sky_dome;
+        self.sum.judge += cost.judge;
+        self.sum.api += cost.api;
+        self.sum.walk += cost.walk;
+        self.sum.stream += cost.stream;
+        self.sum.scene += cost.scene;
+        self.sum.camera += cost.camera;
+        self.sum.shell += cost.shell;
+        self.sum.draw += cost.draw;
+        self.sum.total += cost.total;
+        if cost.total > self.worst {
+            self.worst = cost.total;
+            self.worst_at = tick;
+        }
+        if FrameCost::ms(cost.total) >= self.stall_ms {
+            self.stalls += 1;
+            println!(
+                "stall\tt{tick}\t{:.1} ms — {}",
+                FrameCost::ms(cost.total),
+                cost.report()
+            );
+        }
+    }
+
+    /// The summary for the frame-rate line: **the mean split**, the worst frame of the run
+    /// and how many of the interval's frames were stalls. `None` when it is off or when no
+    /// frame was drawn, so an idle window reports nothing rather than a zero.
+    fn summary(&mut self) -> Option<String> {
+        if !self.on || self.frames == 0 {
+            return None;
+        }
+        let n = self.frames as f64;
+        let mean = FrameCost {
+            roster: self.sum.roster.div_f64(n),
+            sky_light: self.sum.sky_light.div_f64(n),
+            sky_dome: self.sum.sky_dome.div_f64(n),
+            judge: self.sum.judge.div_f64(n),
+            api: self.sum.api.div_f64(n),
+            walk: self.sum.walk.div_f64(n),
+            stream: self.sum.stream.div_f64(n),
+            scene: self.sum.scene.div_f64(n),
+            camera: self.sum.camera.div_f64(n),
+            shell: self.sum.shell.div_f64(n),
+            draw: self.sum.draw.div_f64(n),
+            total: self.sum.total.div_f64(n),
+        };
+        let out = format!(
+            "mean {:.1} ms of {} frame(s) — {} | {} stall(s) over {:.0} ms | worst {:.1} ms at t{}",
+            FrameCost::ms(mean.total),
+            self.frames,
+            mean.report(),
+            self.stalls,
+            self.stall_ms,
+            FrameCost::ms(self.worst),
+            self.worst_at,
+        );
+        self.frames = 0;
+        self.stalls = 0;
+        self.sum = FrameCost::default();
+        Some(out)
+    }
+}
+
+/// **The cloud derivation's own address:** the field's tick (floored to the cloud's own cadence —
+/// [`cloud_tick_of`]), the eye snapped to the cloud domain's sample lattice
+/// ([`voxel_client::CLOUD_SAMPLE_M`]), and the pixel angle's own bits. The same key the frame loop
+/// already used to decide whether the tree had to be rebuilt, so a key still yields exactly one tree.
+type CloudKey = (u64, [i64; 3], u32);
+
+/// **The cloud's own derivation, off the frame thread.**
+///
+/// The cloud field is the model asked once per sample — `CLOUD_SAMPLES_PER_AXIS²` = **4 225**
+/// calls to `clouds::cloud_column`, each a terrain, climate, weather and solar evaluation — over a
+/// 8 192 m span, and the tree behind it is an octree fill over that field. Both used to run **on
+/// the frame thread, every four ticks**, and `SHPLOINGUS_FRAMES=1` measured what that costs: the
+/// field **11–21 ms of every frame and 44–139 ms on a cadence frame**, the tree **20–39 ms mean and
+/// up to 243 ms**, on a 20 Hz clock whose whole frame may spend 50 ms. That is the stall the player
+/// reported, and it is not the roster's — the roster measures 0.07 ms.
+///
+/// Neither half has to be derived *by the frame that draws it*: both are pure functions of
+/// `(tick, eye, pixel angle)` and both are **held between cadences** already. This is the split
+/// `voxel_work::Pool` already makes for meshes, made here for the same reason.
+///
+/// **What this does not change.** The inputs and the values: a key yields one tree whoever computes
+/// it. What changed is *which thread pays*, and the price: a tree is adopted a frame or two after its
+/// cadence rather than on it, and the hold is now bounded by the derivation instead of by the tick.
+/// That is the same held-between-cadences contract the field, the rig and the sky table already keep.
+///
+/// **And it is derived on the cloud's own rung, not the atmosphere's.** `Cadence::Water`'s four ticks
+/// was the cadence this worker was split *off from*, and keeping it bought nothing: the tree is a
+/// picture of a shape that changes over minutes, on a thread that competes with the frame for a core.
+/// [`voxel_client::cloud_cubes::cadence_ticks`] is the ladder's next rung down and
+/// [`cloud_tick_of`] is where the key takes it, so one ask replaces five.
+///
+/// **Owed, and named rather than implied — and it is one thing, not three.** The renderer is **one
+/// system**, and these are its stages rather than separate features:
+///
+/// 1. the **octree** the world is already in (`voxel-mesh::octree`);
+/// 2. its **hierarchy merge** — the backwalk that walks a node up while its boundary stays uniform,
+///    equal-material and coplanar, emitting **n-gons** instead of one rectangle per slice
+///    (`voxel-mesh::mesh` merges per slice today and never walks the hierarchy);
+/// 3. the **subvoxel pass** on those n-gons — the 64 subvoxel base and the 256 lattice, plus the
+///    declared displacement, animated as a pure function of `(tick, address)`, which is why rain and
+///    moving water need it and not a fluid system of their own (C-161, C-43). **Wired in
+///    2026-10-10, so this stage is no longer owed as a call site** (C-182): the frame is handed the
+///    world's own declaration ([`materials::displacement_field`]) and a declared rate, a quad the
+///    field does not move stays a 24-byte record, and the wiring measures inside the noise floor.
+///    What is still owed is the stage's **content**: this world declares no relief, because
+///    generation places whole voxels, and the *addressed* amplitude that would let rain, water and
+///    the ground's own fractional surface declare at an address does not exist yet;
+/// 4. **one material pass** over the result, clouds and water and terrain alike.
+///
+/// So this worker is **not** a second renderer and must not be grown into one. It exists because the
+/// cloud's derivation cannot stay on the frame thread today, and `cloud_field` + `cloud_cubes` +
+/// `vs_cloud_ngon` are a **fork of stages 2–4** that has already cost this program two measured
+/// regressions (1 658 ms in the first octree cut, and the 31–60 ms per frame this removes). The fork
+/// is to be **deleted** when stage 2–4 exist for real — the n-gon shader entry point and the mesher's
+/// polygon pass are the same idea implemented twice, and the world must not keep two answers. This
+/// buys the frame back; it pays none of that.
+struct CloudWorker {
+    /// What the worker thread is asked: the key, the field's tick, the eye and the pixel angle.
+    asks: std::sync::mpsc::Sender<(CloudKey, u64, [f64; 3], f64)>,
+    /// What it has finished, keyed by the ask it answers.
+    answers: std::sync::mpsc::Receiver<(CloudKey, voxel_client::CloudCubes)>,
+    /// The key asked for and not yet answered, so one cadence's question is asked **once** and a
+    /// walking eye does not queue a build per frame.
+    in_flight: Option<CloudKey>,
+}
+
+impl CloudWorker {
+    /// Start the one thread that owns the field and the tree for the life of the program.
+    ///
+    /// The world spec goes over at the start: it is the whole input, it is `Copy`, and it does not
+    /// change — so the worker cannot be asking a different world than the frame is drawing.
+    fn new(spec: WorldSpec, report: bool) -> Self {
+        let (asks, ask_rx) = std::sync::mpsc::channel::<(CloudKey, u64, [f64; 3], f64)>();
+        let (answer_tx, answers) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new().name("cloud".to_owned()).spawn(move || {
+            while let Ok((key, tick, eye_m, pixel_angle_rad)) = ask_rx.recv() {
+                let started = Instant::now();
+                // The field is sampled **at the key's own tick and where the eye stands**, which is
+                // the same pair the frame loop used: the tick is the cadence's, and the column is
+                // the player's, because a field centred on the origin is a field the player walks
+                // out of.
+                let field = voxel_client::CloudField::sample(&spec, tick, [eye_m[0], eye_m[2]]);
+                let field_ms = FrameCost::ms(started.elapsed());
+                let started = Instant::now();
+                let tree = voxel_client::CloudCubes::build(&field, eye_m, pixel_angle_rad);
+                let tree_ms = FrameCost::ms(started.elapsed());
+                if report {
+                    println!(
+                        "cloud\tt{tick}\tfield {field_ms:.1} ms + tree {tree_ms:.1} ms = \
+                         {:.1} ms for {} cell(s), {} record(s)",
+                        field_ms + tree_ms,
+                        tree.cells,
+                        tree.records.len()
+                    );
+                }
+                // A closed channel means the program is going: the ask that could not be answered
+                // is the last thing this thread ever does, and the frame keeps the last tree.
+                if answer_tx.send((key, tree)).is_err() {
+                    break;
+                }
+            }
+        });
+        match spawned {
+            Ok(_) => CloudWorker { asks, answers, in_flight: None },
+            // **A machine that cannot spawn one thread is refused by name, not served a still
+            // picture.** The alternative — running the derivation on the frame thread again — is
+            // the stutter this exists to remove, and silently reverting to it would hide the one
+            // fact the player can feel.
+            Err(refusal) => {
+                eprintln!("shploingus: the cloud worker cannot start: {refusal}");
+                std::process::exit(2);
+            }
+        }
+    }
+
+    /// Ask for one key's tree. **A key already in flight is not asked twice**, and a key that is
+    /// already the one in hand is not asked at all — the caller compares against
+    /// `App::cloud_tree_key` for that, so this only guards the in-flight case.
+    fn ask(&mut self, key: CloudKey, tick: u64, eye_m: [f64; 3], pixel_angle_rad: f64) {
+        if self.in_flight == Some(key) {
+            return;
+        }
+        if self.asks.send((key, tick, eye_m, pixel_angle_rad)).is_ok() {
+            self.in_flight = Some(key);
+        }
+    }
+
+    /// Whatever has finished since the last call, or `None` when the worker is still working.
+    ///
+    /// An answer that arrived is no longer in flight, so this clears the in-flight key **when the
+    /// key it answers is the one being waited for**: an older key's answer adopted while a newer one
+    /// is in flight must not make the frame forget it is waiting.
+    fn finished(&mut self) -> Option<(CloudKey, voxel_client::CloudCubes)> {
+        match self.answers.try_recv() {
+            Ok((key, tree)) => {
+                if self.in_flight == Some(key) {
+                    self.in_flight = None;
+                }
+                Some((key, tree))
+            }
+            Err(_) => None,
+        }
+    }
 }
 
 /// **The sky the same frame's rig was built from**, as a table the shader can read.
@@ -806,6 +1257,25 @@ struct App {
 /// The tree's domain corner is snapped to [`voxel_client::CLOUD_SAMPLE_M`], so two eyes inside
 /// one cell build the *identical* tree: this is what makes the held tree a function of the cell
 /// rather than of the frame, and it is why a key is a legitimate cache key and not a tolerance.
+/// **The tick a cloud is derived from**: the clock's own tick, floored to the cloud's cadence.
+///
+/// The cloud is not re-derived on the atmosphere's rung any more — [`voxel_client::cloud_cubes::cadence_ticks`]
+/// is the ladder's next rung down, and this is where that rung is spent. Two things follow, and both
+/// are wanted:
+///
+/// * the tree's own key stops moving four times a second, so a key that is already in hand is asked
+///   for once per cadence rather than once per atmosphere update; and
+/// * the field is sampled at *the cadence's own tick* rather than at the live one — which is the rule
+///   the ask already followed, since sampling it at the live tick would make the cloud a function of
+///   the frame rate rather than of the clock.
+///
+/// It is a floor rather than a rounding: a tick's cloud is the cloud of the cadence it is *inside* of,
+/// so two frames within one cadence name one tree and the fade below spans exactly one period.
+fn cloud_tick_of(tick: u64) -> u64 {
+    let period = voxel_client::cloud_cubes::cadence_ticks();
+    tick - tick % period
+}
+
 fn snap_to_sample_lattice(eye_m: [f64; 3]) -> [i64; 3] {
     let cell = voxel_client::CLOUD_SAMPLE_M;
     [
@@ -819,17 +1289,37 @@ fn sky_at(
     spec: &WorldSpec,
     daylight: &voxel_client::skylight::Daylight,
     inputs: SkyInputs,
-) -> Option<(Vec<voxel_appearance::LinearRgb>, f64)> {
+    tick: u64,
+    eye_m: [f64; 3],
+) -> Option<(voxel_client::skylight::SkyModel, f64)> {
     let peak = voxel_client::skylight::peak_sun_luminance(spec, inputs);
     // **Absence is a refusal, not a dark sky.** The non-finite case is refused explicitly, because
-    // `peak <= 0.0` is false for a NaN and one would otherwise reach the table as a colour.
+    // `peak <= 0.0` is false for a NaN and one would otherwise reach the model as a radiance.
     if !peak.is_finite() || peak <= 0.0 {
         return None;
     }
-    // The **directional dome** (C-157): elevation × azimuth, so the aureole lands where
-    // the Sun is rather than in the camera's own column. The 1-D summary remains for the
-    // ambient pair; the drawn sky is this table.
-    Some((voxel_client::skylight::sky_dome_table(&daylight.sky, inputs, peak), peak))
+    // **The sky's own transport**, over the air at this column: the bands, the droplets the world's
+    // own weather carries, and one exposure — the same normaliser the Sun's body and the Moon's are
+    // divided by. The shader integrates it per pixel, so there is no table between the model and
+    // the frame; the elevation summary's pair remains the rig's ambient reading and nothing else.
+    let air = voxel_client::sun::air_at(spec, eye_m[0], eye_m[2], tick);
+    Some((
+        // **The same Moon the sky pass and the drawn body are placed from** — `(spec, tick, 0)`,
+        // the epoch every other reading of this world's orbit uses. The sky's lunar term, the
+        // drawn disc and the Moon's own beam therefore come from one `moon_position` call site
+        // rather than from three that could disagree about which Moon is up.
+        voxel_client::skylight::SkyModel::of_graded(
+            &daylight.sky,
+            &air,
+            peak,
+            &voxel_shapers::sky::moon_position(spec, tick, 0),
+            // **The frame's own exposure grade**, carried by the `Daylight` this sky came from: one
+            // evaluation of one atmosphere decides the light, the sky and the grade, so a night's sky
+            // cannot be exposed for a noon the rig beside it does not have.
+            daylight.grade,
+        ),
+        peak,
+    ))
 }
 
 impl App {
@@ -843,6 +1333,11 @@ impl App {
         workspace: Option<std::path::PathBuf>,
     ) -> Self {
         let world = World::shipped();
+        // **The cloud worker, and the instrument that reports it.** The worker is built here so its
+        // thread starts with the program: the first cadence's derivation then begins before the first
+        // frame asks for it rather than after.
+        let timing = FrameTiming::from_env();
+        let cloud_worker = CloudWorker::new(*world.spec(), timing.on);
         let mut camera = Camera::standard(spawn_eye(&world), 16.0 / 9.0);
         camera.pitch_rad = GAME_PITCH_RAD;
         App {
@@ -854,6 +1349,13 @@ impl App {
             render_camera: camera,
             player: Player::new(spawn_feet(&world)),
             world,
+            displacement: materials::displacement_field()
+                .expect("the world's displacement field declares"),
+            refine: RefineConfig::new(
+                REFINE_SAMPLES_PER_BLOCK,
+                REFINE_MAX_TRIANGLES_PER_QUAD,
+            )
+            .expect("the declared refinement rate is inside the addressed level"),
             earthworks: Earthworks::new(),
             held: BTreeSet::new(),
             selected: 0,
@@ -883,11 +1385,17 @@ impl App {
         notifications_shown: 0,
         console_at: 0,
         console_dropped: 0,
-        drawing: None,
-        rig_at_tick: None,
-            clouds: None,
+        timing,
+        drawing: None,            rig_at_tick: None,
+            light_grade: 1.0,
+        light_field: None,
+        light_totals: [0; 5],
+        bodies: Vec::new(),
             cloud_tree: None,
+            cloud_tree_previous: None,
+            cloud_tree_at_tick: None,
             cloud_tree_key: None,
+            cloud_worker,
             turbidity_at: None,
             turbidity: voxel_appearance::sky::SkyInputs::default().turbidity,
             ozone_at: None,
@@ -1115,13 +1623,41 @@ impl ApplicationHandler for App {
         // **Both the background and the Sun's body come from this one evaluation**, exactly
         // as the frame loop's own tick does, so the first frame cannot be lit by one sky and
         // backed by another — nor draw a body normalised against a peak the table was not.
-        if let Some((table, peak)) = sky_at(self.spec(), &boot_daylight, boot_inputs) {
-            graphics.world.write_sky(&table);
-            graphics.world.write_sun(voxel_client::sun::DrawnSun::of(
-                &boot_daylight.sky,
+        if let Some((model, peak)) = sky_at(
+            self.spec(),
+            &boot_daylight,
+            boot_inputs,
+            self.clock.tick,
+            self.render_camera.position_m,
+        ) {
+            graphics.world.write_sky_model(&model);
+            // **The Sun and the Moon as records** (C-184), from this one evaluation: the band table's
+            // own declared reflectance lit by this sky's sun, so the first frame's moon is not lit by a
+            // sun the frame does not have. What draws them is the scene the frame already builds — a
+            // body is geometry now, not a field of a uniform. `None` is the model's own refusal (a Sun
+            // that has not risen, a new moon with no lit face), and a frame with neither has no body.
+            let eye = self.render_camera.position_m;
+            let spec = *self.spec();
+            let mut bodies = Vec::new();
+            if let Some(sun) = voxel_client::sun::DrawnSun::of(&boot_daylight.sky, peak, eye) {
+                bodies.push(sun.body_record_graded(eye, boot_daylight.grade));
+            }
+            if let Some(moon) = voxel_client::sun::DrawnMoon::of(
+                &voxel_shapers::sky::moon_position(&spec, self.clock.tick, 0),
+                &voxel_client::sun::air_at(&spec, eye[0], eye[2], self.clock.tick),
                 peak,
-                self.render_camera.position_m,
-            ));
+                eye,
+                boot_daylight.sky.sun_altitude_deg,
+                voxel_shapers::sky::solar_position(&spec, self.clock.tick).azimuth_deg,
+            ) {
+                bodies.push(moon.body_record_graded(eye, boot_daylight.grade));
+            }
+            self.bodies = bodies;
+        } else {
+            // **Stated, not omitted**: `sky_at` refuses when there is no peak to normalise the
+            // transport against, so this frame has no sky rather than no word for one — which is
+            // the difference the pipeline refuses a frame over.
+            graphics.world.write_no_sky_model();
         }
 
         // The streamer, with one fewer worker than the machine has, because the
@@ -1520,6 +2056,11 @@ impl App {
         let now = Instant::now();
         let dt = (now - self.last).as_secs_f64().min(0.1);
         self.last = now;
+        // **The frame-timing instrument's first mark.** `mark` is moved at each section
+        // boundary below, so the report's split is the frame loop's own order rather than a
+        // second description of it that can go stale.
+        let mut mark = Instant::now();
+        let mut cost = FrameCost::default();
 
         // ---- the clock, and the light it drives --------------------------
         // **Advance before the rig is derived, so the rig is this frame's tick and not
@@ -1553,6 +2094,8 @@ impl App {
         // **The process roster, at the world's own tick.** It runs once per tick (guarded
         // in the method) and reports only when its answer changes; it mutates nothing.
         self.drive_processes(tick);
+        cost.roster = mark.elapsed();
+        mark = Instant::now();
         let due = Some(tick) != self.rig_at_tick
             && self
                 .tick_driver
@@ -1569,40 +2112,88 @@ impl App {
             // the borrow checker's problem rather than the renderer's.
             let spec = *self.spec();
             let eye = self.render_camera.position_m;
-            // **The cloud field, on the same cadence as the rig.** It is asked once per
-            // column on its own sample lattice, so it belongs to the atmosphere's clock and
-            // not the frame's — and it is sampled where the player stands, because a cloud
-            // field centred on the origin would be a field the player walks out of.
-            self.clouds = Some(voxel_client::CloudField::sample(
+            // **The world's own light, rebuilt on the cadence the rig is** — and **kept between
+            // cadences**, which is the half that matters: the cells the previous field measured are
+            // carried over when the beam has not swung past the solver's own step, and thrown away
+            // when it has (see `voxel_client::field`'s module doc for why the step is the stencil's
+            // own resolution rather than a tuning constant).
+            //
+            // `None` when the atmosphere is refused, which is **the rig's own refusal**: the same
+            // `daylight_of` call, the same conditions, one derivation. A field that measured an
+            // atmosphere the rig could not describe would be a second opinion about the sky, and
+            // this game has exactly one.
+            self.light_field = voxel_client::CellField::of(
                 &spec,
                 tick,
-                [eye[0], eye[2]],
-            ));
+                inputs,
+                0,
+                self.light_field.take().map(std::cell::RefCell::into_inner),
+            )
+            .map(std::cell::RefCell::new);
+            // **The cloud field and its tree are asked for in the geometry section below**, not
+            // here: the ask needs the pixel angle, and the derivation itself now runs on
+            // [`CloudWorker`]'s own thread — 4 225 model calls and an octree fill are not this
+            // thread's work to do every four ticks.
             // **One `Sky`, uploaded three times.** The rig, the background and the Sun's body
             // are written from the same `Daylight`, so the light, the sky it is seen against and
             // the body in it cannot describe different atmospheres. Before the sky pass there was
             // only the rig here and nothing to keep in step with it.
             if let Some(daylight) = voxel_client::skylight::daylight_of(&spec, tick, inputs, 0) {
+                // **The field's own exposure, taken from the one `Daylight` the rig is exposed
+                // with** — so a measured corner and a rig-lit one are lit at one grade, and a
+                // twilight's measurements are not read at a noon's exposure.
+                self.light_grade = daylight.grade;
                 if let Some(graphics) = self.graphics.as_mut() {
-                    if let Some(gpu) =
-                        GpuRig::from_rig(&voxel_client::skylight::exposed(&daylight.rig))
-                    {
+                    if let Some(gpu) = GpuRig::from_rig(&voxel_client::skylight::exposed_at(
+                        &daylight.rig,
+                        daylight.grade,
+                    )) {
                         graphics.world.write_rig(&gpu);
                     }
-                    if let Some((table, peak)) = sky_at(&spec, &daylight, inputs) {
-                        let _ = graphics.world.write_sky(&table);
+                    cost.sky_light = mark.elapsed();
+                    mark = Instant::now();
+                    if let Some((model, peak)) = sky_at(&spec, &daylight, inputs, tick, eye) {
+                        graphics.world.write_sky_model(&model);
                         // **The Sun's body** (C-176), from the same `Sky` and the same
                         // normaliser the background was drawn against. `None` when there is no
                         // sun to draw, which is the rig's own condition rather than a second
                         // one: `Sky::sun_light` is black exactly when the Sun is not up.
-                        graphics.world.write_sun(voxel_client::sun::DrawnSun::of(
-                            &daylight.sky,
+                        //
+                        // **The Moon's body**, from the light solver's own bands: the Sun's spectrum
+                        // times the band table's declared reflectance, over π, transmitted back down
+                        // the air column the Sun crossed. The phase is drawn by the shader from the
+                        // body's own geometry, so this is the only thing that decides how bright it
+                        // is and nothing here decides which part of it is lit.
+                        //
+                        // Both are **records in the scene's own array** (C-184): what carries them
+                        // into the frame is the scene build below, not a uniform written here.
+                        self.bodies.clear();
+                        if let Some(sun) =
+                            voxel_client::sun::DrawnSun::of(&daylight.sky, peak, eye)
+                        {
+                            self.bodies.push(sun.body_record_graded(eye, daylight.grade));
+                        }
+                        if let Some(moon) = voxel_client::sun::DrawnMoon::of(
+                            &voxel_shapers::sky::moon_position(&spec, tick, 0),
+                            &voxel_client::sun::air_at(&spec, eye[0], eye[2], tick),
                             peak,
                             eye,
-                        ));
+                            daylight.sky.sun_altitude_deg,
+                            voxel_shapers::sky::solar_position(&spec, tick).azimuth_deg,
+                        ) {
+                            self.bodies.push(moon.body_record_graded(eye, daylight.grade));
+                        }
+                    } else {
+                        // The boot frame's own refusal, on this tick: no sky, stated — and **no
+                        // bodies**, because a body is drawn against this sky and leaving the last
+                        // tick's in place would put a sun in a frame that just said it has none.
+                        graphics.world.write_no_sky_model();
+                        self.bodies.clear();
                     }
                 }
             }
+            cost.sky_dome = mark.elapsed();
+            mark = Instant::now();
         }
         let _ = moved;
 
@@ -1628,6 +2219,9 @@ impl App {
         if let Some(root) = self.workspace.clone() {
             self.shell.watch_packages(&root.join("packages"), Some(tick));
         }
+
+        cost.judge = mark.elapsed();
+        mark = Instant::now();
 
         // ---- the api layer, read back out of the game ----------------------
         // C-54.3: the console, the task viewer, the toast queue and the panel are **one api** — and
@@ -1673,8 +2267,13 @@ impl App {
         }
 
 
+        cost.api = mark.elapsed();
+        mark = Instant::now();
+
         // ---- move -------------------------------------------------------
         self.walk_player(dt);
+        cost.walk = mark.elapsed();
+        mark = Instant::now();
 
         // ---- drive the world --------------------------------------------
         // Every frame, so the shapers are continuous rather than a load step.
@@ -1692,6 +2291,9 @@ impl App {
             }
         };
 
+        cost.stream = mark.elapsed();
+        mark = Instant::now();
+
         // ---- geometry ---------------------------------------------------
         // Rebuilt each frame because the residency changes each frame. The
         // vertex buffers are re-uploaded per frame inside the pipeline — a named
@@ -1707,36 +2309,137 @@ impl App {
             .as_ref()
             .map(|g| voxel_client::pixel_angle_rad(self.camera.fov_y_rad, g.config.height.max(1)))
             .unwrap_or(1.7e-3);
-        let scene = Scene::build_with_detail(
-            self.streamer.as_ref().expect("checked above").meshes(),
-            self.camera.position_m,
-            &DetailLattice::new(0),
-        );
-        // **The tree is rebuilt only when something it is a function of moves.** The key is the
+        // **The light the frame is built with: the world's own measurements where it has them, and
+        // the rig where it does not.**
+        //
+        // This is the whole of what "the world is lit by measurement" means in the code: the same
+        // scene, built by the constructor that asks the world's field at every corner — and by the
+        // record-format constructor when there is no field, which is the frame this game drew
+        // before the field existed rather than a dark one. `Scene::build_with_light`'s own doc
+        // states why the two are constructors rather than a flag, and
+        // `renderer::tests::the_quad_format_and_the_vertex_format_draw_the_same_surface` is what
+        // holds them to one picture.
+        let field = self.light_field.take();
+        if let Some(field) = field.as_ref() {
+            // The frame's budget and its own counters; the measured cells are kept.
+            field.borrow_mut().begin_frame();
+        }
+        let scene = match field.as_ref() {
+            Some(field) => {
+                // **The streamer is the world the beam marches through.** The cast is the one
+                // place the frame says which provider its trees come from, and every other line
+                // here speaks to the trait rather than to the streamer.
+                let trees: &dyn voxel_client::field::ChunkTrees =
+                    self.streamer.as_ref().expect("checked above");
+                // **The measurement, at the frame's own exposure.** `WorldLight` leaves its bands
+                // physical and peak-relative; the shader is handed the rig at `EXPOSURE · grade`,
+                // so the bands take the same scale here — the one place the field's measurement
+                // becomes the frame's light. Without it a measured corner was lit by a beam
+                // `EXPOSURE` times dimmer than the rig's own beam for the same geometry.
+                let grade = self.light_grade;
+                let measured = voxel_client::field::light_at(field, trees);
+                let light = move |x: i32, y: i32, z: i32| {
+                    measured(x, y, z)
+                        .map(|bands| voxel_client::skylight::exposed_bands(bands, grade))
+                };
+                Scene::build_with_light(
+                    self.streamer.as_ref().expect("checked above").meshes(),
+                    self.camera.position_m,
+                    &DetailLattice::new(0),
+                    &light,
+                    Some(&self.displacement),
+                    Some(&self.refine),
+                )
+            }
+            None => Scene::build(
+                self.streamer.as_ref().expect("checked above").meshes(),
+                self.camera.position_m,
+                &DetailLattice::new(0),
+                Some(&self.displacement),
+                Some(&self.refine),
+            ),
+        };
+        // The frame's own tally, folded into the report's running sum and then put back: the
+        // field is `App`'s state and the borrow above was the scene build's.
+        if let Some(field) = field.as_ref() {
+            let field = field.borrow();
+            self.light_totals[0] += field.measured();
+            self.light_totals[1] += field.reused();
+            self.light_totals[2] += field.stale();
+            self.light_totals[3] += field.unmeasured();
+            self.light_totals[4] += field.unresolved();
+        }
+        self.light_field = field;
+        cost.scene = mark.elapsed();
+        mark = Instant::now();
+        // **The tree is derived only when something it is a function of moves.** The key is the
         // field's own tick, the eye snapped to the domain's sample lattice, and the pixel angle —
-        // so walking inside one 128 m cell costs no tree at all, and the frame pays the fill on the
-        // cell boundary rather than on every frame. The eye's snap is not an approximation of where
+        // so walking inside one 128 m cell costs no tree at all, and the fill is paid on the cell
+        // boundary rather than on every frame — **and on the worker rather than on this thread**.
+        // The eye's snap is not an approximation of where
         // the geometry sits: the domain's own corner is snapped to that lattice, so two eyes in one
         // cell build the same tree.
         let ladder_key = (
-            self.rig_at_tick.unwrap_or(0),
+            cloud_tick_of(tick),
             snap_to_sample_lattice(self.camera.position_m),
             pixel_angle_rad.to_bits(),
         );
-        if self.clouds.is_some() && self.cloud_tree_key != Some(ladder_key) {
-            if let Some(field) = self.clouds.as_ref() {
-                self.cloud_tree = Some(voxel_client::CloudCubes::build(
-                    field,
-                    self.camera.position_m,
-                    pixel_angle_rad as f64,
-                ));
-                self.cloud_tree_key = Some(ladder_key);
-            }
+        // **Adopt what the worker has finished, then ask for what the frame wants and does not
+        // have.** Adopting is unconditional and newest-last: a tree whose key the eye has since
+        // walked away from is still the freshest picture of the sky, and the ask it may have
+        // displaced is re-asked below rather than waited on.
+        //
+        // **And the tree it displaces is kept, not dropped.** A swap between two derivations is a
+        // cloud that pops 5 times a second; the two are joined for one cadence by their own weights
+        // below, which is the whole of the fix for it.
+        while let Some((key, tree)) = self.cloud_worker.finished() {
+            self.cloud_tree_previous = self.cloud_tree.take();
+            self.cloud_tree = Some(tree);
+            self.cloud_tree_at_tick = Some(tick);
+            self.cloud_tree_key = Some(key);
         }
+        if self.cloud_tree_key != Some(ladder_key) {
+            // The field's own tick is the **cadence's**, taken from the key rather than from the
+            // clock: a key that moved because the eye crossed a sample lattice still describes the
+            // field the atmosphere last recomputed, and sampling it at the live tick would make the
+            // cloud a function of the frame rate — the thing the atmosphere's cadence exists to
+            // prevent.
+            self.cloud_worker.ask(
+                ladder_key,
+                ladder_key.0,
+                self.camera.position_m,
+                pixel_angle_rad as f64,
+            );
+        }
+        // **The cloud, as a join of the two most recent derivations.** The newer tree's weight is
+        // read from the world's clock — the tick it was derived from against the tick being drawn —
+        // so the dissolve is phase-locked to the cadence that produced it: the newer tree reaches
+        // full weight exactly as the next one falls due, and a tree held after its own cadence
+        // ([`CloudWorker`]'s latency) is drawn at full weight rather than served thinner than it
+        // is. Nothing here reads a stopwatch, so the frame rate cannot change the sky.
+        //
+        // **It is one number for the frame, and it is the shader that spends it.** The scene
+        // carries the two trees and which of them each rectangle belongs to; the *weights* are
+        // `set_cloud_fade`'s below, next to the draw, so a dissolve costs a uniform write rather
+        // than a rebuilt veil per rectangle per frame.
+        let cloud_fade = voxel_client::cloud_cubes::fade_weight(
+            self.cloud_tree_at_tick.unwrap_or(tick),
+            tick,
+        );
         let scene = match self.cloud_tree.as_ref() {
-            Some(tree) => scene.with_clouds(tree),
+            Some(to) => match self.cloud_tree_previous.as_ref() {
+                Some(from) => scene.with_cloud_fade(from, to),
+                // The first tree of a session fades in over its own cadence instead of appearing
+                // between two frames: one tree appended, with clear air as the shader's other side.
+                None => scene.with_clouds(to),
+            },
             None => scene,
         };
+        // **And the frame's own bodies** (C-184), each on its own origin: the Sun and the Moon are
+        // records in the scene rather than fields of a uniform, so a frame that has one draws it and the
+        // pass places it between the terrain and the cloud. They are their own array rather than the
+        // records' own suffix, because the cloud already owns that suffix.
+        let scene = scene.with_bodies(&self.bodies);
 
         // Asked here, **before** `self.graphics` is borrowed mutably below and held
         // across the panel: the water query reads the world, and the draw borrows the
@@ -1788,6 +2491,8 @@ impl App {
         let projected = self.change_strokes(&render_camera, viewport_dp);
         let strokes: Vec<voxel_client::hud::Stroke> =
             if self.lanes { projected } else { Vec::new() };
+        cost.camera = mark.elapsed();
+        mark = Instant::now();
 
         let graphics = self.graphics.as_mut().expect("checked above");
 
@@ -1928,6 +2633,8 @@ impl App {
             }
         }
 
+        cost.shell = mark.elapsed();
+        mark = Instant::now();
         let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = graphics
             .device
@@ -1937,6 +2644,11 @@ impl App {
         // (C-163).
         let pixel_angle =
             voxel_client::pattern::pixel_angle_rad(render_camera.fov_y_rad, graphics.config.height);
+        // **The sky's own weight, one number for this frame** (C-183). It is set here rather than
+        // in the scene because it is not a property of the geometry: the two trees a frame joins
+        // are the same bytes for every frame of the dissolve, and the shader interpolates between
+        // them per pixel from `View::screen.w`.
+        graphics.world.set_cloud_fade(cloud_fade as f32);
         if self.wireframe {
             graphics.world.draw_wireframe(
                 &mut encoder,
@@ -1966,7 +2678,16 @@ impl App {
         // it — which is the safe default rather than a silent no-op.
         graphics.queue.present(surface_texture);
         graphics.hud.trim();
+        cost.draw = mark.elapsed();
         self.frames += 1;
+
+        // ---- the instrument ---------------------------------------------
+        // **The frame's own split, taken from the code the player's frame ran.** A frame that
+        // never reached a present — an occluded or timed-out surface, a lost one — returned
+        // above and is deliberately **not** counted: this reports frames that were drawn, and a
+        // skipped frame that were counted would show up as a free one.
+        cost.total = now.elapsed();
+        self.timing.take(tick, &cost);
 
         // ---- report -----------------------------------------------------
         // The rate is measured over an interval and printed; the panels above are
@@ -1978,9 +2699,41 @@ impl App {
             self.fps = Some(fps);
             self.title_at = now;
             self.frames = 0;
+            // **The instrument's summary, on the line the loop already prints.** It is the
+            // mean split rather than a second frame-rate claim: the rate is above, and this
+            // is where the rate went.
+            if let Some(split) = self.timing.summary() {
+                println!("frame-summary\t{split}");
+            }
+            // **The light field's own report, once a second and in the world's own numbers.** The
+            // claim this game now makes — that the world is lit by measurement rather than by a
+            // rig — is a claim about *how many corners were measured*, and a claim of that shape
+            // has to be readable while the game runs rather than inferred from the picture. So the
+            // five counts are printed beside the frame rate: cells marched this second, corners
+            // answered from the frame's own measurements, corners answered from a measurement **whose
+            // own beam has since moved past the field's step** (`CellField::stale`), corners that fell
+            // back to the rig, and hops made past a chunk the streamer does not hold.
+            //
+            // The stale count is the one that says whether the field is still *covering* the view:
+            // it is high while a turning eye's map catches up and zero once it stands still, and it
+            // exists because the alternative — dropping the cell and letting the whole map be
+            // re-covered — is what left most of a frame on the rig before this pass.
+            //
+            // **"Rigged" is the honest half and it is why the line carries a second number.** A
+            // budget that ran out and a chunk that was not resident both land there, and a frame
+            // lit entirely by the rig would report `0 measured` rather than a black screen.
+            let [measured, reused, stale, rigged, unresolved] = self.light_totals;
+            if self.light_field.is_some() {
+                println!(
+                    "light-field\t{measured} cell(s) marched | {reused} corner(s) answered from the \
+                     frame's own measurements | {stale} corner(s) answered a step behind the light | \
+                     {rigged} corner(s) rigged | {unresolved} hop(s) past a chunk not resident"
+                );
+            }
+            self.light_totals = [0; 5];
             graphics.window.set_title(&format!("shploingus — {}", graphics.adapter));
             println!(
-                "{:.0} fps | {}/{} chunks | {} stale-but-drawn | {} quads | {:.1}/{:.1} MB mesh | scratch {:.1} MB | refusals-for-budget {} | evicted {} | in flight {} | digest {}",
+                "{:.0} fps | {}/{} chunks | {} stale-but-drawn | {} quads | {:.1}/{:.1} MB mesh | scratch {:.1} MB | refusals-for-budget {} | evicted {} | in flight {} | {} cloud rect(s) | digest {}",
                 fps,
                 frame.resident,
                 frame.wanted,
@@ -1992,6 +2745,7 @@ impl App {
                 frame.refused_for_budget,
                 frame.evicted,
                 frame.in_flight,
+                scene.cloud_records,
                 &self.streamer.as_ref().expect("checked above").digest().to_hex()[..16],
             );
         }

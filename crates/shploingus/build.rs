@@ -20,7 +20,10 @@
 
 use std::{env, fs, path::PathBuf};
 
-use voxel_package::{bloat, census, compendium, features, filing, oracle, projection, provenance, record};
+use voxel_package::{
+    bloat, census, compendium, conformance, features, filing, oracle, patch, projection, provenance,
+    record,
+};
 
 fn main() {
     let root = PathBuf::from(
@@ -33,6 +36,13 @@ fn main() {
 
     let source_path = workspace.join("packages/alpha-shell.shspec");
     println!("cargo:rerun-if-changed={}", source_path.display());
+    // The patch set is read by the gate, so a record that changes must rebuild it — the same
+    // reason the chain directory is watched below: a number measured from a directory nobody
+    // watches is a number from before the change.
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace.join("patches").display()
+    );
     // The record is read by the gate, so a document that changes must rebuild.
     for document in record::DOCUMENTS {
         println!(
@@ -51,6 +61,30 @@ fn main() {
         "cargo:rerun-if-changed={}",
         workspace.join(filing::CHAIN_DIR).display()
     );
+    // **The declared readings the gate reads back, watched like every other input** — the same defect
+    // as the chain above, one directory over. The census reads `conformance/` during this script:
+    // the prose ratchet, the acceptance list, and the compiler's documentation reading with its pin.
+    // Cargo re-runs a build script only for the paths it names, so without this line a reading edited
+    // on disk is not re-read — the gate then prints, and the window renders, the *previous* answer as
+    // this build's. The count would be right about the file and wrong about the build, which is a
+    // stale reading that reads as a measurement.
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace.join("conformance").display()
+    );
+
+    // ---- the build tree and the volume, **before anything is compiled**
+    //
+    // Every line below this one writes into `target/`, so a volume that is filling has to be
+    // answered before the gate adds to it, not after cargo has already died in it. The guard
+    // trims only what cargo regenerates, reports every removal and every kept artefact with its
+    // reason, and refuses below its minimum rather than letting a linker fail with an error that
+    // names nothing (`voxel_package::space` carries the measurements behind its three thresholds).
+    //
+    // **It runs here first and is reported further down**, because the report has to exist before
+    // the door can shut: a reader whose build just failed is the reader who most needs to see why.
+    let tree = voxel_package::space::target_dir(&workspace);
+    let space = voxel_package::space::guard(&tree);
 
     let source = fs::read(&source_path).expect("required alpha shell recipe must be readable");
 
@@ -107,11 +141,33 @@ fn main() {
     // first run that looks at the eleven crates that predate any of it.
     census::check_table_shape()
         .unwrap_or_else(|errors| panic!("the crate table is not well formed: {errors}"));
+    // The table against the workspace's own manifest: a member with no row is measured by nothing
+    // (four were), and a row for an absent crate reports on another tree.
+    census::check_against_manifest(&workspace)
+        .unwrap_or_else(|errors| panic!("the crate table disagrees with the workspace: {errors}"));
+    // The declared witnesses, with `CrateRow::required` deciding what a missing one costs.
+    let optional_absences = census::check_witnesses(&workspace)
+        .unwrap_or_else(|errors| panic!("a crate's declared witness is not on disk: {errors}"));
+    // Rule 2 of the dependency discipline, measured: is it actually used? Reported, not refused.
+    let orphans = census::orphan_libraries(&workspace)
+        .unwrap_or_else(|errors| panic!("which crate reads which could not be measured: {errors}"));
+    // The prose ratchet: a crate's share of comment may fall and may not rise.
+    let prose = census::check_prose_frame(&workspace)
+        .unwrap_or_else(|errors| panic!("a crate's prose budget was exceeded: {errors}"));
     let the_census = census::census(&workspace)
         .unwrap_or_else(|errors| panic!("the workspace could not be measured: {errors}"));
     census::check_coverage(&the_census).unwrap_or_else(|errors| {
         panic!("the census did not measure everything, so it is not a census: {errors}")
     });
+
+    // ---- conformance: the census's measurements turned into one question the build must answer
+    //
+    // **`of`, not `verdict`.** The census has just been taken, and `conformance::verdict` would
+    // walk the whole tree a second time to take it again — the same measurement twice, which is
+    // how two readers of one record come to disagree. The declared acceptance list is read here
+    // so the reuse stays faithful to what the door on its own would have said.
+    let (accepted_keys, accepted_declared) = conformance::accepted(&workspace);
+    let the_verdict = conformance::of(&the_census, &accepted_keys, accepted_declared);
 
     // ---- the decision layer: two passes over one subject vocabulary ----
     //
@@ -284,6 +340,12 @@ fn main() {
         report.push_str(&measurement.describe());
     }
 
+    // **The build tree, and the volume it is written to.** The other cost this project measures:
+    // the record's prose is measured above, and the tree it is built in is measured here. Both are
+    // printed every build, because a guard nobody can read is a guard nobody can check.
+    report.push_str("\n# the build tree and the volume\n");
+    report.push_str(&space.describe());
+
     // **Which bytes this build read.** R-59.1's first half, and the feature row the gate was
     // already pointing at: `provenance_digest`'s witness names
     // `crates/voxel-package/src/provenance.rs`, and the file did not exist, so the row read
@@ -340,6 +402,34 @@ fn main() {
     report.push_str("\n# every crate in the workspace\n");
     report.push_str(&format!("crates\t{}\n", census::CRATE_COUNT));
     report.push_str(&format!("axes\t{}\n", census::AXIS_COUNT));
+    // The count above, proved against the manifest rather than trusted.
+    report.push_str(&format!(
+        "crates-in-manifest\t{}\n",
+        match std::fs::read_to_string(workspace.join("Cargo.toml")) {
+            Ok(text) => census::workspace_members(&text).len().to_string(),
+            Err(error) => format!("not-measured ({error})"),
+        }
+    ));
+    report.push_str(&format!("crate-witness-optional-absent\t{}\n", optional_absences.len()));
+    for absence in &optional_absences {
+        report.push_str(&format!("crate-witness-absent\t{absence}\n"));
+    }
+    // Rule 2, printed every build: the count and the names, because "which two" is the question.
+    report.push_str(&format!("orphan-libraries\t{}\n", orphans.len()));
+    for orphan in &orphans {
+        report.push_str(&format!("orphan-library\t{orphan}\n"));
+    }
+    // The ratchet per crate: measured beside allowed, so the slack is a visible decision.
+    report.push_str(&format!("prose-frame\t{}\n", census::PROSE_FRAME_PATH));
+    for standing in &prose {
+        report.push_str(&format!(
+            "prose\t{}\tmeasured={}\tallowed={}\tslack={}\n",
+            standing.crate_.name(),
+            standing.measured,
+            standing.allowed,
+            standing.slack()
+        ));
+    }
 
     // **The spec's own declaration tables, as a section of their own.** The census's fifth axis
     // answers "does the spec declare this crate?", and a reader who cannot see which tables
@@ -398,6 +488,34 @@ fn main() {
         }
     }
 
+    // **Is the tree conformant?** Every axis of every crate is already measured above; this is the
+    // one section that turns those measurements into a door. A refusal is rejected unless
+    // `conformance/accepted-refusals.txt` has named it, and an accepted refusal is **still
+    // printed** — accepted is not deleted, and an absent list accepts nothing.
+    report.push_str("\n# is the tree conformant\n");
+    report.push_str(&the_verdict.describe());
+
+    // **Which parts of the tree a record names, and which it does not.** The join the patch reader
+    // was missing: `get_ownership` answers *"which record names this path?"* for one path, and
+    // nobody asks that about a file they have not opened — so eleven of twelve parts went unnamed,
+    // and the hole was invisible because nothing looked at the whole set at once.
+    //
+    // **It is evidence and not a door.** A part with no record is a part whose history was never
+    // written down: a hole in the record, not a broken build. Refusing here would refuse every
+    // build until the backfill lands, which is how a gate teaches everyone to route around it.
+    report.push_str("\n# what has a patch\n");
+    let patch_set = patch::read_dir(&workspace.join("patches"));
+    report.push_str(&patch_set.describe());
+    report.push('\n');
+    report.push_str(&patch_set.coverage(&census::Crate::ALL).describe());
+    // **And every line's place, not just every part's.** A part is named by a record; a *file* is
+    // the unit the work actually lands in, and the difference is where the tree's remaining debt
+    // lives: 95 code files, every shader and 23 documents found by no record on the first run.
+    // The list is printed whole, biggest first, because a shortened work list reads as a complete
+    // one.
+    report.push('\n');
+    report.push_str(&patch::placement(&patch_set, &workspace).describe());
+
     // ---- the decision layer: both passes, side by side ----
     //
     // Computed before the report was built, so the oracle section could measure its own line;
@@ -412,4 +530,55 @@ fn main() {
     let out = PathBuf::from(env::var_os("OUT_DIR").expect("Cargo build output directory"));
     fs::write(out.join("alpha-shell.shpkg"), &package).expect("write validated shell package");
     fs::write(out.join("alpha-shell.gate"), &report).expect("write shared gate evidence");
+
+    // ---- the door, and it is fatal
+    //
+    // **After the report is written, on purpose.** A gate that refuses before writing its own
+    // evidence makes the failure the only thing a reader can see, and the reader who most needs
+    // the report is the one whose build just failed. The sections above are the measurement; this
+    // is the only one that refuses, and it refuses by name.
+    //
+    // **Unchecked is not silenceable.** `conformance::of` never moves an unchecked cell onto the
+    // accepted list, so no declaration can turn *no instrument ran* into a pass: the list says
+    // which refusals the record admits, and a cell nobody measured is not one of them.
+    // **The volume first, and the order is the point.** A full disk is the one refusal that makes
+    // every other answer unactionable — nothing can be compiled, so the conformance list is not
+    // what a reader can act on next. It is still printed either way, because this refuses after
+    // the report is written.
+    if let Some(refusal) = space.refusal() {
+        panic!("{refusal}");
+    }
+
+    let rejected = the_verdict.rejected();
+    if !the_verdict.is_active() {
+        let mut named = String::new();
+        for refusal in &rejected {
+            named.push_str(&format!(
+                "\n  rejected\t{}\t{}\t{}\t{}",
+                refusal.crate_, refusal.axis, refusal.state, refusal.why
+            ));
+        }
+        for refusal in &the_verdict.unchecked {
+            named.push_str(&format!(
+                "\n  unchecked\t{}\t{}\t{}\t{}",
+                refusal.crate_, refusal.axis, refusal.state, refusal.why
+            ));
+        }
+        // **An admitted key no refusal answers** is the list's own failure, and the mirror of a
+        // rejection: a permission with nothing to permit, which re-admits the refusal it names if
+        // that axis ever comes back. The repair is to delete the line, so the key is printed.
+        for key in &the_verdict.unmatched {
+            named.push_str(&format!("\n  stale-acceptance\t{key}\t(no refusal answers this key)"));
+        }
+        panic!(
+            "the tree is not conformant: {} rejection(s), {} unchecked cell(s) and {} stale \
+             acceptance(s) — and no instrument running is not a pass either. `{}` names the \
+             refusals this record admits; every other one is work, and an admitted key no refusal \
+             answers is a line to delete.{named}",
+            rejected.len(),
+            the_verdict.unchecked.len(),
+            the_verdict.unmatched.len(),
+            conformance::ACCEPTED_PATH
+        );
+    }
 }

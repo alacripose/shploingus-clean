@@ -1,0 +1,3 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running `target\debug\shploingus-clean-room.exe`
+serve: 7 request(s): 5 answered, 2 refused by name

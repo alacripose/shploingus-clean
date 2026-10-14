@@ -1,0 +1,36 @@
+The run's own movement, pre-pass bytes vs these — 2026-10-14f
+============================================================
+
+This pass changes **which owner reads a cell's material**, not what the product prints. So the honest record of
+the run's movement is that there is **none** — and that is a measurement, not a claim:
+
+command (from `clean-room/`):
+  cargo run --offline -j 2   > <this pass's stdout>, 2> <this pass's stderr>
+  (the pre-pass capture is the same command on the bytes this pass started from)
+
+stdout lines: before **532**, after **532**
+stdout sha256: before-clean `63dc1820fa48ed424821dd157f27770eff35051f7ed42b7c8b50d52bb4634b64`, after the same
+  `63dc1820fa48ed424821dd157f27770eff35051f7ed42b7c8b50d52bb4634b64` — **`cmp` says the same bytes**, 0
+  differing lines, 0 differing bytes. Every registry row, every `U1 client:` line, every `U4` and `U12` line,
+  every digest, count, pixel, camera number and refusal sentence the run prints is the same text it printed
+  before this pass.
+stderr: 1 line of the binary's own — `serve: 7 request(s): 5 answered, 2 refused by name` — the same line the
+  10-14d and 10-14e passes printed. (cargo also emits the path-dependency crates' `missing_docs` warnings on
+  stderr before the binary runs; those are `crates/` warnings, are unchanged by this pass, and are not the
+  binary's output.)
+`cargo run` exit: **0**.
+
+A note on the pre-pass capture, so a later reader can reproduce this: the baseline file was written with the
+subject's exit status appended as a trailing `RUN_EXIT=0` line, which is *not* part of the run's stdout. The
+comparison above drops that one line (`head -n -1`) and then the two streams are byte-identical; with the line
+kept, the diff is exactly that one added line. Nothing else differs, and the digest above is over the run's own
+532 lines.
+
+**Why byte-identity is the right evidence here.** The pass's subject is *who owns a cell's material*: the plan
+reading and the mesh sweep now ask the world's own cells instead of deriving the same material a second time
+from a per-column class plane. Two derivations that agree produce the same picture, so a **changed** frame
+would have meant the pass changed behaviour rather than ownership — the opposite of what it claims. The moving
+number this pass owes is not in the run at all: it is the one-cell differential in
+`cell-material-gate-2026-10-14f.txt`, where a world is deliberately made to differ from another in exactly one
+cell and the frame's digest moves with it. The run's own frame is the *unchanged* case, and it is unchanged
+byte for byte.

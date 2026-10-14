@@ -1,0 +1,68 @@
+The port's own comparison block, checked per kind and in order — 2026-10-14b
+==========================================================================
+
+Subject: does this pass's port capture (`port-mesh-2026-10-14b.txt`) reproduce the block §8 measured
+(`port-mesh-2026-10-14.txt`), and does the `port-gate:` line reproduce? Both are answered by commands, run
+from this directory on the final bytes. §8's file is 249 lines and this pass's 250, so the comparison is
+per kind rather than by file length — and the difference between the two files is extraction, not
+measurement: §8's filter dropped every harness line (which took the `port-gate:` line with it, because the
+gate prints on one) and kept two bare `ok` lines; this pass's keeps the gate line and drops the harness's.
+
+The composition of each file, counted rather than assumed
+--------------------------------------------------------
+command: for f in port-mesh-2026-10-14.txt port-mesh-2026-10-14b.txt; do ... done
+  --- port-mesh-2026-10-14.txt
+  total        249
+  stream-seam  6
+  differential 8
+  port-bridge  2
+  port-gate    0
+  divergence   8
+  blank        1
+  other        230
+  --- port-mesh-2026-10-14b.txt
+  total        250
+  stream-seam  9
+  differential 8
+  port-bridge  2
+  port-gate    1
+  divergence   9
+  blank        0
+  other        230
+
+So the comparison is 230 + 8 + 2 = **240** lines in both files, and the port-gate line is the 241st in this
+pass's file and absent from §8's. Everything else that differs is harness or stream-half, named next.
+
+The 240 lines, in order
+-----------------------
+command: diff <(grep -v '^stream-seam:\|port-gate:\|^$\|^ok$' port-mesh-2026-10-14.txt) \
+             <(grep -v '^stream-seam:\|port-gate:\|^$\|^ok$' port-mesh-2026-10-14b.txt)
+  (no output — exit 0)  the whole 240-line block, identical in order
+command: diff <(grep 'mesh port differential' port-mesh-2026-10-14.txt) \
+             <(grep 'mesh port differential' port-mesh-2026-10-14b.txt)
+  (no output — exit 0)  the 8 differential rows, identical in order
+command: diff <(grep 'divergent face\|unnamed' port-mesh-2026-10-14.txt) \
+             <(grep 'divergent face\|unnamed' port-mesh-2026-10-14b.txt | grep -v 'port-gate:')
+  (no output — exit 0)  every divergence example line, identical in order
+command: diff <(grep -v '^stream-seam:\|mesh port differential\|^port-bridge:\|port-gate:\|divergent \
+                 face\|unnamed\|^$\|^ok$' port-mesh-2026-10-14.txt) <(the same on the new file)
+  (no output — exit 0)  the 230 remaining comparison lines, identical in order
+
+The gate line, against §7's own copy
+------------------------------------
+§8's extraction dropped the gate line, so its text is checked against the copy §7's capture carries —
+the same measurement, taken on 2026-10-13's bytes, where the line was kept.
+command: diff <(grep -o 'port-gate:.*' port-mesh-2026-10-13.txt) <(grep -o 'port-gate:.*' port-mesh-2026-10-14b.txt)
+  (no output — exit 0)  identical
+  the line (this pass's copy, and §7's, character for character):
+  port-gate: 8 case(s) compared, 16558 unit face(s) the world owns on the parent's side, 15406
+  divergent face(s) and **every one of them named** — 0 unnamed
+
+What this does and does not establish
+-------------------------------------
+It establishes that the parent-vs-this-crate comparison **did not move** when the keyed door landed: the
+same 8 cases, the same 16 558 unit faces owned on the parent's side, the same 15 406 divergent faces, the
+same 0 unnamed, row for row and example for example. It does not establish that the two *capture files* are
+byte-identical as files — they are not, and should not be read as such: the difference is which harness
+lines each extraction kept, which is why the figure in README.txt §9 is stated per kind (240) rather than as
+a file length (249 / 250).

@@ -54,6 +54,7 @@
 //! or a run with different worker counts produces the same world. This is why
 //! `Stage::Hydrology` can hold a ×4 rung without hydrology needing a time
 //! dimension: the rung decides *whether* it is asked, not *what* it answers.
+use voxel_model::endian::LeBytes;
 
 use voxel_mesh::octree::{SparseVoxelOctree, OCTREE_LEVELS};
 use voxel_model::{ChunkPos, Identity, Refusal, RefusalKind, Refused, CHUNK_SIDE};
@@ -490,30 +491,30 @@ impl TickDriver {
     /// performance knob and never touches output (F12).
     fn digest(&self, tick: u64, units: &[UnitOfWork]) -> Identity {
         let mut payload = Vec::new();
-        payload.extend_from_slice(&tick.to_be_bytes());
+        payload.extend_from_slice(&tick.into_le_bytes());
         let due = self.scheduler.due_at(tick);
-        payload.extend_from_slice(&(due.len() as u64).to_be_bytes());
+        payload.extend_from_slice(&(due.len() as u64).into_le_bytes());
         for stage in &due {
             field_str(&mut payload, stage.name());
         }
-        payload.extend_from_slice(&(units.len() as u64).to_be_bytes());
+        payload.extend_from_slice(&(units.len() as u64).into_le_bytes());
         for unit in units {
             let c = unit.chunk();
             let o = unit.origin();
-            payload.extend_from_slice(&c.x.to_be_bytes());
-            payload.extend_from_slice(&c.y.to_be_bytes());
-            payload.extend_from_slice(&c.z.to_be_bytes());
+            payload.extend_from_slice(&c.x.into_le_bytes());
+            payload.extend_from_slice(&c.y.into_le_bytes());
+            payload.extend_from_slice(&c.z.into_le_bytes());
             for a in o {
-                payload.extend_from_slice(&a.to_be_bytes());
+                payload.extend_from_slice(&a.into_le_bytes());
             }
-            payload.extend_from_slice(&unit.level().to_be_bytes());
+            payload.extend_from_slice(&unit.level().into_le_bytes());
         }
         Identity::of_fields("voxel-work/tick-receipt/v1", &[&payload])
     }
 }
 
 fn field_str(payload: &mut Vec<u8>, text: &str) {
-    payload.extend_from_slice(&(text.len() as u64).to_le_bytes());
+    payload.extend_from_slice(&(text.len() as u64).into_le_bytes());
     payload.extend_from_slice(text.as_bytes());
 }
 

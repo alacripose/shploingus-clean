@@ -71,7 +71,7 @@
 //! *"white noise at the 256 base is acceptable with different shaper patterns for
 //! the noise, so for sand it'd be speckled, for trees it'd be bark, metal could be
 //! brushed/shiny."* The shaper is
-//! [`voxel_shapers::column::materials::SurfacePattern`] — a stencil on the address
+//! [`voxel_shapers::materials::SurfacePattern`] — a stencil on the address
 //! and a curve on the value — and it is the same hash underneath, so nothing is
 //! stored.
 //!
@@ -114,7 +114,7 @@ use voxel_model::{
     DetailIndex, MaterialId, Refusal, RefusalKind, Refused, ShadingField, DETAIL_SIDE,
     SUBVOXEL_SIDE,
 };
-use voxel_shapers::column::materials::SurfacePattern;
+use voxel_shapers::materials::SurfacePattern;
 
 /// One block edge, in metres. The generator's own scale (`C-6`: 1 m voxels).
 const VOXEL_M: f64 = 1.0;
@@ -460,7 +460,7 @@ impl<'a> Pattern<'a> {
     /// what the shader computes before it modulates the row.
     ///
     /// `surface` is the material's declared shaper
-    /// ([`voxel_shapers::column::materials::pattern_of`]), which the shader reads
+    /// ([`voxel_shapers::materials::pattern_of`]), which the shader reads
     /// from the row's `pattern.z`. A material the field does not vary returns
     /// [`DetailSample::NONE`] **exactly** and without touching the lattice: "not
     /// varied at this level at all" is a different claim from "varied by zero",
@@ -868,8 +868,8 @@ mod tests {
         // a *missing* term: an axis that never reached the weight would agree with
         // itself perfectly.
         let angle = f64::from(pixel_angle_rad(std::f64::consts::FRAC_PI_3, 360));
-        // A face seen at an angle, so this is not quietly the `cos_face = 1` case where
-        // an axis could be dropped without showing.
+        /// A face seen at an angle, so this is not quietly the `cos_face = 1` case where
+        /// an axis could be dropped without showing.
         const FACE_COS: f64 = 0.7;
         for &d in &[2.0f64, 10.0, 40.0] {
             let weights = |p: [f64; 3]| {
@@ -895,27 +895,27 @@ mod tests {
 
     #[test]
     fn no_rung_s_weight_has_a_step_in_it() {
-        // **The blend has to stay a blend**, and this is the property that says so.
-        //
-        // C-171 measured the vertical shimmer's asymmetry living in `octave_weight`'s
-        // smoothstep, and named three routes to repair it. Route (a) — staging each
-        // rung whole-or-nothing at `cell / 4`, `octave_weight_staged` — is written and
-        // tested in this file and was measured on the GPU
-        // (`examples/pattern-flicker.rs`, 2026-10-08): it takes the pixels that change
-        // down 45% and *raises* the total on **both** axes (573.1 → 673.0 vertical,
-        // 234.0 → 265.2 horizontal), because a staged rung is drawn at its full 1.0
-        // where the fade drew it at a partial weight. The smooth LOD blend reads as
-        // harsh and broken, so it was not taken.
-        //
-        // What route (a) gives up is *continuity*: a rung that goes 0 → 1 across a
-        // vanishing change of footprint is a switch, whatever it is called. That is
-        // asserted here rather than the route, so a future fade may change shape and
-        // width freely and only has to stay smooth.
-        //
-        // The bound is the smoothstep's own steepest slope, not a tuned constant: `t`
-        // moves `4 / cell` per metre and `smoothstep`'s derivative peaks at 1.5, so
-        // `6 / cell` per metre is the fastest a fade may ever climb. A staged weight
-        // clears it by five orders of magnitude at the very threshold it switches on.
+        /// **The blend has to stay a blend**, and this is the property that says so.
+        ///
+        /// C-171 measured the vertical shimmer's asymmetry living in `octave_weight`'s
+        /// smoothstep, and named three routes to repair it. Route (a) — staging each
+        /// rung whole-or-nothing at `cell / 4`, `octave_weight_staged` — is written and
+        /// tested in this file and was measured on the GPU
+        /// (`examples/pattern-flicker.rs`, 2026-10-08): it takes the pixels that change
+        /// down 45% and *raises* the total on **both** axes (573.1 → 673.0 vertical,
+        /// 234.0 → 265.2 horizontal), because a staged rung is drawn at its full 1.0
+        /// where the fade drew it at a partial weight. The smooth LOD blend reads as
+        /// harsh and broken, so it was not taken.
+        ///
+        /// What route (a) gives up is *continuity*: a rung that goes 0 → 1 across a
+        /// vanishing change of footprint is a switch, whatever it is called. That is
+        /// asserted here rather than the route, so a future fade may change shape and
+        /// width freely and only has to stay smooth.
+        ///
+        /// The bound is the smoothstep's own steepest slope, not a tuned constant: `t`
+        /// moves `4 / cell` per metre and `smoothstep`'s derivative peaks at 1.5, so
+        /// `6 / cell` per metre is the fastest a fade may ever climb. A staged weight
+        /// clears it by five orders of magnitude at the very threshold it switches on.
         const SAMPLES: usize = 4096;
         for octave in OCTAVE_FLOOR..=OCTAVE_TOP {
             let cell = octave_cell_m(octave);

@@ -1,0 +1,19 @@
+237f484090dce54639f6910e64e43d3b60ad428eb4a18a88113c3d8c77ab9067 *README.txt
+d17db631230c108e82964cc2fb3e7ec9e46370e8d02eb52f21adfe0322ed9f08 *cell-material-gate-2026-10-14f.txt
+1299af1887c02acdd02d343ca82edbede4eaeb73cb27478bd88ee13737816c0c *guard-bites-2026-10-14f.txt
+63dc1820fa48ed424821dd157f27770eff35051f7ed42b7c8b50d52bb4634b64 *run-after-the-cells-own-the-material-2026-10-14f.txt
+540107572e087156d05de1d06c1a266faaaa2a2a7230afeffb8dc125d5585247 *run-movement-2026-10-14f.txt
+be8bbc95f95d7c6adcadfb7a31a2adee499e29d9caaf215c2bb82575eaea5944 *window-stdout-2026-10-14f.txt
+e8c0e55ccbcd09eb8ac16f05b47c95ff8af731e01bc8f1c04dd94eccd686f242 *frame-2026-10-14f.ppm
+9934b3c6e419e43f6f0f30c61762d5b6edd8d23addfdc963b7c0d8e5432e95ad *digests-2026-10-14f.txt
+# 2026-10-14f — the eight files this pass wrote or moved under this directory, verified from here with
+# `sha256sum -c`. `README.txt` is §12 (and §7–§11 are untouched above it); the one-cell differential that is
+# this pass's own acceptance is `cell-material-gate-2026-10-14f.txt`; the six bites and their byte-exact
+# restores are `guard-bites-2026-10-14f.txt`; the run's stdout as this pass left it is
+# `run-after-the-cells-own-the-material-2026-10-14f.txt` (532 lines, byte-identical to the pre-pass capture —
+# see `run-movement-2026-10-14f.txt`, which carries the digests of both sides); the window's own stdout is
+# `window-stdout-2026-10-14f.txt` and the frame it presented is `frame-2026-10-14f.ppm` (P6, 576 × 576);
+# and `digests-2026-10-14f.txt` is the clean-room half, verified from `clean-room/`. NOT listed, because this
+# pass did not write them: `pinned-parent-bytes.txt` (no parent byte was read or written this pass — the pin
+# was re-verified read-only, 88 of 88 OK), every `*-2026-10-14e.txt` and earlier capture, `digests-captures-2026-10-14f.txt`
+# itself (a digest of itself would never verify), and the pre-§42 `frame.ppm` under `docs/baselines/u4-the-drawn-reading/`.

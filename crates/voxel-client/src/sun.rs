@@ -7,7 +7,7 @@
 //!
 //! `sky.wgsl` is handed this body's centre relative to the eye, its half-extent and its own
 //! radiance, and tests every pixel's ray against the cuboid - so the Sun on screen is the
-//! same object [`SunCuboid::visibility`] measures a shadow against, rather than a second
+//! same object [`BodyCuboid::visibility`] measures a shadow against, rather than a second
 //! shape declared for the picture.
 //!
 //! **Its orientation is the world's axes**, and that follows from a test rather than from a
@@ -22,6 +22,7 @@ use voxel_appearance::openpbr::LinearRgb;
 use voxel_appearance::sky::Sky;
 use voxel_light::SUN_DILUTION;
 use voxel_shapers::sky::SolarPosition;
+use voxel_shapers::WorldSpec;
 
 /// One astronomical unit, metres (IAU 2012 definition).
 pub const AU_M: f64 = 1.495_978_707e11;
@@ -46,7 +47,7 @@ pub fn angular_radius_rad(distance_m: f64) -> f64 {
 /// axes (`x` east, `y` up, `z` south). See this module's doc for why the orientation is the
 /// world's rather than the eye's.
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub struct SunCuboid {
+pub struct BodyCuboid {
     pub centre: [f64; 3],
     pub radius_m: f64,
 }
@@ -103,12 +104,12 @@ pub fn direction_to(p: &SolarPosition) -> [f64; 3] {
     [d.x, d.y, d.z]
 }
 
-impl SunCuboid {
+impl BodyCuboid {
     /// **The body's place, geometry only**: one astronomical unit along the direction the two
     /// angles name, from `world_anchor`.
     ///
     /// No horizon rule here - *where the body is* and *whether a shadow can be cast from it*
-    /// are two questions, and [`SunCuboid::at_tick`] is the one that answers the second.
+    /// are two questions, and [`BodyCuboid::at_tick`] is the one that answers the second.
     /// [`DrawnSun::of`] wants the first, because a drawn body exists exactly when the rig has
     /// a light in it, and `SkyPhase::sun_is_up` reaches 0.833° below the horizon for
     /// refraction.
@@ -128,7 +129,7 @@ impl SunCuboid {
             declination_deg: 0.0,
             hour_angle_deg: 0.0,
         });
-        Ok(SunCuboid {
+        Ok(BodyCuboid {
             centre: [
                 world_anchor[0] + d[0] * AU_M,
                 world_anchor[1] + d[1] * AU_M,
@@ -268,7 +269,8 @@ impl SunCuboid {
     }
 }
 
-/// **The Sun as the sky pass draws it**: the body, and the radiance of its faces.
+/// **The Sun as a frame draws it** (C-184): the body, and the radiance of its faces — carried into the
+/// frame as a [`crate::quad::BodyRecord`] by [`DrawnSun::body_record`] rather than as a uniform.
 ///
 /// # Why the radiance is not simply `Sky::sun`
 ///
@@ -288,7 +290,7 @@ impl SunCuboid {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct DrawnSun {
     /// The body itself - the same object a shadow's penumbra is measured against.
-    pub body: SunCuboid,
+    pub body: BodyCuboid,
     /// The radiance of its faces, **already through the sky pass's exposure**, so the disc and
     /// the sky it sits in share one scale.
     pub radiance: LinearRgb,
@@ -296,12 +298,21 @@ pub struct DrawnSun {
 
 impl DrawnSun {
     /// The Sun this frame draws, **from the same `Sky` the light rig was built from**, or
-    /// `None` when there is no sun to draw.
+    /// `None` when the Sun is not up.
     ///
-    /// `None` is the rig's own condition rather than a second one. `Sky::sun_light` is exactly
-    /// black when the Sun is not up, so `sky.sun.luminance() > 0.0` is true exactly when the
-    /// rig carries a sun light - and a body drawn for a sun the rig does not have would be a
-    /// picture of a light that is not falling on the world.
+    /// **`None` is the Sun's own state, named, and it used to be the *luminance's* zero.** The test
+    /// here read `sky.sun.luminance() > 0.0`, which was true exactly while the Sun was up *because
+    /// `Sky::sun_light` returned `BLACK` below the horizon* - so the drawn body, the light the Moon
+    /// is lit by and the rig's key light were all one switch, and the Sun's features went out in the
+    /// same update it crossed. Every one of those is now separate: the Sun's own output keeps the
+    /// horizon's air column at every hour below the horizon ([`voxel_appearance::sky::Sky::sun_light`]),
+    /// the rig takes the twilight share of it ([`crate::skylight::daylight_of`]), and **the body is
+    /// drawn while the Sun is up** - [`voxel_shapers::sky::SkyPhase::sun_is_up`], the same rule the
+    /// rig's own membership uses, so the picture and the light cannot drift apart again.
+    ///
+    /// [`BodyCuboid::at_tick`] is *not* called here, and that is the other half of the separation:
+    /// its `BelowHorizon` refusal is the **shadow-casting** rule, and where a body is stands apart
+    /// from whether a shadow can be measured from it.
     ///
     /// `peak` is the world's brightest sun, W/m² ([`crate::skylight::peak_sun_luminance`]) -
     /// **the same normaliser the sky table is divided by**, so one exposure covers both. A
@@ -313,41 +324,213 @@ impl DrawnSun {
     /// astronomical unit of parallax - 4e-8 radians from a six-kilometre world - and not the
     /// direction it is seen from.
     pub fn of(sky: &Sky, peak: f64, anchor_m: [f64; 3]) -> Option<Self> {
-        // **Refused by name, not by how a comparison happens to treat a NaN.** `!(x > 0.0)` also
-        // refuses a NaN, and that behaviour is wanted — a NaN radiance is not a sun — so the NaN
-        // is refused explicitly here, which is the form `skylight::sky_lut` already uses for a
-        // normaliser and the one clippy's `neg_cmp_op_on_partial_ord` asks for: `!(x > 0.0)` and
-        // `x <= 0.0` differ for a NaN, and a reader cannot tell which was meant.
-        let irradiance = sky.sun.luminance();
-        if !irradiance.is_finite() || irradiance <= 0.0 || !peak.is_finite() || peak <= 0.0 {
+        // The Sun's own state, and not a reading of what it emits — see this function's doc.
+        if !voxel_shapers::sky::SkyPhase::sun_is_up(sky.sun_altitude_deg) {
             return None;
         }
-        let body = SunCuboid::at(anchor_m, sky.sun_altitude_deg, sky.sun_azimuth_deg).ok()?;
+        // Refused by name, not by how a comparison happens to treat a NaN — docs/lighting-sky-and-moon.md
+        let irradiance = sky.sun.luminance();
+        if !irradiance.is_finite() || !peak.is_finite() || peak <= 0.0 {
+            return None;
+        }
+        let body = BodyCuboid::at(anchor_m, sky.sun_altitude_deg, sky.sun_azimuth_deg).ok()?;
         Some(DrawnSun {
             body,
             radiance: sky_exposed(sky.sun / (peak * solid_angle_sr(AU_M))),
         })
     }
 
-    /// The body's centre **relative to the eye**, as the shader's uniform carries it.
+    /// **The record this body travels as** (C-184): the centre and the half-extent in the world's
+    /// **engine metres** — `voxel_shapers::scale`'s 1:8 ruling, applied to the offset from the eye
+    /// and to the radius, so what the record subtends is the real angle and the distance it is
+    /// carried at is this world's own.
     ///
-    /// The subtraction is done in `f64` and only the difference is narrowed, the rule
-    /// `camera.rs` states for geometry: at one astronomical unit one `f32` metre is spaced
-    /// 8192 m, so narrowing the *world* point - 1.5e11 m - would quantise a body 1.4e9 m
-    /// across into a grid 8192 m wide. What remains after the subtraction is a direction
-    /// whose narrowing moves it by about 5.5e-8 rad, which is five orders below one pixel of
-    /// the shipped window (1.1e-3 rad at 1080 lines and a 70° field).
-    pub fn centre_relative_to(&self, eye_m: [f64; 3]) -> [f32; 3] {
-        let mut out = [0.0f32; 3];
-        for (axis, slot) in out.iter_mut().enumerate() {
-            *slot = (self.body.centre[axis] - eye_m[axis]) as f32;
-        }
-        out
+    /// `light_direction` is `[0, 0, 0]`: a Sun is what it emits, and `fs_body` draws a body lit by
+    /// nothing as its own radiance — which is why the Moon's record, not this one, is the phase.
+    pub fn body_record(&self, eye_m: [f64; 3]) -> crate::quad::BodyRecord {
+        self.body_record_graded(eye_m, 1.0)
     }
 
-    /// The cuboid's half-extent as the uniform carries it.
-    pub fn half_extent_f32(&self) -> f32 {
-        self.body.radius_m as f32
+    /// [`DrawnSun::body_record`] **at a frame's own exposure grade**: the radiance the record carries
+    /// is scaled by it, so the Sun is drawn at the same exposure the sky it stands in and the light it
+    /// casts are. A record graded apart from its sky would be a disc left at noon over an exposed night.
+    pub fn body_record_graded(&self, eye_m: [f64; 3], grade: f64) -> crate::quad::BodyRecord {
+        let mut centre_m = [0.0f64; 3];
+        for (axis, slot) in centre_m.iter_mut().enumerate() {
+            *slot = eye_m[axis] + voxel_shapers::scale::voxels(self.body.centre[axis] - eye_m[axis]);
+        }
+        crate::quad::BodyRecord {
+            centre_m,
+            half_extent_m: voxel_shapers::scale::voxels(self.body.radius_m),
+            radiance: [
+                self.radiance.r as f32 * grade as f32,
+                self.radiance.g as f32 * grade as f32,
+                self.radiance.b as f32 * grade as f32,
+            ],
+            light_direction: [0.0; 3],
+        }
+    }
+}
+
+/// The world's scale height in **real metres** — the unit `voxel_light`'s coefficients are in.
+///
+/// `voxel_shapers::atmosphere::SCALE_HEIGHT_M` is the same air after the 1:8 ruling, so this is the
+/// figure that constant scales rather than a second measurement of the atmosphere.
+pub const REAL_SCALE_HEIGHT_M: f64 = 8_500.0;
+
+
+/// **The air a ray crosses**, from the world's own measurements rather than a caller's guess: the
+/// shapers' own density and scale height, and the cloud column's water path at `(x, z)`.
+///
+/// **The droplets are zero here, and that is declared rather than forgotten**: `voxel_shapers::fog`'s
+/// near-surface load is not read in this function yet, so a fog dims the ground without dimming the
+/// Moon. The cloud's column is real, so one term is missing and it is named.
+pub fn air_at(spec: &WorldSpec, x: f64, z: f64, tick: u64) -> voxel_light::Air {
+    let sample = voxel_shapers::atmosphere::sample(spec, 0.0);
+    voxel_light::Air {
+        ground_density_kg_m3: sample.density_kg_m3,
+        scale_height_m: REAL_SCALE_HEIGHT_M,
+        droplet_lwc_g_m3: 0.0,
+        droplet_layer_depth_m: 0.0,
+        cloud_water_path_m: voxel_shapers::clouds::column_water_path_m(spec, x, z, tick),
+    }
+}
+
+/// **The Moon as a frame draws it** (C-184): a body at the Moon's own distance, and the radiance of its
+/// **lit face** — carried into the frame as a [`crate::quad::BodyRecord`] by [`DrawnMoon::body_record`].
+///
+/// # Why the radiance is the solver's, and why the phase is not here
+///
+/// The face's radiance is `voxel_light`'s own answer — the Sun's spectrum in each band times the band
+/// table's declared reflectance, over π by Lambert's law, transmitted back down the same air column
+/// the Sun crossed. So the drawn Moon **is** the Sun reflected, and nothing in this file chooses how
+/// bright it is.
+///
+/// Which part of the body the eye sees lit is **geometry, and the shader does it**: each **face** of
+/// the body is shaded by its own normal against the Sun's direction, so a new body, a quarter body and
+/// a full one are one equation rather than three pictures. The illuminated fraction that reaches the
+/// light rig is the same geometry, integrated over the body.
+///
+/// # A cuboid where the light is measured, a sphere where it is drawn
+///
+/// [`BodyCuboid`] is the shape the **photometry** is measured against — the solid angle the Sun's
+/// irradiance is divided by, and the body a shadow's penumbra marches toward — and it is the Sun's own
+/// type, so the two bodies differ only in the numbers.
+///
+/// What the eye sees is `shading.wgsl`'s `fs_body`, which draws a **sphere** from the record: a phase
+/// is a per-pixel normal, and a cuboid has one normal per visible face, so a cube draws a full moon at
+/// every elongation. The one place the two shapes part company in flux is that a face-on square covers
+/// `4/π` times the disc inscribed in it, so the drawn disc delivers that much less of the body's own
+/// irradiance — named in `docs/lighting-sky-and-moon.md` §7 rather than corrected by a second
+/// brightness scale here.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct DrawnMoon {
+    /// **The body itself.** Its half-extent is `voxel_light::MOON_RADIUS_KM`'s own figure, so the
+    /// body subtends the angle the Moon subtends and not an angle chosen for the picture.
+    pub body: BodyCuboid,
+    /// The radiance of a **fully lit** face, already through the sky pass's exposure.
+    pub radiance: LinearRgb,
+    /// **The direction toward the Sun** — the light the shader lights the body's own points with.
+    ///
+    /// Its own field rather than a reading of the drawn Sun's centre, because at night the Sun's body
+    /// is below the horizon and is not drawn at all, and it is *precisely then* that the Moon is up.
+    pub light_direction: [f64; 3],
+}
+
+impl DrawnMoon {
+    /// The Moon this frame draws, or `None` when there is no Moon to draw.
+    ///
+    /// `moon` is **the orbit's own reading** ([`voxel_shapers::sky::moon_position`]): the altitude
+    /// and azimuth the body is placed at, and the elongation the phase comes from. `peak` is the
+    /// world's brightest sun (`crate::skylight::peak_sun_luminance`) — **the same normaliser the
+    /// sky table is divided by**, so one exposure covers the sky, the Sun and the Moon — and
+    /// `anchor_m` the eye the body is placed a lunar distance from.
+    ///
+    /// **`None` when the body is below the horizon, and it is the solver's own refusal rather
+    /// than a second test here**: `voxel_light::moon_radiance` returns all twelve bands zero for a
+    /// Moon that has set, so the sum below is zero and the body is not drawn. A Moon the eye
+    /// cannot see is not a Moon at reduced brightness.
+    pub fn of(
+        moon: &voxel_shapers::sky::MoonPosition,
+        air: &voxel_light::Air,
+        peak: f64,
+        anchor_m: [f64; 3],
+        sun_altitude_deg: f64,
+        sun_azimuth_deg: f64,
+    ) -> Option<Self> {
+        if !moon.phase_fraction.is_finite() || moon.phase_fraction <= 0.0 {
+            return None;
+        }
+        if !peak.is_finite() || peak <= 0.0 {
+            return None;
+        }
+        let path = voxel_light::MoonPath {
+            altitude_deg: moon.altitude_deg,
+            azimuth_deg: moon.azimuth_deg,
+            illuminated_fraction: moon.phase_fraction,
+        };
+        let table = voxel_light::BandTable::computed();
+        let face = voxel_light::moon_radiance(&table, air, &path).ok()?;
+        let total: f64 = face.iter().sum();
+        if !total.is_finite() || total <= 0.0 {
+            return None;
+        }
+        // The bands carry the magnitude, the response carries the shape, and both are divided by the
+        // same normaliser every other radiance in the sky pass is divided by.
+        let chromatic = voxel_light::visible_rgb(&face);
+        let magnitude = total / peak;
+        // **The Moon's own direction function is the Sun's**, because there is one frame here: an
+        // azimuth from north increasing eastwards over `x` east, `y` up, `z` south. A second spelling
+        // of that convention is the defect this module already paid for once.
+        let direction = sun_direction(moon.altitude_deg, moon.azimuth_deg);
+        let to_sun = sun_direction(sun_altitude_deg, sun_azimuth_deg);
+        let distance_m = voxel_light::MOON_DISTANCE_KM * 1_000.0;
+        Some(DrawnMoon {
+            body: BodyCuboid {
+                centre: [
+                    anchor_m[0] + direction.x * distance_m,
+                    anchor_m[1] + direction.y * distance_m,
+                    anchor_m[2] + direction.z * distance_m,
+                ],
+                radius_m: voxel_light::MOON_RADIUS_KM * 1_000.0,
+            },
+            light_direction: [to_sun.x, to_sun.y, to_sun.z],
+            radiance: sky_exposed(LinearRgb {
+                r: chromatic[0] * magnitude,
+                g: chromatic[1] * magnitude,
+                b: chromatic[2] * magnitude,
+            }),
+        })
+    }
+
+    /// **The record this body travels as** (C-184), through the same ruling the Sun's is: engine
+    /// metres, and the same negative `f64` subtraction before the narrow, because a lunar distance
+    /// does not fit a 32-bit metre and a direction does.
+    ///
+    /// **Its `light_direction` is the Sun's**, and that one field is the whole of the phase: the
+    /// record carries the radiance of a *fully lit* face and the direction that lights it, and which
+    /// part of the face the eye sees lit is `fs_body`'s sphere law and not a brightness chosen here.
+    pub fn body_record(&self, eye_m: [f64; 3]) -> crate::quad::BodyRecord {
+        self.body_record_graded(eye_m, 1.0)
+    }
+
+    /// [`DrawnMoon::body_record`] **at a frame's own exposure grade**, through the same scale the Sun's
+    /// own record takes: the Moon's face and the sky it is seen against are one frame's exposure.
+    pub fn body_record_graded(&self, eye_m: [f64; 3], grade: f64) -> crate::quad::BodyRecord {
+        let mut centre_m = [0.0f64; 3];
+        for (axis, slot) in centre_m.iter_mut().enumerate() {
+            *slot = eye_m[axis] + voxel_shapers::scale::voxels(self.body.centre[axis] - eye_m[axis]);
+        }
+        crate::quad::BodyRecord {
+            centre_m,
+            half_extent_m: voxel_shapers::scale::voxels(self.body.radius_m),
+            radiance: [
+                self.radiance.r as f32 * grade as f32,
+                self.radiance.g as f32 * grade as f32,
+                self.radiance.b as f32 * grade as f32,
+            ],
+            light_direction: self.light_direction,
+        }
     }
 }
 
@@ -360,6 +543,140 @@ mod tests {
 
     fn clear(_from: [f64; 3], _ray: [f64; 3]) -> bool {
         false
+    }
+
+    fn moon_air() -> voxel_light::Air {
+        voxel_light::Air {
+            ground_density_kg_m3: voxel_shapers::atmosphere::SEA_LEVEL_DENSITY_KG_M3,
+            scale_height_m: REAL_SCALE_HEIGHT_M,
+            droplet_lwc_g_m3: 0.0,
+            droplet_layer_depth_m: 0.0,
+            cloud_water_path_m: 0.0,
+        }
+    }
+
+    /// **The drawn Moon is the Sun's own light reflected, and what the shader gets is its face.**
+    ///
+    /// Four claims, and each is one the wiring could get wrong while still compiling:
+    ///
+    /// * the body stands at the Moon's own distance with the Moon's own radius, so the disc subtends
+    ///   the angle the Moon subtends rather than an angle chosen for the picture;
+    /// * its radiance is **in the Sun's own units** — the ratio to the drawn Sun's radiance is
+    ///   `reflectance/π · Ω`, which is the same `1e-5` the two bodies are apart in the sky;
+    /// * a thicker crescent does **not** dim the face, because the phase is geometry the shader
+    ///   computes from the ray and not a brightness multiplied in here — the test that would fail if
+    ///   someone moved the phase back into the photometry;
+    /// * a new moon draws **no body at all**, rather than a black disc over the stars.
+    #[test]
+    fn the_drawn_moon_is_the_suns_own_light_reflected_off_a_lit_face() {
+        let spec = WorldSpec::new(2468, Config::default());
+        let inputs = SkyInputs::default();
+        // A tick the model itself calls a lit moon — docs/lighting-sky-and-moon.md
+        let month_ticks = voxel_shapers::sky::SYNODIC_MONTH_DAYS * TICKS_PER_DAY as f64;
+        let tick = (0..month_ticks as u64)
+            .step_by(97)
+            .find(|t| {
+                let moon = voxel_shapers::sky::moon_position(&spec, *t, 0);
+                moon.altitude_deg > 10.0 && moon.phase_fraction > 0.33
+            })
+            .expect("the model's own month has a lit moon above the horizon in it");
+        let day = daylight_of(&spec, tick, inputs, 0).expect("a daylight at the moon's own tick");
+        let peak = peak_sun_luminance(&spec, inputs);
+        let air = moon_air();
+        let eye = [0.0, 0.0, 0.0];
+        let orbit = voxel_shapers::sky::moon_position(&spec, tick, 0);
+        let moon = DrawnMoon::of(
+            &orbit,
+            &air,
+            peak,
+            eye,
+            day.sky.sun_altitude_deg,
+            day.sky.sun_azimuth_deg,
+        )
+        .expect("a moon to draw");
+
+        // The body is where the model puts it, at the size the Moon is.
+        let distance_m =
+            (moon.body.centre[0].powi(2) + moon.body.centre[1].powi(2) + moon.body.centre[2].powi(2))
+            .sqrt();
+        let expected_distance_m = voxel_light::MOON_DISTANCE_KM * 1_000.0;
+        assert!(
+            (distance_m - expected_distance_m).abs() < 1.0e3,
+            "the body stands at {distance_m} m, not the Moon's own {expected_distance_m}"
+        );
+        let angular_diameter_deg =
+            2.0 * (moon.body.radius_m / distance_m).atan().to_degrees();
+        println!("the drawn moon subtends {angular_diameter_deg:.3}° and its face reads {:.3e}",
+            moon.radiance.luminance());
+        assert!(
+            (0.45..0.60).contains(&angular_diameter_deg),
+            "the drawn disc subtends {angular_diameter_deg}°, which is not the Moon's own half a 
+             degree"
+        );
+
+        // **The Sun's own units**, which is the check on the whole exposure: the same normaliser the
+        // Sun's body is drawn with divides this one too, so the ratio is the physics and not a second
+        // scale someone chose.
+        let sun_radiance = sky_exposed(day.sky.sun / (peak * solid_angle_sr(AU_M))).luminance();
+        let ratio = moon.radiance.luminance() / sun_radiance;
+        println!("the moon's face is {ratio:.3e} of the sun's own radiance");
+        assert!(
+            (1.0e-6..1.0e-4).contains(&ratio),
+            "the drawn moon is {ratio} of the drawn sun, which is not a reflectance over π times a 
+             solid angle"
+        );
+
+        // The phase is the shader's, so it must not move the face's radiance.
+        let crescent_orbit = voxel_shapers::sky::MoonPosition {
+            phase_fraction: orbit.phase_fraction * 0.5,
+            ..orbit
+        };
+        let crescent = DrawnMoon::of(
+            &crescent_orbit,
+            &air,
+            peak,
+            eye,
+            day.sky.sun_altitude_deg,
+            day.sky.sun_azimuth_deg,
+        )
+        .expect("a crescent");
+        assert!(
+            (crescent.radiance.luminance() - moon.radiance.luminance()).abs() < 1.0e-12,
+            "a thinner crescent dimmed the lit face ({} against {}), so the phase is in the 
+             photometry rather than in the geometry the shader draws",
+            crescent.radiance.luminance(),
+            moon.radiance.luminance()
+        );
+
+        // A new moon has no lit face, so it is refused rather than drawn black — and a Moon that
+        // has set is refused by the same rule, because the solver gives a body below the horizon
+        // no radiance at all.
+        let new_moon = voxel_shapers::sky::MoonPosition { phase_fraction: 0.0, ..orbit };
+        assert!(
+            DrawnMoon::of(
+                &new_moon,
+                &air,
+                peak,
+                eye,
+                day.sky.sun_altitude_deg,
+                day.sky.sun_azimuth_deg,
+            )
+            .is_none(),
+            "a new moon was handed to the pass as a body"
+        );
+        let set_moon = voxel_shapers::sky::MoonPosition { altitude_deg: -5.0, ..orbit };
+        assert!(
+            DrawnMoon::of(
+                &set_moon,
+                &air,
+                peak,
+                eye,
+                day.sky.sun_altitude_deg,
+                day.sky.sun_azimuth_deg,
+            )
+            .is_none(),
+            "a Moon below the horizon was handed to the pass as a body"
+        );
     }
 
     fn noon() -> SolarPosition {
@@ -402,7 +719,7 @@ mod tests {
         // the cube from the observer's position, and looked fine only because its size was
         // derived from its distance.
         let solar = morning();
-        let sun = SunCuboid::at_tick([0.0; 3], &solar).expect("a sun");
+        let sun = BodyCuboid::at_tick([0.0; 3], &solar).expect("a sun");
         let far_observer = [1.0e6, 0.0, 0.0];
         let to_far = [
             sun.centre[0] - far_observer[0],
@@ -424,29 +741,29 @@ mod tests {
     fn a_sun_below_the_horizon_is_refused_and_not_a_light_from_underneath() {
         let set = SolarPosition { altitude_deg: -5.0, ..noon() };
         assert!(matches!(
-            SunCuboid::at_tick([0.0; 3], &set),
+            BodyCuboid::at_tick([0.0; 3], &set),
             Err(SunRefusal::BelowHorizon { .. })
         ));
     }
 
     #[test]
     fn a_clear_sky_lights_a_whole_surface() {
-        let sun = SunCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
+        let sun = BodyCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
         assert_eq!(sun.visibility([0.0, 0.0, 0.0], 16, clear), 1.0);
     }
 
     #[test]
     fn a_fully_blocked_sun_is_dark_and_says_so() {
         let wall = |_from: [f64; 3], _ray: [f64; 3]| -> bool { true };
-        let sun = SunCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
+        let sun = BodyCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
         assert_eq!(sun.visibility([0.0, 0.0, 0.0], 16, wall), 0.0);
     }
 
     #[test]
     fn an_occluder_edge_gives_a_penumbra_and_not_a_step() {
-        // A **finite** slab, 10 m up, covering everything to one side of `x = EDGE`. The
-        // first version of this predicate was an infinite half-space, so a ray leaning a
-        // fraction of a degree sideways "hit" it kilometres up.
+        /// A **finite** slab, 10 m up, covering everything to one side of `x = EDGE`. The
+        /// first version of this predicate was an infinite half-space, so a ray leaning a
+        /// fraction of a degree sideways "hit" it kilometres up.
         const SLAB_Y: f64 = 10.0;
         const EDGE: f64 = 0.05;
         let wall = |from: [f64; 3], ray: [f64; 3]| -> bool {
@@ -459,7 +776,7 @@ mod tests {
             }
             (from[0] + ray[0] * t) < EDGE
         };
-        let sun = SunCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
+        let sun = BodyCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
 
         assert_eq!(sun.visibility([1.0, 0.0, 0.0], 64, wall), 1.0, "clear of the edge");
         assert_eq!(sun.visibility([-1.0, 0.0, 0.0], 64, wall), 0.0, "behind the slab");
@@ -490,7 +807,7 @@ mod tests {
 
     #[test]
     fn the_penumbra_is_centimetres_at_a_ten_metre_occluder() {
-        let sun = SunCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
+        let sun = BodyCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
         let width = sun.penumbra_width_m([0.0, 0.0, 0.0], 10.0);
         assert!(
             width > 0.01 && width < 0.2,
@@ -592,7 +909,7 @@ mod tests {
     /// below are well clear of the edge, so this is not a statement about tolerance.
     #[test]
     fn the_drawn_face_is_a_square_and_not_a_disc() {
-        let sun = SunCuboid::at([0.0; 3], 90.0, 0.0).expect("a body at the zenith");
+        let sun = BodyCuboid::at([0.0; 3], 90.0, 0.0).expect("a body at the zenith");
         let half_width = (sun.radius_m / AU_M).atan();
         // A ray tilted `angle` off the body's own direction, `across` radians around it in
         // the world's x-z plane. At the zenith that plane is the face's own plane.
@@ -628,37 +945,53 @@ mod tests {
     fn the_shadow_rule_refuses_a_sun_the_drawn_body_still_places() {
         let set = SolarPosition { altitude_deg: -0.4, ..noon() };
         assert!(matches!(
-            SunCuboid::at_tick([0.0; 3], &set),
+            BodyCuboid::at_tick([0.0; 3], &set),
             Err(SunRefusal::BelowHorizon { .. })
         ));
         assert!(
-            SunCuboid::at([0.0; 3], set.altitude_deg, set.azimuth_deg).is_ok(),
+            BodyCuboid::at([0.0; 3], set.altitude_deg, set.azimuth_deg).is_ok(),
             "the geometric body was refused for a reason that belongs to the shadow rule"
         );
     }
 
-    /// **What the `f32` narrowing costs, measured.** One astronomical unit is 1.5e11 m, where
-    /// one `f32` step is 8192 m; the body is anchored at the eye so the only error left is that
-    /// step, and what it moves is the drawn direction. Five orders below one pixel of the
-    /// shipped window.
+    /// **What the record's own narrowing costs, measured.** The record carries the centre in the
+    /// world's engine metres, so the narrowing happens where `quad::origin_bytes` does it — on the
+    /// offset from the eye — and one `f32` step at the Sun's own engine distance is 2048 m out of
+    /// 1.87e10, which is what moves the drawn direction. Five orders below one pixel of the shipped
+    /// window.
     #[test]
-    fn the_eye_relative_centre_costs_under_two_e_minus_seven_radians() {
+    fn the_engine_centre_costs_under_two_e_minus_seven_radians() {
         let eye = [6_000.0, 200.0, -6_000.0];
         let (altitude, azimuth) = (20.0, 130.0);
         let drawn = DrawnSun {
-            body: SunCuboid::at(eye, altitude, azimuth).expect("a body"),
+            body: BodyCuboid::at(eye, altitude, azimuth).expect("a body"),
             radiance: LinearRgb::BLACK,
         };
-        let relative = drawn.centre_relative_to(eye);
+        let record = drawn.body_record(eye);
         let exact = direction_to(&SolarPosition {
             altitude_deg: altitude,
             azimuth_deg: azimuth,
             declination_deg: 0.0,
             hour_angle_deg: 0.0,
         });
-        let seen = [relative[0] as f64, relative[1] as f64, relative[2] as f64];
+        let seen = [
+            (record.centre_m[0] - eye[0]) as f32 as f64,
+            (record.centre_m[1] - eye[1]) as f32 as f64,
+            (record.centre_m[2] - eye[2]) as f32 as f64,
+        ];
         let length = (seen[0] * seen[0] + seen[1] * seen[1] + seen[2] * seen[2]).sqrt();
-        assert!(length > 1.0e11, "the body is not a unit of distance away: {length} m");
+        assert!(
+            length > 1.0e9,
+            "the body is not an astronomical distance away: {length} m"
+        );
+        // The centre itself is a world `f64` and exact; what moves is the narrowed *offset*, whose step
+        // at the Sun's engine distance is one `f32` ulp — 2 048 m of 1.87e10, which is 1.1e-7 rad.
+        let distance_m = voxel_shapers::scale::voxels(AU_M);
+        assert!(
+            (length - distance_m).abs() <= distance_m * f32::EPSILON as f64,
+            "the record carries the body at {length} m, not the world's own {distance_m} m, by more \
+             than one f32 step"
+        );
         let mut worst = 0.0f64;
         for axis in 0..3 {
             worst = worst.max((seen[axis] / length - exact[axis]).abs());
@@ -693,10 +1026,7 @@ mod tests {
                 "channel {name} measured {a} against {b}"
             );
         }
-        // **And it is a division and not a multiply**, said as the inverse: dividing the
-        // exposure back out and multiplying the solid angle back in recovers the irradiance
-        // share the radiance was made from. A wrong direction of that step fails here rather
-        // than looking plausible.
+        // And it is a division and not a multiply — docs/lighting-sky-and-moon.md
         for (name, channel, share) in [
             ("r", got.r, day.sky.sun.r / peak),
             ("g", got.g, day.sky.sun.g / peak),
@@ -727,7 +1057,7 @@ mod tests {
 
     #[test]
     fn no_samples_is_not_a_claim_of_daylight() {
-        let sun = SunCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
+        let sun = BodyCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
         assert_eq!(
             sun.visibility([0.0, 0.0, 0.0], 0, clear),
             0.0,

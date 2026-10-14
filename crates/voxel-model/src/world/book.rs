@@ -46,6 +46,7 @@
 //! **with its origin on the record, citing a ticket**. Neither is a rename of the other: the
 //! world's row is a change's own account of itself; the ticket's is a claim filed against a
 //! ticket. They are two types because they answer two questions.
+use crate::endian::LeBytes;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -842,19 +843,19 @@ fn compare_map<K: Ord + Clone>(
 }
 
 fn append(input: &mut Vec<u8>, bytes: &[u8]) {
-    input.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
+    input.extend_from_slice(&(bytes.len() as u64).into_le_bytes());
     input.extend_from_slice(bytes);
 }
 
 fn append_rational(input: &mut Vec<u8>, value: Rational) {
-    append(input, &value.numerator().to_be_bytes());
-    append(input, &value.denominator().to_be_bytes());
+    append(input, &value.numerator().into_le_bytes());
+    append(input, &value.denominator().into_le_bytes());
 }
 
 fn append_coord(input: &mut Vec<u8>, coord: Coord) {
-    append(input, &coord.x.to_be_bytes());
-    append(input, &coord.y.to_be_bytes());
-    append(input, &coord.z.to_be_bytes());
+    append(input, &coord.x.into_le_bytes());
+    append(input, &coord.y.into_le_bytes());
+    append(input, &coord.z.into_le_bytes());
 }
 
 /// The source's compact provenance encoding, kept: a fluid address's coordinate is folded into

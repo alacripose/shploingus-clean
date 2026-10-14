@@ -7,7 +7,7 @@
 
 use voxel_appearance::openpbr::Colour;
 use voxel_client::shading;
-use voxel_shapers::column::materials;
+use voxel_shapers::materials;
 
 fn main() {
     let registry = materials::registry().expect("the admitted registry builds");

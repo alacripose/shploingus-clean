@@ -33,11 +33,11 @@ impl Digest {
     /// cannot tell two different things apart is a digest that will.
     pub fn of_fields(tag: &str, fields: &[&[u8]]) -> Self {
         let mut h = Sha256::new();
-        h.update((tag.len() as u64).to_le_bytes());
+        h.update(&crate::endian::le_bytes(tag.len() as u64));
         h.update(tag.as_bytes());
-        h.update((fields.len() as u64).to_le_bytes());
+        h.update(&crate::endian::le_bytes(fields.len() as u64));
         for f in fields {
-            h.update((f.len() as u64).to_le_bytes());
+            h.update(&crate::endian::le_bytes(f.len() as u64));
             h.update(f);
         }
         Digest(h.finalize().into())

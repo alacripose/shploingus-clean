@@ -63,7 +63,7 @@ const EYE: [f64; 3] = [0.5, 2.0, -2.0];
 ///
 /// Each is `(name, normal, a point on the face)`. The cosine below is derived from these by the
 /// same `abs(dot(n, v))` the shader uses, so nothing here is a hand-typed constant.
-const FACES: [(&'static str, [f64; 3], [f64; 3]); 3] = [
+const FACES: [(&str, [f64; 3], [f64; 3]); 3] = [
     ("top", [0.0, 1.0, 0.0], [0.5, SIDE, 0.5]),
     ("left", [-1.0, 0.0, 0.0], [0.0, 0.5, 0.5]),
     ("front", [0.0, 0.0, 1.0], [0.5, 0.5, SIDE]),

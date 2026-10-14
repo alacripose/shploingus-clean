@@ -27,9 +27,9 @@
 //! inside the hit voxel; that is a declared refinement, not an oversight, and it
 //! is the only thing standing between this and exact shape picking.
 
-use voxel_model::{Face, LocalPos, CHUNK_SIDE, SUBVOXEL_SIDE};
+use voxel_model::{Face, LocalPos, MaterialId, SubvoxelIndex, CHUNK_SIDE, SUBVOXEL_SIDE};
 
-use crate::octree::{local_from, SparseVoxelOctree};
+use crate::octree::{local_from, Node, SparseVoxelOctree};
 
 /// A ray in **voxel** units, so one unit is one metre. `dir` need not be
 /// normalised; [`Hit::distance`] is in units of `dir`'s length.
@@ -279,6 +279,329 @@ impl SparseVoxelOctree {
         }
         None
     }
+
+    /// **The ray's own path through this tree, one occupied node at a time** — the walk that
+    /// makes the tree an accelerator rather than a lookup table.
+    ///
+    /// [`Self::raycast_local`] steps the grid a voxel at a time and asks the tree whether each
+    /// one is empty. That answers *picking* (one hit, a metre away) and it is the wrong cost for
+    /// a **march**: a beam from a ridge to the Sun, or a shadow ray from a cave floor, crosses
+    /// hundreds of voxels of which nearly all are nothing, and asking about each one spends the
+    /// walk on the space *between* matter.
+    ///
+    /// This walk descends the hierarchy instead. A node's box is tested against the ray **once**,
+    /// and:
+    ///
+    /// * [`Node::Empty`] is skipped whole — the cost of an empty metre is the cost of an empty
+    ///   chunk;
+    /// * [`Node::Uniform`] is yielded as **one span** however many voxels it covers — a block of
+    ///   one material is one question, and the merge that built it is what makes that true;
+    /// * [`Node::Mixed`] is a leaf voxel, so it is one span by definition;
+    /// * [`Node::Branch`] is descended, nearest child first, and only the children the ray's slab
+    ///   actually crosses are visited at all.
+    ///
+    /// The spans are **in order and never overlap**: each is the ray's own intersection with the
+    /// box of a non-empty node. **The gap between two spans is empty space** — the walk yields no
+    /// span for it, which is the whole of the saving — and `exit_t` and the next `entry_t` are the
+    /// two ends of that gap rather than a beat the walk missed. A caller accumulating along the
+    /// path (a transmittance, a distance to first solid) therefore charges the spans and lets the
+    /// gaps cost nothing, instead of reconstructing the geometry from them.
+    ///
+    /// `None` for a degenerate ray — a NaN coordinate, a zero direction, a reach that is not a
+    /// reach — by the same rule as [`Crossings::new`]: an unmeasurable ray is not a ray that
+    /// crosses nothing.
+    pub fn spans(&self, ray: &Ray, max_distance: f64) -> Option<Spans<'_>> {
+        Spans::new(self.root(), self.levels(), ray, max_distance)
+    }
+
+    /// The first voxel along `ray`, found by **descending the hierarchy**.
+    ///
+    /// The same hit [`Self::raycast_local`] reports — the same voxel, entry face, subvoxel and
+    /// distance, so a caller may swap one for the other — at the cost of the tree rather than the
+    /// grid. `the_two_walks_find_the_same_voxel` holds the two against each other over a battery
+    /// of rays; `the_hierarchical_walk_touches_far_less_of_the_grid` measures what the descent
+    /// buys.
+    pub fn raycast_accelerated(&self, ray: &Ray, max_distance: f64) -> Option<Hit> {
+        for span in self.spans(ray, max_distance)? {
+            if !span.occupied() {
+                continue;
+            }
+            let local = local_from(span.voxel).ok()?;
+            return Some(Hit {
+                local,
+                entry_face: span.entry_face,
+                subvoxel: span.at,
+                distance: span.entry_t,
+            });
+        }
+        None
+    }
+}
+
+/// **One stretch of a ray's path under one node** — a voxel at level 0, and `2^level` voxels per
+/// edge above it.
+///
+/// The span carries the node it came from rather than a material, because a leaf's answer is a
+/// shape and not one material: [`Span::material_at_entry`] is the single question a ray asks of
+/// it, and a caller with a second question (a subvoxel's own blocking) asks the node.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Span<'a> {
+    /// The node the path is under: `Empty` never appears (it yields no span).
+    pub node: &'a Node,
+    /// The **first voxel** of the span: the one the ray entered at [`Span::entry_t`].
+    pub voxel: [i32; 3],
+    /// The face that voxel was entered through, or `None` when the ray began inside the span.
+    pub entry_face: Option<Face>,
+    /// Where the span begins, in units of `dir`'s length.
+    pub entry_t: f64,
+    /// Where it ends: the distance at which the ray leaves the span's own node, so consecutive
+    /// spans meet exactly and `exit_t - entry_t` is the stretch of path this node owns.
+    pub exit_t: f64,
+    /// The node's level: `0` is one voxel, `L` covers `2^L` per edge.
+    pub level: u32,
+    /// The subvoxel of [`Span::voxel`] the ray entered through — the 4×4×4 address a dig or a
+    /// material question needs.
+    pub at: SubvoxelIndex,
+}
+
+impl Span<'_> {
+    /// Whether there is any matter under this node at all.
+    ///
+    /// The node's own emptiness, not the entry cell's: a `Mixed` voxel with holes is still a
+    /// voxel with a surface, and a ray that enters one has met matter. That is the rule
+    /// [`SparseVoxelOctree::raycast_local`] applies to a whole voxel, stated here once.
+    pub fn occupied(&self) -> bool {
+        match self.node {
+            Node::Empty => false,
+            Node::Uniform(material) => !material.is_empty(),
+            Node::Mixed(shape) => !shape.is_empty(),
+            // A branch is never yielded: the walk descends it.
+            Node::Branch(_) => false,
+        }
+    }
+
+    /// What the span holds at the point the ray entered it: a `Uniform` node's material, a
+    /// `Mixed` leaf voxel's own cell there, or `None` for matter that is absent.
+    ///
+    /// **A `Uniform` node answers for every voxel under it**, which is not a shortcut: the node
+    /// exists only because all `2^(3*level)` voxels beneath it hold that one material, which is
+    /// what the tree's own merge rule guarantees.
+    pub fn material_at_entry(&self) -> Option<MaterialId> {
+        match self.node {
+            Node::Empty => None,
+            Node::Uniform(material) => (!material.is_empty()).then_some(*material),
+            Node::Mixed(shape) => {
+                let material = shape.get(self.at);
+                (!material.is_empty()).then_some(material)
+            }
+            Node::Branch(_) => None,
+        }
+    }
+}
+
+/// One node still to visit: its box, and where the ray enters it.
+#[derive(Clone, Copy)]
+struct Pending<'a> {
+    node: &'a Node,
+    /// The box's corner, in local voxel coordinates.
+    min: [i32; 3],
+    /// The level of the box: it covers `2^level` voxels per edge from `min`.
+    level: u32,
+    near: f64,
+    far: f64,
+    entry_face: Option<Face>,
+}
+
+/// The walk [`SparseVoxelOctree::spans`] returns. See it for what a span is.
+pub struct Spans<'a> {
+    ray: Ray,
+    stack: Vec<Pending<'a>>,
+}
+
+impl<'a> Spans<'a> {
+    fn new(root: &'a Node, levels: u32, ray: &Ray, max_distance: f64) -> Option<Self> {
+        let ray = *ray;
+        for i in 0..3 {
+            if !ray.origin[i].is_finite() || !ray.dir[i].is_finite() {
+                return None;
+            }
+        }
+        if ray.dir.iter().all(|d| *d == 0.0) || !max_distance.is_finite() || max_distance <= 0.0 {
+            return None;
+        }
+        let min = [0i32; 3];
+        let stack = match slab(&ray, min, levels, max_distance) {
+            Some((near, far, entry_face)) => {
+                vec![Pending { node: root, min, level: levels, near, far, entry_face }]
+            }
+            None => Vec::new(),
+        };
+        Some(Spans { ray, stack })
+    }
+}
+
+impl<'a> Iterator for Spans<'a> {
+    type Item = Span<'a>;
+
+    fn next(&mut self) -> Option<Span<'a>> {
+        while let Some(pending) = self.stack.pop() {
+            match pending.node {
+                Node::Empty => continue,
+                Node::Uniform(_) | Node::Mixed(_) => {
+                    let entry_t = pending.near.max(0.0);
+                    let point = point_at(self.ray.origin, self.ray.dir, entry_t);
+                    let voxel = first_voxel(point, pending.min, pending.level);
+                    return Some(Span {
+                        node: pending.node,
+                        voxel,
+                        entry_face: pending.entry_face,
+                        entry_t,
+                        exit_t: pending.far,
+                        level: pending.level,
+                        at: subvoxel_of(point, voxel),
+                    });
+                }
+                Node::Branch(children) => {
+                    if pending.level == 0 {
+                        continue;
+                    }
+                    let level = pending.level - 1;
+                    // The crossed children, nearest first: one node's octants are disjoint boxes,
+                    // so their intervals cannot interleave and the first is the first matter.
+                    let mut crossed = [None; 8];
+                    let mut count = 0usize;
+                    for (index, child) in children.iter().enumerate() {
+                        if matches!(child, Node::Empty) {
+                            continue;
+                        }
+                        let min = child_min(pending.min, level, index);
+                        if let Some((near, far, entry_face)) =
+                            slab(&self.ray, min, level, pending.far)
+                        {
+                            crossed[count] =
+                                Some((near, Pending { node: child, min, level, near, far, entry_face }));
+                            count += 1;
+                        }
+                    }
+                    for i in 1..count {
+                        let mut j = i;
+                        while j > 0 {
+                            let (left, right) = (
+                                crossed[j - 1].expect("filled before the sort").0,
+                                crossed[j].expect("filled before the sort").0,
+                            );
+                            if left <= right {
+                                break;
+                            }
+                            crossed.swap(j - 1, j);
+                            j -= 1;
+                        }
+                    }
+                    for slot in crossed[..count].iter().rev() {
+                        if let Some((_, child)) = slot {
+                            self.stack.push(*child);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+/// The box of a child octant: `min` shifted by the octant's own bit per axis.
+///
+/// x is bit 0, y bit 1, z bit 2 — the order `octree::octant_index` writes, because a second
+/// spelling of it here is a second chance to get the octants wrong.
+fn child_min(min: [i32; 3], level: u32, index: usize) -> [i32; 3] {
+    let half = 1i32 << level;
+    let mut out = min;
+    for axis in 0..3 {
+        if index & (1 << axis) != 0 {
+            out[axis] += half;
+        }
+    }
+    out
+}
+
+/// The slab test: where the ray `(origin, dir)` is inside the box `min .. min + 2^level`.
+///
+/// `Some((near, far, entry_face))` when it is inside for some stretch within `max_distance`,
+/// with `entry_face` naming the box's face the ray crossed when it came from outside — and
+/// `None` when the ray began inside, because at zero distance there is no entry face.
+///
+/// A **zero direction** on an axis is the parallel case and is handled as one: the ray is either
+/// inside that slab for its whole length or outside it forever, and there is no division to do.
+/// This is [`Crossings`]' own rule for a zero component, arrived at directly.
+///
+/// **Public because one question is asked from outside this crate**: a light marching *across*
+/// chunks has to know where the ray leaves each chunk's own box, and `far` here is exactly that.
+/// `voxel_client::field` is the caller, and the alternative to this function is a second
+/// intersection routine in the client that must agree with this one — the defect the module
+/// comment above is about.
+pub fn slab(ray: &Ray, min: [i32; 3], level: u32, max_distance: f64) -> Option<(f64, f64, Option<Face>)> {
+    let size = (1i32 << level) as f64;
+    let mut near = 0.0f64;
+    let mut far = max_distance;
+    let mut axis: Option<(usize, bool)> = None;
+    for i in 0..3 {
+        let lo = min[i] as f64;
+        let hi = lo + size;
+        let d = ray.dir[i];
+        let o = ray.origin[i];
+        if !d.is_finite() || !o.is_finite() || !hi.is_finite() {
+            return None;
+        }
+        if d == 0.0 {
+            if o < lo || o > hi {
+                return None;
+            }
+            continue;
+        }
+        let a = (lo - o) / d;
+        let b = (hi - o) / d;
+        let (t0, t1) = if a <= b { (a, b) } else { (b, a) };
+        if t0 > 0.0 && t0 > near {
+            axis = Some((i, d > 0.0));
+        }
+        near = near.max(t0);
+        far = far.min(t1);
+        if near > far {
+            return None;
+        }
+    }
+    if far <= 0.0 {
+        return None;
+    }
+    let entry_face = axis.map(|(i, positive)| match (i, positive) {
+        (0, true) => Face::NegX,
+        (0, false) => Face::PosX,
+        (1, true) => Face::NegY,
+        (1, false) => Face::PosY,
+        (_, true) => Face::NegZ,
+        (_, false) => Face::PosZ,
+    });
+    Some((near, far, entry_face))
+}
+
+/// The first voxel of a span: the voxel of `point`, clamped to the span's own box.
+///
+/// The clamp is the boundary case rather than an error path: a point exactly on the box's far
+/// plane floors into the next voxel, which is not in this span, and the voxel the ray is in is
+/// the last one that is.
+fn first_voxel(point: [f64; 3], min: [i32; 3], level: u32) -> [i32; 3] {
+    let high = (1i32 << level) - 1;
+    let mut out = [0i32; 3];
+    for axis in 0..3 {
+        let floored = point[axis].floor();
+        let clamped = if !floored.is_finite() {
+            min[axis] as f64
+        } else {
+            floored.clamp(min[axis] as f64, (min[axis] + high) as f64)
+        };
+        out[axis] = clamped as i32;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -445,6 +768,179 @@ mod tests {
             .expect("the walk crossed the hit voxel");
         assert_eq!(crossing.entry_face, hit.entry_face);
         assert!((crossing.t - hit.distance).abs() < 1e-12);
+    }
+
+    // ---- the hierarchical walk: the two walks must agree, and the descent must cost less ----
+
+    /// Deterministic rays, spread over the chunk and over the axis-aligned and diagonal cases,
+    /// from a tiny linear congruential generator. A hand-written list would test the cases its
+    /// author thought of; this one also crosses the tree at the angles nobody picks.
+    fn a_battery(count: usize, seed: u64) -> Vec<Ray> {
+        let mut state = seed | 1;
+        let mut next = move || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((state >> 33) as f64 / (1u64 << 31) as f64) * 2.0 - 1.0
+        };
+        (0..count)
+            .map(|_| {
+                Ray::new(
+                    [
+                        next() * 15.5 + 16.0,
+                        next() * 15.5 + 16.0,
+                        next() * 15.5 + 16.0,
+                    ],
+                    [next(), next(), next()],
+                )
+            })
+            .collect()
+    }
+
+    /// A chunk with all three node kinds in it, and **dense enough that a battery actually
+    /// crosses matter**: three quadrants filled by `Uniform` nodes of two materials, one quadrant
+    /// empty, and `Mixed` leaves — scattered voxels and a voxel with a hole in it — in the gaps.
+    fn a_mixed_chunk() -> SparseVoxelOctree {
+        let mut tree = SparseVoxelOctree::new();
+        tree.set_material_region([0, 0, 0], 4, STONE);
+        tree.set_material_region([16, 0, 0], 4, MaterialId(9));
+        tree.set_material_region([0, 0, 16], 4, STONE);
+        for cell in [[0, 20, 0], [7, 31, 3], [16, 20, 0], [31, 16, 31], [2, 17, 2]] {
+            tree.set_voxel(local_from(cell).unwrap(), VoxelShape::solid(STONE));
+        }
+        let mut holed = VoxelShape::solid(STONE);
+        holed.set(voxel_model::SubvoxelIndex { x: 0, y: 0, z: 0 }, MaterialId::EMPTY);
+        tree.set_voxel(local_from([24, 20, 24]).unwrap(), holed);
+        tree
+    }
+
+    /// **The acceleration may not answer a different question.** Every ray of the battery gives
+    /// the same voxel, entry face, subvoxel and distance from both walks, and the battery must
+    /// *hit* — two walks that agree about missing prove nothing.
+    #[test]
+    fn the_two_walks_find_the_same_voxel() {
+        let tree = a_mixed_chunk();
+        let mut hits = 0usize;
+        for ray in a_battery(400, 0x5eed_1234) {
+            let stepped = tree.raycast_local(&ray, 200.0);
+            let descended = tree.raycast_accelerated(&ray, 200.0);
+            assert_eq!(
+                stepped.map(|h| (h.local, h.entry_face, h.subvoxel)),
+                descended.map(|h| (h.local, h.entry_face, h.subvoxel)),
+                "the two walks disagree about {ray:?}"
+            );
+            match (stepped, descended) {
+                (Some(stepped), Some(descended)) => assert!(
+                    (stepped.distance - descended.distance).abs() < 1e-9,
+                    "the walks agree on the voxel and not on the distance: {} against {} in \
+                     {ray:?}",
+                    stepped.distance,
+                    descended.distance
+                ),
+                (None, None) => {}
+                _ => unreachable!("the two walks already agreed on which of them hit"),
+            }
+            if stepped.is_some() {
+                hits += 1;
+            }
+        }
+        assert!(hits > 150, "the battery barely hit anything: {hits} of 400");
+    }
+
+    /// **The measurement the acceleration exists for**: a ray straight through an empty chunk, from
+    /// one face to the other — the grid walk visits every voxel it crosses, the tree walk only the
+    /// boxes that are not empty — and then the same ray with one solid voxel at the far end, where
+    /// both must find that voxel and the tree still must not walk the space between.
+    #[test]
+    fn the_hierarchical_walk_touches_far_less_of_the_grid() {
+        let mut tree = SparseVoxelOctree::new();
+        let ray = Ray::new([0.5, 0.5, 0.5], [1.0, 0.0, 0.0]);
+        let stepped = Crossings::new(&ray, 32.0).unwrap().count();
+        let descended = tree.spans(&ray, 32.0).unwrap().count();
+        assert!(stepped >= 32, "the grid walk crossed the whole chunk: {stepped}");
+        assert_eq!(descended, 0, "an empty chunk has no occupied span to report");
+
+        tree.set_voxel(local_from([31, 0, 0]).unwrap(), VoxelShape::solid(STONE));
+        let hit = tree.raycast_accelerated(&ray, 32.0).expect("the far voxel");
+        assert_eq!(hit.local, local_from([31, 0, 0]).unwrap());
+        let descended = tree.spans(&ray, 32.0).unwrap().count();
+        assert!(
+            descended <= 4,
+            "the descent should cost the nodes it enters, not the voxels it passes: {descended} \
+             spans against {stepped} voxels"
+        );
+        println!(
+            "a ray across an empty chunk: {stepped} voxels stepped, {descended} spans descended"
+        );
+    }
+
+    /// **A block of one material is one question.** Eight voxels per edge, one material: one node,
+    /// so one span — and the span says so by its level rather than by a count of voxels. The
+    /// region's origin is **aligned to its own level** (`8 = 2^3`), which is what makes it one
+    /// node: an unaligned region is written through the node covering the aligned region it is in.
+    #[test]
+    fn a_solid_block_is_one_span_however_many_voxels_it_covers() {
+        let mut tree = SparseVoxelOctree::new();
+        tree.set_material_region([8, 0, 0], 3, STONE);
+        let ray = Ray::new([0.5, 4.5, 4.5], [1.0, 0.0, 0.0]);
+        let spans: Vec<Span> = tree.spans(&ray, 40.0).unwrap().collect();
+        assert_eq!(spans.len(), 1, "a block of one material is one span");
+        assert_eq!(spans[0].level, 3);
+        assert_eq!(spans[0].material_at_entry(), Some(STONE));
+        assert_eq!(spans[0].voxel, [8, 4, 4], "the span begins at the block's own voxel");
+        assert_eq!(spans[0].entry_face, Some(Face::NegX));
+        assert!((spans[0].entry_t - 7.5).abs() < 1e-12, "entry at {}", spans[0].entry_t);
+        assert!((spans[0].exit_t - 15.5).abs() < 1e-12, "exit at {}", spans[0].exit_t);
+        assert_eq!(
+            tree.raycast_accelerated(&ray, 40.0).unwrap().local,
+            local_from([8, 4, 4]).unwrap()
+        );
+    }
+
+    #[test]
+    fn the_spans_are_ordered_disjoint_and_their_gaps_are_empty() {
+        let tree = a_mixed_chunk();
+        let mut checked = 0usize;
+        for ray in a_battery(120, 0xabcd_0f0f) {
+            let spans: Vec<Span> = tree.spans(&ray, 200.0).unwrap().collect();
+            for pair in spans.windows(2) {
+                let (end, next) = (pair[0].exit_t, pair[1].entry_t);
+                assert!(
+                    end <= next + 1e-12,
+                    "two spans overlap in {ray:?}: ends at {end}, next begins at {next}"
+                );
+                for crossing in Crossings::new(&ray, 200.0).expect("the battery's rays are rays") {
+                    if crossing.t > end && crossing.t < next {
+                        let local = local_from(crossing.voxel).expect("inside the chunk");
+                        assert!(
+                            tree.voxel(local).is_empty(),
+                            "the walk stepped over {:?}, which is not empty, in {ray:?}",
+                            crossing.voxel
+                        );
+                    }
+                }
+            }
+            for span in &spans {
+                assert!(span.exit_t > span.entry_t, "an empty span in {ray:?}");
+                assert!(span.entry_t >= 0.0, "a span before the origin in {ray:?}");
+                assert!(span.occupied(), "an empty node was yielded in {ray:?}");
+            }
+            checked += spans.len();
+        }
+        assert!(checked > 50, "the battery crossed too little to be a test: {checked}");
+    }
+
+    #[test]
+    fn the_descent_is_bounded_by_the_reach_and_by_the_chunk() {
+        let tree = a_mixed_chunk();
+        let ray = Ray::new([0.5, 0.5, 0.5], [1.0, 0.0, 0.0]);
+        let spans: Vec<Span> = tree.spans(&ray, 1e9).unwrap().collect();
+        assert!(!spans.is_empty());
+        for span in &spans {
+            assert!(span.exit_t <= 32.0, "a span left the chunk at {}", span.exit_t);
+        }
+        assert_eq!(tree.spans(&Ray::new([0.5, 40.5, 0.5], [1.0, 0.0, 0.0]), 40.0).unwrap().count(), 0);
+        assert!(tree.spans(&Ray::new([0.0; 3], [0.0; 3]), 10.0).is_none());
+        assert!(tree.spans(&Ray::new([f64::NAN, 0.0, 0.0], [1.0, 0.0, 0.0]), 10.0).is_none());
+        assert!(tree.spans(&Ray::new([0.0; 3], [1.0, 0.0, 0.0]), f64::INFINITY).is_none());
     }
 
     #[test]
