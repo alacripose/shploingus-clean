@@ -169,6 +169,27 @@ fn walk_lift_m_s() -> f64 {
     })
 }
 
+/// **A held pose** — `SHPLOINGUS_EYE="x,y,z[,pitch_deg]"`, in metres and degrees.
+///
+/// The demo's walk is frame-rate driven, so the ghost's path — and every defect that depends on
+/// where it is — moves between runs; a frame that went black cannot be asked for again by waiting.
+/// With a pose pinned the camera is *placed* instead of flown, which makes such a frame reproducible
+/// on demand: the same eye, the same heading, the same tick, every time.
+fn walk_eye_pin() -> Option<([f64; 3], Option<f64>)> {
+    let text = std::env::var("SHPLOINGUS_EYE").ok()?;
+    let mut parts = text.split(',').map(|part| part.trim().parse::<f64>());
+    let x = parts.next()?.ok()?;
+    let y = parts.next()?.ok()?;
+    let z = parts.next()?.ok()?;
+    let pitch = parts.next().and_then(|part| part.ok());
+    if [x, y, z].iter().all(|value| value.is_finite()) {
+        Some(([x, y, z], pitch))
+    } else {
+        eprintln!("shploingus: SHPLOINGUS_EYE must be finite metres, not {text:?}");
+        None
+    }
+}
+
 /// **What a god asks its observer to do this frame**, in metres a second along the observer's own
 /// axes — forward, right, up.
 ///
@@ -629,8 +650,29 @@ fn ground_probe(scene: &Scene, eye: [f64; 3]) -> Option<[f64; 3]> {
                 }
             }
         }
+        // **The highest surface the frame draws in the eye's own column**, above or below it: a
+        // plane over the eye's height is the geometry the camera is standing inside.
+        let chunk = [
+            (eye[0] / 32.0).floor() * 32.0,
+            (eye[2] / 32.0).floor() * 32.0,
+        ];
+        let mut highest = f64::NEG_INFINITY;
+        for record in &scene.records {
+            if record.face != 3 {
+                continue;
+            }
+            let Some(origin) = scene.origins.get(record.chunk as usize) else {
+                continue;
+            };
+            if (origin[0] - chunk[0]).abs() > 0.5 || (origin[2] - chunk[1]).abs() > 0.5 {
+                continue;
+            }
+            let plane = origin[1] + f64::from(record.slice) * voxel_client::pattern::SUBVOXEL_CELL_M;
+            highest = highest.max(plane);
+        }
         eprintln!(
-            "probe: eye {eye:?} records {} vertices {} origins {} faces {faces:?} near {near}",
+            "probe: eye {eye:?} records {} vertices {} origins {} faces {faces:?} near {near} \
+             surface {highest:.2}",
             scene.records.len(),
             scene.vertices.len(),
             scene.origins.len()
@@ -2912,6 +2954,15 @@ impl App {
             // frame this change exists to fix would never be asked of the run. Six chunks puts the
             // eye just outside the five-chunk window, and the arrival that follows is the frame
             // the counter below is about.
+            // **A pinned pose stays pinned**: no hop, no cruise, no lift — one eye for the whole
+            // run, so a frame that went black can be asked for again.
+            if let Some((pin, pitch)) = walk_eye_pin() {
+                self.laya.position_m = pin;
+                self.camera.position_m = pin;
+                if let Some(pitch) = pitch {
+                    self.camera.pitch_rad = pitch.to_radians();
+                }
+            } else {
             let hop_at = self.walk_for.map(|limit| limit * 0.4).unwrap_or(20.0);
             if !self.walk_hopped
                 && self.walk_since.is_some_and(|since| since.elapsed().as_secs_f64() >= hop_at)
@@ -2941,6 +2992,7 @@ impl App {
                     ..LayaWish::default()
                 },
             );
+            }
         }
         cost.walk = mark.elapsed();
         mark = Instant::now();
@@ -3019,59 +3071,129 @@ impl App {
         // landed yet reads as unmeasured for the frames it is absent (its direct shadow is still
         // the shadow map's, which is drawn from the geometry that is present).
         // Nine a frame: a crossing only owes the chunks that entered (docs/lighting-sky-and-moon.md,
-        // "The horizon's streaming rules").
+        // "The horizon's streaming rules"). The coarse band is sixteen summaries a frame — it
+        // reaches 256 m each way, so its first fill is the world's whole skyline rather than a
+        // crossing's slab.
         const HORIZON_CHUNKS_PER_FRAME: usize = 9;
-        // **The chunks this frame may not draw, because their light has not arrived.** A chunk
-        // inside the horizon cube whose cells are not stamped has no sampled horizon at any of its
-        // fragments, so it would fall through to the rig's flat ambient — a stand-in, not a light.
-        // It is filtered out of `drawn_meshes()` below, exactly as an unmeshed chunk is absent
-        // (docs/lighting-sky-and-moon.md, "A chunk is drawn only with sampled light").
-        let mut unlit: std::collections::BTreeSet<(i32, i32, i32)> = std::collections::BTreeSet::new();
-        // **The eye's own chunk is never refused.** It is the one chunk the player is standing on:
-        // refusing it removes the ground under the camera and leaves the coarse far surface to fill
-        // the frame, which is a worse lie than the rig it was meant to avoid. It is stamped first,
-        // outside the frame's budget, so it is measured in the same frame it is needed.
+        const HORIZON_FAR_CHUNKS_PER_FRAME: usize = 16;
+        // **Nothing is withheld from the frame over a missing stamp.** A chunk whose cells are not
+        // stamped yet now says so (`horizon_stamped`), and an unmeasured ray is the shadow map's
+        // answer rather than an invented one — so the chunk is drawn, and it is drawn with a real
+        // measurement. Withholding it instead removed the ground under the player for the frames a
+        // crossing's slab was still being stamped, which is the black the player saw.
+        //
+        // **The eye's own chunk is stamped first, outside the frame's budget**, because it is the
+        // one chunk the player is standing on.
         let eye_chunk_stamp = self.chunk_of_eye();
         if let Some(graphics) = self.graphics.as_mut() {
             let eye = self.camera.position_m;
-            graphics.world.horizon_recenter(eye);
+            // **The cell under the eye, before and after the crossing**: a band that reports rock
+            // there only once it has been shifted is a move bug, and one that reports it before the
+            // move is a stamp that was already wrong.
+            let solid_before = graphics.world.horizon_solid(eye).is_some_and(|solid| solid);
+            let moved = graphics.world.horizon_recenter(eye);
+            if moved && std::env::var_os("SHPLOINGUS_PROBE_DEBUG").is_some() {
+                eprintln!(
+                    "horizon-recenter: eye {eye:?} before {solid_before} after {:?}",
+                    graphics.world.horizon_solid(eye)
+                );
+            }
             if let Some(streamer) = self.streamer.as_ref() {
                 // A chunk the window dropped leaves its trees behind; the volume must drop its cells.
                 let resident: std::collections::BTreeSet<(i32, i32, i32)> =
                     streamer.tree_chunks().map(|pos| (pos.x, pos.y, pos.z)).collect();
                 graphics.world.horizon_retain(&resident);
                 // Before the budget: the chunk under the eye.
+                //
+                // **A crossing re-stamps it whatever the version map says.** A mark measured on
+                // the run this was found at (`SHPLOINGUS_EYE`) read *matter* at the eye's own cell
+                // while that chunk's octree read air there, and one forced restamp of the chunk
+                // corrected the cell in the same frame — so "this version is already stamped" is
+                // not a good enough claim for the one chunk the camera is standing in. The cost is
+                // one chunk's walk on a chunk boundary, which is not a frame anyone is watching.
                 if let (Some(version), Some(tree)) =
                     (streamer.tree_version(eye_chunk_stamp), streamer.tree_shared(eye_chunk_stamp))
                 {
-                    if graphics.world.horizon_wants(eye_chunk_stamp, version) {
+                    if moved || graphics.world.horizon_wants(eye_chunk_stamp, version) {
                         graphics.world.horizon_stamp(eye_chunk_stamp, &tree, version);
                     }
                 }
-                let mut budget = HORIZON_CHUNKS_PER_FRAME;
+                let mut near_budget = HORIZON_CHUNKS_PER_FRAME;
+                let mut far_budget = HORIZON_FAR_CHUNKS_PER_FRAME;
                 for pos in streamer.tree_chunks() {
                     // An edit bumps the chunk's version, so its stamp follows the new tree.
                     let Some(version) = streamer.tree_version(pos) else {
-                        if pos != eye_chunk_stamp {
-                            unlit.insert((pos.x, pos.y, pos.z));
-                        }
                         continue;
                     };
                     if !graphics.world.horizon_wants(pos, version) {
                         continue;
                     }
-                    if budget > 0 {
-                        if let Some(tree) = streamer.tree_shared(pos) {
-                            graphics.world.horizon_stamp(pos, &tree, version);
-                            budget -= 1;
-                            continue;
-                        }
+                    // **Two budgets, because the two bands answer different questions.** The fine
+                    // cube holds 27 chunks and a crossing owes nine of them; the coarse band
+                    // reaches 256 m each way and fills from the same leaves at its own rate. A
+                    // chunk still waiting for its stamp is drawn anyway and asked again next
+                    // frame: the budget is the cost of the walk, never a reason to hide ground.
+                    let budget = if graphics.world.horizon_covers(pos) {
+                        &mut near_budget
+                    } else {
+                        &mut far_budget
+                    };
+                    if *budget == 0 {
+                        continue;
                     }
-                    // Still wanting a stamp, so still without its light: refused this frame and
-                    // retried on the next one. Never the eye's own chunk: see above.
-                    if pos != eye_chunk_stamp {
-                        unlit.insert((pos.x, pos.y, pos.z));
+                    if let Some(tree) = streamer.tree_shared(pos) {
+                        graphics.world.horizon_stamp(pos, &tree, version);
+                        *budget -= 1;
                     }
+                }
+                // **What the band actually holds at the eye**, one line a frame, when the probe
+                // is asked for: the slots it has looked at and whether the air above the camera
+                // is measured as matter. A frame whose ground is black and whose cells above it
+                // are solid is a stamp that put rock where there is none.
+                if std::env::var_os("SHPLOINGUS_PROBE_DEBUG").is_some() {
+                    let eye = self.camera.position_m;
+                    // **The world's own answer beside the band's**, from the streamer's record: the
+                    // generator and the stamp are two statements about one cell, and a frame whose
+                    // ground is black is explained when they disagree.
+                    let voxel = |p: [f64; 3]| {
+                        streamer
+                            .material_at(
+                                p[0].floor() as i32,
+                                p[1].floor() as i32,
+                                p[2].floor() as i32,
+                            )
+                            .map(|material| !material.is_empty())
+                            .unwrap_or(false)
+                    };
+                    // **What the octree the eye's chunk was stamped from says**, which is the
+                    // only statement about that column that is not the band's own: a band that
+                    // reports rock where its own tree holds air has lost the address.
+                    let tree_says = streamer.tree_shared(eye_chunk_stamp).map(|tree| {
+                        let at = |y: f64| {
+                            let local = |value: f64| {
+                                (value.floor() as i32).rem_euclid(CHUNK_SIDE) as u32
+                            };
+                            voxel_model::LocalPos::new(
+                                local(eye[0]),
+                                local(y),
+                                local(eye[2]),
+                            )
+                            .ok()
+                            .map(|pos| !tree.voxel(pos).is_empty())
+                        };
+                        (at(eye[1]), at(eye[1] + 8.0))
+                    });
+                    eprintln!(
+                        "horizon: coverage {:#x} at-eye {:?} +1 {:?} +3 {:?} +8 {:?} world {:?} {:?} tree {:?}",
+                        graphics.world.horizon_coverage(),
+                        graphics.world.horizon_solid(eye),
+                        graphics.world.horizon_solid([eye[0], eye[1] + 1.0, eye[2]]),
+                        graphics.world.horizon_solid([eye[0], eye[1] + 3.0, eye[2]]),
+                        graphics.world.horizon_solid([eye[0], eye[1] + 8.0, eye[2]]),
+                        voxel(eye),
+                        voxel([eye[0], eye[1] + 8.0, eye[2]]),
+                        tree_says,
+                    );
                 }
             }
         }
@@ -3125,8 +3247,7 @@ impl App {
                 self.streamer
                     .as_ref()
                     .expect("checked above")
-                    .drawn_meshes()
-                    .filter(|(pos, _, _)| !unlit.contains(&(pos.x, pos.y, pos.z))),
+                    .drawn_meshes(),
                 eye_chunk,
                 light,
                 Some(&self.displacement),

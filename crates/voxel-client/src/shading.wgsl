@@ -272,53 +272,9 @@ fn sun_visibility(rel: vec3<f32>, n: vec3<f32>) -> f32 {
 // `fs_main` chooses between them at the call site.
 const WORLD_HORIZON_REACH_M: f32 = 32.0;
 const WORLD_HORIZON_SKY_REACH_M: f32 = 24.0;
-/// **One voxel's 4×4×4 occupancy**, as the two words `voxel_client::horizon` stamped.
-///
-/// `x` is the low word, `y` the high one, and bit `x + 4y + 16z` of the pair is the subvoxel at
-/// that address — `SubvoxelIndex::flat` in `voxel-model`, which is the order the octree's leaf
-/// shapes are authored in. Two words because WGSL has no `u64`.
-fn world_mask(i: vec3<i32>) -> vec2<u32> {
-    let n = i32(horizon.near.y);
-    let index = 2u * u32(i.x + n * (i.y + n * i.z));
-    return vec2<u32>(horizon_cells[index], horizon_cells[index + 1u]);
-}
-
-/// **Is the subvoxel this cube-relative point stands in solid?**
-///
-/// `world` is the point relative to the cube's own corner, in metres. The cell is its floor and
-/// the subvoxel is the fractional part at `HORIZON_SUBVOXEL_SIDE` grain, which is the whole of the
-/// address law: no second grid, no per-metre boolean. This is the question
-/// `voxel_stream::light::transmittance_tree` asks of the same leaves on the CPU.
-fn world_subvoxel_solid(world: vec3<f32>) -> bool {
-    let cell = floor(world / HORIZON_CELL_M);
-    let inside = fract(world / HORIZON_CELL_M) * f32(HORIZON_SUBVOXEL_SIDE);
-    let at = clamp(vec3<i32>(floor(inside)), vec3<i32>(0), vec3<i32>(i32(HORIZON_SUBVOXEL_SIDE) - 1));
-    let mask = world_mask(vec3<i32>(cell));
-    let ordinal = u32(at.x + i32(HORIZON_SUBVOXEL_SIDE) * (at.y + i32(HORIZON_SUBVOXEL_SIDE) * at.z));
-    let word = select(mask.y, mask.x, ordinal < 32u);
-    return ((word >> (ordinal % 32u)) & 1u) != 0u;
-}
-
-/// **The stretch of a partly-occupied voxel this ray crosses**: `true` when it meets matter.
-///
-/// A voxel is entered through one subvoxel and left through another, so testing the entry alone
-/// would let a beam through a dug corner and out through the rock behind it. This is the
-/// cell-by-cell answer `raycast::Spans` gives for a `Mixed` leaf, at the subvoxel's own stride —
-/// and it is only ever paid for a voxel whose mask is **partial**: an empty one costs a compare
-/// and a full one is an answer, so a world of whole blocks never enters here.
-fn world_partial_blocked(local: vec3<f32>, d: vec3<f32>, enter: f32, exit: f32) -> bool {
-    var t = enter + HORIZON_SUBVOXEL_M * 0.5;
-    for (var step = 0; step < HORIZON_SUB_STEPS; step = step + 1) {
-        if (t >= exit) {
-            break;
-        }
-        if (world_subvoxel_solid(local + d * t - horizon.to_anchor.xyz)) {
-            return true;
-        }
-        t = t + HORIZON_SUBVOXEL_M * 0.5;
-    }
-    return false;
-}
+// The masks, the address laws and the two bands' walks live in `horizon.wgsl`, composed above
+// this file: one decoder, so the law the CPU model and the fragment read cannot drift apart.
+// The functions here name the band they read — `world_*` is the fine one — and never restate it.
 
 /// **What one direction carries from an eye-relative point**: `x` is the share that arrives
 /// (`1` clear, `0` stopped) and `y` is **whether the whole reach was a measurement**.
@@ -380,33 +336,111 @@ fn world_march(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> vec2<f32> {
         if (any(i < vec3<i32>(0)) || any(i >= n)) {
             return vec2<f32>(1.0, 0.0);
         }
-        let mask = world_mask(i);
+        // **An unmeasured slot is not air.** A chunk that has not stamped yet has no answer at
+        // this cell, and reading its empty cells as clear would hand the fragment an unshadowed
+        // beam through a wall nobody has looked at.
+        if (!horizon_stamped(i)) {
+            return vec2<f32>(1.0, 0.0);
+        }
+        let mask = horizon_mask(i);
         if (mask.x == 0u && mask.y == 0u) {
             continue;
         }
         if (mask.x == 0xFFFFFFFFu && mask.y == 0xFFFFFFFFu) {
             return vec2<f32>(0.0, 1.0);
         }
-        if (world_partial_blocked(local, d, enter, min(t_max[axis], reach_m))) {
+        if (horizon_partial_blocked(local, d, enter, min(t_max[axis], reach_m))) {
             return vec2<f32>(0.0, 1.0);
         }
     }
     return vec2<f32>(1.0, 0.0);
 }
 
+/// **The coarse band's transmittance along one direction**, from the point the fine band stopped
+/// measuring — the same walk at eight metres a cell, which is the rung a far chunk is lit at.
+///
+/// Its word is a **share** (`FAR_SHARE` of the cell holds matter), so the ray keeps that fraction
+/// and walks on: a colonnade dims by the pillars it crosses instead of turning into a wall of
+/// eight-metre stones. The fragment's own coarse cell is advanced past before anything is tested,
+/// exactly as the fine walk does — a surface is drawn on its own cell's boundary and a march that
+/// counted it would shadow every block in the world.
+///
+/// **An unstamped cell ends the walk with what it had**: the band's own "not measured" is the
+/// shadow map's answer, not clear air.
+fn world_far_share(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> f32 {
+    let cell_m = horizon.far.x;
+    let n = vec3<i32>(horizon.far.yzw);
+    let rel = (local - horizon.to_far.xyz) / cell_m;
+    if (any(rel < vec3<f32>(0.0)) || any(rel >= vec3<f32>(n))) {
+        return 1.0;
+    }
+    var i = vec3<i32>(floor(rel));
+    let f = rel - floor(rel);
+    var t_max = vec3<f32>(1e30);
+    var walk = vec3<i32>(0);
+    for (var axis = 0; axis < 3; axis = axis + 1) {
+        if (d[axis] > 0.0) {
+            t_max[axis] = (cell_m - f[axis] * cell_m) / d[axis];
+            walk[axis] = 1;
+        } else if (d[axis] < 0.0) {
+            t_max[axis] = (f[axis] * cell_m) / -d[axis];
+            walk[axis] = -1;
+        }
+    }
+    let t_delta = vec3<f32>(cell_m) / max(abs(d), vec3<f32>(1e-20));
+    var clear = 1.0;
+    for (var step = 0; step < HORIZON_MAX_STEPS; step = step + 1) {
+        var axis = 0;
+        if (t_max.y <= t_max.x && t_max.y <= t_max.z) {
+            axis = 1;
+        } else if (t_max.z < t_max.x) {
+            axis = 2;
+        }
+        if (t_max[axis] >= reach_m) {
+            return clear;
+        }
+        i[axis] = i[axis] + walk[axis];
+        t_max[axis] = t_max[axis] + t_delta[axis];
+        if (any(i < vec3<i32>(0)) || any(i >= n)) {
+            return clear;
+        }
+        let word = horizon_far_word(i);
+        if ((word & FAR_MEASURED) == 0u) {
+            return clear;
+        }
+        clear = clear * (1.0 - f32(word & FAR_SHARE) / 255.0);
+    }
+    return clear;
+}
+
 /// **How much of one direction reaches an eye-relative point**: `1` clear, `0` stopped.
 ///
 /// The same answer `voxel_stream::light` gives for a solid material, at the octree's own subvoxel
-/// grain: the beam the rig carries is the solver's, transmitted through the atmosphere, and this
-/// only decides how much of it reached this cell. A direction that could not be measured — a
-/// degenerate one, or one that leaves the volume — is `1.0`, the answer the dome had before the
-/// volume existed, because an unmeasured ray is not a shadow.
+/// grain inside the 96 m cube and at the coarse band's eight metres outside it: the beam the rig
+/// carries is the solver's, transmitted through the atmosphere, and this only decides how much of
+/// it reached this cell. **The fine band answers first and the coarse rung carries on from where
+/// it stopped** — the trade the shadow's cascades make, at the light's own grain — so a chunk at
+/// 200 m is lit by a measurement instead of the unshadowed sky. A direction neither band could
+/// measure is `1.0`, the answer the dome had before the volume existed.
 fn world_visibility(local: vec3<f32>, dir: vec3<f32>, reach_m: f32) -> f32 {
     let length_dir = length(dir);
     if (length_dir <= 0.0) {
         return 1.0;
     }
-    return world_march(local, dir / length_dir, reach_m).x;
+    let d = dir / length_dir;
+    let fine = world_march(local, d, reach_m);
+    if (fine.y > 0.5) {
+        return fine.x;
+    }
+    // **The coarse rung answers only outside the fine cube.** A fragment whose own cell is in an
+    // unstamped slot has simply not been looked at yet — its own chunk has no measurement either
+    // way — and answering it with an 8 m cell is the false edge this band's dome is refused for:
+    // it darkens the ground the player is standing on by the hill beside it.
+    let rel = (local - horizon.to_anchor.xyz) / horizon.near.x;
+    if (all(rel >= vec3<f32>(0.0)) && all(rel < horizon.near.yzw)) {
+        return 1.0;
+    }
+    return world_far_share(local, d, reach_m);
 }
 
 /// **The dome's own share at a point**: the mean of the three declared rays.

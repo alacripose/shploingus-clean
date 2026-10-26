@@ -1119,6 +1119,24 @@ impl WorldPipeline {
         self.horizon.wants(pos, version)
     }
 
+    /// **Whether a chunk is in the fine cube** — the one band whose missing cells a frame may
+    /// not draw through. A chunk merely in the coarse band is lit at the coarse rung, not refused.
+    pub fn horizon_covers(&self, pos: voxel_model::ChunkPos) -> bool {
+        self.horizon.covers(pos)
+    }
+
+    /// What the fine band holds at a world point: `None` outside the cube or where the slot is
+    /// unstamped, `Some(false)` for measured air, `Some(true)` for matter. The readout a frame
+    /// uses to say which band answered for a pixel.
+    pub fn horizon_solid(&self, point_m: [f64; 3]) -> Option<bool> {
+        self.horizon.solid_at(point_m)
+    }
+
+    /// The fine band's stamped-slot mask, as the shader reads it.
+    pub fn horizon_coverage(&self) -> u32 {
+        self.horizon.coverage()
+    }
+
     /// **Stamp one resident chunk's subvoxel octree into the light horizon.**
     ///
     /// Returns the cells the chunk marked. A chunk the cube does not cover, or one whose version

@@ -33,15 +33,15 @@
 //! `SubvoxelIndex::flat` in `voxel-model` written twice.
 //!
 //! # The box, and what is outside it
-//!
-//! The box is three chunks square — [`HORIZON_CELLS`] × [`HORIZON_CELL_M`] = 96 m — with the eye's
+//!    //! The box is three chunks square — [`HORIZON_CELLS`] × [`HORIZON_CELL_M`] = 96 m — with the eye's
 //! chunk in the middle, so it follows the eye one chunk at a time and covers a chunk behind the
-//! camera as well as the chunk ahead of it. **Past its edge there is no
-//! measurement, and the shader says so by returning `1.0`** rather than treating the edge as
-//! clear air: outside the volume the frame's answer is the shadow map's (or the rig's), which is
-//! the light the frame had before this field existed and a different claim from "this cell sees
-//! the whole sky". The box is inside the shadow map's own 256 m range, so the two terms overlap
-//! where both are measured and the near field is the finer of the two.
+//! camera as well as the chunk ahead of it. **Past its edge the coarse band answers**, 8 m cells
+//! over [`HORIZON_FAR_CELLS`] × [`HORIZON_FAR_CELL_M`] = 512 m, so a chunk the shadow map still
+//! reaches is lit by a measurement at its own rung rather than falling back to the unshadowed sky.
+//! A cell that is **unstamped** in either band is no measurement at all, and the shader says so
+//! rather than treating it as clear air: outside both bands the frame's answer is the shadow
+//! map's, which is the light the frame had before this field existed and a different claim from
+//! "this cell sees the whole sky".
 //!
 //! # A stamp belongs to a version of a tree
 //!
@@ -52,6 +52,15 @@
 //! stamping again** and a chunk that has not moved costs one map lookup. A stamp that outlived
 //! its tree would be the shadow of a block that is no longer there: break one out of a wall and
 //! the hole has to let light through on the frame the new tree lands, not at the next recentre.
+//!
+//! **And a stamp belongs to a rung.** The version is one half of what a walk covers; the other is
+//! *which bands the walk wrote*. A chunk first seen eight chunks out is stamped with none of its
+//! metres in the cube — the coarse band gets its 8 m summary and the fine loop is skipped — so a
+//! chunk can be current at a version and have never been walked at 1 m. A record that carried the
+//! version alone said "stamped" for a band the walk had not reached, and the chunk the player then
+//! walked into read as measured, empty air rather than as unmeasured. The same is true in the other
+//! direction: a crossing shifts the cells and cuts the ones that fall out of the volume, so the
+//! record loses those bands at the crossing and the chunk is walked again on the way back in.
 //!
 //! # One body, or the other
 //!
@@ -93,15 +102,20 @@ pub const HORIZON_SKY_REACH_M: f32 = 32.0;
 /// **Metres per coarse cell** — the far band's grain, one eighth of the world's chunk.
 pub const HORIZON_FAR_CELL_M: f32 = 8.0;
 
-/// Coarse cells along one edge of the far band: 32 × [`HORIZON_FAR_CELL_M`] = 256 m.
-pub const HORIZON_FAR_CELLS: u32 = 32;
+/// Coarse cells along one edge of the far band: 64 × [`HORIZON_FAR_CELL_M`] = 512 m.
+///
+/// **As wide as the shadow's far cascade is deep** (256 m each way), because this is the light's
+/// own coarse rung and the two answer for the same distance: a drawn chunk the shadow map still
+/// reaches must be one the coarse band has looked at, or its ambient has no measurement at exactly
+/// the range the geometry is still real.
+pub const HORIZON_FAR_CELLS: u32 = 64;
 
 /// **How far a far-band ray walks**, metres — a quarter of the band's diagonal, so a ray that
 /// starts at the eye has the whole declared horizon ahead of it and not just half of one side.
 pub const HORIZON_FAR_REACH_M: f32 = 160.0;
 
-/// Chunks along one edge of the far band: 256 m / 32 m.
-pub const HORIZON_FAR_SLOTS: i32 = 8;
+/// Chunks along one edge of the far band: 512 m / 32 m, half of them each side of the eye's chunk.
+pub const HORIZON_FAR_SLOTS: i32 = 16;
 
 /// The far band's word: **bits 0–7 are the share of this cell that holds matter** (`0` empty,
 /// `255` full), and bit 8 says the cell was stamped.
@@ -114,6 +128,30 @@ pub const HORIZON_FAR_SLOTS: i32 = 8;
 pub const FAR_SHARE: u32 = 0xFF;
 /// See [`FAR_SHARE`]: the coarse cell has been looked at.
 pub const FAR_MEASURED: u32 = 1 << 8;
+
+/// **Which of the two bands a stamp actually wrote**, as the record's own bits.
+///
+/// The version alone is not the fact a caller needs. A chunk first seen eight chunks out is
+/// stamped with none of its metres in the cube, so [`HorizonStream::stamp`] skips the fine loop and
+/// writes only its 8 m summary; two crossings later that same chunk is the one the player is
+/// standing in, at the *same* version of the *same* tree*. A record that remembered only the
+/// version answered "this is stamped" for a band that had never been walked, and the chunk under
+/// the player then read as **measured air** — `Some(false)`, a claim, where the truth was
+/// `None`, no measurement at all.
+const BAND_NEAR: u8 = 1;
+const BAND_FAR: u8 = 1 << 1;
+
+/// **What one chunk's stamp covers**: the version of the tree it was walked from, and the bands
+/// whose cells that walk actually wrote at that version.
+///
+/// Both halves are needed and neither implies the other. The version changes when the tree does;
+/// the bands change when the *eye* does, because a crossing shifts the cells and whatever the shift
+/// cut out of the volume is no longer stamped in it. See [`HorizonStream::recenter`].
+#[derive(Clone, Copy, Debug)]
+struct Stamp {
+    version: u64,
+    bands: u8,
+}
 
 /// The three directions the dome is sampled along, in the shader's own order.
 ///
@@ -163,9 +201,10 @@ pub struct HorizonStream {
     anchor: [i32; 3],
     /// The world-voxel corner of far cell `(0, 0, 0)`.
     far_anchor: [i32; 3],
-    /// **Chunks stamped into this anchor's cube, and the version of the tree each was stamped
-    /// from** — so a chunk is walked once per version of it and an edit is walked again.
-    stamped: BTreeMap<(i32, i32, i32), u64>,
+    /// **Chunks stamped into this volume, and what each stamp covers** — the version of the tree
+    /// it was walked from and the bands it wrote — so a chunk is walked once per version *and per
+    /// rung*, and an edit or a crossing is walked again.
+    stamped: BTreeMap<(i32, i32, i32), Stamp>,
     /// Whether the CPU cube has moved since the last upload.
     dirty: bool,
     buffer: wgpu::Buffer,
@@ -250,11 +289,23 @@ impl HorizonStream {
         self.anchor
     }
 
-    /// **Which of the cube's 3 × 3 × 3 chunk slots hold a stamp**, as `sx + 3·(sy + 3·sz)` bits
-    /// — the mask the shader reads to tell an empty cell from an unmeasured one.
+    /// **Which of the cube's 3 × 3 × 3 chunk slots have been walked at the fine rung**, as
+    /// `sx + 3·(sy + 3·sz)` bits — the mask the shader reads to tell an empty cell from an
+    /// unmeasured one.
+    ///
+    /// **A record is not a walk.** A chunk that was stamped while it was outside the cube has a
+    /// record whose only band is the coarse one: its 8 m summary exists and the fine loop never ran.
+    /// Counting that record here set the bit anyway, and the frame then read a slot full of zeros as
+    /// *measured air* — the chunk beside the player, or the chunk in front of them, answering "the
+    /// whole sky is visible from every cell in me" instead of "nobody has looked at me at 1 m yet".
+    /// The shadow map answers the second; the first is an invented measurement. So the bit means
+    /// what `horizon_stamped` says it means: this slot's metres have been looked at.
     pub fn coverage(&self) -> u32 {
         let mut mask = 0u32;
-        for ((x, y, z), _version) in &self.stamped {
+        for ((x, y, z), stamp) in &self.stamped {
+            if stamp.bands & BAND_NEAR == 0 {
+                continue;
+            }
             let slot = [
                 (x * CHUNK_SIDE - self.anchor[0]).div_euclid(CHUNK_SIDE),
                 (y * CHUNK_SIDE - self.anchor[1]).div_euclid(CHUNK_SIDE),
@@ -268,19 +319,53 @@ impl HorizonStream {
         mask
     }
 
-    /// Whether a chunk's 32 m box touches the cube.
+    /// Whether a chunk's 32 m box touches the **fine** cube — the only box whose unstamped cells
+    /// a frame may not draw through.
     pub fn covers(&self, pos: ChunkPos) -> bool {
-        let (origin, far) = self.box_of(pos);
-        origin[0] < far[0] && origin[1] < far[1] && origin[2] < far[2]
+        let origin = pos.origin();
+        in_box([origin.x, origin.y, origin.z], self.anchor, HORIZON_CELLS as i32)
     }
 
-    /// **Whether this chunk's cube still needs this version of its tree.**
+    /// Whether a chunk's 32 m box touches the **coarse** band.
+    pub fn covers_far(&self, pos: ChunkPos) -> bool {
+        let origin = pos.origin();
+        let span = (HORIZON_FAR_CELLS as f32 * HORIZON_FAR_CELL_M) as i32;
+        in_box([origin.x, origin.y, origin.z], self.far_anchor, span)
+    }
+
+    /// **The bands a chunk touches right now** — the only ones a stamp of it could write.
+    fn bands(&self, pos: ChunkPos) -> u8 {
+        let mut bands = 0;
+        if self.covers(pos) {
+            bands |= BAND_NEAR;
+        }
+        if self.covers_far(pos) {
+            bands |= BAND_FAR;
+        }
+        bands
+    }
+
+    /// **Whether this chunk's volume still needs this version of its tree, in a band it has not
+    /// been walked in.**
     ///
-    /// True when the chunk is in the box and the version it was stamped at is not the version it
-    /// has now — which is every chunk after a recentre, the chunk an edit rebuilt, and no chunk
-    /// on an ordinary frame of a still world.
+    /// Two questions, and the old one asked only the first. The **version** answers "is this the
+    /// tree I stamped?" — an edit bumps it and the chunk wants a walk. The **bands** answer "did
+    /// that walk reach the rung this chunk is at now?" — a chunk is stamped into the coarse band
+    /// alone while it is outside the cube, and into the fine band alone is impossible (a fine stamp
+    /// writes both), but the reverse happens on every crossing: leaving the cube cuts a chunk's
+    /// metres out of the volume, so the record has to forget the fine band with them.
+    ///
+    /// So a chunk wants a walk when it touches either band and touches a band its stamp does not
+    /// cover at that version. On an ordinary frame of a still world it wants nothing.
     pub fn wants(&self, pos: ChunkPos, version: u64) -> bool {
-        self.covers(pos) && self.stamped.get(&(pos.x, pos.y, pos.z)) != Some(&version)
+        let bands = self.bands(pos);
+        if bands == 0 {
+            return false;
+        }
+        match self.stamped.get(&(pos.x, pos.y, pos.z)) {
+            Some(stamp) => stamp.version != version || stamp.bands & bands != bands,
+            None => true,
+        }
     }
 
     /// **Move the cube to the eye's own chunk, and carry what it already knows.**
@@ -306,8 +391,8 @@ impl HorizonStream {
         if anchor == self.anchor {
             return false;
         }
-        // **The far band is centred on the eye's own chunk too**, four chunks out on each axis: a
-        // 256 m box with the player in the middle, so a tunnel mouth and the skyline are both in
+        // **The far band is centred on the eye's own chunk too**, eight chunks out on each axis: a
+        // 512 m box with the player in the middle, so a tunnel mouth and the skyline are both in
         // it and nothing the eye can walk toward arrives half a box late.
         let far_anchor = [
             (chunk.x - HORIZON_FAR_SLOTS / 2) * CHUNK_SIDE,
@@ -335,17 +420,25 @@ impl HorizonStream {
         self.far = shifted(&self.far, HORIZON_FAR_CELLS as i32, 1, far_shift);
         self.anchor = anchor;
         self.far_anchor = far_anchor;
-        // **A stamp survives only while its chunk is still in the box.** Its cells moved with the
-        // band, so the version it was taken at is still the version standing in them.
-        let n = HORIZON_CELLS as i32;
-        self.stamped.retain(|key, _| {
+        // **A stamp survives while its chunk is still in either band — and only in the bands the
+        // shift left it in.** The cells moved with the bands, so the version it was taken at is
+        // still the version standing in them; a band whose cells the shift *cut* is not, so the
+        // record loses that band here rather than claiming metres that are no longer in the volume.
+        // This is the half that makes the far band cheap: the coarse summary of a chunk the fine
+        // cube has left behind survives every crossing, and the fine band it lost does not.
+        let far_span = (HORIZON_FAR_CELLS as f32 * HORIZON_FAR_CELL_M) as i32;
+        self.stamped.retain(|key, stamp| {
             let origin = ChunkPos::new(key.0, key.1, key.2).origin();
-            [origin.x, origin.y, origin.z]
-                .iter()
-                .enumerate()
-                .all(|(axis, start)| {
-                    *start < anchor[axis] + n && *start + CHUNK_SIDE > anchor[axis]
-                })
+            let origin = [origin.x, origin.y, origin.z];
+            let mut kept = 0;
+            if in_box(origin, anchor, HORIZON_CELLS as i32) {
+                kept |= BAND_NEAR;
+            }
+            if in_box(origin, far_anchor, far_span) {
+                kept |= BAND_FAR;
+            }
+            stamp.bands &= kept;
+            kept != 0
         });
         self.dirty = true;
         true
@@ -390,6 +483,10 @@ impl HorizonStream {
     /// asked of the same leaves the mesher reads, so a dug quarter is a hole in the shadow rather
     /// than a whole metre of darkness.
     ///
+    /// **Both bands, always** — a chunk outside the 96 m cube has no fine cells to mark and still
+    /// stamps its 8 m summary, which is the rung a far fragment is lit at. The fine loop is skipped
+    /// there so a far chunk costs its leaves rather than its voxels.
+    ///
     /// The chunk's own cells are **cleared first**, because a chunk replaces the one it was: an
     /// edit is served by a new tree for the same chunk, and a stamp that only ever added bits
     /// would keep the block the player broke. Chunks do not overlap, so this costs no neighbour's
@@ -397,10 +494,15 @@ impl HorizonStream {
     ///
     /// Returns the number of cells the chunk marked (including cells already carrying a mask).
     pub fn stamp(&mut self, pos: ChunkPos, tree: &SparseVoxelOctree, version: u64) -> usize {
-        if !self.wants(pos, version) {
-            return 0;
-        }
-        self.stamped.insert((pos.x, pos.y, pos.z), version);
+        // **The caller owns "does this need stamping".** `wants` is the cheap question and every
+        // caller asks it; re-asking it here made a forced stamp a no-op, which is how a chunk whose
+        // cells a crossing had emptied kept a version record claiming they were there.
+        //
+        // **The record says which bands this walk wrote**, computed before anything moves, because
+        // the answer is exactly what the two loops below are allowed to write: the coarse loop
+        // writes wherever the chunk is in the coarse band, the fine loop only inside the cube.
+        let bands = self.bands(pos);
+        self.stamped.insert((pos.x, pos.y, pos.z), Stamp { version, bands });
         let origin = pos.origin();
         let base = [origin.x, origin.y, origin.z];
         self.clear_chunk(base);
@@ -427,12 +529,16 @@ impl HorizonStream {
         // leaf adds its own volume — `Uniform` all of it, `Mixed` its solid subvoxels — so a cell's
         // share is the mean of the fine band over that cell and the two agree at the handover.
         let mut solids = [[[0u32; 4]; 4]; 4];
+        let in_near = self.covers(pos);
         tree.visit_leaves(&mut |local: [i32; 3], level: u32, node: &Node| {
             match node {
                 Node::Empty | Node::Branch(_) => {}
                 Node::Uniform(_) => {
                     let side = 1i32 << level;
                     add_solid_volume(&mut solids, local, side, (side * side * side) as u32);
+                    if !in_near {
+                        return;
+                    }
                     let words = [u32::MAX, u32::MAX];
                     for y in local[1]..local[1] + side {
                         for z in local[2]..local[2] + side {
@@ -449,7 +555,8 @@ impl HorizonStream {
                 }
                 Node::Mixed(shape) => {
                     let words = subvoxel_words(shape.cells());
-                    if words != [0, 0]
+                    if in_near
+                        && words != [0, 0]
                         && self.mark([base[0] + local[0], base[1] + local[1], base[2] + local[2]], words)
                     {
                         marked += 1;
@@ -635,20 +742,22 @@ impl HorizonStream {
     /// relative to it; the cube is written only when a chunk stamped it, an edit forgot it or the
     /// cube recentred.
     pub fn write(&mut self, queue: &wgpu::Queue, eye_m: [f64; 3]) {
+        // **Both bands, under one flag.** The coarse band used to be uploaded in a second
+        // `dirty` block, after the first had already cleared it: the far buffer never left its
+        // zeroed state, so every coarse cell on the GPU read as unstamped and the coarse rung
+        // answered nothing for the whole run.
         if self.dirty {
             let mut bytes = Vec::with_capacity(self.cells.len() * 4);
             for cell in &self.cells {
                 bytes.extend_from_slice(&cell.to_le_bytes());
             }
             queue.write_buffer(&self.buffer, 0, &bytes);
-            self.dirty = false;
-        }
-        if self.dirty {
             let mut far = Vec::with_capacity(self.far.len() * 4);
             for cell in &self.far {
                 far.extend_from_slice(&cell.to_le_bytes());
             }
             queue.write_buffer(&self.far_buffer, 0, &far);
+            self.dirty = false;
         }
         let mut view = [0.0f32; 20];
         for axis in 0..3 {
@@ -671,20 +780,11 @@ impl HorizonStream {
         queue.write_buffer(&self.uniform, 0, &bytes);
     }
 
-    fn box_of(&self, pos: ChunkPos) -> ([i32; 3], [i32; 3]) {
-        let origin = pos.origin();
-        let near = [
-            origin.x.max(self.anchor[0]),
-            origin.y.max(self.anchor[1]),
-            origin.z.max(self.anchor[2]),
-        ];
-        let far = [
-            (origin.x + CHUNK_SIDE).min(self.anchor[0] + HORIZON_CELLS as i32),
-            (origin.y + CHUNK_SIDE).min(self.anchor[1] + HORIZON_CELLS as i32),
-            (origin.z + CHUNK_SIDE).min(self.anchor[2] + HORIZON_CELLS as i32),
-        ];
-        (near, far)
-    }
+}
+
+/// Whether a chunk's own box touches `anchor .. anchor + span` on every axis.
+fn in_box(origin: [i32; 3], anchor: [i32; 3], span: i32) -> bool {
+    (0..3).all(|axis| origin[axis] < anchor[axis] + span && origin[axis] + CHUNK_SIDE > anchor[axis])
 }
 
 /// **One band, moved to its new anchor**, zeroing the cells the old anchor did not hold.
@@ -825,8 +925,8 @@ mod tests {
         stream.stamp(ChunkPos::new(1, 0, 0), &tree_with_roof(), 1);
         assert_eq!(stream.coverage(), (1 << 13) | (1 << 14));
         assert!(
-            !stream.wants(ChunkPos::new(2, 0, 0), 1) && stream.coverage() & (1 << 15) == 0,
-            "a chunk outside the cube claimed a slot"
+            stream.wants(ChunkPos::new(2, 0, 0), 1) && stream.coverage() & (1 << 15) == 0,
+            "a chunk outside the fine cube claimed one of its slots"
         );
     }
 
@@ -892,12 +992,60 @@ mod tests {
         );
         assert!(!stream.wants(ChunkPos::new(0, 0, 0), 1), "a carried chunk is not walked again");
         assert!(stream.wants(ChunkPos::new(2, 0, 0), 1), "the chunk that entered wants a stamp");
-        assert!(!stream.wants(ChunkPos::new(3, 0, 0), 1), "a chunk past the 96 m box is not in it");
+        // **Past the fine box, the coarse band still owns the chunk.** Chunk 3 is 96 m away and
+        // wants its 8 m summary; chunk 9 is past the 512 m band and wants nothing.
+        assert!(stream.wants(ChunkPos::new(3, 0, 0), 1), "a chunk in the coarse band was dropped");
+        assert!(!stream.wants(ChunkPos::new(9, 0, 0), 1), "a chunk past both bands wants a stamp");
 
-        // Two chunks along, the chunk that stamped the roof is out of the box and must be forgotten.
+        // **And it stamps only its summary**: no fine cell of chunk 3 is in the cube, so the walk
+        // marks none, while the coarse cells it covers read as measured and full.
+        let mut far_only = SparseVoxelOctree::new();
+        far_only.set_material_region([0, 0, 0], 5, MaterialId(1));
+        assert_eq!(
+            stream.stamp(ChunkPos::new(3, 0, 0), &far_only, 1),
+            0,
+            "a chunk outside the fine cube marked one of its cells"
+        );
+        assert_eq!(
+            stream.far_share_at([100.0, 4.0, 4.0]),
+            Some(1.0),
+            "a chunk past the fine box stamped no coarse summary: far chunks have no light rung"
+        );
+
         assert!(stream.recenter([80.0, 1.0, 1.0]));
         assert_eq!(stream.solid_at([4.0, 3.4, 4.0]), None, "a cell outside the cube has no answer");
-        assert!(!stream.stamped.contains_key(&(0, 0, 0)), "the stamp outlived its chunk's slot");
+        assert!(
+            stream.far_share_at([4.0, 3.5, 4.0]).is_some(),
+            "a chunk still in the coarse band lost its summary at the crossing"
+        );
+        assert!(
+            stream.stamped.contains_key(&(0, 0, 0))
+                && !stream.wants(ChunkPos::new(0, 0, 0), 1),
+            "a carried coarse stamp was thrown away and would be walked again"
+        );
+    }
+
+    /// **The crossing walked the other way.** A shift has two signs and the test above only asks
+    /// for one: the eye stepping to −x moves the band by +32 m, and a band that carried the wrong
+    /// sign would leave its cells a chunk off its own anchor — the rock that is in front of the
+    /// player answering for the air he is standing in.
+    #[test]
+    fn a_crossing_toward_negative_x_carries_the_cube_the_same_way() {
+        let (device, _queue) = device();
+        let mut stream = HorizonStream::new(&device);
+        assert!(stream.recenter([1.0, 1.0, 1.0]));
+        stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 1);
+        assert!(stream.recenter([-1.0, 1.0, 1.0]), "the step back did not move the box");
+        assert_eq!(
+            stream.solid_at([4.0, 3.4, 4.0]),
+            Some(true),
+            "the roof is at a different address after the band moved toward −x"
+        );
+        assert_eq!(
+            stream.solid_at([4.0, 2.4, 4.0]),
+            Some(false),
+            "the cell under the roof took the roof's matter"
+        );
     }
 
     /// **An edit is a new version, and the replaced chunk's cells follow it.**
@@ -913,7 +1061,12 @@ mod tests {
         stream.recenter([1.0, 1.0, 1.0]);
         stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 6);
         assert_eq!(stream.solid_at([4.0, 3.4, 4.0]), Some(true), "the roof was not stamped");
-        assert_eq!(stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 6), 0, "a held version is not walked again");
+        assert!(!stream.wants(ChunkPos::new(0, 0, 0), 6), "a held version is not walked again");
+        assert_eq!(
+            stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 6),
+            16,
+            "a forced stamp is a walk: the caller asked for the cells, not for an opinion"
+        );
 
         // The player breaks the whole roof: the rebuilt chunk arrives as version 7.
         let empty = SparseVoxelOctree::new();
@@ -923,6 +1076,183 @@ mod tests {
             stream.solid_at([4.0, 3.4, 4.0]),
             Some(false),
             "the roof of the tree before the edit is still standing"
+        );
+    }
+
+    /// **A chunk walked at the coarse rung is not a chunk walked at the fine one.**
+    ///
+    /// The sequence is the ordinary walk, not a contrivance: a chunk is first seen eight chunks
+    /// out, so its stamp lands with none of its metres in the cube and writes only its 8 m summary;
+    /// two crossings later the player is standing in it, at the **same version** of the same tree.
+    /// The record used to carry the version alone, so `wants` answered "stamped" for a band that
+    /// had never been walked: the slot's coverage bit was set, every cell was zero, and the chunk
+    /// under the player read as **measured air** — `Some(false)`, which is a claim about the world,
+    /// rather than `None`, which is the truth about the volume.
+    #[test]
+    fn a_chunk_stamped_at_the_coarse_rung_is_walked_again_when_it_enters_the_fine_cube() {
+        let (device, _queue) = device();
+        let mut stream = HorizonStream::new(&device);
+        stream.recenter([1.0, 1.0, 1.0]);
+        let far_chunk = ChunkPos::new(7, 0, 0);
+        assert!(
+            !stream.covers(far_chunk) && stream.covers_far(far_chunk),
+            "the chunk this test walks into is not outside the fine cube and inside the coarse one"
+        );
+        assert_eq!(
+            stream.stamp(far_chunk, &tree_with_roof(), 1),
+            0,
+            "a chunk outside the fine cube wrote a metre into it"
+        );
+        assert!(
+            !stream.wants(far_chunk, 1),
+            "the coarse summary did not land: the chunk will be walked again for the wrong reason"
+        );
+
+        // The walk only changes the chunk's distance from the eye. The tree is untouched.
+        assert!(
+            stream.recenter([7.0 * 32.0 + 1.0, 1.0, 1.0]),
+            "the walk did not move the band"
+        );
+        assert!(stream.covers(far_chunk), "the chunk did not enter the fine cube");
+        assert_eq!(
+            stream.coverage() & (1 << 13),
+            0,
+            "a slot whose only walk was the 8 m summary told the shader its metres were measured"
+        );
+        assert!(
+            stream.wants(far_chunk, 1),
+            "a chunk summarised at 8 m answered for a 1 m band it was never walked in"
+        );
+
+        // What the frame's own loop does with a `wants`, and what the march then reads.
+        let roof = [7.0 * 32.0 + 4.0, 3.4, 4.0];
+        stream.stamp(far_chunk, &tree_with_roof(), 1);
+        assert_ne!(
+            stream.coverage() & (1 << 13),
+            0,
+            "the slot stayed unmeasured after the chunk was walked at 1 m"
+        );
+        assert_eq!(
+            stream.solid_at(roof),
+            Some(true),
+            "the chunk the player walked into measures as empty air: its roof was never stamped \
+             at 1 m"
+        );
+        assert_eq!(
+            stream.solid_at([roof[0], 2.4, 4.0]),
+            Some(false),
+            "the cell under the roof took the roof's matter"
+        );
+    }
+
+    /// **A crossing owes the whole slab that enters, not the chunk the player is standing in.**
+    ///
+    /// This is the player's own report — "chunks outside the one the player is in aren't
+    /// sampling" — written as a sequence. The slab ahead is the slab every player walks into, and
+    /// it is summarised at 8 m while it is still outside the cube, one ordinary frame's work. The
+    /// frame loop stamps the eye's chunk **whatever the record says** (a crossing re-stamps it) and
+    /// every other chunk only when `wants` says so, so a record that answered for a band it never
+    /// wrote left the nine chunks ahead unmeasured on the very frame they became the ground under
+    /// the player's feet: one chunk sampled, twenty-six falling back to the shadow map.
+    #[test]
+    fn a_crossing_stamps_every_chunk_of_the_slab_that_enters_the_cube() {
+        let (device, _queue) = device();
+        let mut stream = HorizonStream::new(&device);
+        assert!(stream.recenter([1.0, 1.0, 1.0]));
+
+        // The slab ahead, summarised while it is outside the cube — and nothing else about it
+        // changes between here and the crossing below.
+        for pos in (-1..=1).flat_map(|y| (-1..=1).map(move |z| ChunkPos::new(2, y, z))) {
+            assert!(
+                stream.covers_far(pos) && !stream.covers(pos),
+                "chunk {pos:?} of the slab ahead is not outside the cube and inside the coarse band"
+            );
+            stream.stamp(pos, &tree_with_roof(), 1);
+            assert!(!stream.wants(pos, 1), "the slab's summary did not land");
+        }
+
+        // One chunk forward. The slab is inside the cube and its trees are untouched.
+        assert!(stream.recenter([33.0, 1.0, 1.0]), "the walk did not move the box");
+        let mut wanted = 0;
+        for y in -1..=1 {
+            for z in -1..=1 {
+                let pos = ChunkPos::new(2, y, z);
+                assert!(stream.covers(pos), "chunk {pos:?} did not enter the cube");
+                if stream.wants(pos, 1) {
+                    wanted += 1;
+                }
+            }
+        }
+        assert_eq!(
+            wanted, 9,
+            "the crossing left {} of the nine entering chunks unsampled",
+            9 - wanted
+        );
+
+        // Nine a frame is the crossing's budget, so the slab is walked on the frame it enters.
+        for y in -1..=1 {
+            for z in -1..=1 {
+                let pos = ChunkPos::new(2, y, z);
+                if stream.wants(pos, 1) {
+                    stream.stamp(pos, &tree_with_roof(), 1);
+                }
+            }
+        }
+        for y in -1..=1 {
+            for z in -1..=1 {
+                let roof = [
+                    2.0 * 32.0 + 4.0,
+                    y as f64 * 32.0 + 3.4,
+                    z as f64 * 32.0 + 4.0,
+                ];
+                assert_eq!(
+                    stream.solid_at(roof),
+                    Some(true),
+                    "chunk {y},{z} of the slab the player walked into measures as empty air"
+                );
+            }
+        }
+    }
+
+    /// **A band the crossing cut is not a band the chunk is stamped in.**
+    ///
+    /// The other direction of the same lie, and the one a player makes every time they turn
+    /// around: a chunk walked while the cube held it, left behind in the coarse band, and walked
+    /// back into at the same version. Leaving cut its metres out of the volume — that cut is what
+    /// makes a crossing nine stamps instead of twenty-seven — so the record has to lose the fine
+    /// band with them. It did not, and the chunk the player returned to read as measured air under
+    /// a coverage bit that said it had been looked at.
+    #[test]
+    fn a_band_the_crossing_cut_is_walked_again_when_the_chunk_returns() {
+        let (device, _queue) = device();
+        let mut stream = HorizonStream::new(&device);
+        stream.recenter([1.0, 1.0, 1.0]);
+        stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 1);
+        assert_eq!(stream.solid_at([4.0, 3.4, 4.0]), Some(true), "the roof was not stamped");
+
+        // Four chunks out: the fine cube no longer holds chunk 0, and its metres are cut.
+        assert!(stream.recenter([4.0 * 32.0 + 1.0, 1.0, 1.0]));
+        assert!(
+            !stream.covers(ChunkPos::new(0, 0, 0)) && stream.covers_far(ChunkPos::new(0, 0, 0)),
+            "the crossing did not leave this chunk in the coarse band alone"
+        );
+        assert_eq!(
+            stream.solid_at([4.0, 3.4, 4.0]),
+            None,
+            "a cell outside the cube has no answer"
+        );
+
+        // And back, at the same version: the fine band owes a walk it was never asked for.
+        assert!(stream.recenter([1.0, 1.0, 1.0]));
+        assert!(
+            stream.wants(ChunkPos::new(0, 0, 0), 1),
+            "a chunk whose fine cells the crossing cut was treated as walked when it came back"
+        );
+        stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 1);
+        assert_eq!(
+            stream.solid_at([4.0, 3.4, 4.0]),
+            Some(true),
+            "the chunk the player walked back into measures as empty air"
         );
     }
 
@@ -941,7 +1271,7 @@ mod tests {
             assert!(source.contains(literal), "the shader's {what} moved without this module's");
         }
         assert_eq!(HORIZON_CELLS as f32 * HORIZON_CELL_M, 96.0);
-        assert_eq!(HORIZON_FAR_CELLS as f32 * HORIZON_FAR_CELL_M, 256.0);
+        assert_eq!(HORIZON_FAR_CELLS as f32 * HORIZON_FAR_CELL_M, 512.0);
         assert_eq!(HORIZON_SUBVOXEL_M, 0.25);
         assert_eq!(SKY_RAYS.len(), 3);
     }

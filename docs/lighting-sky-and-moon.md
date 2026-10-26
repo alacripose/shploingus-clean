@@ -812,14 +812,30 @@ chunk slot; where it is clear the march reports no measurement and the shadow ma
 partially filled cube is a box with some of its answer delegated, and never a chunk-shaped hole in the
 light.
 
+**The bit means walked at 1 m, not merely recorded.** A chunk stamped while it was outside the cube has
+a record whose only band is the coarse one, and counting that record set the slot's bit with every cell
+gone: the frame then read zeros as *measured air* and the chunk beside the player reported a full view
+of the sky from every metre in it. That is the one shape of this defect the mask itself carried — a bit
+is now set only by a stamp that wrote the fine band, so a chunk waiting its turn is unmeasured and the
+shadow map answers instead of an invented dome.
+
 **A chunk that leaves the window is forgotten from both bands — its own box only.** A coarse cell is
 8 m and a chunk is four of them aligned to its corner, so no neighbour shares one. Clearing the whole
 coarse band instead (which the first version did) threw away every other chunk's summary while leaving
 their versions current, so the far field went blank on the frame the window moved and stayed blank.
 
-**Stamps are keyed by the version of the tree they were taken from** (`voxel_work::Streamer::tree_version`),
-so an edit's rebuilt chunk is stamped again on the frame its new tree lands, and an untouched chunk is
-never walked twice.
+**Stamps are keyed by the version of the tree they were taken from and the bands they wrote**
+(`voxel_work::Streamer::tree_version` plus the record's own bits), so an edit's rebuilt chunk is stamped
+again on the frame its new tree lands, and an untouched chunk is never walked twice. The version alone
+was not enough: a chunk is first seen eight chunks out, where a stamp writes only its 8 m summary, and
+the same chunk is the one the player walks into later at the *same* version — with no 1 m cells at all.
+`wants` therefore asks two questions, "is this the tree I stamped?" and "did that walk reach the rung
+this chunk is at now?".
+
+**A crossing drops from the record every band it cut out of the volume.** Leaving the cube shifts a
+chunk's metres out of it, so the fine cells are gone; the record loses that band with them and the chunk
+is walked again on the way back in. What survives a crossing is the coarse summary, which is what keeps
+a re-entry to the chunk's own walk rather than a rebuild of a band.
 
 **The coarse band is a level of the same octree, not a mask.** Each 8 m cell carries the share of its
 512 voxels that hold matter (bits 0–7) beside the stamped bit, accumulated during the same leaf walk
