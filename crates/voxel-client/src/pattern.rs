@@ -115,39 +115,75 @@ pub const SUBVOXEL_CELL_M: f64 = VOXEL_M / SUBVOXEL_SIDE as f64;
 /// subvoxel axis.
 pub const DETAIL_CELL_M: f64 = SUBVOXEL_CELL_M / DETAIL_SIDE as f64;
 
-/// **The rungs**, in metres, near to far. Three, and the reasons are each measured:
+/// **The rungs**, in metres, near to far — **five**, a factor of four apart, and the reasons
+/// are each measured:
 ///
 /// * **31.25 mm** — 32 addressable cells per block face, the finest the eye accepts
 ///   (*"we don't do 256, the minimum size is the 32² per face"*). Nothing below it is drawn.
-/// * **0.5 m** — half a block: the block materials' own mottling, and the scale the
-///   mid-ground is read at. Without it the near grain fell to the 4 m cell by 6 m and the
-///   blend read as a hard fade (*"the block maximums fade too hard"*).
-/// * **8 m** — the coarse LOD. The far read is an **interpolation of corner values**, so it
-///   is soft to begin with; it is also attenuated towards the material's mean as its own
-///   footprint grows, which is what a distant LOD is (*"the LOD materials were sharp, not
-///   softened"*).
-pub const RUNGS_M: [f64; 3] = [NEAR_CELL_M, 0.5, 8.0];
+/// * **125 mm** and **0.5 m** — an eighth and half a block. These are the rungs whose absence
+///   made the handover a cliff: with three cells a factor of sixteen apart the material had to
+///   swing from one scale to the next in a single step of distance, which is the *"the block
+///   maximums fade too hard"* report. A quarter-octave ladder of five gives each handover a
+///   factor of four of footprint to happen in.
+/// * **2 m** and **8 m** — the mid-far and the coarse LOD. Both are **point-sampled** at the
+///   fragment's own cell: the material is sharp at every distance, and what looks soft at range
+///   is now only the ladder's crossfade, which is the one thing a distance change must do.
+pub const RUNGS_M: [f64; 5] = [NEAR_CELL_M, 0.125, 0.5, 2.0, 8.0];
 
 /// **The near lattice's cell**: 31.25 mm — 32 samples per block face, the address floor.
 pub const NEAR_CELL_M: f64 = DETAIL_CELL_M * 2.0;
 
 /// **The coarse lattice's cell**: 8 m, the last rung of [`RUNGS_M`].
-pub const FAR_CELL_M: f64 = RUNGS_M[2];
-/// **How much of a lattice a pixel can draw**: one at the eye, falling to zero at a quarter
-/// of the cell (where the cell is four pixels across), smoothstepped at both ends.
+pub const FAR_CELL_M: f64 = RUNGS_M[RUNGS_M.len() - 1];
+/// **Where a footprint stands on the ladder**, in rung units: `0.0` at the finest rung's own
+/// handover point and `RUNGS_M.len()` past the coarse one.
 ///
-/// **Distance only.** The weight takes no face, no plane and no eye angle, so a wall and a
-/// floor at the same distance weigh the same. That is the whole of the vertical-face fix: the
-/// old weight divided by a function of the face's cosine, and walking past a wall swept that
-/// cosine across its range while a floor's barely moved.
-pub fn cell_weight(footprint_m: f64, cell_m: f64) -> f64 {
-    // One until a **quarter** of the cell is a pixel, zero at `cell / 4` — a plateau, not a
-    // ramp from the eye. The ramp version put a rung at half weight 1.5 m away, which is
-    // what made the near detail wash out ("the block maximums fade too hard").
-    let far = cell_m / 4.0;
-    let near = cell_m / 16.0;
-    let t = ((far - footprint_m) / (far - near)).clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
+/// The origin is **a quarter of the finest cell**, because that is where a rung's own cell is
+/// four pixels across — the point at which a lattice may be drawn at all. From there the rungs
+/// are a factor of four apart, so one doubling of the footprint is half a rung (`log2 / 2`).
+pub fn rung_level(footprint_m: f64) -> f64 {
+    let handover = RUNGS_M[0] / 4.0;
+    if footprint_m <= handover {
+        return 0.0;
+    }
+    (footprint_m / handover).log2() / 2.0
+}
+
+/// **The ladder's weights: two rungs, cross-faded, and no more.**
+///
+/// **Rungs hand over smoothly: two adjacent ones, weighted by how far the footprint stands
+/// between them.**
+///
+/// A rung's cell is four pixels across at its own handover point (`RUNGS[i] / 4`) and one pixel
+/// across at the next one (`RUNGS[i]`), so the level's fractional part is exactly the share the
+/// next rung deserves. `w[i] = 1 - t`, `w[i+1] = t`, sum one: the blend moves continuously with
+/// distance, which is what a stepped choice could not do — *"the blending is not smooth"*.
+///
+/// **And the cells themselves are not blended.** The lattice is read nearest-neighbour (see
+/// [`Pattern::nearest`]), so what the cross-fade mixes is two *scales* of a sharp field, never
+/// two corners of one cell: the cells stay crisp ("the trilinear corner sampled cells are
+/// blurry") and only the rung a distance hands over to moves.
+///
+/// Past the last rung the weights are all zero: eight metres of footprint is one pixel per coarse
+/// cell, and beyond that there is nothing a lattice can draw that would not alias, so the
+/// material shows its mean.
+///
+/// **Distance only.** No face, no plane, no eye angle: a wall and a floor at the same distance
+/// weigh the same. The old weight divided by a function of the face's cosine, and walking past
+/// a wall swept that cosine across its range while a floor's barely moved.
+pub fn rung_weights(footprint_m: f64) -> [f64; RUNGS_M.len()] {
+    let mut weights = [0.0; RUNGS_M.len()];
+    let level = rung_level(footprint_m);
+    if level >= RUNGS_M.len() as f64 {
+        return weights;
+    }
+    let index = level.floor() as usize;
+    let t = (level - index as f64).clamp(0.0, 1.0);
+    weights[index] = 1.0 - t;
+    if index + 1 < RUNGS_M.len() {
+        weights[index + 1] = t;
+    }
+    weights
 }
 
 /// **One pixel's angular size**, in radians: the camera's vertical field of view over
@@ -380,30 +416,23 @@ impl<'a> Pattern<'a> {
         let Some((roughness_gain, reflectance_gain)) = self.field.gain(material) else {
             return Ok(DetailSample::NONE);
         };
-        // **Two lattices, and the address is the world's.** The near one is read in
-        // 31.25 mm cells, the far one in whole blocks; both addresses come from the world
-        // position alone, and the eye enters only through the footprint — how much of each
-        // the pixel can draw. There is **no face, no plane and no eye angle** anywhere in
-        // the address or the weight, so a wall and a floor at the same distance read the
-        // same cells. That is the invariant the eleven-rung ladder broke: its weights were
-        // a function of the eye's angle to the surface, walking past a wall swept that
-        // angle over its whole range frame by frame, and the wall's material re-rolled as
-        // the player moved.
-        // **The ladder, as a weighted mean over three rungs.** Each rung's weight is its
-        // own cell's plateau (`cell_weight`), the sum normalises it, and the address of
-        // every rung is the world point alone — no face, no plane, no eye angle. That is
-        // what makes a wall and a floor at one distance read the same cells, and what
-        // keeps a fragment's material from re-rolling when the eye moves.
+        // **The ladder, as a weighted mean over five point-sampled rungs.** The weights are
+        // [`rung_weights`] — footprint alone — and each rung's address is the world point
+        // alone, so there is **no face, no plane and no eye angle** anywhere in the law: a
+        // wall and a floor at the same distance read the same cells. That is the invariant
+        // the eleven-rung ladder broke, its weights being a function of the eye's angle to
+        // the surface.
+        let weights = rung_weights(footprint_m);
         let mut weight_sum = 0.0;
         let mut roughness = 0.0;
         let mut reflectance = 0.0;
-        for cell_m in RUNGS_M.iter() {
-            let weight = cell_weight(footprint_m, *cell_m);
+        for (rung, cell_m) in RUNGS_M.iter().enumerate() {
+            let weight = weights[rung];
             if weight <= 0.0 {
                 continue;
             }
             let step = (cell_m / DETAIL_CELL_M) as i64;
-            let sample = self.grid(material, p_m, step)?;
+            let sample = self.nearest(material, p_m, step)?;
             roughness += weight * surface.curve(sample.roughness_delta);
             reflectance += weight * surface.curve(sample.reflectance_delta);
             weight_sum += weight;
@@ -417,58 +446,43 @@ impl<'a> Pattern<'a> {
         })
     }
 
-    /// **One lattice as a smooth field** at `step` fine cells per axis: the eight
-    /// corner hashes of the grid cell the point stands in, weighted trilinearly by its
-    /// place inside it.
+    /// **One lattice, read as the fragment's own cell**: the single nearest sample, no corner
+    /// blend.
     ///
-    /// The interpolation is what makes the law survivable. A value per cell is a step
-    /// function, so a fragment a rounding step over an edge reads a different material
-    /// and the picture boils along every cell boundary as the eye moves. Interpolated, the
-    /// field is continuous across every edge and a rounding step is a rounding step.
+    /// This is what "nearest neighbour" means here, and it is the fix for the cells the user saw
+    /// as blurry: the eight-corner mean made every cell edge a ramp the width of the cell, so the
+    /// material's picture was softened by the grain it was supposed to show. The texture of the
+    /// world is its cells, and a cell is a value.
     ///
-    /// `step` is a power of two (2 and 256), so the grid index is the point's fine-cell
-    /// index shifted and the fraction is its low bits.
-    fn grid(&self, material: MaterialId, p_m: [f64; 3], step: i64) -> Refused<DetailSample> {
+    /// The continuity the blend used to buy is the **ladder's** instead: [`rung_weights`]
+    /// cross-fades two *scales* by how far the footprint stands between them, so what moves with
+    /// distance is which rung a surface hands over to, smoothly, and never the corners inside one
+    /// cell.
+    ///
+    /// `step` is a power of two (2 … 512 fine cells a rung cell), so the cell index is the
+    /// point's fine-cell index with its low bits dropped.
+    fn nearest(&self, material: MaterialId, p_m: [f64; 3], step: i64) -> Refused<DetailSample> {
         let bits = step.trailing_zeros();
-        let mut grid = [0i64; 3];
-        let mut frac = [0.0f64; 3];
+        let mut corner = [0i32; 3];
+        let mut addr = [0u16; 3];
         for axis in 0..3 {
-            let g = p_m[axis] / DETAIL_CELL_M / step as f64;
-            let i0 = g.floor();
-            grid[axis] = i0 as i64;
-            frac[axis] = g - i0;
-        }
-        let mut roughness = 0.0f64;
-        let mut reflectance = 0.0f64;
-        for (di, wu) in [(0i64, 1.0 - frac[0]), (1, frac[0])] {
-            for (dj, wv) in [(0i64, 1.0 - frac[1]), (1, frac[1])] {
-                for (dk, ww) in [(0i64, 1.0 - frac[2]), (1, frac[2])] {
-                    let mut corner = [0i32; 3];
-                    let mut addr = [0u16; 3];
-                    for (axis, d) in [di, dj, dk].into_iter().enumerate() {
-                        let fine = (grid[axis] + d) << bits;
-                        let subvoxel = fine >> 4;
-                        if !(i32::MIN as i64..=i32::MAX as i64).contains(&subvoxel) {
-                            return Err(Refusal::owned(
-                                RefusalKind::CoordinateOutOfRange,
-                                format!("subvoxel cell {subvoxel} at axis {axis} does not fit i32"),
-                            ));
-                        }
-                        corner[axis] = subvoxel as i32;
-                        addr[axis] = (fine & 0xF) as u16;
-                    }
-                    let sample = self.lattice.sample(
-                        material,
-                        corner,
-                        DetailIndex { x: addr[0], y: addr[1], z: addr[2] },
-                    )?;
-                    let w = wu * wv * ww;
-                    roughness += w * sample.roughness_delta;
-                    reflectance += w * sample.reflectance_delta;
-                }
+            let grid = (p_m[axis] / DETAIL_CELL_M / step as f64).floor() as i64;
+            let fine = grid << bits;
+            let subvoxel = fine >> 4;
+            if !(i32::MIN as i64..=i32::MAX as i64).contains(&subvoxel) {
+                return Err(Refusal::owned(
+                    RefusalKind::CoordinateOutOfRange,
+                    format!("subvoxel cell {subvoxel} at axis {axis} does not fit i32"),
+                ));
             }
+            corner[axis] = subvoxel as i32;
+            addr[axis] = (fine & 0xF) as u16;
         }
-        Ok(DetailSample { roughness_delta: roughness, reflectance_delta: reflectance })
+        self.lattice.sample(
+            material,
+            corner,
+            DetailIndex { x: addr[0], y: addr[1], z: addr[2] },
+        )
     }
 
 }
@@ -618,25 +632,67 @@ mod tests {
         assert!((pixel_angle_rad(1.2, 1440) as f64 - a / 2.0).abs() < 1e-12);
     }
 
+    /// **The ladder is five cells a quarter-octave apart, and it hands over smoothly.**
+    ///
+    /// Three cells sixteen apart made every handover a cliff — the material had to swing from one
+    /// scale to the next inside a single step of distance, which is the *"the block maximums fade
+    /// too hard"* report. Five, a factor of four apart, give each handover a factor of four of
+    /// footprint to happen in, and the weights cross-fade across it so the change is continuous in
+    /// distance: *"the blending is not smooth"* is the report this answers.
     #[test]
-    fn the_two_cells_are_the_scales_the_eye_asked_for() {
-        // 32 addressable cells per block face near, half a block in the mid-ground, and
-        // eight metres at the far end — the smallest set that keeps the near detail and
-        // hands over to a coarser read instead of a fade.
-        assert_eq!(NEAR_CELL_M, 0.03125);
-        assert_eq!(FAR_CELL_M, 8.0);
-        assert_eq!(RUNGS_M[0], NEAR_CELL_M);
-        assert_eq!(RUNGS_M[2], FAR_CELL_M);
-        // A cell's weight is one at the eye and **zero at a quarter of it** — where the cell
-        // is four pixels across — and it never rises with distance.
-        assert_eq!(cell_weight(0.0, NEAR_CELL_M), 1.0);
-        assert_eq!(cell_weight(NEAR_CELL_M / 4.0, NEAR_CELL_M), 0.0);
-        assert_eq!(cell_weight(FAR_CELL_M / 4.0, FAR_CELL_M), 0.0);
-        let mut last = 1.0;
-        for step in 0..=100 {
-            let w = cell_weight(NEAR_CELL_M / 4.0 * step as f64 / 100.0, NEAR_CELL_M);
-            assert!(w <= last + 1e-12, "the weight rose with distance");
-            last = w;
+    fn the_ladder_is_five_cells_a_quarter_octave_apart_and_hands_over_smoothly() {
+        assert_eq!(RUNGS_M, [0.03125, 0.125, 0.5, 2.0, 8.0]);
+        assert_eq!(RUNGS_M[0], NEAR_CELL_M, "the near cell left the eye's 32-per-face floor");
+        assert_eq!(RUNGS_M[RUNGS_M.len() - 1], FAR_CELL_M);
+        assert_eq!(NEAR_CELL_M, 1.0 / 32.0, "32 addressable cells a face, no finer");
+        for pair in RUNGS_M.windows(2) {
+            assert!(
+                (pair[1] / pair[0] - 4.0).abs() < 1e-12,
+                "rungs {} and {} are not a factor of four apart",
+                pair[0],
+                pair[1]
+            );
+        }
+        // Each rung is **one** at its own handover point — a quarter of its cell, four pixels
+        // across — and the finest rung owns everything nearer than that.
+        assert_eq!(rung_weights(0.0), [1.0, 0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(rung_weights(RUNGS_M[0] / 4.0), [1.0, 0.0, 0.0, 0.0, 0.0]);
+        for (rung, cell) in RUNGS_M.iter().enumerate().skip(1) {
+            let mut expected = [0.0; 5];
+            expected[rung] = 1.0;
+            assert_eq!(rung_weights(cell / 4.0), expected, "rung {rung} at its own handover point");
+        }
+        // **Half way between two handovers the two rungs are half each**, which is the smooth
+        // handover itself rather than an artefact of where the table is read.
+        assert_eq!(rung_weights(0.0625), [0.0, 0.5, 0.5, 0.0, 0.0]);
+        assert_eq!(rung_weights(4.0), [0.0, 0.0, 0.0, 0.0, 0.5]);
+        // **And nothing past the coarse one.** Eight metres of footprint is one pixel per coarse
+        // cell; beyond that a lattice cannot be drawn without aliasing, so the material shows its
+        // mean rather than a shimmer.
+        assert_eq!(rung_weights(FAR_CELL_M), [0.0; 5], "the ladder never retired");
+        // **At most two rungs, weights a partition of one wherever anything is drawn, and the
+        // index never going backwards** across nine decades of footprint.
+        let mut last_index = 0usize;
+        for step in 0..=400 {
+            let footprint = 1e-3 * 4f64.powf(step as f64 / 40.0);
+            let weights = rung_weights(footprint);
+            let drawn: Vec<usize> = (0..5).filter(|rung| weights[*rung] > 0.0).collect();
+            let sum: f64 = weights.iter().sum();
+            assert!(drawn.len() <= 2, "{} rungs are drawn at {footprint} m", drawn.len());
+            if drawn.is_empty() {
+                assert!(footprint >= FAR_CELL_M, "the ladder went silent at {footprint} m");
+            } else {
+                // **Above the coarse rung's own handover there is nothing finer to mix with**, so
+                // its weight fades to the material's mean and the sum falls with it. Below that
+                // the two drawn rungs are a partition of one.
+                if footprint <= FAR_CELL_M / 4.0 {
+                    assert!((sum - 1.0).abs() < 1e-9, "the weights sum to {sum} at {footprint} m");
+                } else {
+                    assert!(sum > 0.0 && sum <= 1.0, "the top fade is not a fade: {sum}");
+                }
+                assert!(drawn[0] >= last_index, "the ladder went backwards at {footprint} m");
+                last_index = drawn[0];
+            }
         }
     }
 
@@ -676,8 +732,15 @@ mod tests {
         );
     }
 
+    /// **A cell is one value, and the ladder is what moves with distance — smoothly.**
+    ///
+    /// Two properties, and they belong to different layers. **Inside** a rung the lattice is read
+    /// nearest-neighbour: one cell is one value, and a step over its edge reads the neighbour's,
+    /// because a corner blend softens the picture by the width of the grain it was meant to show
+    /// (*"the trilinear corner sampled cells are blurry"*). **Across** rungs the weights
+    /// cross-fade, so distance moves the material continuously instead of stepping it.
     #[test]
-    fn the_field_is_continuous_at_every_cell_edge_and_has_nothing_below_32_a_face() {
+    fn a_cell_is_one_value_and_the_ladder_hands_over_smoothly() {
         let lattice = lattice();
         let material = MaterialId(6);
         let field = field_with(material);
@@ -686,46 +749,80 @@ mod tests {
         let at = |p: [f64; 3], footprint: f64| {
             pattern.at(material, p, footprint, surface).expect("a finite point")
         };
-        // **Continuous across an edge.** A value per cell steps at every edge, and a
-        // fragment a rounding step over one reads a different material; both sides of a
-        // near edge and a far edge agree here.
-        for (cell_m, p, footprint) in [
-            (NEAR_CELL_M, [2.0, 1.0, 3.0], 0.0),
-            (FAR_CELL_M, [4.0, 0.0, 8.0], 0.2),
-        ] {
-            let a = at([p[0] - 1e-4 * cell_m, p[1], p[2]], footprint);
-            let b = at(p, footprint);
-            let c = at([p[0] + 1e-4 * cell_m, p[1], p[2]], footprint);
-            for (x, y) in [(a.roughness_delta, b.roughness_delta), (b.roughness_delta, c.roughness_delta)] {
-                assert!((x - y).abs() < 1e-3, "the field stepped at a {cell_m} m edge");
+        // **Inside one near cell, one value** — three quarters of the way through it and still the
+        // same read, which a corner blend could not give.
+        let p = [2.0, 1.0, 3.0];
+        let cell = at(p, 0.0);
+        for step in [0.0, 0.0078, 0.0156, 0.0234] {
+            assert_eq!(
+                at([p[0] + step, p[1], p[2]], 0.0),
+                cell,
+                "a fragment {step} m inside one near cell read a different value"
+            );
+        }
+        // **And the neighbour over the edge is a different value**: the lattice is drawn, not
+        // averaged away.
+        let mut changed = 0usize;
+        for step in 1..8 {
+            if at([p[0] + NEAR_CELL_M * step as f64, p[1], p[2]], 0.0) != cell {
+                changed += 1;
             }
         }
-        // **Nothing below 32 samples a face.** Inside one near cell (31.25 mm) the field is
-        // affine, so a half-cell step moves it by exactly half — a finer feature would put a
-        // kink between the corners.
-        let field_at = |x: f64| {
-            pattern.grid(material, [x, 0.0, 0.0], (RUNGS_M[0] / DETAIL_CELL_M) as i64).expect("a sample").roughness_delta
-        };
-        let a = field_at(0.0);
-        let b = field_at(NEAR_CELL_M / 2.0);
-        let c = field_at(NEAR_CELL_M);
-        assert!(((a + c) / 2.0 - b).abs() < 1e-12, "there is a feature below 31.25 mm");
-        // And the rungs are different reads of the same material: by 0.2 m of footprint the
-        // near grain is gone and the mid-ground's own mottling is what remains.
-        assert_ne!(at([1.234, 0.5, 2.345], 0.0), at([1.234, 0.5, 2.345], 0.2));
+        assert!(changed >= 6, "{changed} of 7 neighbouring near cells read the same value");
+        // **The same law at the coarse rung**: eight-metre cells, read nearest-neighbour.
+        let coarse = at([4.0, 0.0, 8.0], FAR_CELL_M / 4.0);
+        assert_eq!(
+            at([4.0 + 3.9, 0.0, 8.0], FAR_CELL_M / 4.0),
+            coarse,
+            "a coarse cell is not one value"
+        );
+        assert_ne!(
+            at([4.0 + FAR_CELL_M, 0.0, 8.0], FAR_CELL_M / 4.0),
+            coarse,
+            "two coarse cells read one value"
+        );
+        // **The handover is smooth.** A footprint step of a thousandth of a metre moves the value
+        // by less than the rungs differ by — the cross-fade, not a step between scales.
+        let mut worst = 0.0f64;
+        for step in 0..300 {
+            let footprint = 1e-3 * 4f64.powf(step as f64 / 30.0);
+            let a = at([1.234, 0.5, 2.345], footprint);
+            let b = at([1.234, 0.5, 2.345], footprint + 1e-3);
+            worst = worst.max((a.roughness_delta - b.roughness_delta).abs());
+        }
+        assert!(worst < 0.02, "a 1 mm footprint step moved the material by {worst}");
+        // **Half way between two handovers, the read lies between the two rungs' own** — the
+        // cross-fade is a mix of two sharp scales, and it is bounded by them.
+        let p = [1.234, 0.5, 2.345];
+        let low = at(p, RUNGS_M[1] / 4.0).roughness_delta;
+        let high = at(p, RUNGS_M[2] / 4.0).roughness_delta;
+        let mixed = at(p, RUNGS_M[1] / 2.0).roughness_delta;
+        assert!(
+            mixed >= low.min(high) - 1e-9 && mixed <= low.max(high) + 1e-9,
+            "the handover is outside the two rungs it was supposed to mix: {mixed} not in [{low}, {high}]"
+        );
     }
 
     #[test]
-    fn the_pattern_is_silent_past_the_far_cells_floor_and_on_an_unvaried_material() {
+    fn the_pattern_is_silent_past_the_ladders_fade_and_on_an_unvaried_material() {
         let lattice = lattice();
         let material = MaterialId(6);
         let field = field_with(material);
         let pattern = Pattern::new(&lattice, &field);
         let p = [4.2, 0.3, 7.9];
-        // Past a quarter of a block, the field has nothing to say: an average, not a guess.
-        assert_eq!(
+        // **The coarse rung is drawn where its cell is four pixels wide and gone where it is
+        // two**: at 2 m of footprint the 8 m cell is the material's picture, and at 4 m a pixel
+        // covers half a cell — a lattice there would shimmer, so the material shows its mean. An
+        // average, not a guess.
+        assert_ne!(
             pattern.at(material, p, FAR_CELL_M / 4.0, SurfacePattern::Speckle).unwrap(),
-            DetailSample::NONE
+            DetailSample::NONE,
+            "the coarse rung is not drawn at its own handover point"
+        );
+        assert_eq!(
+            pattern.at(material, p, FAR_CELL_M, SurfacePattern::Speckle).unwrap(),
+            DetailSample::NONE,
+            "the pattern did not retire where the coarse cell is one pixel across"
         );
         // A material the field does not vary is **exactly** none, and never touches the
         // lattice: "not varied at this level at all" is not "varied by zero".

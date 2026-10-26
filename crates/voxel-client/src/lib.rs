@@ -107,8 +107,8 @@ pub use game::{
 pub use atmosphere::{Atmosphere, AtmosphereAhead};
 pub use hud::{HudRenderer, HudState, BRIGHTEST_BACKDROP, DIGEST_CHARS};
 pub use pattern::{
-    address_at, cell_weight, eye_footprint_m, eye_phase, eye_voxel, footprint_distance_m,
-    pixel_angle_rad, Pattern, DETAIL_CELL_M, FAR_CELL_M, NEAR_CELL_M, RUNGS_M,
+    address_at, eye_footprint_m, eye_phase, eye_voxel, footprint_distance_m, pixel_angle_rad,
+    rung_level, rung_weights, Pattern, DETAIL_CELL_M, FAR_CELL_M, NEAR_CELL_M, RUNGS_M,
     SUBVOXEL_CELL_M,
 };
 pub use renderer::{

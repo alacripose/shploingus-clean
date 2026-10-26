@@ -1095,37 +1095,62 @@ fn pattern_curve(pattern: u32, s: f32) -> f32 {
 
 // `pattern::RUNGS_M`, in metres: **31.25 mm** — 32 addressable cells per block face, the
 // finest the eye accepts ("we don't do 256, the minimum size is the 32² per face") — then
-// **half a block** for the mid-ground's mottling, then **8 m** for the coarse LOD.
-const RUNG_NEAR: f32 = 0.03125;
-const RUNG_MID: f32 = 0.5;
-const RUNG_FAR: f32 = 8.0;
+// **125 mm**, **half a block**, **two metres** and **8 m**. A factor of four apart, so every
+// handover has a factor of four of footprint to happen in; three cells sixteen apart made it a
+// cliff — the "block maximums fade too hard" report.
+const RUNG_0: f32 = 0.03125;
+const RUNG_1: f32 = 0.125;
+const RUNG_2: f32 = 0.5;
+const RUNG_3: f32 = 2.0;
+const RUNG_4: f32 = 8.0;
 
-// The same three cells in fine (15.6 mm) lattice cells, as powers of two.
-const NEAR_STEP: i32 = 2;
-const NEAR_SHIFT: u32 = 1u;
-const MID_STEP: i32 = 32;
-const MID_SHIFT: u32 = 5u;
-const FAR_STEP: i32 = 512;
-const FAR_SHIFT: u32 = 9u;
+// The same cells in fine (15.6 mm) lattice cells, as powers of two: one arithmetic shift of the
+// fragment's fine-cell index, and the point sample is that index with its low bits dropped.
+const STEP_0: i32 = 2;
+const SHIFT_0: u32 = 1u;
+const STEP_1: i32 = 8;
+const SHIFT_1: u32 = 3u;
+const STEP_2: i32 = 32;
+const SHIFT_2: u32 = 5u;
+const STEP_3: i32 = 128;
+const SHIFT_3: u32 = 7u;
+const STEP_4: i32 = 512;
+const SHIFT_4: u32 = 9u;
 
-// `pattern::cell_weight`: one until a **quarter** of the cell is a pixel, zero at `cell / 4`
-// — a plateau with a short smoothstep handover, not a ramp from the eye. Without the
-// plateau a rung was at half weight a metre and a half away and the near detail washed out;
-// with a long crossfade two scales are drawn at once and the blend is what reads as blur,
-// not the material.
-fn cell_weight(footprint: f32, cell: f32) -> f32 {
-    let far = cell / 4.0;
-    let near = cell / 16.0;
-    let t = clamp((far - footprint) / (far - near), 0.0, 1.0);
-    return t * t * (3.0 - 2.0 * t);
+// `pattern::rung_level`: where a footprint stands on the ladder, in rung units. The origin is a
+// **quarter of the finest cell** — four pixels across, where a lattice may first be drawn — and
+// the rungs are a factor of four apart, so one doubling of the footprint is half a rung.
+fn rung_level(footprint: f32) -> f32 {
+    let handover = RUNG_0 / 4.0;
+    return log2(max(footprint, handover) / handover) / 2.0;
 }
 
-// `Pattern::grid`: one lattice as a **smooth field** at `step` fine cells per axis — the
-// eight corner hashes of the grid cell, weighted by the fragment's place inside it.
-// `step` is a power of two, so the grid index is one arithmetic shift of the fragment's
-// absolute fine-cell index and the fraction is that index's low bits. Interpolating is
-// what makes the field continuous: a value per cell would step at every edge, and a
-// fragment a rounding step over one would read a different material.
+// `pattern::rung_weights`: **two adjacent rungs, weighted by how far the footprint stands
+// between them** — `w[i] = 1 - t`, `w[i+1] = t`, sum one. A rung's cell is four pixels across at
+// its own handover point and one pixel across at the next, which is exactly the level's
+// fractional part, so the handover is continuous in distance ("the blending is not smooth" was a
+// stepped choice). Past the coarse rung (eight metres of footprint, one pixel per cell) the
+// weights are zero and the material shows its mean.
+fn rung_weights(footprint: f32) -> array<f32, 5> {
+    var weights = array<f32, 5>(0.0, 0.0, 0.0, 0.0, 0.0);
+    let level = rung_level(footprint);
+    if (level >= 5.0) {
+        return weights;
+    }
+    let index = i32(floor(level));
+    let t = clamp(level - f32(index), 0.0, 1.0);
+    weights[index] = 1.0 - t;
+    if (index + 1 < 5) {
+        weights[index + 1] = t;
+    }
+    return weights;
+}
+
+// `Pattern::nearest`: one lattice, **point-sampled at the fragment's own cell** — the single
+// nearest sample, no corner blend. A corner blend softens the picture by the width of the grain
+// it was meant to show, which is the blur the user reported ("the trilinear corner sampled cells
+// are blurry"); the texture of the world is its cells. The handover between scales is
+// `rung_weights`' job, and it is smooth there instead.
 fn grid_sample(
     seed: vec2<u32>,
     tag: vec2<u32>,
@@ -1133,35 +1158,19 @@ fn grid_sample(
     pattern: u32,
     cell: vec3<i32>,
     a: vec3<u32>,
-    sub: vec3<f32>,
     bits: u32,
-    step: i32,
     shift: u32,
     channel: u32,
 ) -> f32 {
-    // `sub` is the fragment's place inside its fine cell, so the coordinate is exact:
-    // without it the field would step by a whole 31.25 mm cell at every fine boundary,
-    // which is the `f32`-against-`f64` disagreement the agreement test refuses.
     let fine = cell * i32(camera.rates.y) + vec3<i32>(a);
-    let grid = fine >> vec3<u32>(shift);
-    let frac = (vec3<f32>(fine & vec3<i32>(step - 1)) + sub) / f32(step);
-    var total = 0.0;
-    for (var i = 0u; i < 2u; i = i + 1u) {
-        let wu = select(1.0 - frac.x, frac.x, i == 1u);
-        for (var j = 0u; j < 2u; j = j + 1u) {
-            let wv = select(1.0 - frac.y, frac.y, j == 1u);
-            for (var k = 0u; k < 2u; k = k + 1u) {
-                let ww = select(1.0 - frac.z, frac.z, k == 1u);
-                let corner_fine = (grid + vec3<i32>(i32(i), i32(j), i32(k))) << vec3<u32>(shift);
-                let corner = corner_fine >> vec3<u32>(4u);
-                let addr = corner_fine & vec3<i32>(0xF);
-                let flat = u32(addr.x) | (u32(addr.y) << bits) | (u32(addr.z) << (2u * bits));
-                total = total + wu * wv * ww * pattern_curve(
-                    pattern, lattice_sample(seed, tag, material, corner, flat, channel));
-            }
-        }
-    }
-    return total;
+    // The fragment's own rung cell: the fine index with its low bits dropped, exactly as the
+    // CPU's `nearest` floors the same quotient.
+    let corner_fine = (fine >> vec3<u32>(shift)) << vec3<u32>(shift);
+    let corner = corner_fine >> vec3<u32>(4u);
+    let addr = corner_fine & vec3<i32>(0xF);
+    let flat = u32(addr.x) | (u32(addr.y) << bits) | (u32(addr.z) << (2u * bits));
+    return pattern_curve(
+        pattern, lattice_sample(seed, tag, material, corner, flat, channel));
 }
 
 // `openpbr::PATTERN_TINT`: how much of its own value a fragment's albedo may swing
@@ -1235,8 +1244,6 @@ fn pattern_deviation(
     // round onto the top edge.
     let fine_last = f32(camera.rates.y - 1u);
     let a = vec3<u32>(min(floor(f_sub * f32(camera.rates.y)), vec3<f32>(fine_last)));
-    // The fragment's place **inside** its fine cell, which the grid's fraction needs.
-    let sub = f_sub * f32(camera.rates.y) - vec3<f32>(a);
     // The address's packing width is the side's own log2 (`DetailLattice::flat`).
     let bits = firstLeadingBit(camera.rates.y);
 
@@ -1247,32 +1254,52 @@ fn pattern_deviation(
     let seed = vec2<u32>(camera.lattice.x, camera.lattice.y);
     let tag = vec2<u32>(camera.lattice.z, camera.lattice.w);
 
-    let w_near = cell_weight(footprint, RUNG_NEAR);
-    let w_mid = cell_weight(footprint, RUNG_MID);
-    let w_far = cell_weight(footprint, RUNG_FAR);
-    let total = w_near + w_mid + w_far;
-    if (total <= 0.0) {
-        return vec4<f32>(0.0);
-    }
+    // **The ladder, five point-sampled rungs, weighted by footprint alone.** `rung_weights`
+    // takes no face, no plane and no eye angle, so a wall and a floor at one distance read the
+    // same cells — the invariant the eleven-rung ladder broke.
+    let weights = rung_weights(footprint);
+    var total = 0.0;
     var roughness = 0.0;
     var reflectance = 0.0;
-    if (w_near > 0.0) {
-        let r = grid_sample(seed, tag, material, pattern, cell, a, sub, bits, NEAR_STEP, NEAR_SHIFT, 1u);
-        let f = grid_sample(seed, tag, material, pattern, cell, a, sub, bits, NEAR_STEP, NEAR_SHIFT, 2u);
-        roughness = roughness + w_near * r;
-        reflectance = reflectance + w_near * f;
+    if (weights[0] > 0.0) {
+        let r = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_0, 1u);
+        let f = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_0, 2u);
+        roughness = roughness + weights[0] * r;
+        reflectance = reflectance + weights[0] * f;
+        total = total + weights[0];
     }
-    if (w_mid > 0.0) {
-        let r = grid_sample(seed, tag, material, pattern, cell, a, sub, bits, MID_STEP, MID_SHIFT, 1u);
-        let f = grid_sample(seed, tag, material, pattern, cell, a, sub, bits, MID_STEP, MID_SHIFT, 2u);
-        roughness = roughness + w_mid * r;
-        reflectance = reflectance + w_mid * f;
+    if (weights[1] > 0.0) {
+        let r = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_1, 1u);
+        let f = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_1, 2u);
+        roughness = roughness + weights[1] * r;
+        reflectance = reflectance + weights[1] * f;
+        total = total + weights[1];
     }
-    if (w_far > 0.0) {
-        let r = grid_sample(seed, tag, material, pattern, cell, a, sub, bits, FAR_STEP, FAR_SHIFT, 1u);
-        let f = grid_sample(seed, tag, material, pattern, cell, a, sub, bits, FAR_STEP, FAR_SHIFT, 2u);
-        roughness = roughness + w_far * r;
-        reflectance = reflectance + w_far * f;
+    if (weights[2] > 0.0) {
+        let r = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_2, 1u);
+        let f = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_2, 2u);
+        roughness = roughness + weights[2] * r;
+        reflectance = reflectance + weights[2] * f;
+        total = total + weights[2];
+    }
+    if (weights[3] > 0.0) {
+        let r = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_3, 1u);
+        let f = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_3, 2u);
+        roughness = roughness + weights[3] * r;
+        reflectance = reflectance + weights[3] * f;
+        total = total + weights[3];
+    }
+    if (weights[4] > 0.0) {
+        let r = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_4, 1u);
+        let f = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_4, 2u);
+        roughness = roughness + weights[4] * r;
+        reflectance = reflectance + weights[4] * f;
+        total = total + weights[4];
+    }
+    // A footprint past the ladder's fade draws nothing, and `total` is zero there: the
+    // divergence below is what must not happen, not a division by a retired weight.
+    if (total <= 0.0) {
+        return vec4<f32>(0.0);
     }
     let coverage = clamp(total, 0.0, 1.0);
     return vec4<f32>(
@@ -1441,7 +1468,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
             swatch = mix(
                 vec3<f32>(0.0, 0.1, 1.0),
                 vec3<f32>(1.0, 0.1, 0.0),
-                cell_weight(footprint, RUNG_NEAR),
+                rung_weights(footprint)[0],
             ) * (0.15 + 0.85 * clamp(ladder.z, 0.0, 1.0));
         } else {
             // Nine decades of footprint, from 0.1 mm to 100 m, laid over the hue wheel — the range
