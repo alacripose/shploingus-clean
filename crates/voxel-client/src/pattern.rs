@@ -149,6 +149,22 @@ pub fn rung_level(footprint_m: f64) -> f64 {
     (footprint_m / handover).log2() / 2.0
 }
 
+/// **Whether a footprint sits far enough from a handover for the two sides to agree on the
+/// weights.**
+///
+/// The shader computes the footprint from its own `f32` offset from the eye; this module computes
+/// it from the `f64` the fixture holds. On a handover (`level = k + 0`) a difference in the last
+/// bits of the footprint moves both weights, so a pixel there is a measurement of which precision
+/// fell where — not of whether the two laws are one law. [`address_is_settled`] excludes the same
+/// class of pixel at the lattice; this excludes it at the ladder.
+pub fn rung_is_settled(footprint_m: f64) -> bool {
+    let level = rung_level(footprint_m);
+    // **A handover is where the level's fractional part is a half**, not where it is a whole: at
+    // a whole number one rung is at weight one and the choice is stable. A thousandth of a rung
+    // from the half is far outside the two precisions' disagreement.
+    (level - level.floor() - 0.5).abs() > 1e-3
+}
+
 /// **The ladder's weights: two rungs, cross-faded, and no more.**
 ///
 /// **Rungs hand over smoothly: two adjacent ones, weighted by how far the footprint stands
@@ -432,57 +448,89 @@ impl<'a> Pattern<'a> {
                 continue;
             }
             let step = (cell_m / DETAIL_CELL_M) as i64;
-            let sample = self.nearest(material, p_m, step)?;
-            roughness += weight * surface.curve(sample.roughness_delta);
-            reflectance += weight * surface.curve(sample.reflectance_delta);
+            let sample = self.grid(material, p_m, step)?;
+            roughness += weight * sample.roughness_delta;
+            reflectance += weight * sample.reflectance_delta;
             weight_sum += weight;
         }
         if weight_sum <= 0.0 {
             return Ok(DetailSample::NONE);
         }
+        // **The shaper's curve lands once, on the finished blend** — the ladder's mean and the
+        // trilinear cell's mean, together — not on each rung before they are weighted. Curving
+        // first and averaging after is `E[s^2]` against `(E[s])^2`: identical while one rung is
+        // drawn, a few percent apart the moment two overlap. That asymmetry is what the GPU
+        // agreement test measured at the mid probe, and it is the shader's own order.
+        let mean = DetailSample {
+            roughness_delta: roughness / weight_sum,
+            reflectance_delta: reflectance / weight_sum,
+        };
         Ok(DetailSample {
-            roughness_delta: roughness / weight_sum * roughness_gain,
-            reflectance_delta: reflectance / weight_sum * reflectance_gain,
+            roughness_delta: surface.curve(mean.roughness_delta) * roughness_gain,
+            reflectance_delta: surface.curve(mean.reflectance_delta) * reflectance_gain,
         })
     }
 
-    /// **One lattice, read as the fragment's own cell**: the single nearest sample, no corner
-    /// blend.
+    /// **One lattice as a smooth field** at `step` fine cells per axis: the eight corner hashes
+    /// of the grid cell the point stands in, weighted trilinearly by its place inside it.
     ///
-    /// This is what "nearest neighbour" means here, and it is the fix for the cells the user saw
-    /// as blurry: the eight-corner mean made every cell edge a ramp the width of the cell, so the
-    /// material's picture was softened by the grain it was supposed to show. The texture of the
-    /// world is its cells, and a cell is a value.
+    /// **Why the interpolation stays, measured rather than preferred.** A nearest-neighbour read
+    /// of this lattice is discontinuous in the sample position, and the shader does not have the
+    /// sample position exactly: it rebuilds the fragment's world point from `p_rel + eye_phase`
+    /// in `f32`, so a vertical eye step re-rounds that sum by a few micrometres. Against a 31.25
+    /// mm cell that is a fraction of a percent of pixels — and every one of them changes value by
+    /// the *full* amplitude of the pattern, because neighbouring cells of this lattice are
+    /// independent hashes. The user's own A/B is the measurement: *"when jumping in the trilinear
+    /// sampled version, the cells don't flicker; in the nearest neighbor version they flicker"*.
     ///
-    /// The continuity the blend used to buy is the **ladder's** instead: [`rung_weights`]
-    /// cross-fades two *scales* by how far the footprint stands between them, so what moves with
-    /// distance is which rung a surface hands over to, smoothly, and never the corners inside one
-    /// cell.
+    /// A blend is Lipschitz in the position, so the same jitter moves the value by the same few
+    /// micrometres' worth of its gradient and nothing is visible. Sharp cells and jump stability
+    /// cannot both hold for a per-cell hash; the ladder gives the distance change its own smooth
+    /// handover ([`rung_weights`]) and this gives position its continuity.
     ///
-    /// `step` is a power of two (2 … 512 fine cells a rung cell), so the cell index is the
-    /// point's fine-cell index with its low bits dropped.
-    fn nearest(&self, material: MaterialId, p_m: [f64; 3], step: i64) -> Refused<DetailSample> {
+    /// `step` is a power of two (2 … 512 fine cells a rung cell), so the grid index is the
+    /// point's fine-cell index shifted and the fraction is its low bits.
+    fn grid(&self, material: MaterialId, p_m: [f64; 3], step: i64) -> Refused<DetailSample> {
         let bits = step.trailing_zeros();
-        let mut corner = [0i32; 3];
-        let mut addr = [0u16; 3];
+        let mut grid = [0i64; 3];
+        let mut frac = [0.0f64; 3];
         for axis in 0..3 {
-            let grid = (p_m[axis] / DETAIL_CELL_M / step as f64).floor() as i64;
-            let fine = grid << bits;
-            let subvoxel = fine >> 4;
-            if !(i32::MIN as i64..=i32::MAX as i64).contains(&subvoxel) {
-                return Err(Refusal::owned(
-                    RefusalKind::CoordinateOutOfRange,
-                    format!("subvoxel cell {subvoxel} at axis {axis} does not fit i32"),
-                ));
-            }
-            corner[axis] = subvoxel as i32;
-            addr[axis] = (fine & 0xF) as u16;
+            let g = p_m[axis] / DETAIL_CELL_M / step as f64;
+            let i0 = g.floor();
+            grid[axis] = i0 as i64;
+            frac[axis] = g - i0;
         }
-        self.lattice.sample(
-            material,
-            corner,
-            DetailIndex { x: addr[0], y: addr[1], z: addr[2] },
-        )
+        let mut roughness = 0.0f64;
+        let mut reflectance = 0.0f64;
+        for (di, wu) in [(0i64, 1.0 - frac[0]), (1, frac[0])] {
+            for (dj, wv) in [(0i64, 1.0 - frac[1]), (1, frac[1])] {
+                for (dk, ww) in [(0i64, 1.0 - frac[2]), (1, frac[2])] {
+                    let mut corner = [0i32; 3];
+                    let mut addr = [0u16; 3];
+                    for (axis, d) in [di, dj, dk].into_iter().enumerate() {
+                        let fine = (grid[axis] + d) << bits;
+                        let subvoxel = fine >> 4;
+                        if !(i32::MIN as i64..=i32::MAX as i64).contains(&subvoxel) {
+                            return Err(Refusal::owned(
+                                RefusalKind::CoordinateOutOfRange,
+                                format!("subvoxel cell {subvoxel} at axis {axis} does not fit i32"),
+                            ));
+                        }
+                        corner[axis] = subvoxel as i32;
+                        addr[axis] = (fine & 0xF) as u16;
+                    }
+                    let sample = self.lattice.sample(
+                        material,
+                        corner,
+                        DetailIndex { x: addr[0], y: addr[1], z: addr[2] },
+                    )?;
+                    let w = wu * wv * ww;
+                    roughness += w * sample.roughness_delta;
+                    reflectance += w * sample.reflectance_delta;
+                }
+            }
+        }
+        Ok(DetailSample { roughness_delta: roughness, reflectance_delta: reflectance })
     }
 
 }
@@ -732,15 +780,17 @@ mod tests {
         );
     }
 
-    /// **A cell is one value, and the ladder is what moves with distance — smoothly.**
+    /// **The field is continuous in position and the ladder is continuous in distance.**
     ///
-    /// Two properties, and they belong to different layers. **Inside** a rung the lattice is read
-    /// nearest-neighbour: one cell is one value, and a step over its edge reads the neighbour's,
-    /// because a corner blend softens the picture by the width of the grain it was meant to show
-    /// (*"the trilinear corner sampled cells are blurry"*). **Across** rungs the weights
-    /// cross-fade, so distance moves the material continuously instead of stepping it.
+    /// The field is interpolated because a nearest read is discontinuous in the sample position,
+    /// and the shader does not have that position exactly — it rebuilds the fragment's world point
+    /// from `p_rel + eye_phase` in `f32`, so a vertical eye step re-rounds it. Nearest turns that
+    /// into whole-cell value jumps (the user's A/B: *"when jumping in the trilinear sampled
+    /// version, the cells don't flicker; in the nearest neighbor version they flicker"*); a blend
+    /// moves by the jitter's own worth of its gradient. The ladder is where the distance change
+    /// belongs, and `rung_weights` cross-fades it.
     #[test]
-    fn a_cell_is_one_value_and_the_ladder_hands_over_smoothly() {
+    fn the_field_is_continuous_in_position_and_the_ladder_in_distance() {
         let lattice = lattice();
         let material = MaterialId(6);
         let field = field_with(material);
@@ -749,50 +799,47 @@ mod tests {
         let at = |p: [f64; 3], footprint: f64| {
             pattern.at(material, p, footprint, surface).expect("a finite point")
         };
-        // **Inside one near cell, one value** — three quarters of the way through it and still the
-        // same read, which a corner blend could not give.
-        let p = [2.0, 1.0, 3.0];
-        let cell = at(p, 0.0);
-        for step in [0.0, 0.0078, 0.0156, 0.0234] {
-            assert_eq!(
-                at([p[0] + step, p[1], p[2]], 0.0),
-                cell,
-                "a fragment {step} m inside one near cell read a different value"
-            );
-        }
-        // **And the neighbour over the edge is a different value**: the lattice is drawn, not
-        // averaged away.
-        let mut changed = 0usize;
-        for step in 1..8 {
-            if at([p[0] + NEAR_CELL_M * step as f64, p[1], p[2]], 0.0) != cell {
-                changed += 1;
+        // **Continuous across a cell edge**, at the finest rung and at the coarse one: this is the
+        // property that keeps a micrometre of position jitter from becoming a different material.
+        for (cell_m, p, footprint) in [
+            (NEAR_CELL_M, [2.0, 1.0, 3.0], 0.0),
+            (FAR_CELL_M, [4.0, 0.0, 8.0], FAR_CELL_M / 4.0),
+        ] {
+            let a = at([p[0] - 1e-4 * cell_m, p[1], p[2]], footprint);
+            let b = at(p, footprint);
+            let c = at([p[0] + 1e-4 * cell_m, p[1], p[2]], footprint);
+            for (x, y) in [(a.roughness_delta, b.roughness_delta), (b.roughness_delta, c.roughness_delta)] {
+                assert!((x - y).abs() < 1e-3, "the field stepped at a {cell_m} m edge");
             }
         }
-        assert!(changed >= 6, "{changed} of 7 neighbouring near cells read the same value");
-        // **The same law at the coarse rung**: eight-metre cells, read nearest-neighbour.
-        let coarse = at([4.0, 0.0, 8.0], FAR_CELL_M / 4.0);
-        assert_eq!(
-            at([4.0 + 3.9, 0.0, 8.0], FAR_CELL_M / 4.0),
-            coarse,
-            "a coarse cell is not one value"
-        );
-        assert_ne!(
-            at([4.0 + FAR_CELL_M, 0.0, 8.0], FAR_CELL_M / 4.0),
-            coarse,
-            "two coarse cells read one value"
-        );
-        // **The handover is smooth.** A footprint step of a thousandth of a metre moves the value
-        // by less than the rungs differ by — the cross-fade, not a step between scales.
+        // **Affine inside one near cell** — a half-cell step moves the field by exactly half, which
+        // is what eight corners of 32-per-face samples are.
+        let field_at = |x: f64| {
+            pattern
+                .grid(material, [x, 0.0, 0.0], (RUNGS_M[0] / DETAIL_CELL_M) as i64)
+                .expect("a sample")
+                .roughness_delta
+        };
+        let (a, b, c) = (field_at(0.0), field_at(NEAR_CELL_M / 2.0), field_at(NEAR_CELL_M));
+        assert!(((a + c) / 2.0 - b).abs() < 1e-12, "there is a feature below 31.25 mm");
+        // **And the ladder is smooth in distance**: a step of the footprint moves the value by far
+        // less than the rungs differ by — a handover, not a step between scales.
+        //
+        // **The step is a share of the footprint, not a millimetre.** The handover is a *relative*
+        // distance (`rung_level` is `log2` of `footprint / (cell/4)`), so a fixed millimetre is a
+        // ninth of the finest handover and a thousandth of the coarse one: at the bottom of the
+        // ladder it measures how small the finest rung's handover is, not whether the handover is
+        // continuous. One per cent of the footprint is the same question at every scale.
         let mut worst = 0.0f64;
         for step in 0..300 {
             let footprint = 1e-3 * 4f64.powf(step as f64 / 30.0);
             let a = at([1.234, 0.5, 2.345], footprint);
-            let b = at([1.234, 0.5, 2.345], footprint + 1e-3);
+            let b = at([1.234, 0.5, 2.345], footprint * 1.01);
             worst = worst.max((a.roughness_delta - b.roughness_delta).abs());
         }
-        assert!(worst < 0.02, "a 1 mm footprint step moved the material by {worst}");
-        // **Half way between two handovers, the read lies between the two rungs' own** — the
-        // cross-fade is a mix of two sharp scales, and it is bounded by them.
+        assert!(worst < 0.02, "a 1% footprint step moved the material by {worst}");
+        // **Half way between two handovers the read lies between the two rungs' own** — the
+        // cross-fade mixes two scales and is bounded by them.
         let p = [1.234, 0.5, 2.345];
         let low = at(p, RUNGS_M[1] / 4.0).roughness_delta;
         let high = at(p, RUNGS_M[2] / 4.0).roughness_delta;

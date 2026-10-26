@@ -1146,31 +1146,53 @@ fn rung_weights(footprint: f32) -> array<f32, 5> {
     return weights;
 }
 
-// `Pattern::nearest`: one lattice, **point-sampled at the fragment's own cell** — the single
-// nearest sample, no corner blend. A corner blend softens the picture by the width of the grain
-// it was meant to show, which is the blur the user reported ("the trilinear corner sampled cells
-// are blurry"); the texture of the world is its cells. The handover between scales is
-// `rung_weights`' job, and it is smooth there instead.
+// `Pattern::grid`: one lattice as a **smooth field** at `step` fine cells per axis — the eight
+// corner hashes of the grid cell, weighted by the fragment's place inside it.
+//
+// **Why the blend stays, as a measurement rather than a preference.** A nearest read is
+// discontinuous in the sample position, and this shader does not have that position exactly: it
+// rebuilds the fragment's world point from `p_rel + eye_phase` in `f32`, so a vertical eye step
+// re-rounds it by micrometres. Against a 31.25 mm cell that is a fraction of a percent of pixels,
+// and each of them changes by the **full** amplitude of the pattern — neighbouring cells of this
+// lattice are independent hashes. The user's A/B settled it: jumping does not flicker the cells in
+// the trilinear version and does in the nearest one. A blend is Lipschitz in position, so the same
+// jitter moves it by the jitter's own worth of gradient. Sharp cells and jump stability cannot
+// both hold here; the ladder's smooth handover is what changes with distance.
 fn grid_sample(
     seed: vec2<u32>,
     tag: vec2<u32>,
     material: u32,
-    pattern: u32,
     cell: vec3<i32>,
     a: vec3<u32>,
+    sub: vec3<f32>,
     bits: u32,
+    step: i32,
     shift: u32,
     channel: u32,
 ) -> f32 {
+    // `sub` is the fragment's place inside its fine cell, so the coordinate is exact: without it
+    // the field would step by a whole 31.25 mm cell at every fine boundary, which is the
+    // `f32`-against-`f64` disagreement the agreement test refuses.
     let fine = cell * i32(camera.rates.y) + vec3<i32>(a);
-    // The fragment's own rung cell: the fine index with its low bits dropped, exactly as the
-    // CPU's `nearest` floors the same quotient.
-    let corner_fine = (fine >> vec3<u32>(shift)) << vec3<u32>(shift);
-    let corner = corner_fine >> vec3<u32>(4u);
-    let addr = corner_fine & vec3<i32>(0xF);
-    let flat = u32(addr.x) | (u32(addr.y) << bits) | (u32(addr.z) << (2u * bits));
-    return pattern_curve(
-        pattern, lattice_sample(seed, tag, material, corner, flat, channel));
+    let grid = fine >> vec3<u32>(shift);
+    let frac = (vec3<f32>(fine & vec3<i32>(step - 1)) + sub) / f32(step);
+    var total = 0.0;
+    for (var i = 0u; i < 2u; i = i + 1u) {
+        let wu = select(1.0 - frac.x, frac.x, i == 1u);
+        for (var j = 0u; j < 2u; j = j + 1u) {
+            let wv = select(1.0 - frac.y, frac.y, j == 1u);
+            for (var k = 0u; k < 2u; k = k + 1u) {
+                let ww = select(1.0 - frac.z, frac.z, k == 1u);
+                let corner_fine = (grid + vec3<i32>(i32(i), i32(j), i32(k))) << vec3<u32>(shift);
+                let corner = corner_fine >> vec3<u32>(4u);
+                let addr = corner_fine & vec3<i32>(0xF);
+                let flat = u32(addr.x) | (u32(addr.y) << bits) | (u32(addr.z) << (2u * bits));
+                total = total
+                    + wu * wv * ww * lattice_sample(seed, tag, material, corner, flat, channel);
+            }
+        }
+    }
+    return total;
 }
 
 // `openpbr::PATTERN_TINT`: how much of its own value a fragment's albedo may swing
@@ -1244,6 +1266,8 @@ fn pattern_deviation(
     // round onto the top edge.
     let fine_last = f32(camera.rates.y - 1u);
     let a = vec3<u32>(min(floor(f_sub * f32(camera.rates.y)), vec3<f32>(fine_last)));
+    // The fragment's place **inside** its fine cell, which the grid's fraction needs.
+    let sub = f_sub * f32(camera.rates.y) - vec3<f32>(a);
     // The address's packing width is the side's own log2 (`DetailLattice::flat`).
     let bits = firstLeadingBit(camera.rates.y);
 
@@ -1262,36 +1286,36 @@ fn pattern_deviation(
     var roughness = 0.0;
     var reflectance = 0.0;
     if (weights[0] > 0.0) {
-        let r = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_0, 1u);
-        let f = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_0, 2u);
+        let r = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_0, SHIFT_0, 1u);
+        let f = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_0, SHIFT_0, 2u);
         roughness = roughness + weights[0] * r;
         reflectance = reflectance + weights[0] * f;
         total = total + weights[0];
     }
     if (weights[1] > 0.0) {
-        let r = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_1, 1u);
-        let f = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_1, 2u);
+        let r = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_1, SHIFT_1, 1u);
+        let f = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_1, SHIFT_1, 2u);
         roughness = roughness + weights[1] * r;
         reflectance = reflectance + weights[1] * f;
         total = total + weights[1];
     }
     if (weights[2] > 0.0) {
-        let r = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_2, 1u);
-        let f = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_2, 2u);
+        let r = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_2, SHIFT_2, 1u);
+        let f = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_2, SHIFT_2, 2u);
         roughness = roughness + weights[2] * r;
         reflectance = reflectance + weights[2] * f;
         total = total + weights[2];
     }
     if (weights[3] > 0.0) {
-        let r = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_3, 1u);
-        let f = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_3, 2u);
+        let r = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_3, SHIFT_3, 1u);
+        let f = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_3, SHIFT_3, 2u);
         roughness = roughness + weights[3] * r;
         reflectance = reflectance + weights[3] * f;
         total = total + weights[3];
     }
     if (weights[4] > 0.0) {
-        let r = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_4, 1u);
-        let f = grid_sample(seed, tag, material, pattern, cell, a, bits, SHIFT_4, 2u);
+        let r = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_4, SHIFT_4, 1u);
+        let f = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_4, SHIFT_4, 2u);
         roughness = roughness + weights[4] * r;
         reflectance = reflectance + weights[4] * f;
         total = total + weights[4];
@@ -1302,9 +1326,14 @@ fn pattern_deviation(
         return vec4<f32>(0.0);
     }
     let coverage = clamp(total, 0.0, 1.0);
+    // **The shaper's curve lands on the ladder's mean, not on each corner**: `Pattern::at`
+    // shapes `sample.roughness_delta`, the finished trilinear blend. Curving the eight corners and
+    // blending after is a different function (`E[s^2]` against `(E[s])^2`), and it made the GPU and
+    // the crate disagree by 1.3e-2 on every speckle surface while bark, whose curve is the identity,
+    // still agreed to 4e-8 — that asymmetry is what located this.
     return vec4<f32>(
-        roughness / total * roughness_gain,
-        reflectance / total * reflectance_gain,
+        pattern_curve(pattern, roughness / total) * roughness_gain,
+        pattern_curve(pattern, reflectance / total) * reflectance_gain,
         coverage,
         0.0,
     );

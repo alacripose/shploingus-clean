@@ -1347,7 +1347,14 @@ mod tests {
                     );
                     let got = frame.pixel(i, j).expect("the probe covers the frame");
                     distinct.insert(got[0].to_bits());
-                    if !crate::pattern::address_is_settled(p, step, ADDRESS_MARGIN) {
+                    // **Two unsettled classes, both of them the fixture's, neither the shader's.**
+                    // One is a fragment whose address sits on a rounding edge of a lattice cell;
+                    // the other is a fragment whose footprint sits on a ladder handover, where the
+                    // weights are decided by the last bits of a number this test holds in `f64` and
+                    // the shader in `f32`. Everything else must agree to the threshold.
+                    if !crate::pattern::address_is_settled(p, step, ADDRESS_MARGIN)
+                        || !crate::pattern::rung_is_settled(footprint)
+                    {
                         skipped += 1;
                         continue;
                     }
@@ -1380,7 +1387,8 @@ mod tests {
             }
             println!(
                 "{what}: probe at {distance_m} m, footprint {footprint_centre:.2e} m at the \
-                 centre, compared {compared} of {} pixels ({skipped} skipped on a cell edge), \
+                 centre, compared {compared} of {} pixels ({skipped} skipped on a cell edge or a \
+                 ladder handover), \
                  worst disagreement {worst:e}, {} distinct reds",
                 side * side,
                 distinct.len()
