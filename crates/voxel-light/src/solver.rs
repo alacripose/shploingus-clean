@@ -276,9 +276,9 @@ pub fn direct_beam(
     // over the whole column instead made a cloud thicker than the sky it hides, and made the day's
     // beam and the night's — the same beam, reflected — disagree about the same air:
     // `the_beams_droplets_are_their_own_layer_and_not_the_whole_column`.
-    let droplets = droplet_extinction_per_m(air.droplet_lwc_g_m3)
-        + cloud_extinction_per_m(air.cloud_water_path_m);
     let air_path = air.scale_height_m * air_mass(sun.altitude_deg);
+    let droplets = droplet_extinction_per_m(air.droplet_lwc_g_m3)
+        + cloud_extinction_per_m(air.cloud_water_path_m, air.scale_height_m);
     let drop_path = path_in_layer(air_path, sun.altitude_deg, air.droplet_layer_depth_m);
     for (index, power) in out.iter_mut().enumerate() {
         let band = &table.bands()[index];
@@ -311,15 +311,48 @@ pub fn mixed_phase(lambda_um: f64, droplet_scatter_per_m: f64, cos_theta: f64) -
     (air_scatter * air_phase + droplet_scatter_per_m * droplet_phase) / total
 }
 
-/// **A cloud's own extinction per metre**, from its water path: the column's water spread over
-/// one scale height, at the same droplet optics the fog uses.
-pub fn cloud_extinction_per_m(cloud_water_path_m: f64) -> f64 {
-    if !(cloud_water_path_m > 0.0) {
+/// **The cloud's extinction per real metre of liquid water path**, dimensionless per metre.
+///
+/// **Linear, and that is the whole point.** This is `cloud_field`'s own declared rate —
+/// `CLOUD_EXTINCTION_PER_M = 0.01`, a saturated metre of the field's water turning a column opaque
+/// in about a kilometre — restated here in the solver's units, because the sky's optics and the
+/// cloud field's march are one medium and must not disagree about it. A `voxel-client` test holds
+/// the two numbers equal.
+///
+/// **It used to be the fog visibility fit, and the fit diverges at zero.**
+/// [`droplet_extinction_per_m`] carries `Vis = 0.0219 · LWC^-0.9603`, which is right for *fog* —
+/// an air parcel whose LWC is a measured, finite quantity — and is quoted for `LWC` in
+/// `0.05..0.5 g/m³`. Reaching it from a column water path puts that path, divided by a scale
+/// height, into the fit: at **`1.4e-7 m` of water** the exponent turns that into **`5e-6 /m`**, a
+/// third of the whole Rayleigh extinction, and the slope there is unbounded. Measured at the
+/// opening day's sunset: the horizon band's radiance stepped **`0.20636 → 0.22324` (×1.082)** on
+/// the first tick the column had any water at all, and the rig's ambient went **`0.01124 →
+/// 0.01314`** over the next four — a visible wash of sky light arriving in one update, with no
+/// cloud yet in the frame. Linear in the path, one cloud is one law: the term is a part in `1e7`
+/// of the air's own extinction until the column is a real one.
+pub const CLOUD_EXTINCTION_PER_M: f64 = 0.01;
+
+/// **A cloud's own extinction per metre**, from a column water path: the cloud field's optical
+/// depth, `σ · LWP`, spread over the air's own scale height.
+///
+/// **The division is the units, and it was missing.** `σ · LWP` is an *optical depth* —
+/// dimensionless — and the solver's `droplets` is an extinction **per metre**, carried in the same
+/// sum as the air's own. Feeding the depth in as if it were a rate made an eighth of a millimetre
+/// of column water weigh as much as a third of the whole atmosphere: measured at the opening
+/// day's sunset, the first tick with any water at all carried `LWP = 8.7e-4 m`, and the droplet
+/// term came out at `8.7e-6 /m` against the air's `~1e-4` — **8.7 % of the atmosphere's own
+/// extinction from a wisp**, which moved the horizon band's radiance `0.20636 → 0.22819` (×1.106)
+/// and the rig's ambient with it. Spread over the scale height instead, that wisp is `1.1e-9 /m`
+/// (a part in `1e5`), and a real `125 m` column — this world's deepest, from
+/// `examples/aerosol-column.rs` — is `1.6e-4 /m`, a veil the sky can see. Linear in the water path,
+/// so nothing steps at zero, and **one coefficient for every ray**: the sky model uploads this
+/// number in one row and must not vary it with the view, or the CPU reading and the solver's own
+/// transport are two media wearing one name (`the_model_is_the_solvers_own_transport_at_every_angle`).
+pub fn cloud_extinction_per_m(cloud_water_path_m: f64, scale_height_m: f64) -> f64 {
+    if !cloud_water_path_m.is_finite() || cloud_water_path_m <= 0.0 || !(scale_height_m > 0.0) {
         return 0.0;
     }
-    // The column's water, spread over a scale height, in the unit the droplet optics want.
-    let lwc_g_m3 = cloud_water_path_m * 1_000.0 / crate::spectra::SCALE_HEIGHT_M * 1_000.0;
-    droplet_extinction_per_m(lwc_g_m3)
+    CLOUD_EXTINCTION_PER_M * cloud_water_path_m / scale_height_m
 }
 
 /// **The sky: what the ray from the eye carries, band by band.**
@@ -350,10 +383,10 @@ pub fn sky_radiance(
         });
     }
 
-    let droplets = droplet_extinction_per_m(air.droplet_lwc_g_m3)
-        + cloud_extinction_per_m(air.cloud_water_path_m);
     // The view's own air mass, floored at a grazing path so a horizon ray is long, not infinite.
     let view_air_mass = (1.0 / view_elevation_deg.to_radians().sin().abs()).clamp(1.0, GRAZING_AIR_MASS);
+    let droplets = droplet_extinction_per_m(air.droplet_lwc_g_m3)
+        + cloud_extinction_per_m(air.cloud_water_path_m, air.scale_height_m);
     let cos_theta = scatter_angle_cosine(sun.altitude_deg, sun.azimuth_deg, view_elevation_deg, view_azimuth_deg);
 
     // **The floor the reference measures.** Below astronomical twilight the sky is the night
@@ -687,9 +720,9 @@ pub fn moon_radiance(
     if moon.altitude_deg <= 0.0 {
         return Ok(out);
     }
-    let droplets = droplet_extinction_per_m(air.droplet_lwc_g_m3)
-        + cloud_extinction_per_m(air.cloud_water_path_m);
     let air_path = air.scale_height_m * air_mass(moon.altitude_deg);
+    let droplets = droplet_extinction_per_m(air.droplet_lwc_g_m3)
+        + cloud_extinction_per_m(air.cloud_water_path_m, air.scale_height_m);
     let drop_path = path_in_layer(air_path, moon.altitude_deg, air.droplet_layer_depth_m);
 
     for (index, value) in out.iter_mut().enumerate() {
@@ -741,10 +774,10 @@ pub fn transmittance(
     if !elevation_deg.is_finite() {
         return Err(SolverError::NonFinite { what: "the elevation", value: elevation_deg });
     }
-    let droplets = droplet_extinction_per_m(air.droplet_lwc_g_m3)
-        + cloud_extinction_per_m(air.cloud_water_path_m);
     // `voxel_shapers::atmosphere`'s scaling, read as a path rather than a height.
     let air_mass = (1.0 / elevation_deg.to_radians().sin().abs()).clamp(1.0, GRAZING_AIR_MASS);
+    let droplets = droplet_extinction_per_m(air.droplet_lwc_g_m3)
+        + cloud_extinction_per_m(air.cloud_water_path_m, air.scale_height_m);
     // The droplets' crossing: the whole distance level, the layer's depth looking up.
     let drop_path = path_in_layer(distance_m, elevation_deg, air.droplet_layer_depth_m);
     let mut out = [0.0f64; BAND_COUNT];

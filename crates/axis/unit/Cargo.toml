@@ -1,0 +1,11 @@
+[package]
+name = "voxel-axis-unit"
+description = "The addressable units: a text tiled into paragraph spans that claim every character exactly once, each with a deterministic unit id and the exact source slice it quotes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-axis-coverage = { path = "../coverage" }
+voxel-model = { path = "../../voxel-model" }

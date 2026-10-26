@@ -1,0 +1,109 @@
+   Compiling voxel-light v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-light)
+warning: missing documentation for a struct field
+   --> crates\voxel-light\src\solver.rs:113:17
+    |
+113 |     NonFinite { what: &'static str, value: f64 },
+    |                 ^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> crates\voxel-light\src\lib.rs:2:9
+    |
+  2 | #![warn(missing_docs)]
+    |         ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\voxel-light\src\solver.rs:113:37
+    |
+113 |     NonFinite { what: &'static str, value: f64 },
+    |                                     ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\voxel-light\src\solver.rs:115:16
+    |
+115 |     Negative { what: &'static str, value: f64 },
+    |                ^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> crates\voxel-light\src\solver.rs:115:36
+    |
+115 |     Negative { what: &'static str, value: f64 },
+    |                                    ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\voxel-light\src\spectra.rs:81:18
+   |
+81 |     BadVersion { found: u16, expected: u16 },
+   |                  ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\voxel-light\src\spectra.rs:81:30
+   |
+81 |     BadVersion { found: u16, expected: u16 },
+   |                              ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\voxel-light\src\spectra.rs:83:16
+   |
+83 |     BadCount { found: u16, expected: u16 },
+   |                ^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\voxel-light\src\spectra.rs:83:28
+   |
+83 |     BadCount { found: u16, expected: u16 },
+   |                            ^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\voxel-light\src\spectra.rs:87:24
+   |
+87 |     UnknownTransport { index: usize, class: u8 },
+   |                        ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+  --> crates\voxel-light\src\spectra.rs:87:38
+   |
+87 |     UnknownTransport { index: usize, class: u8 },
+   |                                      ^^^^^^^^^
+
+warning: `voxel-light` (lib test) generated 10 warnings
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.97s
+     Running unittests src\lib.rs (target\debug\deps\voxel_light-3286bb5db8ddf723.exe)
+
+running 31 tests
+full moon at the zenith: 3.0484e-3 W/m2, 2.082 lx at 683 lm/W (the real figure is lower, the Moon's spectrum being red)
+the sun's own bands render as (0.327, 0.341, 0.333)
+a full moon overhead delivers 3.0484e-3 W/m2 in the twelve bands
+test solver::tests::a_refusal_is_a_refusal_and_not_a_guess ... ok
+test solver::tests::the_beam_is_exactly_zero_when_the_planet_occludes_the_body ... ok
+test solver::tests::the_beams_droplets_are_their_own_layer_and_not_the_whole_column ... ok
+test solver::tests::the_full_moons_illuminance_lands_where_the_published_figures_put_it ... ok
+test spectra::tests::a_table_from_another_schema_is_refused_by_name ... ok
+test solver::tests::the_references_own_visibility_relation_is_the_one_used ... ok
+test solver::tests::the_rgb_response_puts_the_bands_where_an_eye_puts_them ... ok
+test solver::tests::the_twilight_is_the_references_own_curve ... ok
+test spectra::tests::a_table_with_the_wrong_band_count_is_refused ... ok
+test solver::tests::more_droplets_put_more_light_into_the_sky_and_take_more_out_of_the_path ... ok
+test solver::tests::the_suns_own_spectrum_comes_out_near_white ... ok
+test solver::tests::the_daylight_sky_is_blue_for_rayleighs_own_reason ... ok
+test solver::tests::the_response_makes_a_flat_spectrum_neutral ... ok
+test spectra::tests::a_truncated_table_is_refused_rather_than_padded ... ok
+test spectra::tests::an_undeclared_transport_class_is_refused_and_names_its_band ... ok
+test spectra::tests::bytes_left_over_after_the_last_band_are_refused ... ok
+test spectra::tests::the_agreed_numbers_are_pinned ... ok
+test spectra::tests::the_bands_sum_to_the_solar_constant_exactly ... ok
+test spectra::tests::each_band_separates_absorption_from_scattering ... ok
+test solver::tests::a_night_is_never_black ... ok
+test spectra::tests::the_far_bands_are_links_and_the_rest_are_a_field ... ok
+test spectra::tests::the_moon_is_a_grey_regolith_and_slightly_red ... ok
+test spectra::tests::the_water_band_puts_absorption_where_rayleigh_has_none ... ok
+test spectra::tests::rayleigh_scattering_falls_off_with_wavelength ... ok
+test spectra::tests::ozone_absorbs_at_its_declared_head_and_nowhere_else ... ok
+test spectra::tests::planck_peaks_where_wien_says_it_does ... ok
+test spectra::tests::the_sun_is_mostly_visible_and_near_infrared ... ok
+test spectra::tests::the_table_is_twelve_bands_spanning_the_spectrum ... ok
+test spectra::tests::the_table_round_trips_through_its_own_bytes ... ok
+test solver::tests::the_moon_is_a_reflectance_and_not_an_emitter ... ok
+test solver::tests::the_twilight_falls_smoothly_and_the_beam_does_not ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

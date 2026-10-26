@@ -52,8 +52,12 @@
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
+use voxel_axis_mcp::{Registry, TicketGrant};
+use voxel_axis_matrix::{Fix, Segment, Site};
+use voxel_model::axis::AxisKind;
 use voxel_model::chain::{Chain, EventKind, Namespace, Season};
 use voxel_model::grant::Grant;
 use voxel_model::ticket::EvidenceOrigin;
@@ -68,7 +72,7 @@ pub const PROTOCOL_VERSION: &str = "2025-06-18";
 
 /// The surface, in served order. The work list is first because it is the reason the gate exists.
 /// The filing tool is last because it is the only one that needs an author.
-pub const TOOLS: [&str; 9] = [
+pub const TOOLS: [&str; 14] = [
     "get_work_list",
     "get_conformance",
     "get_census",
@@ -78,6 +82,11 @@ pub const TOOLS: [&str; 9] = [
     "get_api_view",
     "judge_work",
     "reject_non_conformance",
+    "get_axis_matrix",
+    "get_axis_recipe",
+    "get_patch_recipes",
+    "grant_recipe",
+    "apply_recipe",
 ];
 
 /// The bridge row each served tool is a call to. **The tree's vocabulary, not a parallel one.**
@@ -94,6 +103,15 @@ pub fn row_of(name: &str) -> Option<&'static str> {
         // and covered by `observe`.
         "judge_work" => Some("verify_package"),
         "reject_non_conformance" => Some("append_event"),
+        // **The axis route, in the tree's own vocabulary.** Reading the matrix is reading governance;
+        // a recipe line is the `read_recipe` row's own act. Issuing a grant files authority against a
+        // ticket (`file_ticket`, `present`). Applying a recipe is the act that resolves that ticket —
+        // and it is `resolve_ticket`'s `RequiresGrant` class that refuses an apply with no grant, while
+        // the signature over the grant is what the axis layer checks.
+        "get_axis_matrix" => Some("read_governance"),
+        "get_axis_recipe" | "get_patch_recipes" => Some("read_recipe"),
+        "grant_recipe" => Some("file_ticket"),
+        "apply_recipe" => Some("resolve_ticket"),
         _ => None,
     }
 }
@@ -154,20 +172,73 @@ pub fn tool_list() -> Value {
     let tools: Vec<Value> = TOOLS
         .iter()
         .map(|name| {
-            let schema = if *name == "get_ownership" {
-                json!({
-                    "type": "object",
-                    "properties": {"path": {"type": "string"}},
-                    "required": ["path"],
-                    "additionalProperties": false
-                })
-            } else {
-                json!({"type": "object", "properties": {}, "additionalProperties": false})
-            };
-            json!({"name": name, "description": description(name), "inputSchema": schema})
+            json!({"name": name, "description": description(name), "inputSchema": schema_of(name)})
         })
         .collect();
     Value::Array(tools)
+}
+
+/// **What a tool needs, declared once.** An empty object is a tool that takes no arguments; every
+/// other schema names exactly the arguments its body reads, so a client can construct a call without
+/// reading this crate's source.
+fn schema_of(name: &str) -> Value {
+    let cell = json!({
+        "ticket": {"type": "string"},
+        "segment": {"type": "string"},
+        "axis": {"type": "string"}
+    });
+    match name {
+        "get_ownership" => json!({
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+            "additionalProperties": false
+        }),
+        "get_axis_matrix" => json!({
+            "type": "object",
+            "properties": {"ticket": {"type": "string"}},
+            "required": ["ticket"],
+            "additionalProperties": false
+        }),
+        "get_axis_recipe" => json!({
+            "type": "object",
+            "properties": cell,
+            "required": ["ticket", "segment", "axis"],
+            "additionalProperties": false
+        }),
+        "get_patch_recipes" => json!({
+            "type": "object",
+            "properties": {
+                "patch": {"type": "string"},
+                "ticket": {"type": "string"}
+            },
+            "required": ["patch", "ticket"],
+            "additionalProperties": false
+        }),
+        "grant_recipe" => json!({
+            "type": "object",
+            "properties": {
+                "ticket": {"type": "string"},
+                "segment": {"type": "string"},
+                "axis": {"type": "string"},
+                "expires": {"type": "integer", "minimum": 0}
+            },
+            "required": ["ticket", "segment", "axis"],
+            "additionalProperties": false
+        }),
+        "apply_recipe" => json!({
+            "type": "object",
+            "properties": {
+                "ticket": {"type": "string"},
+                "segment": {"type": "string"},
+                "axis": {"type": "string"},
+                "ticket_grant": {"type": "string"}
+            },
+            "required": ["ticket", "segment", "axis", "ticket_grant"],
+            "additionalProperties": false
+        }),
+        _ => json!({"type": "object", "properties": {}, "additionalProperties": false}),
+    }
 }
 
 /// What each tool answers, in one sentence, because a tool nobody can choose is a tool nobody calls.
@@ -179,7 +250,9 @@ fn description(name: &str) -> &'static str {
         "get_conformance" => {
             "The gate's verdict over every subject: active only when nothing is refused and nothing is unchecked, because an unmeasured cell is not a pass."
         }
-        "get_census" => "The whole crate-by-axis table, as the build gate prints it.",
+        "get_census" => {
+            "The crate-by-axis table and the classified top-level folders beside it, as the build gate prints them."
+        }
         "get_patch_set" => {
             "The patch records and the target each declares: what is applied, what is owed, and where a change belongs."
         }
@@ -195,6 +268,21 @@ fn description(name: &str) -> &'static str {
         }
         "reject_non_conformance" => {
             "Reject the cells the conformance rule refuses, by appending one refusal_recorded event per cell to the project chain. Requires the capability its row needs — the bridge names it when it is missing — and a scoped, attributed grant."
+        }
+        "get_axis_matrix" => {
+            "The verified calibration matrix over this tree: one line per segment with its star, tier, ticket and witness, then the package — the same cells as cited, laddered statements with the pin over them. Reads without a key."
+        }
+        "get_patch_recipes" => {
+            "Compile a patch record's declared recipes against the measured matrix: the edit, its site, the check that must move, and the gates the tree requires."
+        }
+        "get_axis_recipe" => {
+            "The package's own line for a named ticket and cell: the statement, the file:line it cites, and the ladder reading the tree derives. Refused when the ticket or the cell was not the one measured."
+        }
+        "grant_recipe" => {
+            "Issue a ticket-scoped grant for one cell, signed by this machine's key, valid until a tick given in unix seconds. Returns the credential as one line, which `apply_recipe` accepts. The signature covers the ticket, the cell and the expiry."
+        }
+        "apply_recipe" => {
+            "Decide an apply on a measured cell under a signed grant. Six checks run — credential, signature, ticket, cell, expiry, witness — and the receipt names them. Nothing is written: the act stays with the caller."
         }
         _ => "Unknown tool.",
     }
@@ -215,7 +303,27 @@ pub fn call_with(
     authority: &Authority,
     grant: Option<&Grant>,
 ) -> Result<String, String> {
-    let receipt = receipt(name, authority, grant);
+    // **A signed grant is the credential an apply presents, and it carries its own attribution.**
+    // The bridge's grant is a presence check; the signature is the proof, and the axis layer is what
+    // checks it. A line that does not parse is refused here with the axis crate's own kind —
+    // `malformed_record`, not "no grant was presented", which would tell the client the wrong fact.
+    let derived: Option<Grant> = match (name, grant) {
+        ("apply_recipe", None) => match arguments.get("ticket_grant") {
+            None => None,
+            Some(value) => {
+                let wire = value.as_str().ok_or_else(|| {
+                    "apply_recipe needs `ticket_grant` as a string: the credential's own one-line \
+                     form"
+                        .to_string()
+                })?;
+                let parsed = TicketGrant::from_wire(wire)
+                    .map_err(|found| RefusalSet::to_string(&found))?;
+                Grant::new(parsed.grant().granter(), parsed.grant().scope()).ok()
+            }
+        },
+        _ => None,
+    };
+    let receipt = receipt(name, authority, grant.or(derived.as_ref()));
     if !receipt.ran() {
         // The bridge's own sentence, and the checks that ran to produce it.
         return Err(receipt.line());
@@ -228,13 +336,18 @@ fn dispatch(root: &Path, name: &str, arguments: &Value) -> Result<String, String
     match name {
         "get_work_list" => work_list(root),
         "get_conformance" => conformance(root),
-        "get_census" => Ok(census::report(&readings(root)?)),
+        "get_census" => census_table(root),
         "get_patch_set" => patch_set(root),
         "get_ownership" => ownership(root, arguments),
         "get_test_bloat" => Ok(bloat::measure_workspace_tests(root).describe()),
         "get_api_view" => Ok(api_view()),
         "judge_work" => judge_work(root, arguments),
         "reject_non_conformance" => reject_non_conformance(root),
+        "get_axis_matrix" => axis_matrix(root, arguments),
+        "get_axis_recipe" => axis_recipe(root, arguments),
+        "get_patch_recipes" => patch_recipes(root, arguments),
+        "grant_recipe" => grant_recipe(root, arguments),
+        "apply_recipe" => apply_recipe(root, arguments),
         other => Err(format!("unknown tool {other}; the tools are {TOOLS:?}")),
     }
 }
@@ -578,6 +691,16 @@ fn readings(root: &Path) -> Result<census::Census, String> {
     census::census(root).map_err(|found| RefusalSet::to_string(&found))
 }
 
+/// **The crate table, with the folders beside it.** The census measures workspace members, so a
+/// folder that is not a crate is outside it; the folder reading is the half that says which
+/// folder is a package, an emit root or a declared non-package. Both come from
+/// `voxel-package`'s own instruments — this function joins two readings, it does not take one.
+fn census_table(root: &Path) -> Result<String, String> {
+    let table = census::report(&readings(root)?);
+    let folders = census::folders::classify(root).map_err(|found| RefusalSet::to_string(&found))?;
+    Ok(format!("{table}\n{}", folders.describe()))
+}
+
 /// Every cell that is not active, with its reason. **The refusal list is the work list** — computed, not remembered.
 fn work_list(root: &Path) -> Result<String, String> {
     let census = readings(root)?;
@@ -686,6 +809,789 @@ fn ownership(root: &Path, arguments: &Value) -> Result<String, String> {
     }
     out.push_str(&format!("ownership\t{naming} record(s) name this path\n"));
     Ok(out)
+}
+
+/// How long a grant issued without an explicit expiry stays authority for, in unix seconds.
+pub const DEFAULT_GRANT_SECONDS: u64 = 600;
+
+/// **The verified matrix and its package.** Read without a key, so a client that only looks at the
+/// tree never causes one to be minted: every line is the matrix's or the package's own.
+fn axis_matrix(root: &Path, arguments: &Value) -> Result<String, String> {
+    let ticket = string_arg(arguments, "ticket", "{\"ticket\": \"T-0954\"}")?;
+    let registry = Registry::read(root, ticket).map_err(|found| RefusalSet::to_string(&found))?;
+    let matrix = registry.matrix().report().join("\n");
+    let pin = registry
+        .package()
+        .map(|package| package.pin().digest.to_string())
+        .unwrap_or_default();
+    let package = registry
+        .package()
+        .map(|package| package.render())
+        .unwrap_or_default();
+    Ok(format!(
+        "axis-matrix\tticket\t{ticket}\tcell(s)\t{}\n{matrix}\naxis-package\tpin\t{pin}\n{package}\n",
+        registry.matrix().len()
+    ))
+}
+
+/// **The package's own line for a named ticket and cell.** The layer checks that the ticket is the
+/// one measured and that the cell names a witness; this function spells neither rule.
+fn axis_recipe(root: &Path, arguments: &Value) -> Result<String, String> {
+    let ticket = string_arg(arguments, "ticket", "{\"ticket\": \"T-0954\"}")?;
+    let segment = segment_arg(arguments)?;
+    let axis = axis_arg(arguments)?;
+    let registry = Registry::read(root, ticket).map_err(|found| RefusalSet::to_string(&found))?;
+    let line = registry
+        .recipe(ticket, segment, axis)
+        .map_err(|found| RefusalSet::to_string(&found))?;
+    Ok(format!(
+        "axis-recipe\t{ticket}\t{}\t{}\n{}\n",
+        segment.name(),
+        axis.name(),
+        line.render()
+    ))
+}
+
+/// **A patch record's declared recipes, compiled against the measured matrix.**
+///
+/// The join the surface was missing: a patch says what changed; its `recipe` blocks say what to type,
+/// at which `file:line`, what the check must print, and which gates the tree requires. Each block is
+/// compiled through the matrix's own constructor, so a recipe for a cell the walk did not measure is
+/// refused by name rather than rendered as if it were portable.
+fn patch_recipes(root: &Path, arguments: &Value) -> Result<String, String> {
+    let wanted = string_arg(arguments, "patch", "{\"patch\": \"PATCH-061\"}")?;
+    let ticket = string_arg(arguments, "ticket", "{\"ticket\": \"T-0954\"}")?;
+    let dir = root.join("patches");
+    let entries = std::fs::read_dir(&dir)
+        .map_err(|why| format!("{} could not be read: {why}", dir.display()))?;
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("md"))
+        .collect();
+    files.sort();
+    let file = files
+        .iter()
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(wanted))
+        })
+        .ok_or_else(|| format!("refused: no patch record starts with `{wanted}` under patches/"))?;
+    let name = file.file_name().and_then(|name| name.to_str()).unwrap_or_default();
+    let text = std::fs::read_to_string(file).map_err(|why| format!("{name} could not be read: {why}"))?;
+    let record = patch::parse(name, &text);
+    let mut out = format!("patch\t{}\t{}\n", record.id, record.title);
+    for problem in &record.problems {
+        out.push_str(&format!("patch-problem\t\t{problem}\n"));
+    }
+    // **A record that cannot say who it is, is named as such.** The blocks are still compiled below,
+    // because the act is readable even when the record's frontmatter is not.
+    if !record.complete() {
+        out.push_str(&format!(
+            "patch-unevaluable\t{}\t{}\n",
+            record.id,
+            record.problems.join("; ")
+        ));
+    }
+    if record.recipes.is_empty() {
+        let why = if record.problems.is_empty() {
+            "a prose record is a record, not an act".to_string()
+        } else {
+            format!("the record is not evaluable: {}", record.problems.join("; "))
+        };
+        return Err(format!(
+            "{out}refused: {} declares no `recipe` block, so there is nothing to compile: {why}",
+            record.id
+        ));
+    }
+    let registry = Registry::read(root, ticket).map_err(|found| RefusalSet::to_string(&found))?;
+    let mut compiled = 0usize;
+    for (at, declared) in record.recipes.iter().enumerate() {
+        if compile_declared(&registry, declared, at + 1, &mut out) {
+            compiled += 1;
+        }
+    }
+    out.push_str(&format!("compiled\t{compiled}\t{}\n", record.recipes.len()));
+    Ok(out)
+}
+
+/// **The one compiler for a declared act**, shared by the single-record route and the corpus walk.
+/// Returns whether the block became a recipe line; every reason it did not is already in `out`.
+fn compile_declared(
+    registry: &Registry,
+    declared: &patch::PatchRecipe,
+    slot: usize,
+    out: &mut String,
+) -> bool {
+    for gate in &declared.requires {
+        out.push_str(&format!("requires\t{slot}\t{gate}\n"));
+    }
+    if !declared.complete() {
+        for problem in &declared.problems {
+            out.push_str(&format!("recipe-problem\t{slot}\t{problem}\n"));
+        }
+        return false;
+    }
+    let segment = match Segment::parse(&declared.segment) {
+        Ok(segment) => segment,
+        Err(refusal) => {
+            out.push_str(&format!("recipe-problem\t{slot}\t{refusal}\n"));
+            return false;
+        }
+    };
+    let Some(axis) = AxisKind::ALL.into_iter().find(|axis| axis.name() == declared.axis) else {
+        out.push_str(&format!(
+            "recipe-problem\t{slot}\t`{}` is not an axis\n",
+            declared.axis
+        ));
+        return false;
+    };
+    let Some((path, line)) = declared.site_parts() else {
+        out.push_str(&format!("recipe-problem\t{slot}\tthe site is not `path:line`\n"));
+        return false;
+    };
+    let fix = Fix::new(
+        Site::new(path, line),
+        declared.what.clone(),
+        declared.because.clone(),
+        declared.check.clone(),
+        declared.witness.clone(),
+        declared.expects.unwrap_or(0),
+    );
+    match registry.matrix().recipe(segment, axis, fix) {
+        Ok(recipe) => match recipe.render() {
+            Ok(text) => {
+                out.push_str(&format!(
+                    "recipe\t{slot}\t{}/{}\n{text}\n",
+                    segment.name(),
+                    axis.name()
+                ));
+                true
+            }
+            Err(refusal) => {
+                out.push_str(&format!("recipe-problem\t{slot}\t{}\n", refusal.detail()));
+                false
+            }
+        },
+        Err(found) => {
+            out.push_str(&format!("recipe-refused\t{slot}\t{}\n", RefusalSet::to_string(&found)));
+            false
+        }
+    }
+}
+
+/// **The whole patch corpus, one recipe line at a time.** Records that already declare `recipe`
+/// blocks are compiled through the same [`compile_declared`] the single-record route uses. Records
+/// that are prose only get a draft **only from fields their own text sources**: the title, the first
+/// `file:line`, the first command, a witness path, and a target that names exactly one segment. A
+/// field that cannot be sourced is a named gap, not a plausible default. With `write`, compiled
+/// drafts land in `patches/upstream/recipes/<PATCH>.recipe` and a `coverage.tsv`; no patch record is
+/// edited, so a draft cannot pass as the record's own words.
+///
+/// **The summary's first field is `records`, not `patches` and not `blocks + gaps`.** The old line
+/// printed that sum under the label `patches`, which made 81 read as a file count; the corpus has 76
+/// records, 30 declared blocks and 50 gaps, and the three are now named separately.
+pub fn patch_recipe_coverage(root: &Path, ticket: &str, write: bool) -> Result<String, String> {
+    let dir = root.join("patches");
+    let entries = std::fs::read_dir(&dir)
+        .map_err(|why| format!("{} could not be read: {why}", dir.display()))?;
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().and_then(|extension| extension.to_str()) == Some("md")
+                && path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.starts_with("PATCH-"))
+        })
+        .collect();
+    files.sort();
+    let registry = Registry::read(root, ticket).map_err(|found| RefusalSet::to_string(&found))?;
+
+    let mut out = String::new();
+    let records = files.len();
+    let mut blocks = 0usize;
+    let mut compiled_existing = 0usize;
+    let mut derived = 0usize;
+    let mut compiled_derived = 0usize;
+    let mut rederived = 0usize;
+    let mut rederived_match = 0usize;
+    let mut gaps = 0usize;
+    let mut written: Vec<(String, String)> = Vec::new();
+
+    for file in files {
+        let name = file
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let text = std::fs::read_to_string(&file)
+            .map_err(|why| format!("{} could not be read: {why}", file.display()))?;
+        let record = patch::parse(&name, &text);
+        if !record.problems.is_empty() {
+            let label = if record.id.is_empty() { name.as_str() } else { record.id.as_str() };
+            out.push_str(&format!(
+                "record-problem\t{label}\t{}\n",
+                record.problems.join("; ")
+            ));
+        }
+        if !record.recipes.is_empty() {
+            blocks += record.recipes.len();
+            out.push_str(&format!(
+                "patch\t{}\tblocks\t{}\n",
+                record.id,
+                record.recipes.len()
+            ));
+            for (at, declared) in record.recipes.iter().enumerate() {
+                if compile_declared(&registry, declared, at + 1, &mut out) {
+                    compiled_existing += 1;
+                }
+                // **A block is not exempt from the prose it claims to compile.** When the
+                // record's own prose states an act, derive it again and compare the sourced
+                // coordinates. The block is still compiled above; this line is the proof that
+                // the same act can be reached from the prose, not merely copied into a fence.
+                if prose_act(&text).is_some() {
+                    rederived += 1;
+                    if reconcile_block(root, &record, &text, &name, ticket, declared, at + 1, &mut out) {
+                        rederived_match += 1;
+                    }
+                }
+            }
+            continue;
+        }
+
+        let draft = derive_recipe(root, &record, &text, &name, ticket);
+        if !draft.complete() {
+            gaps += 1;
+            out.push_str(&format!(
+                "gap\t{}\t{}\n",
+                record.id,
+                draft.problems.join("; ")
+            ));
+            continue;
+        }
+        derived += 1;
+        let mut block = String::new();
+        if compile_declared(&registry, &draft, 1, &mut block) {
+            compiled_derived += 1;
+            out.push_str(&format!(
+                "derived\t{}\t{}/{}\n{block}",
+                record.id,
+                draft.segment,
+                draft.axis
+            ));
+            if write {
+                let body = block.split_once('\n').map(|(_, body)| body).unwrap_or("");
+                written.push((record.id.clone(), body.to_string()));
+            }
+        } else {
+            gaps += 1;
+            out.push_str(&format!("gap\t{}\t{}\n", record.id, block.replace('\n', " ")));
+        }
+    }
+
+    out.push_str(&format!(
+        "records\t{records}\tblocks\t{blocks}\tcompiled\t{compiled_existing}\tderived\t{derived}\tderived-compiled\t{compiled_derived}\trederived\t{rederived}\trederived-match\t{rederived_match}\tgaps\t{gaps}\n"
+    ));
+
+    if write {
+        let out_dir = root.join("patches/upstream/recipes");
+        std::fs::create_dir_all(&out_dir)
+            .map_err(|why| format!("{} could not be created: {why}", out_dir.display()))?;
+        for (id, body) in &written {
+            std::fs::write(out_dir.join(format!("{id}.recipe")), body)
+                .map_err(|why| format!("{} could not be written: {why}", id))?;
+        }
+        let mut coverage = String::from("patch\tkind\tproblems\n");
+        for line in out.lines() {
+            if let Some(rest) = line.strip_prefix("gap\t") {
+                coverage.push_str(&format!("gap\t{rest}\n"));
+            }
+        }
+        std::fs::write(out_dir.join("coverage.tsv"), coverage)
+            .map_err(|why| format!("the coverage table could not be written: {why}"))?;
+        out.push_str(&format!("wrote\t{}\t{}\n", written.len(), out_dir.display()));
+    }
+    Ok(out)
+}
+
+/// One draft act from a prose record. **Nothing is invented**: every field is copied from the record
+/// or its text, and a field with no source becomes a named problem the caller prints.
+fn derive_recipe(
+    root: &Path,
+    record: &patch::PatchRecord,
+    text: &str,
+    file_name: &str,
+    ticket: &str,
+) -> patch::PatchRecipe {
+    let mut recipe = patch::PatchRecipe {
+        ticket: ticket.to_string(),
+        axis: "evidence_grade".to_string(),
+        requires: vec!["cargo check --workspace".to_string()],
+        expects: Some(0),
+        ..patch::PatchRecipe::default()
+    };
+    let mut problems = Vec::new();
+
+    // **The prose act is the route.** A record may state its act in a sentence rather than a fence;
+    // when it does, those coordinates win over any incidental `path:line` earlier in the document.
+    let act = prose_act(text);
+    if let Some(act) = &act {
+        recipe.site = act.site.clone();
+        recipe.check = act.check.clone();
+        recipe.witness = act
+            .witness
+            .clone()
+            .or_else(|| act.site.rsplit_once(':').map(|(path, _)| path.to_string()))
+            .unwrap_or_default();
+        match segment_for_site(&act.site) {
+            Ok(segment) => recipe.segment = segment.to_string(),
+            Err(why) => problems.push(why),
+        }
+        if let Err(refusal) = Site::new(
+            act.site.rsplit_once(':').map(|(path, _)| path.to_string()).unwrap_or_default(),
+            act.site.rsplit_once(':').and_then(|(_, line)| line.parse().ok()).unwrap_or(0),
+        )
+        .locate(root)
+        {
+            problems.push(refusal.detail().to_string());
+        }
+    } else {
+        match segment_for(record) {
+            Ok(segment) => recipe.segment = segment.to_string(),
+            Err(why) => problems.push(why),
+        }
+        match first_site(text) {
+            Some((path, line)) => {
+                if let Err(refusal) = Site::new(path.clone(), line).locate(root) {
+                    problems.push(refusal.detail().to_string());
+                }
+                recipe.site = format!("{path}:{line}");
+            }
+            None => problems.push(
+                "no `path:line` in the record; a recipe site cannot be guessed from a path alone"
+                    .to_string(),
+            ),
+        }
+        match first_command(text) {
+            Some(command) => recipe.check = command,
+            None => problems.push(
+                "no `cargo` command in the record; the check that must move is not stated"
+                    .to_string(),
+            ),
+        }
+        recipe.witness = first_witness(text).unwrap_or_else(|| format!("patches/{file_name}"));
+    }
+
+    let fallback_title = title_of(text);
+    let title = if record.title.trim().is_empty() { fallback_title.as_str() } else { record.title.as_str() };
+    recipe.what = truncate(title, 256);
+    if recipe.what.trim().is_empty() {
+        problems.push("the record has no title".to_string());
+    }
+    recipe.because = change_summary(text).unwrap_or_else(|| recipe.what.clone());
+    recipe.problems = problems;
+    recipe
+}
+
+/// **A sentence the record can carry instead of a fence.** The prose names the site, the check and,
+/// when it has one, the witness; this reads those three and nothing else. A record that does not say
+/// `The act is at` has no prose act, so a historical `path:line` in it is not promoted by accident.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ProseAct {
+    site: String,
+    check: String,
+    witness: Option<String>,
+}
+
+fn prose_act(text: &str) -> Option<ProseAct> {
+    for line in text.lines() {
+        let line = line.trim();
+        if !line.contains("The act is at") {
+            continue;
+        }
+        let spans = backticked(line);
+        let site = spans.iter().find(|span| {
+            span.rsplit_once(':')
+                .is_some_and(|(path, line)| path.ends_with(".rs") && line.parse::<u32>().is_ok())
+        })?
+        .clone();
+        let command = spans.iter().find(|span| span.trim_start().starts_with("cargo "))?.clone();
+        let check = if command.contains(" -> ") {
+            command
+        } else if command.contains(" test") || command.contains(" build") {
+            format!("{command} -> failures 0")
+        } else {
+            format!("{command} -> exit 0")
+        };
+        let witness = line
+            .split_once("witness is")
+            .and_then(|(_, rest)| backticked(rest).into_iter().next());
+        return Some(ProseAct { site, check, witness });
+    }
+    None
+}
+
+/// Every backticked span in one line, in order. The record's own prose marks its machine-read
+/// fields the same way its tables mark a path, so no second grammar is introduced.
+fn backticked(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find('`') {
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('`') else {
+            break;
+        };
+        out.push(after[..end].trim().to_string());
+        rest = &after[end + 1..];
+    }
+    out
+}
+
+/// The title a record's first `#` heading carries, after the em dash or hyphen. Used only when the
+/// frontmatter has no title, so a prose-only record can still name its act.
+fn title_of(text: &str) -> String {
+    for line in text.lines() {
+        let Some(rest) = line.trim().strip_prefix("# ") else {
+            continue;
+        };
+        let rest = rest.trim();
+        if let Some((_, title)) = rest.split_once('\u{2014}') {
+            return title.trim().to_string();
+        }
+        if let Some((_, title)) = rest.split_once(" - ") {
+            return title.trim().to_string();
+        }
+        return rest.to_string();
+    }
+    String::new()
+}
+
+/// Compare one declared block with the act its own prose states. Only the sourced coordinates are
+/// compared: `what` and `because` are editorial prose, while a site, a check, a witness and a
+/// segment are facts the matrix compiles. Returns whether all four agree.
+fn reconcile_block(
+    root: &Path,
+    record: &patch::PatchRecord,
+    text: &str,
+    file_name: &str,
+    ticket: &str,
+    declared: &patch::PatchRecipe,
+    slot: usize,
+    out: &mut String,
+) -> bool {
+    let draft = derive_recipe(root, record, text, file_name, ticket);
+    if !draft.complete() {
+        out.push_str(&format!(
+            "rederived\t{}\tblock {slot}\tnot-sourced\t{}\n",
+            record.id,
+            draft.problems.join("; ")
+        ));
+        return false;
+    }
+    let pairs = [
+        ("segment", draft.segment.as_str(), declared.segment.as_str()),
+        ("site", draft.site.as_str(), declared.site.as_str()),
+        ("check", draft.check.as_str(), declared.check.as_str()),
+        ("witness", draft.witness.as_str(), declared.witness.as_str()),
+    ];
+    let differs: Vec<String> = pairs
+        .iter()
+        .filter(|(_, left, right)| left != right)
+        .map(|(field, left, right)| format!("{field} prose={left:?} block={right:?}"))
+        .collect();
+    if differs.is_empty() {
+        out.push_str(&format!(
+            "rederived\t{}\tblock {slot}\tmatch\tsegment,site,check,witness\n",
+            record.id
+        ));
+        true
+    } else {
+        out.push_str(&format!(
+            "rederived\t{}\tblock {slot}\tdiffers\t{}\n",
+            record.id,
+            differs.join("; ")
+        ));
+        false
+    }
+}
+
+/// The segment a site path names, by the matrix's own vocabulary.
+fn segment_for_site(site: &str) -> Result<&'static str, String> {
+    let path = site.rsplit_once(':').map(|(path, _)| path).unwrap_or(site);
+    let segment = if path.starts_with("crates/axis/") {
+        "axis"
+    } else if path.starts_with("crates/voxel-client/src/shell") {
+        "shell"
+    } else if path.starts_with("crates/voxel-client/src/pattern") {
+        "pattern"
+    } else if path.starts_with("crates/voxel-client") {
+        "shell"
+    } else if path.starts_with("crates/voxel-ui") {
+        "ui"
+    } else if path.starts_with("crates/voxel-model")
+        || path.starts_with("crates/voxel-noise")
+        || path.starts_with("crates/voxel-light")
+        || path.starts_with("crates/voxel-mesh")
+        || path.starts_with("crates/voxel-shapers")
+        || path.starts_with("crates/voxel-appearance")
+        || path.starts_with("crates/voxel-stream")
+    {
+        "world"
+    } else if path.starts_with("crates/voxel-package")
+        || path.starts_with("crates/voxel-mcp")
+        || path.starts_with("crates/voxel-von")
+        || path.starts_with("crates/voxel-instrument")
+    {
+        "tooling"
+    } else if path.starts_with("crates/shploingus") {
+        "game"
+    } else {
+        return Err(format!("site {site:?} names no segment the matrix has"));
+    };
+    Ok(segment)
+}
+
+/// The segment a record's `target` names, or the sentence saying why it is not one.
+fn segment_for(record: &patch::PatchRecord) -> Result<&'static str, String> {
+    let mut found = std::collections::BTreeSet::new();
+    let text = format!("{} {}", record.target, record.named_paths.join(" "));
+    if text.contains("voxel-client/src/shell") || record.target.contains("shploingus/shell") {
+        found.insert("shell");
+    }
+    if text.contains("voxel-client/src/pattern") {
+        found.insert("pattern");
+    }
+    if text.contains("voxel-client") && !text.contains("voxel-client/src/pattern") {
+        found.insert("shell");
+    }
+    if text.contains("voxel-ui") {
+        found.insert("ui");
+    }
+    if text.contains("voxel-model")
+        || text.contains("voxel-noise")
+        || text.contains("voxel-light")
+        || text.contains("voxel-mesh")
+        || text.contains("voxel-shapers")
+        || text.contains("voxel-appearance")
+        || text.contains("voxel-stream")
+    {
+        found.insert("world");
+    }
+    if text.contains("crates/axis")
+        || record.target.contains("axis")
+        || text.contains("shploingus/being")
+    {
+        found.insert("axis");
+    }
+    if text.contains("voxel-package")
+        || text.contains("voxel-mcp")
+        || text.contains("voxel-von")
+        || text.contains("voxel-instrument")
+    {
+        found.insert("tooling");
+    }
+    if text.contains("shploingus/src") || record.target.trim() == "shploingus" {
+        found.insert("game");
+    }
+    match found.len() {
+        1 => Ok(found.into_iter().next().expect("one member")),
+        0 => Err(format!(
+            "target {:?} names no segment the matrix has; a recipe cannot pick one for it",
+            record.target
+        )),
+        _ => Err(format!(
+            "target {:?} names {} segments ({}); one act belongs to one cell",
+            record.target,
+            found.len(),
+            found.into_iter().collect::<Vec<_>>().join(", ")
+        )),
+    }
+}
+
+/// The first `path:line` a record states, in the order it states them.
+fn first_site(text: &str) -> Option<(String, u32)> {
+    for line in text.lines() {
+        for token in line.split(|c: char| {
+            c.is_whitespace() || "`()[],;\"'".contains(c)
+        }) {
+            let token = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '/' && c != '.' && c != '_' && c != '-');
+            let Some((path, number)) = token.rsplit_once(':') else {
+                continue;
+            };
+            if !path.contains('/') || !path.ends_with(".rs") {
+                continue;
+            }
+            let Ok(line) = number.parse::<u32>() else {
+                continue;
+            };
+            if line > 0 {
+                return Some((path.to_string(), line));
+            }
+        }
+    }
+    None
+}
+
+/// The first `cargo` command the record states, with the movement a reader can check.
+fn first_command(text: &str) -> Option<String> {
+    let mut checks = Vec::new();
+    for line in text.lines() {
+        let line = line.trim().trim_start_matches("$ ").trim_matches('`').trim();
+        if !line.starts_with("cargo ") {
+            continue;
+        }
+        if line.contains(" -> ") {
+            checks.push(line.to_string());
+            continue;
+        }
+        let movement = if line.contains(" test") || line.contains(" build") {
+            "failures 0"
+        } else {
+            "exit 0"
+        };
+        checks.push(format!("{line} -> {movement}"));
+    }
+    checks.sort_by_key(|command| !command.contains(" test"));
+    checks.into_iter().next()
+}
+
+/// A baseline or conformance path the record names, or `None`.
+fn first_witness(text: &str) -> Option<String> {
+    for line in text.lines() {
+        for token in line.split_whitespace() {
+            let token = token.trim_matches(|c: char| "`()[],;\"'".contains(c));
+            if token.starts_with("docs/baselines/") || token.starts_with("conformance/") {
+                return Some(token.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// The first sentence of `# Change`, or `None` when the record carries no such section.
+fn change_summary(text: &str) -> Option<String> {
+    let mut inside = false;
+    let mut body = Vec::new();
+    for line in text.lines() {
+        if line.trim() == "# Change" {
+            inside = true;
+            continue;
+        }
+        if inside && line.starts_with("# ") {
+            break;
+        }
+        if inside {
+            body.push(line.trim());
+        }
+    }
+    let joined = body.join(" ");
+    let sentence = joined
+        .split_once(". ")
+        .map(|(sentence, _)| sentence)
+        .unwrap_or(&joined)
+        .trim();
+    (!sentence.is_empty()).then(|| truncate(sentence, 1000))
+}
+
+/// A UTF-8-safe prefix, so a title cannot be cut through a character.
+fn truncate(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_string();
+    }
+    let mut end = max;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_string()
+}
+
+/// **Issue the credential an apply presents.** The expiry is in unix seconds, and the server's clock
+/// is the one that will be checked; a client's own clock is a claim, not a fact.
+fn grant_recipe(root: &Path, arguments: &Value) -> Result<String, String> {
+    let ticket = string_arg(arguments, "ticket", "{\"ticket\": \"T-0954\"}")?;
+    let segment = segment_arg(arguments)?;
+    let axis = axis_arg(arguments)?;
+    let expires = match arguments.get("expires") {
+        None => unix_now().saturating_add(DEFAULT_GRANT_SECONDS),
+        Some(value) => value.as_u64().ok_or_else(|| {
+            "`expires` must be an unsigned tick in unix seconds".to_string()
+        })?,
+    };
+    let security = voxel_axis_security::Security::machine_local(root)
+        .map_err(|found| RefusalSet::to_string(&found))?;
+    let registry = Registry::mount(root, ticket, security)
+        .map_err(|found| RefusalSet::to_string(&found))?;
+    let grant = registry
+        .grant(ticket, segment, axis, expires)
+        .map_err(|found| RefusalSet::to_string(&found))?;
+    Ok(format!("grant-issued\tuntil\t{expires}\n{}\n", grant.to_wire()))
+}
+
+/// **Decide an apply under a signed grant.** The wire line is parsed and then verified by the layer;
+/// a tampered field is `signature_invalid`, another key is `untrusted_key`, and an expiry in the
+/// past is `destination_invariant_refused` — each the axis crates' own kind, printed as itself.
+fn apply_recipe(root: &Path, arguments: &Value) -> Result<String, String> {
+    let ticket = string_arg(arguments, "ticket", "{\"ticket\": \"T-0954\"}")?;
+    let segment = segment_arg(arguments)?;
+    let axis = axis_arg(arguments)?;
+    let wire = string_arg(
+        arguments,
+        "ticket_grant",
+        "{\"ticket_grant\": \"axis-grant/1\\t…\"}",
+    )?;
+    let credential = TicketGrant::from_wire(wire).map_err(|found| RefusalSet::to_string(&found))?;
+    let security = voxel_axis_security::Security::machine_local(root)
+        .map_err(|found| RefusalSet::to_string(&found))?;
+    let registry = Registry::mount(root, ticket, security)
+        .map_err(|found| RefusalSet::to_string(&found))?;
+    let applied = registry
+        .apply(Some(&credential), ticket, segment, axis, unix_now())
+        .map_err(|found| RefusalSet::to_string(&found))?;
+    Ok(format!("{}\n", applied.render()))
+}
+
+/// A required string argument, refused with the shape the tool wants rather than a bare "missing".
+fn string_arg<'a>(
+    arguments: &'a Value,
+    field: &str,
+    shape: &str,
+) -> Result<&'a str, String> {
+    arguments.get(field).and_then(Value::as_str).ok_or_else(|| {
+        format!("this tool needs a `{field}` string, as {shape}")
+    })
+}
+
+/// The segment, parsed by the matrix's own parser.
+fn segment_arg(arguments: &Value) -> Result<Segment, String> {
+    let word = string_arg(arguments, "segment", "{\"segment\": \"shell\"}")?;
+    Segment::parse(word)
+        .map_err(|refusal| format!("refused: `{word}` is not a segment: {refusal}"))
+}
+
+/// The axis, looked up in the closed vocabulary rather than spelled a second time.
+fn axis_arg(arguments: &Value) -> Result<AxisKind, String> {
+    let word = string_arg(arguments, "axis", "{\"axis\": \"evidence_grade\"}")?;
+    AxisKind::ALL
+        .into_iter()
+        .find(|axis| axis.name() == word)
+        .ok_or_else(|| {
+            format!(
+                "refused: `{word}` is not an axis; the vocabulary is {}",
+                AxisKind::ALL.map(|axis| axis.name()).join(", ")
+            )
+        })
+}
+
+/// The server's clock, in unix seconds. A clock before the epoch answers 0, and a grant expiring at
+/// 0 is already expired, so the failure direction is a refusal rather than a permission.
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0)
 }
 
 fn ok(id: Value, result: Value) -> Value {

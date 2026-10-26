@@ -38,7 +38,7 @@
 use std::time::Instant;
 
 use voxel_appearance::sky::SkyInputs;
-use voxel_client::field::{CellField, ChunkTrees, CELLS_PER_FRAME, REACH_M};
+use voxel_client::field::{CellField, ChunkTrees, REACH_M};
 use voxel_mesh::{MeshConfig, SparseVoxelOctree};
 use voxel_model::{ChunkPos, SubvoxelIndex, VoxelPos, CHUNK_SIDE};
 use voxel_shapers::{Config, WorldSpec};
@@ -65,11 +65,11 @@ const CEILING_BYTES: usize = 256 * 1024 * 1024;
 /// transmittance comes out at exactly `1.0`. What the bands are then is **the model's own delivery
 /// at this tick and this address** — the number the world's cells are a fraction of, and the reason
 /// no reading below is compared against a constant.
-struct Empty(SparseVoxelOctree);
+struct Empty(std::sync::Arc<SparseVoxelOctree>);
 
 impl ChunkTrees for Empty {
-    fn tree_at(&self, _pos: ChunkPos) -> Option<&SparseVoxelOctree> {
-        Some(&self.0)
+    fn tree_at(&self, _pos: ChunkPos) -> Option<std::sync::Arc<SparseVoxelOctree>> {
+        Some(std::sync::Arc::clone(&self.0))
     }
 }
 
@@ -100,7 +100,7 @@ fn main() {
     );
 
     let inputs = SkyInputs::default();
-    let empty = Empty(SparseVoxelOctree::new());
+    let empty = Empty(std::sync::Arc::new(SparseVoxelOctree::new()));
     let mut failures: Vec<String> = Vec::new();
 
     // ---- by day ----------------------------------------------------------
@@ -135,7 +135,8 @@ fn main() {
     let mut day_reference = CellField::of(&spec, day_tick, inputs, 0, None)
         .expect("the shipped atmosphere is described");
     let delivery = day_reference
-        .at(&empty, [origin.x, origin.y + CHUNK_SIDE - 1, origin.z])
+        .measure(&empty, VoxelPos::new(origin.x, origin.y + CHUNK_SIDE - 1, origin.z).into())
+        .map(|(bands, _)| bands)
         .expect("an empty world always has a measurement");
     let delivered_direct = delivery[0] + delivery[1] + delivery[2];
     println!(
@@ -265,27 +266,30 @@ fn main() {
     // **The same cells asked again.** The second pass is the cache's, and it is the number that says
     // whether a frame's corners cost marches or hash lookups — a frame asks at every corner of every
     // quad it builds, so this difference is the difference between a usable frame and a slideshow.
-    let marched = day_field.measured();
+    let marched = day_field.adopted();
     day_field.begin_frame();
     let again = Instant::now();
     let repeated = measure(&mut day_field, &streamer, origin);
     let repeat_ms = again.elapsed().as_secs_f64() * 1000.0;
     println!(
         "\nthe same {} cell(s) asked again: {:.2} ms against {:.2} ms, with {} answered from the \
-         frame's own measurements and {} marched",
+         field's own measurements and {} measured",
         repeated.cells,
         repeat_ms,
         columns.elapsed_ms,
-        day_field.reused(),
-        day_field.measured()
+        day_field.answered(),
+        day_field.adopted()
     );
-    if day_field.reused() == 0 {
-        failures.push("the second pass over the same cells marched every one of them again".into());
+    if day_field.answered() == 0 {
+        failures.push("the second pass over the same cells measured every one of them again".into());
     }
+    // **And the cost is the worker's, not the frame's**: the frame reads a hash map, and the bytes
+    // that used to be a per-frame budget are now an ask's worth of marches on another thread.
     println!(
-        "the field's frame budget is {CELLS_PER_FRAME} cells: {:.1} ms if every one is a fresh \
-         march (the first pass marched {marched})",
-        columns.millis_per_cell() * CELLS_PER_FRAME as f64
+        "the measurement is off the frame: {} ask(s) of {} cells carry {:.1} ms a march here",
+        marched.div_ceil(voxel_client::CELLS_PER_ASK as u64).max(1),
+        voxel_client::CELLS_PER_ASK,
+        columns.millis_per_cell() * voxel_client::CELLS_PER_ASK as f64
     );
 
     // ---- by night --------------------------------------------------------
@@ -335,7 +339,8 @@ fn main() {
     let mut night_reference = CellField::of(&spec, night_tick, inputs, 0, None)
         .expect("the shipped atmosphere is described");
     let night_delivery = night_reference
-        .at(&empty, [origin.x, origin.y + CHUNK_SIDE - 1, origin.z])
+        .measure(&empty, VoxelPos::new(origin.x, origin.y + CHUNK_SIDE - 1, origin.z).into())
+        .map(|(bands, _)| bands)
         .expect("an empty world always has a measurement");
     let moon_direct = (night_delivery[0] + night_delivery[1] + night_delivery[2]) as f64;
     println!(
@@ -460,6 +465,19 @@ fn mean(values: &[f32]) -> f32 {
 /// after half a metre and is charged by the *neighbours*, which nobody had asked about. A cell is
 /// underground for a beam when the matter is all around it, and the twenty-six sides are the honest
 /// statement of that at the voxel's own scale.
+/// **The frame's own path to a cell**: answer from the field if it has a measurement, and march it
+/// on this thread if it does not.
+///
+/// The game splits these two — the frame only ever asks, and [`voxel_client::Measurer`] does the
+/// marching — but an example measuring a field has no worker and no frame to protect.
+fn asked(field: &mut CellField, streamer: &Streamer, cell: VoxelPos) -> Option<[f32; 6]> {
+    let cell = voxel_client::field::SubvoxelPos::from(cell);
+    match field.at(cell) {
+        Some(bands) => Some(bands),
+        None => field.measure(streamer, cell).map(|(bands, _)| bands),
+    }
+}
+
 fn measure(field: &mut CellField, streamer: &Streamer, origin: VoxelPos) -> Columns {
     let at = SubvoxelIndex::new(2, 2, 2).expect("the middle of a voxel");
     let top = origin.y + CHUNK_SIDE - 1;
@@ -488,7 +506,8 @@ fn measure(field: &mut CellField, streamer: &Streamer, origin: VoxelPos) -> Colu
                 continue;
             }
             out.solid += 1;
-            let open = field.at(streamer, [wx, surface + 1, wz]).expect("the open cell");
+            let open = asked(field, streamer, VoxelPos::new(wx, surface + 1, wz))
+                .expect("the open cell");
             // The enclosed cell: the first voxel of the column, from the surface down, whose own
             // 3×3×3 neighbourhood is all matter. Its own cell is excluded from its own beam — that
             // is the march's first rule — so what has to block the light is the rock around it.
@@ -500,7 +519,8 @@ fn measure(field: &mut CellField, streamer: &Streamer, origin: VoxelPos) -> Colu
             let Some(buried_cell) = enclosed else {
                 continue;
             };
-            let buried = field.at(streamer, [wx, buried_cell, wz]).expect("the enclosed cell");
+            let buried = asked(field, streamer, VoxelPos::new(wx, buried_cell, wz))
+                .expect("the enclosed cell");
             out.enclosed += 1;
             out.cells += 2;
             let direct = open[0] + open[1] + open[2];

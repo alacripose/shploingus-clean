@@ -389,21 +389,28 @@ pub enum EvidenceOrigin {
     /// ticket can hold and a reader can see — rather than a system where self-reported evidence
     /// has no representation and so is quietly filed as if it were an oracle's.
     SelfReport,
+    /// **D** — mechanically derived. This tree computed the statement from bytes it read.
+    ///
+    /// The scrubber's own origin (`prose_logic` records `origin: "mechanical_derivation"`).
+    /// It is weaker than a self-report on the admission ladder, because a derivation can be
+    /// wrong about what a sentence means even when its bytes are exact.
+    Derived,
 }
 
 impl EvidenceOrigin {
-    pub const ALL: [EvidenceOrigin; 3] = [
+    pub const ALL: [EvidenceOrigin; 4] = [
         EvidenceOrigin::Oracle,
         EvidenceOrigin::ReadBack,
         EvidenceOrigin::SelfReport,
+        EvidenceOrigin::Derived,
     ];
 
-    pub const COUNT: usize = 3;
+    pub const COUNT: usize = 4;
 
     /// The recorded tokens — the letters, in ladder order. **On the type, not at
     /// the call site**: a ladder's tokens are the ladder's own declaration, and
     /// a copy elsewhere is a second thing that can drift (D-07).
-    pub const TOKENS: &'static [&'static str] = &["A", "B", "C"];
+    pub const TOKENS: &'static [&'static str] = &["A", "B", "C", "D"];
 
     /// The single letter, as the reference writes it. **A letter, not a rank** — the letters
     /// happen to be alphabetical and nothing more, which is why the type carries no `Ord`.
@@ -412,6 +419,7 @@ impl EvidenceOrigin {
             EvidenceOrigin::Oracle => "A",
             EvidenceOrigin::ReadBack => "B",
             EvidenceOrigin::SelfReport => "C",
+            EvidenceOrigin::Derived => "D",
         }
     }
 
@@ -420,6 +428,7 @@ impl EvidenceOrigin {
             EvidenceOrigin::Oracle => "A — an external oracle decided this",
             EvidenceOrigin::ReadBack => "B — read back from world state",
             EvidenceOrigin::SelfReport => "C — self-report; evidence, but not authority",
+            EvidenceOrigin::Derived => "D — mechanically derived from the bytes it quotes",
         }
     }
 
@@ -429,7 +438,7 @@ impl EvidenceOrigin {
             .find(|origin| origin.letter() == word.trim())
             .ok_or_else(|| {
                 format!(
-                    "unknown evidence origin {word:?}; there are {}: A, B, C",
+                    "unknown evidence origin {word:?}; there are {}: A, B, C, D",
                     Self::COUNT
                 )
             })
@@ -2011,7 +2020,7 @@ mod tests {
         let _ = KINDS_ARE_TOTAL;
         let _ = ORIGINS_ARE_TOTAL;
         assert_eq!(TicketKind::ALL.len(), 4);
-        assert_eq!(EvidenceOrigin::ALL.len(), 3);
+        assert_eq!(EvidenceOrigin::ALL.len(), 4);
         for kind in TicketKind::ALL {
             assert_eq!(TicketKind::parse(kind.name()), Ok(kind));
             assert!(!kind.prefix().is_empty());

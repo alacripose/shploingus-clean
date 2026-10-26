@@ -87,7 +87,25 @@ pub fn schlick(cos_theta: f64, f0: f64) -> f64 {
 /// That is the behaviour a flat matte sheet cannot express, and it is the whole
 /// reason water reads as water as the player walks past it.
 pub fn surface_radiance(body: LinearRgb, reflected: LinearRgb, cos_theta: f64) -> LinearRgb {
-    let f = schlick(cos_theta, WATER_F0);
+    surface_radiance_with(body, reflected, cos_theta, WATER_F0)
+}
+
+/// [`surface_radiance`] **at a boundary reflectance the caller read**, so the water's Fresnel is a
+/// material quantity with the same LOD reading every other surface carries rather than a constant.
+///
+/// `f0` is the normal-incidence reflectance. The client passes `WATER_F0` moved by the material's
+/// own `lod_reflectance_delta` (the reflectance deviation a fragment with no address reads from the
+/// Sun's angle); its CPU mirror and `shading.wgsl`'s water branch compute that one number the same
+/// way, and `renderer::tests::the_water_surface_reflects_the_sky_the_model_says_it_does` is what
+/// holds them together. `WATER_F0` remains the identity of the fluid: a caller that has no LOD
+/// reading to apply uses [`surface_radiance`] and gets exactly the physics above.
+pub fn surface_radiance_with(
+    body: LinearRgb,
+    reflected: LinearRgb,
+    cos_theta: f64,
+    f0: f64,
+) -> LinearRgb {
+    let f = schlick(cos_theta, f0);
     body * (1.0 - f) + reflected * f
 }
 

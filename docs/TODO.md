@@ -708,6 +708,22 @@ the world goes, are the user's (C-184.4).
    gated on `Convergent` boundaries measured at 5 of 5,168 samples, and `delta`,
    `transition`, `process` have **no caller anywhere**. Named, not repaired — each is the
    user's to rule on. Evidence: `examples/cave-census` (new), `examples/relief-profile`.
+   **The tree declared 2026-10-23:** the technology tree is rows, not prose — **8 tiers,
+   146 substances, 79 processes, 32 vocabulary entries**, every process carrying a mandatory
+   `source` (the harvested artifact, the §8.1 roster row, or an explicit `declared:` where the
+   harvest is silent). `materials::tree` owns reachability: the walk fires processes tier by tier
+   from what the world holds and refuses an unreachable tier, an unproduced `made` substance, a
+   dead process and an undeclared name; the generator refuses to write through any of them, and
+   `the_committed_tree_is_complete_and_reachable` fails loudly on an orphaned node. The **state
+   axis** (`Solid | Liquid | Molten | Solution | Gas`) landed with it: a melt or a liquor names the
+   solid it is derived from in `phase_of`, and the gate refuses a molten row nothing melts.
+   Coverage: **tiers 8/8, substances 146/146 (80 made, 80 produced), processes 79/79**. Not built,
+   by the mission's own boundary: inventory, recipe lookup, craft action, and any wiring into the
+   appearance registry — the tree is data and its owner, not gameplay. The agricultural families
+   (husbandry, composting, dyeing) landed after the state axis, and solvent extraction followed on
+   ethanol — the one extractant the harvest names and the tree already makes — taking it to 146 rows
+   with extraction rowed in both halves; three of §8.1's 41 rules are still unrowed, named in
+   `MODS-MATERIALS.md` §8.5.
 
 14. **The return path (user, 2026-10-03).** *"the whole reason why we're doing this huge ass
    materials pass is because we were on a tangent fixing the shell, which turned into repairing
@@ -805,6 +821,95 @@ the world goes, are the user's (C-184.4).
    black-screen report (the world stops drawing, the shell remains — needs an instrument before
    a cause).
 
+   **The face's own plane in the address (C-163.1, 2026-10-21).** A rectangle's plane is a whole
+   number of subvoxels, so on a face the address's own axis *is* the grid and the crate's
+   `floor(p / 0.25)` names the cell on the plane's `+` side. The fragment rebuilt that coordinate
+   from the eye's two halves in `f32`, and for some eyes it landed a rounding step **below** the
+   plane; `floor` then drew the whole face from the cell *beside* the face, and which side an eye
+   got depended on where it stood — the pattern on a wall changing as the camera moved, which is
+   the shimmer the eye reads as z-fighting. Measured on a 5 m² face of the shipped world at 2 m:
+   the drawn colour was the beside cell's **0.2544** against its own **0.2446**, and over a walk
+   of sixteen eyes the worst was **5.02e-3** of a channel. **The repair is the record's own
+   plane**: `vs_quad` states the face's axis and its world subvoxel cell (exact integers, from
+   `slice` and the recovered chunk origin) as a flat varying, and `pattern_deviation` takes that
+   axis from it instead of from the interpolated position. Worst disagreement over the same walk
+   is now **1.13e-7**; `renderer::tests::a_face_on_a_cell_boundary_draws_its_own_cell_from_every_eye`
+   is the guard (5.02e-3 before, 1.13e-7 after), `pattern-flicker`'s 0.05 m totals moved
+   339.1 → **332.6** (vertical) and 144.5 → **143.1** (horizontal) with the same worst, and both
+   `shploingus.exe` and `surface-format-check` draw through the new varying with no validation
+   error. **A corner states no plane** — a refined rectangle's corners are off the plane its
+   normal names — so the vertex format keeps the interpolated address; the window draws that path
+   whenever a light field is bound. `examples/face-pattern.rs` is the instrument (it writes the
+   three faces as PNGs and prints the drawn step spacing per in-plane axis). **Still owed,
+   unchanged by this row:** the **per-axis (anisotropic) rung selection** above. Measured
+   2026-10-21 on one wall of the shipped world at 2.34 m: the footprint is **5.0 mm** at 30° off
+   its normal and **20.9 mm** at 78°, because it is one scalar — `distance × pixel angle ÷ cos` —
+   and so coarsens *both* in-plane axes by the same `1/cos`. A face the eye skims therefore loses
+   detail across its width as well as along its length, which is the eye's *"the pixels merge...
+   horizontally"*. The address law itself is square and eye-independent at that point (cell
+   `[192, 58, 245]`, address `(0, 8, 8)` from four eyes: 1.75 m, 2.0 m, 2.25 m, and 0.37 m
+   slid in the plane), and no cell of the eighteen-chunk region is covered twice (**0** of
+   5 622 quads, **0** planes with two faces), so the grazing filter is the whole of what remains
+   here.
+
+   **The grain's basis is the face's, not the world's (C-163.2, 2026-10-21).** The report above
+   says the cells are right-sized *"except in certain cases on vertical sides of blocks where they
+   stop being squares"*; the address and the shading were both measured square, and the cause was
+   one step further out: `SurfacePattern::stencil` — the shaper that turns white noise into bark
+   and brushed stone — stretched its axis **by world name** (`Bark` shifted `z`, `Brushed` shifted
+   `x`). A stretch keyed to a world axis is swallowed on the face that looks along it, `x` being
+   constant across an x-facing wall, so the same material drew square cells on that side and
+   four-to-one cells on every other side of the block; a trunk's bark showed grain on two of its
+   four faces and none on the other two. **Measured on the stencil at the floor rung**, before:
+   bark on a z-facing wall **35.7 mm × 35.7 mm** (square) against **35.7 mm × 250 mm** on an
+   x-facing one; brushed the mirror image. The fix is in the two files that own the stencil:
+   `SurfacePattern::stretch_axis(plane)` states the axis **in the face's own basis** — bark runs up
+   (`y`) on every vertical face and a log's end face shows rings, brushed runs horizontally (`x` on
+   a z-facing wall, `z` on an x-facing one) — and `pattern_stencil` in `shading.wgsl` dispatches on
+   the same table with the flat `plane` varying the fragment already had. After: every vertical
+   face of a directional material is **250 mm × 35.7 mm**, the grain is the same direction on both
+   walls of a corner, and the frame is held to the crate at **2.5e-6** median on a 33² grid of the
+   bark wall. Guards: `pattern::tests::every_vertical_face_of_a_directional_material_shows_its_grain`
+   (it fails on the world-axis law — bark 8 against 8 on a z-facing wall — and passes on this one)
+   and the bark stage of `renderer::tests::the_pattern_is_drawn_where_the_greedy_mesh_has_no_geometry`
+   (**1.2e-8** worst against the crate, previously 8.9e-8 on the coarse rungs). The instrument is
+   `examples/face-square.rs`: one wall and one floor of one material at **one footprint — 5.813 mm
+   on both, 2.236 m away at 26.6°** — in one held frame, plus two bark walls at right angles, and
+   it prints the drawn cell per in-plane axis, the frame-against-`shade_cpu` median per face
+   (**2.2e-5** on the wall, **3.5e-5** on the floor of the speckle pair — the shading path is
+   face-blind), and writes `target/face-corner.png` and `target/face-bark.png`.
+
+   **And the refined-corner path states the face too (C-163.2, same day).** The paragraph above left
+   one path on the world axis: a refined triangle carries no record, so `vs_main` had no plane to
+   state and the fragment fell back to the material's world axis. The repair is the vertex format's
+   own reserved slot — the second of the two `f32` the retired lattice sample held, now `plane_axis`
+   (`-1` where the geometry has no face), written by `Scene::build_with_light` from the quad's face
+   and read by `vs_main` — so the stride stays **64 bytes** and the eight attributes keep their
+   offsets. **Measured on the shipped surface**, `examples/face-refined.rs`: a generated world
+   (`WorldSource`, 49 chunks, 17 693 quads) with a **displacement law declared for every material**
+   (502 bent quads, 0 records — the whole frame on the vertex path, 19 720 corners), and a player's
+   eye 2.0 m off each face, 1.70 m above its foot, looking level. Two runs of one binary differ only
+   in the `stretch_axis` table — the pre-fix world axes against the face-relative one:
+
+   | face | before (world axis) | after (the face) | frame changed |
+   |---|---|---|---|
+   | trunk side, z-facing | 35.7 × 35.7 mm | 35.7 × 250 mm | 33.4 % of 1 681 points > 4e-3 |
+   | trunk side, x-facing | 250 × 35.7 mm | 35.7 × 250 mm | 34.3 % |
+   | dolomite wall, x-facing | 35.7 × 35.7 mm | 250 × 35.7 mm | 78.4 % |
+   | dolomite wall, z-facing (control) | 250 × 35.7 mm | 250 × 35.7 mm | 0.0 % |
+
+   The fourth row is the control and the point of the measurement: a face whose world axis is
+   already in-plane is untouched, so what changed is the law and not the build. The frames are held
+   to the crate on a 41² grid of each face: **8.1e-8** and **9.3e-8** median on the two trunk sides,
+   **4.5e-7** on the dolomite wall — and on that wall the same frame is **4.7e-2** away from the
+   corner fallback, which is what says the corner stage received the plane rather than falling back.
+   Guard: `scene::tests::a_refined_corner_states_the_face_it_was_cut_from` (every corner of a bent
+   quad states its quad's axis; a screen-space probe states `-1`). Artifacts:
+   `target/face-refined-compare.png` and `target/face-refined-{bark,brushed}-{posz,posx}-{before,after}.png`.
+   **Still owed:** the per-axis rung selection above; and `materials::displacement_field` is still
+   empty, so the shipped world never bends a quad today and this path is reached only by a world
+   that declares relief.
+
 ---
 
 ## 9. The open work the patches named — kept here so it is not lost
@@ -864,6 +969,7 @@ shape as §3.
 
 | 36 | **Nothing in this record ever asked for an outline** | the user, 2026-10-10 | **open, and it is a decision that was never captured, which is why no gate could report it.** The user's ask: *"make sure the missing materials rendering features are in — deadlock has additive outlines and npr highlights/rim light, subsurface scattering."* Measured, three of the four are in and one was never specified: **rim light** and the **specular warp** highlight are declared in `APPEARANCE.md` §1.2, built in `npr::shade`, drawn by `shading.wgsl` (§2 rim and 2b the coat), and measured — `Terms { half_lambert: true, rim: true, specular_warp: true, ambient: true, subsurface: true }`; **subsurface** was drawn by both the CPU and the shader and **invisible to `Terms`**, so `response` could not tell `subsurface_weight: Some(0.0)` from `None`, which is the rule that struct exists to keep — repaired this round, and the `a_stated_surface` measurement is now five terms rather than four; **outlines are absent**, and not by omission of the code: `APPEARANCE.md` §1.2 declares **four** terms and none is an outline, `npr.rs` has no outline branch, and every occurrence of the word in the client is debug or shell furniture (the `F4` merge rectangles, the change view's transient outline, the HUD lanes). There is no inverted-hull pass and no screen-space edge detect. **So the feature is missing from the record, not from the code**, which is the distinction this whole pass exists to draw: a wish the ledger never recorded cannot be contended with, counted, or reported missing. What a row here needs is the decision, not the code — which of the two techniques (an inverted hull expanded along the normal, per-material and additive, or a screen-space edge from depth and normals), whether it is a fifth term of the stylisation or its own pass, and whether it applies to every material or only the ones that declare it. Until that is decided, this is the one item in §9 whose blocker is a sentence rather than work |
 | 37 | **What the compiler says about missing documentation** | the user, 2026-10-10 | **on, and it is the measurement the rustdoc ruling was missing.** `#![warn(missing_docs)]` is declared in all seventeen crate roots — the same place `#![forbid(unsafe_code)]` already stood — and nothing denies warnings anywhere (no `RUSTFLAGS`, no `[lints]`, no `-Dwarnings`), so it is **advisory**: `cargo check --workspace` exits **0** and prints the list. It flags **2 285 public items**, and the shape is the finding: **906 struct fields and 524 enum variants — 63 % of the total — are the bulk**, then 537 methods, 152 associated functions, 94 associated constants, 27 structs, 21 constants, 14 enums, 8 functions and 2 type aliases. So what is missing is not prose about *behaviour*; it is the reason for *data*, which is exactly the thing the rustdoc ruling (row 17) was written about: `voxel-model` **907** (its axis tables), `voxel-shapers` 464, `voxel-package` 340, `voxel-client` 190, `voxel-ui` 155, then `voxel-work` 58, `voxel-appearance` 54, `voxel-mesh` 40, `voxel-instrument` 33, `voxel-stream` 22, `voxel-noise` 15, `voxel-light` 6, `voxel-audio` 1. **Three roots flag nothing** — `voxel-von`, `voxel-mcp` and the `shploingus` binary, which has no public items at all — and the two small crates document every public item they have, which is why zero is a reading here rather than a silence. **Owed, and it is a decision rather than a sweep:** whether this count becomes a *ratchet* (may fall, may not rise, like `conformance/prose-frame.txt`) or stays a target, because nothing bounds it today — and 2 285 warnings on every build is a wall a reader stops reading, which is the failure this tree has already caught itself in twice. The measurement is `logs/missing-docs-check.txt`. **Followed the same day (row 17): every line of `conformance/missing-docs.txt` now carries a pin over the bytes its count was taken over, so the gate reports `stale` when the tree has moved instead of repeating a snapshot as this build's answer — and the gate now watches `conformance/`, which it did not, so a reading edited on disk is re-read rather than the previous answer being rendered as today's.** What the pin does not do is take the count: the recipe is still two commands, and a pin pasted beside an unchanged count is the one failure the file cannot see by itself (stated in its header). |
+| 38 | **The light field has never measured a cell** | found by PATCH-047's own instrument, 2026-10-22 | **repaired, 2026-10-22 (PATCH-051), and the first of its two questions is the one that answered it.** Every `light-field` line written by the shipped binary — **375 of them** across `logs/` and every run of PATCH-047 — read `0 cell(s) marched`, with 1.3–1.7 M corners rigged per second. The field existed and was asked; the cause was **two address laws in one path**: the scene converted a corner with `floor(p / 0.25 m)` while `CellField::at` read those integers as **metres**, so every corner named a cell four chunks from its own and `WorldLight::march` found no tree under it. The repair is one law in one place — `VoxelPos::of_point` — with the cell's chunk and its own centre derived from the same type, so the key, the address and the ray's start cannot drift apart again. **Measured on the shipped binary, settled:** **82 207 cells held**, **225 984 of 228 700 corners (98.8 %) drawn from the world's own light** and 2 716 (1.2 %) on the rig, 30 909 cells adopted a second, **0 hops past a chunk not resident**, frame **8.4 ms / 117 fps / 0 stalls**, digest `7c66a632336cc0a3` unchanged; `light-shot`'s static frame measures all **82 749** cells its corners name in 0.6 s and differs from the rig in **73.5 %** of its pixels. What is still open is the row's *second* question, now for a different reason: the frame pays 68 B a corner whether the field answers or not, and at 98.8 % coverage that is the right format — but a window still streaming in spends its first seconds on the rig, and whether that window should build with the 24-byte record format until the field has something to say is a policy change with a visible switch, not a repair. Also named rather than fixed: every build's corners are **between one and two field steps old** (the field's step is 0.5°, the geometry's epoch is 1.0°), so the report reads `0 answered` / `225 984 a step behind` at every build, forever. PATCH-051 states both. |
 
 **How a row leaves this table.** It moves up into the plan proper (§1–§8) when it is scheduled, and it
 disappears when the work lands — a row that is done says how it was verified, in this tree's usual

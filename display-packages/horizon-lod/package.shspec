@@ -1,0 +1,9 @@
+shploingus.recipe/3
+package	horizon-lod	v0
+# The first package with a layer. The layer is the machine part; this file names it by a `row`,
+# because `shploingus.recipe/3` has no layer rows and R-64.1 refuses a field the schema does not
+# have rather than widening it (M10.1).
+#
+# The row's id is the layer's id. `voxel_package::layer::read_package` refuses a declared layer
+# this file names by no row, and `voxel-layers` prints both together so a reader can check the join.
+row	LOD-0001	draw the far ring from the rung's own record: terrain at the horizon is the LOD rung's, not the near mesh's

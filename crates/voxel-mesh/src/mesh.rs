@@ -386,6 +386,13 @@ impl MeshStats {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Mesh {
     pub chunk: ChunkPos,
+    /// **The voxel corner the quads are measured from**, which is not always the chunk's.
+    ///
+    /// A chunk mesh is placed at its chunk's own corner, and `chunk` carries that. A *body* — a
+    /// tree, or anything else with a position of its own — is drawn from the corner of the voxel
+    /// its base stands on, and may span a chunk boundary without lying about which chunk it is
+    /// in. [`Mesh::digest`] still covers `chunk` alone, so no chunk's identity moves.
+    pub origin: [i32; 3],
     pub quads: Vec<Quad>,
     /// Boundary loops for the same surface `quads` covers, in the same plane order.
     pub loops: Vec<Loop>,
@@ -393,8 +400,19 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    /// The chunk's low corner, in voxels.
+    /// The voxel corner the quads are measured from.
     pub fn origin_voxel(&self) -> [i32; 3] {
+        self.origin
+    }
+
+    /// **Place this body at its own corner**, rather than at its chunk's.
+    pub fn placed_at(mut self, origin: [i32; 3]) -> Self {
+        self.origin = origin;
+        self
+    }
+
+    /// The chunk's own low corner, which is where a chunk mesh belongs.
+    pub fn chunk_origin(&self) -> [i32; 3] {
         let o = self.chunk.origin();
         [o.x, o.y, o.z]
     }
@@ -569,7 +587,16 @@ impl Mesher {
 
         stats.quads = quads.len() as u64;
         stats.loops = loops.len() as u64;
-        Ok(Mesh { chunk: chunk.pos, quads, loops, stats })
+        Ok(Mesh {
+            chunk: chunk.pos,
+            origin: {
+                let o = chunk.pos.origin();
+                [o.x, o.y, o.z]
+            },
+            quads,
+            loops,
+            stats,
+        })
     }
 
     /// Build the same mesh **without merging**: one quad per visible face.
@@ -599,6 +626,10 @@ impl Mesher {
         let visible_faces = quads.len() as u64;
         Ok(Mesh {
             chunk: chunk.pos,
+            origin: {
+                let o = chunk.pos.origin();
+                [o.x, o.y, o.z]
+            },
             stats: MeshStats {
                 solid_voxels: chunk.tree().solid_count(),
                 visible_faces,

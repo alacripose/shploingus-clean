@@ -1,0 +1,10 @@
+[package]
+name = "voxel-axis-being"
+description = "The being substrate: one record, seven faces, a life stage, needs and a spiritual signature. Every living thing in this tree is a being before it is anything else."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-model = { path = "../../voxel-model" }

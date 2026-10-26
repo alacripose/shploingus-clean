@@ -10,8 +10,11 @@
 //!
 //! # What the schema makes true
 //!
-//! 1. Every substance has a **canonical unit**, and every quantity converts to
-//!    grams **exactly** — by a declared rational, never by a float constant.
+//! 1. Every substance has a **canonical unit** and a **state** (`Solid | Liquid |
+//!    Molten | Solution | Gas`), the two must agree, and every quantity converts
+//!    to grams **exactly** — by a declared rational, never by a float constant.
+//!    A melt or a solution is a *derived* state: its row names the solid it is
+//!    derived from in `phase_of`, and a molten row nothing melts is refused.
 //! 2. Every process **balances**: what goes in equals what comes out, in grams.
 //!    A gather is not an exception: its input side is the world, and the gate
 //!    admits it only when every output is something the world already holds
@@ -234,6 +237,69 @@ impl Unit {
     }
 }
 
+/// A substance's **state** — the axis that makes a melt or a solution a row
+/// rather than an adjective.
+///
+/// [`Unit`] says how the ledger counts a row; `State` says what the row *is*,
+/// and the two must agree. `Solid` is counted by mass or count; `Liquid`,
+/// `Molten` and `Solution` by volume; `Gas` by gas volume.
+///
+/// **`Molten` and `Solution` are derived states**, and their row must name the
+/// solid they are derived from in `phase_of`: molten copper is copper at its
+/// melting point, and pregnant liquor is crushed ore's copper carried in water.
+/// The gate refuses a derived row with no source solid, a source that is not a
+/// declared solid, and a molten row that no process actually melts.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum State {
+    /// A solid: rock, metal, timber, a powder.
+    Solid,
+    /// A liquid that is its own phase: water, oil, ethanol, tar.
+    Liquid,
+    /// A solid at or above its melting point. `phase_of` names that solid.
+    Molten,
+    /// A solid carried in a solvent. `phase_of` names the solid it carries.
+    Solution,
+    /// A gas, counted by the `Gas` unit and sinking to the atmosphere.
+    Gas,
+}
+
+impl State {
+    pub const ALL: [State; 5] = [
+        State::Solid,
+        State::Liquid,
+        State::Molten,
+        State::Solution,
+        State::Gas,
+    ];
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            State::Solid => "Solid",
+            State::Liquid => "Liquid",
+            State::Molten => "Molten",
+            State::Solution => "Solution",
+            State::Gas => "Gas",
+        }
+    }
+
+    /// Whether the state is a transformation of the solid named by `phase_of`.
+    pub const fn is_derived(self) -> bool {
+        matches!(self, State::Molten | State::Solution)
+    }
+
+    pub fn parse(text: &str) -> Refused<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|state| state.name() == text)
+            .ok_or_else(|| {
+                Refusal::owned(
+                    RefusalKind::UndeclaredName,
+                    format!("{text:?} is not one of Solid/Liquid/Molten/Solution/Gas"),
+                )
+            })
+    }
+}
+
 /// `[V]` read, `[D]` declared, `[NS]` not yet sourced (H-18.7, verbatim).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum Availability {
@@ -427,6 +493,13 @@ pub struct Substance {
     pub family: Family,
     pub hue: Hue,
     pub unit: Unit,
+    /// What the row *is*. The unit must be able to express it, and a derived
+    /// state must name the solid it comes from in `phase_of`.
+    pub state: State,
+    /// For `Molten` and `Solution` rows, the declared solid this state is
+    /// derived from: the metal a melt is, the carried solid a solution holds.
+    /// `None` for every state that is its own phase.
+    pub phase_of: Option<String>,
     /// g/mL. Required for `Volume` and `Gas` — the units that convert by it.
     /// A `Mass` or `Count` may still state it: a density is a physical property
     /// (geology reads it), not a conversion that only some units need. What is
@@ -577,6 +650,11 @@ pub struct Process {
     pub outputs: Vec<Qty>,
     pub mechanism: Mechanism,
     pub requires: Requires,
+    /// **Where the row was read from** — the harvested artifact, mod file or record section that
+    /// states the method. A row with no source is an invented row, and [`Table::gate`] refuses it:
+    /// the tree's whole claim is that every process is a real method this project found, not a
+    /// plausible one it composed.
+    pub source: String,
     /// Declared losses are **outputs** and therefore balance.
     pub provenance: Availability,
     pub note: String,
@@ -794,6 +872,137 @@ impl Table {
                 }
             }
 
+            // **The state and the unit must agree.** The unit is how the ledger
+            // counts a row; the state is what the row is. A `Solid` cannot be
+            // counted by volume, a melt cannot be counted by mass, and only a
+            // `Gas` uses the `Gas` unit — which is also what keeps the
+            // atmosphere sink below honest.
+            if (substance.state == State::Gas) != (substance.unit == Unit::Gas) {
+                defects.refuse(
+                    RefusalKind::OutOfDeclaredRange,
+                    format!(
+                        "{name}: a {} row may not use the {} unit",
+                        substance.state.name(),
+                        substance.unit.name()
+                    ),
+                );
+            }
+            match substance.state {
+                State::Solid => {
+                    if substance.unit == Unit::Volume {
+                        defects.refuse(
+                            RefusalKind::OutOfDeclaredRange,
+                            format!("{name}: a Solid is not counted by volume"),
+                        );
+                    }
+                }
+                State::Liquid | State::Molten | State::Solution => {
+                    if substance.unit != Unit::Volume {
+                        defects.refuse(
+                            RefusalKind::OutOfDeclaredRange,
+                            format!(
+                                "{name}: a {} row is counted by volume, not {}",
+                                substance.state.name(),
+                                substance.unit.name()
+                            ),
+                        );
+                    }
+                }
+                State::Gas => {}
+            }
+
+            // **A derived state names the solid it is derived from.** A melt
+            // with no `phase_of` is a liquid pretending to be a metal; a
+            // solution with none is water pretending to carry something.
+            match (substance.state.is_derived(), &substance.phase_of) {
+                (false, None) => {}
+                (true, None) => {
+                    defects.refuse(
+                        RefusalKind::FieldDataMissing,
+                        format!(
+                            "{name}: a {} must name the solid it is that solid {} in `phase_of`",
+                            substance.state.name(),
+                            if substance.state == State::Molten { "melted from" } else { "carried" }
+                        ),
+                    );
+                }
+                (false, Some(_)) => {
+                    defects.refuse(
+                        RefusalKind::OutOfDeclaredRange,
+                        format!(
+                            "{name}: only a Molten or Solution row names a `phase_of`; a {} is its \
+                             own phase",
+                            substance.state.name()
+                        ),
+                    );
+                }
+                (true, Some(solid)) => {
+                    if solid == name {
+                        defects.refuse(
+                            RefusalKind::OutOfDeclaredRange,
+                            format!("{name}: `phase_of` names the row itself"),
+                        );
+                    }
+                    match self.substances.get(solid) {
+                        None => {
+                            defects.refuse(
+                                RefusalKind::UndeclaredName,
+                                format!("{name}: `phase_of` {solid:?} is not a declared substance"),
+                            );
+                        }
+                        Some(origin) if origin.state != State::Solid => {
+                            defects.refuse(
+                                RefusalKind::OutOfDeclaredRange,
+                                format!(
+                                    "{name}: `phase_of` {solid:?} is {}, not a solid",
+                                    origin.state.name()
+                                ),
+                            );
+                        }
+                        Some(_) => {}
+                    }
+                    // Nothing mines a melt or a solution: it is made.
+                    if substance.source.is_held_by_world() {
+                        defects.refuse(
+                            RefusalKind::OutOfDeclaredRange,
+                            format!(
+                                "{name}: a {} is made by a process, not held by the world",
+                                substance.state.name()
+                            ),
+                        );
+                    }
+                    // A melt has teeth: some process must actually melt its
+                    // solid (or, for an alloy, melt its molten constituents)
+                    // into it. A molten row with no melt is a liquid in a
+                    // metal's clothes.
+                    if substance.state == State::Molten {
+                        let melted = self.processes.iter().any(|process| {
+                            let produces = process
+                                .outputs
+                                .iter()
+                                .any(|qty| qty.substance == *name);
+                            let feeds = process.inputs.iter().any(|qty| {
+                                qty.substance == *solid
+                                    || self
+                                        .substances
+                                        .get(&qty.substance)
+                                        .is_some_and(|input| input.state == State::Molten)
+                            });
+                            produces && feeds
+                        });
+                        if !melted {
+                            defects.refuse(
+                                RefusalKind::UnbalancedProcess,
+                                format!(
+                                    "{name}: no process melts {solid:?} (or a molten constituent) \
+                                     into it"
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+
             // A gas nobody can hold: a gas that declares `holding` is refused.
             if substance.unit == Unit::Gas && substance.sink == Sink::Holding {
                 defects.refuse(
@@ -874,6 +1083,15 @@ impl Table {
                 defects.refuse(
                     RefusalKind::UndeclaredName,
                     format!("process {name:?} is declared twice"),
+                );
+            }
+            // **A process with no source is an invented process.** The method, the heat and the
+            // hours may be `[D]`, but the row still has to say where the rule was found; an empty
+            // cell is not a citation.
+            if process.source.trim().is_empty() {
+                defects.refuse(
+                    RefusalKind::FieldDataMissing,
+                    format!("{name}: no source — a process nothing states is an invented one"),
                 );
             }
             if !tier_names.contains(process.tier.as_str()) {
@@ -1020,6 +1238,8 @@ mod tests {
             family: Family::Ceramic,
             hue: Hue::Natural,
             unit: Unit::Mass,
+            state: State::Solid,
+            phase_of: None,
             density_g_ml: None,
             unit_mass_g: None,
             rot_per_day: Ratio::ZERO,
@@ -1053,6 +1273,7 @@ mod tests {
             outputs,
             mechanism: mechanism(),
             requires: Requires::default(),
+            source: "a test row".into(),
             provenance: Availability::Declared,
             note: String::new(),
         }
@@ -1226,6 +1447,59 @@ mod tests {
             defects.all().iter().any(|r| r.kind() == RefusalKind::OutOfDeclaredRange
                 && r.detail().contains("must declare its sink")),
             "unexpected defects: {defects}"
+        );
+    }
+
+    #[test]
+    fn a_molten_row_must_name_the_solid_it_melts() {
+        let mut copper = mass("copper", Source::Made);
+        copper.no_consumer = Some("a test end".into());
+        let mut melt = mass("molten_copper", Source::Made);
+        melt.unit = Unit::Volume;
+        melt.density_g_ml = Some(ratio(8, 1));
+        melt.state = State::Molten;
+        melt.no_consumer = Some("a test end".into());
+        let table = Table::new(tiers(), vec![copper, melt], vec![], vec![]);
+        let defects = table.gate();
+        let report = defects.to_string();
+        assert!(
+            defects.all().iter().any(|refusal| refusal.detail().contains("phase_of")),
+            "a melt with no solid of origin must be refused by name: {report}"
+        );
+    }
+
+    #[test]
+    fn a_molten_row_whose_solid_is_not_solid_is_refused() {
+        let mut water = mass("water", Source::Gathered);
+        water.unit = Unit::Volume;
+        water.density_g_ml = Some(Ratio::ONE);
+        water.state = State::Liquid;
+        water.no_consumer = Some("a test end".into());
+        let mut melt = mass("molten_copper", Source::Made);
+        melt.unit = Unit::Volume;
+        melt.density_g_ml = Some(ratio(8, 1));
+        melt.state = State::Molten;
+        melt.phase_of = Some("water".into());
+        melt.no_consumer = Some("a test end".into());
+        let table = Table::new(tiers(), vec![water, melt], vec![], vec![]);
+        let defects = table.gate();
+        assert!(
+            defects.all().iter().any(|refusal| refusal.detail().contains("not a solid")),
+            "phase_of must name a solid: {defects}"
+        );
+    }
+
+    #[test]
+    fn a_solid_may_not_be_counted_by_volume() {
+        let mut sand = mass("sand", Source::Mined);
+        sand.unit = Unit::Volume;
+        sand.density_g_ml = Some(ratio(3, 2));
+        sand.no_consumer = Some("a test end".into());
+        let table = Table::new(tiers(), vec![sand], vec![], vec![]);
+        let defects = table.gate();
+        assert!(
+            defects.all().iter().any(|refusal| refusal.detail().contains("not counted by volume")),
+            "a solid is not a volume: {defects}"
         );
     }
 

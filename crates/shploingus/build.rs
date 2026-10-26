@@ -34,8 +34,16 @@ fn main() {
     // the wrong place.
     let workspace = record::workspace_root(&root).expect("a workspace root above this crate");
 
-    let source_path = workspace.join("packages/alpha-shell.shspec");
+    // **The source is the display package's, and the client's copy is proved equal to it.**
+    // M10.0 puts a package's source under `display-packages/` and leaves `packages/` the emit root;
+    // the client mounts this folder at boot through `Mount::load_package` (which reads its
+    // `package.cells`), and `packages/alpha-shell.shspec` is the copy the watch can re-adopt, so the
+    // two files are one declaration and the build refuses if they ever disagree. A folder missing
+    // its `package.shspec` is named by path here rather than skipped.
+    let source_path = workspace.join("display-packages/alpha-shell/package.shspec");
+    let mounted_path = workspace.join("packages/alpha-shell.shspec");
     println!("cargo:rerun-if-changed={}", source_path.display());
+    println!("cargo:rerun-if-changed={}", mounted_path.display());
     // The patch set is read by the gate, so a record that changes must rebuild it — the same
     // reason the chain directory is watched below: a number measured from a directory nobody
     // watches is a number from before the change.
@@ -86,16 +94,47 @@ fn main() {
     let tree = voxel_package::space::target_dir(&workspace);
     let space = voxel_package::space::guard(&tree);
 
-    let source = fs::read(&source_path).expect("required alpha shell recipe must be readable");
+    let source = fs::read(&source_path).unwrap_or_else(|why| {
+        panic!(
+            "the display package {} could not be read ({why}); a package folder must carry its \
+             recipe, and a build that skipped it would embed nothing and open a windowless shell",
+            source_path.display()
+        )
+    });
+    let mounted = fs::read(&mounted_path).unwrap_or_else(|why| {
+        panic!(
+            "the client's mount file {} could not be read ({why}); the shell mounts those bytes and \
+             a build that did not compare them would let the two copies drift",
+            mounted_path.display()
+        )
+    });
+    assert!(
+        mounted == source,
+        "{} and {} are not the same bytes: the display package is the source and the client's \
+         mount file is its copy, so a difference is one of them edited alone",
+        mounted_path.display(),
+        source_path.display()
+    );
 
     // ---- the package itself: compile, then load through the same codec ----
-    let package = voxel_package::recipe::compile(&source)
+    // The folder's frames travel in the frame, read by the same function a mount uses.
+    let artifacts = voxel_package::recipe::artifacts_in(&workspace.join("display-packages/alpha-shell"))
+        .unwrap_or_else(|why| panic!("alpha shell artifacts refused: {why}"));
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace.join("display-packages/alpha-shell/frames").display()
+    );
+    let package = voxel_package::recipe::compile_with_artifacts(&source, &artifacts)
         .unwrap_or_else(|errors| panic!("alpha shell recipe refused: {errors}"));
     let loaded = voxel_package::recipe::load(&package)
         .unwrap_or_else(|errors| panic!("alpha shell package refused: {errors}"));
     assert_eq!(
         loaded.source, source,
         "the package must preserve the exact recipe source"
+    );
+    assert_eq!(
+        loaded.artifacts, artifacts,
+        "the package must carry the display package's frames"
     );
 
     // ---- the declared features: refuse what the build depends on, display the rest ----

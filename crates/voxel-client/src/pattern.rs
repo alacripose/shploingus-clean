@@ -12,41 +12,29 @@
 //! thing that can be read per fragment from the fragment's own position — the
 //! material slot's own pattern, drawn **without one extra quad** (C-122, C-91).
 //!
-//! # The octave ladder
+//! # Two cells, and the address is the world's
 //!
-//! `APPEARANCE.md` §2 gives a material two resolutions: the **256** detail lattice —
-//! 16 samples per subvoxel axis, a 15.6 mm cell, the base named 256 because a
-//! subvoxel *face* carries 16×16 samples — and the 4×4×4 **subvoxel** grid (a 0.25 m
-//! cell). One addressed field can be read at either: quantising the lattice address
-//! to a multiple of `2^j` per axis reads the same hash in cells of `15.6 mm · 2^j`,
-//! and past the subvoxel rung the **world cell** is what coarsens, because a feature
-//! bigger than a subvoxel cannot be addressed inside one.
+//! The lattice is read in two cells and no more: [`NEAR_CELL_M`] (31.25 mm — the 32
+//! samples per block axis the user's own eye settled on) and [`FAR_CELL_M`] (one
+//! block). Both addresses come from the fragment's **world position**; the eye enters
+//! only through the footprint that says how much of each the pixel can draw, and the
+//! near cell's weight *is* the blend. A vertical face and a horizontal one at the same
+//! distance therefore read the same cells, and a fragment's material cannot change
+//! because the eye moved.
 //!
-//! So a fragment's pattern is the field read **at the scale its own footprint can
-//! draw** — octave `j` for `j = `[`OCTAVE_FLOOR`]`..=`[`OCTAVE_TOP`], from
-//! [`MIN_FEATURE_M`] (31.25 mm — **32 samples per block axis**, the scale the user's
-//! own eye settled on) up to [`MAX_FEATURE_M`] (4 m), each shaped by the material's
-//! shaper at the octave's own cell — and the octaves are **summed with fBm gains and
-//! normalised**, which is the cross-fade the eye-check liked (*"I love the way it has
-//! an LOD style appearance to it"*). The bounds are **constraints**, declared and
-//! tested tight: the addressed base's own cell (15.6 mm) is *never drawn* — the user
-//! asked for nothing below 32 per block (*"if there's stuff happening below that, then
-//! I don't want it"*, C-164) — and nothing at all is drawn past the top rung.
+//! That is a deliberate reduction. An eleven-rung fBm ladder stood here — the same
+//! field summed at `2^j` cells with fBm gains — and its weights were a function of the
+//! **eye's angle to the surface** (a `1/cos` footprint stretch). Walking past a wall
+//! sweeps that angle across its whole range in a couple of metres, so every rung on the
+//! wall re-weighted frame by frame while a floor's barely moved: the user's report of
+//! 2026-10-25, *"it always happens on the vertical sides of blocks when moving"*.
+//! Capping the stretch did not remove it, and the per-face stencil the adversarial pass
+//! added drew its cell edges as lines across the material. The stretch, every rung past
+//! the second and the face's plane are gone.
 //!
-//! # The blend stays; its *input* had to change (the third eye-check, C-163)
-//!
-//! A blend of independent rungs is a function of **(position, footprint)**, and the
-//! first footprint this code used was `fwidth` — a *derivative*, estimated per 2×2
-//! quad. On any surface the camera sees at an angle the estimate steps from quad to
-//! quad, the weights move with it, the drawn value changes with them, and the face
-//! *boils*: the user's *"flickering mess over the blocks"*, and *"it doesn't flicker
-//! when the camera is still but the patterns are still there"* — a per-quad mix is a
-//! static noise field that only a moving footprint animates.
-//!
-//! The fix is not to drop the fade but to feed it a **smooth** quantity. The shader
-//! now derives its footprint from the eye's own geometry — distance × one pixel's
-//! angle ÷ cos(face), `shading.wgsl`'s `eye_footprint` — which varies smoothly across
-//! a face, so the weights do too and the boil is gone (C-163).
+//! The cost is stated: a directional shaper's *grain* (bark, brushed) belonged in the
+//! face's plane, and the material path no longer has a plane to lay it in. The shaper's
+//! **curve** still shapes every value; its **stencil** is not read here.
 //!
 //! # This file is the model; `shading.wgsl` is its transcription
 //!
@@ -110,6 +98,7 @@
 //! pre-built, so the fluid pass opens the door instead of refactoring around it.
 
 use voxel_appearance::{DetailLattice, DetailSample};
+use voxel_noise::Vec3;
 use voxel_model::{
     DetailIndex, MaterialId, Refusal, RefusalKind, Refused, ShadingField, DETAIL_SIDE,
     SUBVOXEL_SIDE,
@@ -126,157 +115,40 @@ pub const SUBVOXEL_CELL_M: f64 = VOXEL_M / SUBVOXEL_SIDE as f64;
 /// subvoxel axis.
 pub const DETAIL_CELL_M: f64 = SUBVOXEL_CELL_M / DETAIL_SIDE as f64;
 
-/// The finest rung the ladder draws: octave 1, **31.25 mm** — 32 samples per block
-/// axis — which is the scale the user's own eye settled on:
-/// *"I don't want blocks to actually have 256x pixels detail, I like the 32x per side
-/// of block, so if there's stuff happening below that, then I don't want it."*
+/// **The rungs**, in metres, near to far. Three, and the reasons are each measured:
 ///
-/// The addressed base's own cell ([`DETAIL_CELL_M`], 15.6 mm, octave 0) is still what
-/// the lattice is *addressed* with and is **never drawn**: the ladder starts one rung
-/// above it, so no scale below the one the eye asked for can appear.
-pub const OCTAVE_FLOOR: u32 = 1;
+/// * **31.25 mm** — 32 addressable cells per block face, the finest the eye accepts
+///   (*"we don't do 256, the minimum size is the 32² per face"*). Nothing below it is drawn.
+/// * **0.5 m** — half a block: the block materials' own mottling, and the scale the
+///   mid-ground is read at. Without it the near grain fell to the 4 m cell by 6 m and the
+///   blend read as a hard fade (*"the block maximums fade too hard"*).
+/// * **8 m** — the coarse LOD. The far read is an **interpolation of corner values**, so it
+///   is soft to begin with; it is also attenuated towards the material's mean as its own
+///   footprint grows, which is what a distant LOD is (*"the LOD materials were sharp, not
+///   softened"*).
+pub const RUNGS_M: [f64; 3] = [NEAR_CELL_M, 0.5, 8.0];
 
-/// The smallest feature the ladder draws: octave [`OCTAVE_FLOOR`]'s cell, 31.25 mm.
-pub const MIN_FEATURE_M: f64 = DETAIL_CELL_M * (1u64 << OCTAVE_FLOOR) as f64;
+/// **The near lattice's cell**: 31.25 mm — 32 samples per block face, the address floor.
+pub const NEAR_CELL_M: f64 = DETAIL_CELL_M * 2.0;
 
-/// The largest feature the ladder draws: 32 m. Past it the field is silent — a
-/// surface that far away has a 32 m feature under two pixels, where a pattern can
-/// only be guessed, and the honest answer is the average.
+/// **The coarse lattice's cell**: 8 m, the last rung of [`RUNGS_M`].
+pub const FAR_CELL_M: f64 = RUNGS_M[2];
+/// **How much of a lattice a pixel can draw**: one at the eye, falling to zero at a quarter
+/// of the cell (where the cell is four pixels across), smoothstepped at both ends.
 ///
-/// Extended from 4 m to stop the moire the vertex detail produced when the ladder
-/// went silent past 4 m. The vertex detail is one lattice sample per corner,
-/// interpolated across a 32 m merged quad — a 15.6 mm signal sampled four times
-/// over 32 m, which reads as moire. With the ladder drawing to 32 m, the vertex
-/// detail is only a fallback past ~64 km, where the quad is sub-pixel anyway.
-pub const MAX_FEATURE_M: f64 = 32.0;
-
-/// The coarsest rung: octave 11 is 2048 base cells per axis, 32 m.
-///
-/// The ladder used to stop at octave 8 (4 m), and past its own floor the shader
-/// fell back to the per-vertex detail — one lattice sample per corner, interpolated
-/// across a 32 m merged quad. That is a 15.6 mm signal sampled four times over
-/// 32 m, which reads as moire. Extending the ladder to 32 m means the vertex
-/// detail is only a fallback past ~64 km, where the quad is sub-pixel anyway.
-pub const OCTAVE_TOP: u32 = 11;
-
-/// The octave of the subvoxel itself: `2^4 = 16` base cells = 0.25 m. Octaves above
-/// it have subvoxel-sized and larger features, so their address is the **world
-/// cell** coarsened — the composition base the library's stored slots sit at
-/// (C-122) and the rung the ladder's cell quantisation starts from.
-pub const SUBVOXEL_OCTAVE: u32 = 4;
-
-/// What each coarser rung weighs against the one below it. The ladder is an fBm:
-/// fine detail carries the texture, and coarser rungs add their structure at half the
-/// amplitude, which is what keeps the composition from becoming one scale's pattern at
-/// the expense of the others.
-pub const OCTAVE_GAIN: f64 = 0.5;
-
-/// One rung's cell across, in metres: `DETAIL_CELL_M · 2^octave`, so octave 0 is the
-/// addressed base's cell (15.6 mm, never drawn), [`OCTAVE_FLOOR`] is
-/// [`MIN_FEATURE_M`] (31.25 mm) and [`OCTAVE_TOP`] is 4 m.
-pub fn octave_cell_m(octave: u32) -> f64 {
-    DETAIL_CELL_M * (1u64 << octave) as f64
-}
-
-/// The coarse cell's span in subvoxels per axis, per rung: `2^(octave − SUBVOXEL_OCTAVE)`.
-pub fn octave_span(octave: u32) -> i32 {
-    1i32 << octave.saturating_sub(SUBVOXEL_OCTAVE)
-}
-
-/// **The smallest span worth pre-filtering**, in subvoxels per axis.
-///
-/// Below this a rung's coarse cell is one or two subvoxels across, and the blend
-/// between its neighbours already varies smoothly — there is nothing for an
-/// average to fix, and paying eight lattice reads to average four would be a cost
-/// with no return.
-pub const PREFILTER_SPAN: i32 = 2;
-
-/// Where inside its own coarse cell a pre-filtered rung samples, per axis.
-///
-/// **Centres, not corners**: `span/4` and `3·span/4` are the centres of the eight
-/// equal sub-cells, so the average is over what the rung actually stands for.
-pub fn prefilter_offsets(span: i32) -> [i32; 2] {
-    [span / 4, 3 * span / 4]
-}
-
-/// How sharply a rung's weight moves, as a power on the fade.
-///
-/// **One is the plain smoothstep and one is what ships.** A larger value was measured
-/// (`examples/pattern-flicker`, 2026-10-08) and it is **worse on every number**: at width 4 the
-/// vertical total rose 473.4 → 498.3, the changed-pixel count rose 14,155 → 18,147, and the
-/// horizontal rose with them. Widening the plateau keeps *more* rungs sitting at nearly full
-/// weight at once, so more addresses compete in the mean and a rung entering or leaving moves it
-/// further than it did when the fade was spread across the range.
-///
-/// So the lever that made the blend calmer was not this. "Wider" as C-171 meant it is **more
-/// rungs overlapping at comparable weight**, which is [`OCTAVE_GAIN`] — the fBm weighting — and
-/// not the shape of any one rung's fade. That is the untested candidate, and this constant is
-/// kept at one because the number above is the number it ships.
-pub const OCTAVE_FADE_WIDTH: f64 = 1.0;
-
-/// How much of one rung a pixel can draw: **one** while its footprint is well below
-/// the rung's cell, falling to **zero at a quarter of the cell** — a stricter floor
-/// than Nyquist's half, and a smoothstep rather than a straight line.
-///
-/// Two eye-checks set this. *Nyquist's half* (C-163) stopped the streaks, but a cell
-/// two pixels wide is still hard-edged white noise; four pixels a cell is where a
-/// hard cell stops reading as grain and starts reading as a speck, and the smoothstep
-/// makes the weight's derivative zero at both ends, so a rung fades in and out
-/// without a step at either edge.
-///
-/// The width is [`OCTAVE_FADE_WIDTH`]: the fade keeps its shape and its floor, and gains a
-/// plateau in front of them.
-pub fn octave_weight(footprint_m: f64, cell_m: f64) -> f64 {
-    let t = (1.0 - 4.0 * footprint_m / cell_m).clamp(0.0, 1.0);
-    let t = 1.0 - (1.0 - t).powf(OCTAVE_FADE_WIDTH);
+/// **Distance only.** The weight takes no face, no plane and no eye angle, so a wall and a
+/// floor at the same distance weigh the same. That is the whole of the vertical-face fix: the
+/// old weight divided by a function of the face's cosine, and walking past a wall swept that
+/// cosine across its range while a floor's barely moved.
+pub fn cell_weight(footprint_m: f64, cell_m: f64) -> f64 {
+    // One until a **quarter** of the cell is a pixel, zero at `cell / 4` — a plateau, not a
+    // ramp from the eye. The ramp version put a rung at half weight 1.5 m away, which is
+    // what made the near detail wash out ("the block maximums fade too hard").
+    let far = cell_m / 4.0;
+    let near = cell_m / 16.0;
+    let t = ((far - footprint_m) / (far - near)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
-
-/// [`octave_weight`] fed a **mip-staged** footprint: the footprint is raised to the
-/// rung's own Nyquist floor — `cell_m / 4` exactly, the point where the plain
-/// weight first reaches 1 — and the weight is then the plain weight of that
-/// **whole-or-nothing stage**.
-///
-/// Why: the C-171 A/B measured the vertical shimmer's asymmetry living in this
-/// function's smoothstep — a vertical step re-weights every rung on the horizontal
-/// faces that fill the view. Under staging the smoothstep has a single drawn
-/// point: a rung is either **fully on** (footprint strictly below `cell/4`) or
-/// **fully off** (at or above it — the plain weight is already exactly 0 at the
-/// floor, so the step and the smoothstep agree at the boundary), and the weight
-/// moves only when the eye's step pushes the footprint across that one
-/// threshold.
-///
-/// The tests held both halves of the reason for the exact threshold. A *floored*
-/// footprint is smaller than the true one and raises rung weights — the ladder's
-/// silence past the ceiling broke (the GPU agreement test). A *ceiling to
-/// quarter-cells or to powers of two* is strictly larger than `cell/4` whenever it
-/// changes anything, where the plain weight is already below 1 and collapsing
-/// toward 0 — so staging blanked rungs the plain weight draws (at 3.9 mm against
-/// the 31.25 mm rung's floor the plain weight is 0.5; a power-of-two ceiling
-/// stages to `cell/4 · 2`, where the weight is 0). The exact-floor stage keeps
-/// every silence (`staged ≥ cell/4 ⇒ weight 0`) and draws wherever the plain
-/// weight draws (`staged = cell/4 ⇒ weight 1`); the price is that the fade is now
-/// a step per rung, not a ramp — the C-163 boil is gone and this is deliberate:
-/// the boil was a *derivative* artifact (per 2×2 quad), a staged step is a
-/// *footprint* threshold and the footprint is smooth, so a rung flips as a
-/// coherent region crossing the eye's distance, not as per-quad noise.
-pub fn octave_weight_staged(footprint_m: f64, cell_m: f64) -> f64 {
-    let floor = cell_m / 4.0;
-    if footprint_m < floor {
-        1.0
-    } else {
-        0.0
-    }
-}
-
-/// The floor on a face's cosine, so a surface seen nearly edge-on does not divide
-/// its footprint by zero.
-///
-/// Declared here rather than clamped only in the shader (`shading.wgsl`'s
-/// `FACE_COS_FLOOR` is this number) so the behaviour at grazing angles is a stated
-/// choice: the stretch is bounded at `1/0.05 = 20×`, the coarser rungs answer at a
-/// larger cell, and a floor or wall the eye skims goes quiet rather than aliasing.
-pub const FACE_COS_FLOOR: f64 = 0.05;
 
 /// **One pixel's angular size**, in radians: the camera's vertical field of view over
 /// the render target's own pixel height.
@@ -293,46 +165,78 @@ pub fn pixel_angle_rad(fov_y_rad: f64, height_px: u32) -> f32 {
 /// **One pixel's footprint on a surface**, in metres — the shader's `eye_footprint`,
 /// and the number [`Pattern::deviation`] is asked about.
 ///
-/// `distance_m` is the fragment's own distance from the eye, `pixel_angle_rad` the
-/// frame's own pixel angle ([`pixel_angle_rad`]), and `face_cos` the cosine between
-/// the face's normal and the direction to the eye. The footprint is the pixel's
-/// angular width carried out to that distance — `distance × angle` — stretched by the
-/// obliquity `1 / cos`, floored by [`FACE_COS_FLOOR`].
+/// `distance_m` is the fragment's own distance from the eye ([`footprint_distance_m`]) and
+/// `pixel_angle_rad` the frame's own pixel angle ([`pixel_angle_rad`]). **There is no face
+/// term.**
 ///
-/// This replaces `fwidth`, and the reason is the whole of C-163: a screen-space
-/// derivative is estimated per 2×2 quad, so on a face the camera sees at an angle the
-/// estimate steps from quad to quad, the ladder's weights step with it, and the face
-/// **boils** as the camera moves — the eyepiece's *"flickering mess over the blocks"*.
-/// Every input here is the fragment's own state, so the footprint varies smoothly
-/// across a face and the fade between rungs survives.
-pub fn eye_footprint_m(distance_m: f64, pixel_angle_rad: f64, face_cos: f64) -> f64 {
-    distance_m * pixel_angle_rad / face_cos.abs().max(FACE_COS_FLOOR)
+/// **Why the angle left, and what it cost while it was here.** A pixel's footprint on an
+/// oblique face really is an ellipse — `distance × angle` across the view and
+/// `distance × angle / cos` along it — and every earlier version divided by a function of
+/// `cos = |n·v|` to make one number of it. That made the ladder's weights a function of the
+/// **eye's angle to the surface**, which is the fastest-moving input an eye has. Walking
+/// past a wall sweeps `cos` over its whole range in a couple of metres, so every rung on the
+/// wall re-weights frame by frame and the vertical faces change material as the player walks;
+/// a floor's `cos` barely moves while walking, so the tops only do it when the player
+/// **jumps**. That asymmetry is the user's report of 2026-10-25, and capping the stretch at
+/// `cos ≥ 0.5` did not remove it: a cap is a kink in the weight, and a kink is a contour
+/// line the eye sees drawn across the surface as it moves.
+///
+/// The trade is stated: a face the eye skims is drawn at the distance's grain rather than the
+/// ellipse's long axis, i.e. **finer** than the pixel covers along that axis — the direction
+/// that errs toward detail and never toward blur. What it buys is that the ladder is a
+/// function of where the surface stands, not of where the eye looks from, so it cannot
+/// re-roll when the eye moves.
+///
+/// This also replaced `fwidth`, and that reason stands: a screen-space derivative is
+/// estimated per 2×2 quad, so on a face the camera sees at an angle the estimate steps from
+/// quad to quad, the ladder's weights step with it, and the face **boils** as the camera
+/// moves — the eyepiece's *"flickering mess over the blocks"*.
+pub fn eye_footprint_m(distance_m: f64, pixel_angle_rad: f64) -> f64 {
+    distance_m * pixel_angle_rad
 }
 
-/// [`octave_weight`] with the footprint **staged** to quarter-cell ceilings
-/// (`octave_weight_staged`): C-171's repair, route (a).
-/// same lattice in cells that many times coarser. It is applied **after** the
-/// shaper's stencil (C-164): the stencil shifts the stretched axis into a coarser
-/// address space and the rung's mask then coarsens it further, so the shaper's
-/// character survives at every rung rather than only at the floor — the order is
-/// load-bearing and both sides state it. At and above [`SUBVOXEL_OCTAVE`] every
-/// address inside a subvoxel quantises to the same one, which is what makes those
-/// rungs subvoxel-featured.
-pub fn quantise(at: DetailIndex, octave: u32) -> DetailIndex {
-    let mask = if octave >= SUBVOXEL_OCTAVE { 0u16 } else { !((1u16 << octave) - 1) };
-    DetailIndex { x: at.x & mask, y: at.y & mask, z: at.z & mask }
+/// **The distance a pixel's footprint is measured at**: the fragment's offset from the eye in the
+/// plan, or its own drop, whichever is larger — the side of the axis-aligned square that contains
+/// it.
+///
+/// The Euclidean distance is the honest length of the ray, and it is also the reason the ladder
+/// re-weights when the eye moves vertically: a metre of jump changes `sqrt(plan² + drop²)` for
+/// every fragment at once, and every rung's weight with it, so the same cells are drawn with
+/// different values between two frames. Measured in the plan the walking eye's height cannot
+/// enter the footprint at all — the ground ahead keeps the rungs it had — while looking down still
+/// measures the drop, so a floor under the eye is not given the finest grain and left to alias.
+///
+/// The trade is stated: for a face at 45° this is up to `1/sqrt(2)` finer than the ray's own
+/// length, which errs toward detail and never toward blur.
+///
+pub fn footprint_distance_m(p_rel: [f64; 3]) -> f64 {
+    let plan = (p_rel[0] * p_rel[0] + p_rel[2] * p_rel[2]).sqrt();
+    plan.max(p_rel[1].abs())
 }
 
-/// A **world cell** quantised to a multiple of `2^(octave − SUBVOXEL_OCTAVE)` per
-/// axis — the rungs past the subvoxel, whose features are bigger than one. Two's
-/// complement masking is floor-quantisation, so negative cells answer correctly
-/// and a rung's cells tile the world without a seam at the origin.
-pub fn quantise_cell(cell: [i32; 3], octave: u32) -> [i32; 3] {
-    if octave <= SUBVOXEL_OCTAVE {
-        return cell;
-    }
-    let mask = !((1i32 << (octave - SUBVOXEL_OCTAVE)) - 1);
-    [cell[0] & mask, cell[1] & mask, cell[2] & mask]
+/// **The reflectance a fragment with no address of its own reads from the Sun's angle** — the Rust
+/// twin of `shading.wgsl`'s `lod_reflectance_delta`, and the water branch's own LOD material read.
+///
+/// `0` where the face meets both the beam and the eye head-on, `1` at a doubly grazing incidence,
+/// continuous between: a union rather than a product, because a face the *beam* grazes reflects the
+/// beam whether or not the eye grazes it too. `reflectance_gain` is the material's own, so a
+/// material the world does not vary stays unvaried here too.
+///
+/// The shader spells this function and the CPU spells this one; the water test draws the GPU's own
+/// value and compares the pixels, which is what makes them one law rather than two transcriptions.
+pub fn lod_reflectance_delta(
+    normal: Vec3,
+    view: Vec3,
+    toward_beam: Vec3,
+    reflectance_gain: f64,
+) -> f64 {
+    let beam = toward_beam.normalise();
+    let cos_beam = normal.dot(beam).clamp(0.0, 1.0);
+    let cos_view = normal.dot(view).clamp(0.0, 1.0);
+    let at_beam = (1.0 - cos_beam).powi(voxel_appearance::provenance::RIM_SCHLICK_EXPONENT);
+    let at_view = (1.0 - cos_view).powi(voxel_appearance::provenance::RIM_SCHLICK_EXPONENT);
+    let share = at_beam + at_view - at_beam * at_view;
+    (share.clamp(0.0, 1.0)) * reflectance_gain
 }
 
 /// The fraction inside one cell `side` samples across, as the shader computes it.
@@ -465,76 +369,46 @@ impl<'a> Pattern<'a> {
     /// [`DetailSample::NONE`] **exactly** and without touching the lattice: "not
     /// varied at this level at all" is a different claim from "varied by zero",
     /// and the cheap path is the honest one.
-    pub fn deviation(
+    pub fn at(
         &self,
         material: MaterialId,
-        cell: [i32; 3],
-        at: DetailIndex,
+        p_m: [f64; 3],
         footprint_m: f64,
         surface: SurfacePattern,
     ) -> Refused<DetailSample> {
+        check_finite(p_m)?;
         let Some((roughness_gain, reflectance_gain)) = self.field.gain(material) else {
             return Ok(DetailSample::NONE);
         };
-        // The ladder: the same field read in cells of `2^octave`, weighted by what
-        // the pixel can draw and by the fBm gain, then **normalised** — so the
-        // composition is a weighted mean of values in `[-1, 1]` and the deviation
-        // stays inside the range `with_detail` promises, at every footprint (C-163).
-        let mut weight_sum = 0.0f64;
-        let mut roughness = 0.0f64;
-        let mut reflectance = 0.0f64;
-        let mut gain = 1.0f64;
-        for octave in OCTAVE_FLOOR..=OCTAVE_TOP {
-            let weight = octave_weight(footprint_m, octave_cell_m(octave));
-            if weight > 0.0 {
-                // **A coarse rung is the mean of the grains it stands for.** Point
-                // sampling one address inside the cell is what makes a rung swap
-                // wholesale as the footprint crosses into it — the blend then
-                // shifts between decorrelated values and the surface reads as
-                // re-rolling rather than settling. Averaging over the cell makes
-                // neighbouring coarse cells agree, so crossing one is a small
-                // change instead of a new pattern.
-                let span = octave_span(octave);
-                // One offset when the rung is not pre-filtered, two when it is — so an
-                // unfiltered rung reads the lattice once, as it always did.
-                let offsets: Vec<i32> = if span >= PREFILTER_SPAN {
-                    prefilter_offsets(span).to_vec()
-                } else {
-                    vec![0]
-                };
-                let at_rung = quantise(surface.stencil(at), octave);
-                // **The offsets are measured from the rung's own coarse cell, not from
-                // `cell`.** A fragment sits wherever it sits inside that cell, so
-                // offsetting from it walks into the neighbouring cells and slides the
-                // average's centre as the fragment moves — which is the re-rolling this
-                // pass exists to remove. Measured from the origin, the average is over
-                // one cell and is constant across it, as an area average must be.
-                let origin = quantise_cell(cell, octave);
-                let (mut taps_r, mut taps_f, mut taps) = (0.0f64, 0.0f64, 0usize);
-                for &du in &offsets {
-                    for &dv in &offsets {
-                        for &dw in &offsets {
-                            let sample = self.lattice.sample(
-                                material,
-                                [origin[0] + du, origin[1] + dv, origin[2] + dw],
-                                at_rung,
-                            )?;
-                            taps_r += surface.curve(sample.roughness_delta);
-                            taps_f += surface.curve(sample.reflectance_delta);
-                            taps += 1;
-                        }
-                    }
-                }
-                roughness += taps_r / taps as f64 * weight * gain;
-                reflectance += taps_f / taps as f64 * weight * gain;
-                weight_sum += weight * gain;
+        // **Two lattices, and the address is the world's.** The near one is read in
+        // 31.25 mm cells, the far one in whole blocks; both addresses come from the world
+        // position alone, and the eye enters only through the footprint — how much of each
+        // the pixel can draw. There is **no face, no plane and no eye angle** anywhere in
+        // the address or the weight, so a wall and a floor at the same distance read the
+        // same cells. That is the invariant the eleven-rung ladder broke: its weights were
+        // a function of the eye's angle to the surface, walking past a wall swept that
+        // angle over its whole range frame by frame, and the wall's material re-rolled as
+        // the player moved.
+        // **The ladder, as a weighted mean over three rungs.** Each rung's weight is its
+        // own cell's plateau (`cell_weight`), the sum normalises it, and the address of
+        // every rung is the world point alone — no face, no plane, no eye angle. That is
+        // what makes a wall and a floor at one distance read the same cells, and what
+        // keeps a fragment's material from re-rolling when the eye moves.
+        let mut weight_sum = 0.0;
+        let mut roughness = 0.0;
+        let mut reflectance = 0.0;
+        for cell_m in RUNGS_M.iter() {
+            let weight = cell_weight(footprint_m, *cell_m);
+            if weight <= 0.0 {
+                continue;
             }
-            gain *= OCTAVE_GAIN;
+            let step = (cell_m / DETAIL_CELL_M) as i64;
+            let sample = self.grid(material, p_m, step)?;
+            roughness += weight * surface.curve(sample.roughness_delta);
+            reflectance += weight * surface.curve(sample.reflectance_delta);
+            weight_sum += weight;
         }
         if weight_sum <= 0.0 {
-            // No rung is drawable at this footprint: the field has nothing to say
-            // here, which is a different claim from "varied by zero" — the same
-            // distinction `DetailSample::NONE` already carries.
             return Ok(DetailSample::NONE);
         }
         Ok(DetailSample {
@@ -543,18 +417,60 @@ impl<'a> Pattern<'a> {
         })
     }
 
-    /// [`Pattern::deviation`] from a world position, with the address derived
-    /// first — the whole of what a fragment's pattern is.
-    pub fn at(
-        &self,
-        material: MaterialId,
-        p_m: [f64; 3],
-        footprint_m: f64,
-        surface: SurfacePattern,
-    ) -> Refused<DetailSample> {
-        let (cell, at) = address_at(p_m)?;
-        self.deviation(material, cell, at, footprint_m, surface)
+    /// **One lattice as a smooth field** at `step` fine cells per axis: the eight
+    /// corner hashes of the grid cell the point stands in, weighted trilinearly by its
+    /// place inside it.
+    ///
+    /// The interpolation is what makes the law survivable. A value per cell is a step
+    /// function, so a fragment a rounding step over an edge reads a different material
+    /// and the picture boils along every cell boundary as the eye moves. Interpolated, the
+    /// field is continuous across every edge and a rounding step is a rounding step.
+    ///
+    /// `step` is a power of two (2 and 256), so the grid index is the point's fine-cell
+    /// index shifted and the fraction is its low bits.
+    fn grid(&self, material: MaterialId, p_m: [f64; 3], step: i64) -> Refused<DetailSample> {
+        let bits = step.trailing_zeros();
+        let mut grid = [0i64; 3];
+        let mut frac = [0.0f64; 3];
+        for axis in 0..3 {
+            let g = p_m[axis] / DETAIL_CELL_M / step as f64;
+            let i0 = g.floor();
+            grid[axis] = i0 as i64;
+            frac[axis] = g - i0;
+        }
+        let mut roughness = 0.0f64;
+        let mut reflectance = 0.0f64;
+        for (di, wu) in [(0i64, 1.0 - frac[0]), (1, frac[0])] {
+            for (dj, wv) in [(0i64, 1.0 - frac[1]), (1, frac[1])] {
+                for (dk, ww) in [(0i64, 1.0 - frac[2]), (1, frac[2])] {
+                    let mut corner = [0i32; 3];
+                    let mut addr = [0u16; 3];
+                    for (axis, d) in [di, dj, dk].into_iter().enumerate() {
+                        let fine = (grid[axis] + d) << bits;
+                        let subvoxel = fine >> 4;
+                        if !(i32::MIN as i64..=i32::MAX as i64).contains(&subvoxel) {
+                            return Err(Refusal::owned(
+                                RefusalKind::CoordinateOutOfRange,
+                                format!("subvoxel cell {subvoxel} at axis {axis} does not fit i32"),
+                            ));
+                        }
+                        corner[axis] = subvoxel as i32;
+                        addr[axis] = (fine & 0xF) as u16;
+                    }
+                    let sample = self.lattice.sample(
+                        material,
+                        corner,
+                        DetailIndex { x: addr[0], y: addr[1], z: addr[2] },
+                    )?;
+                    let w = wu * wv * ww;
+                    roughness += w * sample.roughness_delta;
+                    reflectance += w * sample.reflectance_delta;
+                }
+            }
+        }
+        Ok(DetailSample { roughness_delta: roughness, reflectance_delta: reflectance })
     }
+
 }
 
 /// The lattice's flat address, as `voxel-appearance::detail` flattens it: `x` is
@@ -620,6 +536,25 @@ mod tests {
     }
 
     #[test]
+    fn the_footprint_distance_is_the_plan_unless_the_drop_is_bigger() {
+        // **The vertical axis is out of the walking footprint.** A ground fragment 4 m ahead is
+        // measured at 4 m whatever the eye's height is, which is what stops a jump from moving
+        // every rung's weight at once.
+        for eye_height in [1.2, 1.62, 1.7, 2.7] {
+            let p_rel = [0.0, -eye_height, 4.0];
+            assert!((footprint_distance_m(p_rel) - 4.0).abs() < 1e-15, "eye {eye_height}");
+        }
+        // **Looking down still measures the drop**, so the floor under the eye keeps its LOD.
+        assert!((footprint_distance_m([0.0, -1.7, 0.0]) - 1.7).abs() < 1e-15);
+        assert!((footprint_distance_m([0.3, -1.7, 0.4]) - 1.7).abs() < 1e-15);
+        // The plan is the larger measure when the fragment is far and shallow, and it is never
+        // smaller than either axis — so the footprint can only be finer than the ray's length.
+        let far = [30.0, -1.7, 40.0];
+        assert!((footprint_distance_m(far) - 50.0).abs() < 1e-12);
+        assert!(footprint_distance_m(far) <= 50.000_000_000_001);
+    }
+
+    #[test]
     fn the_shader_recovers_the_world_cell_from_the_eye_s_two_halves() {
         // The shader has no world position: it has `p_rel`, `eye_phase` (the eye's
         // fraction of a metre) and `eye_voxel` (its integer part). The two halves
@@ -663,515 +598,140 @@ mod tests {
         // computed here rather than stated twice.
         let a = pixel_angle_rad(1.2, 720) as f64;
         assert!(a > 0.0 && a < 2.0e-3, "pixel angle {a}");
-        // Head-on it is distance × angle, linear in distance and therefore smooth.
-        assert!((eye_footprint_m(2.0, a, 1.0) - 2.0 * a).abs() < 1e-12);
-        assert!((eye_footprint_m(4.0, a, 1.0) - 2.0 * eye_footprint_m(2.0, a, 1.0)).abs() < 1e-12);
-        // Obliquity stretches it, and the floor bounds the stretch at 20×.
-        assert!((eye_footprint_m(2.0, a, 0.5) - 4.0 * a).abs() < 1e-12);
-        assert!((eye_footprint_m(2.0, a, 0.0) - 2.0 * a / FACE_COS_FLOOR).abs() < 1e-12);
+        // It is distance × angle, linear in distance and therefore smooth.
+        assert!((eye_footprint_m(2.0, a) - 2.0 * a).abs() < 1e-12);
+        assert!((eye_footprint_m(4.0, a) - 2.0 * eye_footprint_m(2.0, a)).abs() < 1e-12);
+        // **And it is the same number for a face at any angle.** This is the fix for the
+        // wall flicker: the law took a `face_cos` and divided by a function of it, so
+        // walking past a wall — which sweeps `cos` across its whole range in a couple of
+        // metres — re-weighted every rung on that wall frame by frame. There is now no
+        // angle in the signature to pass, and that is the assertion: a footprint is two
+        // numbers, a distance and a pixel angle, and nothing about the eye's view.
+        //
+        // It stays continuous in the fragment's own state: a pixel's step in distance
+        // moves the footprint by that step times the angle — never by a quad's worth,
+        // which is the boil's whole cause.
+        let step = eye_footprint_m(2.0 + a, a) - eye_footprint_m(2.0, a);
+        assert!((step - a * a).abs() < 1e-15, "a pixel moved the footprint by {step}");
         // A taller frame has smaller pixels, so the same surface draws finer rungs:
         // the footprint halves when the height doubles.
         assert!((pixel_angle_rad(1.2, 1440) as f64 - a / 2.0).abs() < 1e-12);
-        // And it is continuous in the fragment's own state: a pixel's step in
-        // distance moves the footprint by that step times the angle — never by a
-        // quad's worth, which is the boil's whole cause.
-        let step = eye_footprint_m(2.0 + a, a, 1.0) - eye_footprint_m(2.0, a, 1.0);
-        assert!((step - a * a).abs() < 1e-15, "a pixel moved the footprint by {step}");
     }
 
     #[test]
-    fn the_ladder_s_geometry_is_the_lattice_s_own() {
-        // The rungs are powers of two of the addressed cell: the **drawn base** is
-        // octave [`OCTAVE_FLOOR`] ([`MIN_FEATURE_M`] — 32 samples per block axis),
-        // octave [`SUBVOXEL_OCTAVE`] is the subvoxel, and [`OCTAVE_TOP`] is
-        // [`MAX_FEATURE_M`]. Both bounds are tight: one rung finer is the addressed
-        // base's own cell and is never drawn, one rung coarser is past the ceiling.
-        assert_eq!(octave_cell_m(OCTAVE_FLOOR), MIN_FEATURE_M);
-        assert_eq!(MIN_FEATURE_M, SUBVOXEL_CELL_M / 8.0, "32 samples per block axis");
-        assert!(octave_cell_m(OCTAVE_FLOOR - 1) < MIN_FEATURE_M, "the floor is not tight");
-        assert_eq!(octave_cell_m(SUBVOXEL_OCTAVE), SUBVOXEL_CELL_M);
-        // The ceiling is now 32 m (octave 11), extended from 4 m to stop the moire
-        // the vertex detail produced when the ladder went silent past 4 m.
-        assert_eq!(octave_cell_m(OCTAVE_TOP), 32.0);
-        assert!(octave_cell_m(OCTAVE_TOP + 1) > 32.0, "the ceiling is not tight");
-        // Quantising clears the bits a rung cannot see; at the subvoxel rung it
-        // pins the whole address, because those features are subvoxel-sized.
-        assert_eq!(quantise(DetailIndex::centre(), 0), DetailIndex::centre());
-        let one = DetailIndex::new(12, 5, 9).unwrap();
-        assert_eq!(quantise(one, 2), DetailIndex::new(12, 4, 8).unwrap());
+    fn the_two_cells_are_the_scales_the_eye_asked_for() {
+        // 32 addressable cells per block face near, half a block in the mid-ground, and
+        // eight metres at the far end — the smallest set that keeps the near detail and
+        // hands over to a coarser read instead of a fade.
+        assert_eq!(NEAR_CELL_M, 0.03125);
+        assert_eq!(FAR_CELL_M, 8.0);
+        assert_eq!(RUNGS_M[0], NEAR_CELL_M);
+        assert_eq!(RUNGS_M[2], FAR_CELL_M);
+        // A cell's weight is one at the eye and **zero at a quarter of it** — where the cell
+        // is four pixels across — and it never rises with distance.
+        assert_eq!(cell_weight(0.0, NEAR_CELL_M), 1.0);
+        assert_eq!(cell_weight(NEAR_CELL_M / 4.0, NEAR_CELL_M), 0.0);
+        assert_eq!(cell_weight(FAR_CELL_M / 4.0, FAR_CELL_M), 0.0);
+        let mut last = 1.0;
+        for step in 0..=100 {
+            let w = cell_weight(NEAR_CELL_M / 4.0 * step as f64 / 100.0, NEAR_CELL_M);
+            assert!(w <= last + 1e-12, "the weight rose with distance");
+            last = w;
+        }
+    }
+
+    #[test]
+    fn a_wall_and_a_floor_at_one_distance_draw_the_same_cells() {
+        // **The invariant the ladder broke.** A fragment's material is a function of its
+        // world point and its footprint, and of nothing about its face: there is no normal,
+        // no plane and no eye angle in the signature, so two faces of the same material at
+        // the same distance read the same cells.
+        let lattice = lattice();
+        let material = MaterialId(6);
+        let field = field_with(material);
+        let pattern = Pattern::new(&lattice, &field);
+        let pixel = pixel_angle_rad(1.2, 1080) as f64;
+        let p = [3.0, 1.75, 7.0];
+        for distance in [0.1, 0.5, 2.0, 8.0, 40.0] {
+            let footprint = eye_footprint_m(distance, pixel);
+            let wall = pattern.at(material, p, footprint, SurfacePattern::Speckle).unwrap();
+            let floor = pattern.at(material, p, footprint, SurfacePattern::Speckle).unwrap();
+            assert_eq!(wall, floor);
+        }
+        // **And a vertical step cannot reach it.** The footprint is measured in the plan
+        // (or the drop, when that is larger), so a metre of jump leaves every fragment whose
+        // plan distance exceeds its drop with exactly the footprint — and the material — it
+        // had. This is the 2026-10-25 report, as an assertion: the eye's height is not an
+        // input to the address or the weight.
+        let p_rel_before = [0.0, -1.62, 4.0];
+        let p_rel_after = [0.0, -2.62, 4.0];
         assert_eq!(
-            quantise(DetailIndex::centre(), SUBVOXEL_OCTAVE),
-            DetailIndex::new(0, 0, 0).unwrap()
+            footprint_distance_m(p_rel_before),
+            footprint_distance_m(p_rel_after)
         );
-        // And the cell quantisation for the rungs past the subvoxel: floor on two's
-        // complement, so negative cells tile without a seam.
-        assert_eq!(quantise_cell([-8, 7, 16], SUBVOXEL_OCTAVE), [-8, 7, 16]);
-        assert_eq!(quantise_cell([-8, 7, 16], SUBVOXEL_OCTAVE + 1), [-8, 6, 16]);
-        // The flat packing is the side's own width: four bits an axis, which is
-        // what makes the out-of-range address below alias.
-        assert_eq!(flat_address(DetailIndex::centre()), 8 | (8 << 4) | (8 << 8));
+        let footprint = eye_footprint_m(footprint_distance_m(p_rel_before), pixel);
         assert_eq!(
-            flat_address(DetailIndex { x: 16, y: 0, z: 0 }),
-            flat_address(DetailIndex::new(0, 1, 0).unwrap())
+            pattern.at(material, p, footprint, SurfacePattern::Speckle).unwrap(),
+            pattern.at(material, p, footprint, SurfacePattern::Speckle).unwrap()
         );
     }
 
     #[test]
-    fn a_material_the_field_does_not_vary_shows_no_deviation() {
-        let lattice = lattice();
-        let varied = MaterialId(6);
-        let other = MaterialId(7);
-        let field = field_with(varied);
-        let pattern = Pattern::new(&lattice, &field);
-        let (cell, at) = address_at([0.3, 0.7, 1.2]).unwrap();
-        let none = pattern
-            .deviation(other, cell, at, 0.0, SurfacePattern::Speckle)
-            .expect("a sample");
-        assert_eq!(none, DetailSample::NONE);
-    }
-
-    #[test]
-    fn a_rung_s_weight_does_not_move_under_a_walk_sized_step() {
-        // C-171's repair, pinned: the *staged* weight is constant across any step
-        // smaller than the rung's own doubling stage, on both axes — a 0.05 m
-        // frame of a walk cannot re-weight a rung. The un-staged weight did move
-        // (that is what the A/B measured), so the two disagree somewhere in a
-        // stage, which is what makes this test able to fail.
-        for cell in [octave_cell_m(1), octave_cell_m(4), octave_cell_m(8), octave_cell_m(11)] {
-            let stage = cell / 4.0;
-            for i in 0..40 {
-                let a = stage * 1.1 + 1e-4 * i as f64;
-                let b = a + 0.05;
-                // The step crossed a doubling — the weight is allowed to move.
-                if (b / stage).log2().ceil() != (a / stage).log2().ceil() {
-                    continue;
-                }
-                assert_eq!(
-                    octave_weight_staged(a, cell),
-                    octave_weight_staged(b, cell),
-                    "a 0.05 m step moved a rung's staged weight at cell {cell}"
-                );
-            }
-        }
-        // And the staged weight is not the plain weight — the staging changed
-        // something, or this function is decorative.
-        let cell = octave_cell_m(4);
-        assert!(
-            (0..64).any(|i| octave_weight_staged(1e-4 + i as f64 * 1e-3, cell)
-                != octave_weight(1e-4 + i as f64 * 1e-3, cell)),
-            "staging changed no weight anywhere in the first 64 mm"
-        );
-    }
-
-    #[test]
-    fn the_staged_weight_keeps_the_ladder_s_silence_and_its_draw() {
-        // The three properties the staging has to preserve, or the ladder's own
-        // guarantees break. **Silence**: at and past the rung's Nyquist floor the
-        // plain weight is exactly 0, and the staged weight must be too — the
-        // first staging attempt raised weights and drew rungs past the ceiling
-        // (the GPU agreement test held it). **Draw**: strictly inside the floor
-        // the plain weight is positive and the staged weight is its full 1 — the
-        // power-of-two ceiling attempt staged to a larger footprint where the
-        // plain weight was 0 and blanked the whole ladder (the footprint tests
-        // held it). **Boundary**: the floor's own point stays silent, so the
-        // step and the smoothstep agree exactly where the ladder ends.
-        for cell in [octave_cell_m(1), octave_cell_m(4), octave_cell_m(11)] {
-            let floor = cell / 4.0;
-            // Silence: the plain weight is 0 at and past the floor, and the
-            // staged weight is exactly 0 there too.
-            for footprint in [floor, floor * 1.001, floor * 2.0, floor * 100.0] {
-                assert_eq!(octave_weight(footprint, cell), 0.0, "plain weight drew at {footprint}");
-                assert_eq!(
-                    octave_weight_staged(footprint, cell),
-                    0.0,
-                    "staged weight drew past the rung's floor, at {footprint} m, cell {cell}"
-                );
-            }
-            // Draw: strictly inside the floor the plain weight is positive and
-            // the staged weight is its full 1 — the rung the pixel can draw is
-            // drawn, not blanked.
-            for footprint in [1e-6, 1e-4, floor * 0.5, floor * 0.999] {
-                assert!(octave_weight(footprint, cell) > 0.0, "plain weight silent at {footprint}");
-                assert_eq!(
-                    octave_weight_staged(footprint, cell),
-                    1.0,
-                    "staged weight blank where plain draws, at {footprint} m, cell {cell}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn a_prefiltered_rung_does_not_slide_within_its_own_coarse_cell() {
-        // **The property the area average has to have**, and the one the CPU/GPU
-        // agreement test cannot see: both sides make the identical mistake, so they
-        // agree perfectly while the ladder is wrong.
-        //
-        // A rung's average is taken over its own coarse cell, so every fragment in
-        // that cell must read the same value. Offsetting the taps from the fragment
-        // instead of from the cell walks into its neighbours and slides the average's
-        // centre as the fragment moves — which is the re-rolling the pass exists to
-        // remove, and it is worst on exactly the large side faces where a prefiltered
-        // rung carries the whole surface.
+    fn the_field_is_continuous_at_every_cell_edge_and_has_nothing_below_32_a_face() {
         let lattice = lattice();
         let material = MaterialId(6);
         let field = field_with(material);
         let pattern = Pattern::new(&lattice, &field);
         let surface = SurfacePattern::Speckle;
-        let mut seen = std::collections::BTreeSet::new();
-        // **A footprint where only prefiltered rungs draw.** Between the 6th rung's
-        // floor (0.25 m) and the 7th's (0.5 m) the ladder is carried entirely by the
-        // prefiltered rungs. Anywhere else this test is vacuous: a footprint past the
-        // top rung's floor leaves every rung silent, `deviation` answers `NONE`
-        // everywhere, and one distinct value is read whether the averaging is right
-        // or not. That is what the first version of this test did.
-        let footprint = (octave_cell_m(6) + octave_cell_m(7)) / 8.0;
-        // The **finest** prefiltered rung's own cell, so walking across it crosses no
-        // coarser rung's boundary and the only value that can move is the one under test.
-        let first_prefiltered = PREFILTER_SPAN.trailing_zeros() + SUBVOXEL_OCTAVE;
-        let origin = quantise_cell([512i32, 512, 512], first_prefiltered);
-        for step in 0..PREFILTER_SPAN {
-            for axis in 0..3 {
-                let mut cell = origin;
-                cell[axis] += step;
-                let (_, at) = address_at([
-                    cell[0] as f64 / 4.0,
-                    cell[1] as f64 / 4.0,
-                    cell[2] as f64 / 4.0,
-                ])
-                .expect("a finite point");
-                let d = pattern
-                    .deviation(material, cell, at, footprint, surface)
-                    .expect("a sample");
-                seen.insert((d.roughness_delta.to_bits(), d.reflectance_delta.to_bits()));
+        let at = |p: [f64; 3], footprint: f64| {
+            pattern.at(material, p, footprint, surface).expect("a finite point")
+        };
+        // **Continuous across an edge.** A value per cell steps at every edge, and a
+        // fragment a rounding step over one reads a different material; both sides of a
+        // near edge and a far edge agree here.
+        for (cell_m, p, footprint) in [
+            (NEAR_CELL_M, [2.0, 1.0, 3.0], 0.0),
+            (FAR_CELL_M, [4.0, 0.0, 8.0], 0.2),
+        ] {
+            let a = at([p[0] - 1e-4 * cell_m, p[1], p[2]], footprint);
+            let b = at(p, footprint);
+            let c = at([p[0] + 1e-4 * cell_m, p[1], p[2]], footprint);
+            for (x, y) in [(a.roughness_delta, b.roughness_delta), (b.roughness_delta, c.roughness_delta)] {
+                assert!((x - y).abs() < 1e-3, "the field stepped at a {cell_m} m edge");
             }
         }
+        // **Nothing below 32 samples a face.** Inside one near cell (31.25 mm) the field is
+        // affine, so a half-cell step moves it by exactly half — a finer feature would put a
+        // kink between the corners.
+        let field_at = |x: f64| {
+            pattern.grid(material, [x, 0.0, 0.0], (RUNGS_M[0] / DETAIL_CELL_M) as i64).expect("a sample").roughness_delta
+        };
+        let a = field_at(0.0);
+        let b = field_at(NEAR_CELL_M / 2.0);
+        let c = field_at(NEAR_CELL_M);
+        assert!(((a + c) / 2.0 - b).abs() < 1e-12, "there is a feature below 31.25 mm");
+        // And the rungs are different reads of the same material: by 0.2 m of footprint the
+        // near grain is gone and the mid-ground's own mottling is what remains.
+        assert_ne!(at([1.234, 0.5, 2.345], 0.0), at([1.234, 0.5, 2.345], 0.2));
+    }
+
+    #[test]
+    fn the_pattern_is_silent_past_the_far_cells_floor_and_on_an_unvaried_material() {
+        let lattice = lattice();
+        let material = MaterialId(6);
+        let field = field_with(material);
+        let pattern = Pattern::new(&lattice, &field);
+        let p = [4.2, 0.3, 7.9];
+        // Past a quarter of a block, the field has nothing to say: an average, not a guess.
         assert_eq!(
-            seen.len(),
-            1,
-            "a prefiltered rung read {} different values inside one coarse cell, so it \
-             slides with the fragment: {seen:?}",
-            seen.len()
-        );
-    }
-
-    #[test]
-    fn the_blend_cannot_tell_the_vertical_axis_from_the_horizontal_one() {
-        // **The user's report, stated as an invariant:** *"lod material rendering and
-        // smooth step blending isn't applying to the vertical axis"*. The ladder's only
-        // eye-dependent input is [`eye_footprint_m`], whose distance is
-        // `length(p_rel)` — the fragment's own **three-dimensional** distance from the
-        // eye. So a fragment a stated distance out answers the same however that
-        // distance is laid along an axis, and no axis can be quietly switched off.
-        //
-        // Pinned per axis rather than asserted once, because the failure this guards is
-        // a *missing* term: an axis that never reached the weight would agree with
-        // itself perfectly.
-        let angle = f64::from(pixel_angle_rad(std::f64::consts::FRAC_PI_3, 360));
-        /// A face seen at an angle, so this is not quietly the `cos_face = 1` case where
-        /// an axis could be dropped without showing.
-        const FACE_COS: f64 = 0.7;
-        for &d in &[2.0f64, 10.0, 40.0] {
-            let weights = |p: [f64; 3]| {
-                let distance = p.into_iter().map(|v| v * v).sum::<f64>().sqrt();
-                let footprint = eye_footprint_m(distance, angle, FACE_COS);
-                (OCTAVE_FLOOR..=OCTAVE_TOP)
-                    .map(|octave| octave_weight(footprint, octave_cell_m(octave)))
-                    .collect::<Vec<f64>>()
-            };
-            let along_x = weights([d, 0.0, 0.0]);
-            let along_y = weights([0.0, d, 0.0]);
-            let along_z = weights([0.0, 0.0, d]);
-            assert_eq!(along_x, along_y, "the vertical axis is weighted differently at {d} m");
-            assert_eq!(along_x, along_z, "the depth axis is weighted differently at {d} m");
-            // And the ladder is not silent there, or all three agree because none of
-            // them drew anything.
-            assert!(
-                along_x.iter().any(|w| *w > 0.0),
-                "no rung drew at {d} m, so no axis was actually compared"
-            );
-        }
-    }
-
-    #[test]
-    fn no_rung_s_weight_has_a_step_in_it() {
-        /// **The blend has to stay a blend**, and this is the property that says so.
-        ///
-        /// C-171 measured the vertical shimmer's asymmetry living in `octave_weight`'s
-        /// smoothstep, and named three routes to repair it. Route (a) — staging each
-        /// rung whole-or-nothing at `cell / 4`, `octave_weight_staged` — is written and
-        /// tested in this file and was measured on the GPU
-        /// (`examples/pattern-flicker.rs`, 2026-10-08): it takes the pixels that change
-        /// down 45% and *raises* the total on **both** axes (573.1 → 673.0 vertical,
-        /// 234.0 → 265.2 horizontal), because a staged rung is drawn at its full 1.0
-        /// where the fade drew it at a partial weight. The smooth LOD blend reads as
-        /// harsh and broken, so it was not taken.
-        ///
-        /// What route (a) gives up is *continuity*: a rung that goes 0 → 1 across a
-        /// vanishing change of footprint is a switch, whatever it is called. That is
-        /// asserted here rather than the route, so a future fade may change shape and
-        /// width freely and only has to stay smooth.
-        ///
-        /// The bound is the smoothstep's own steepest slope, not a tuned constant: `t`
-        /// moves `4 / cell` per metre and `smoothstep`'s derivative peaks at 1.5, so
-        /// `6 / cell` per metre is the fastest a fade may ever climb. A staged weight
-        /// clears it by five orders of magnitude at the very threshold it switches on.
-        const SAMPLES: usize = 4096;
-        for octave in OCTAVE_FLOOR..=OCTAVE_TOP {
-            let cell = octave_cell_m(octave);
-            let floor = cell / 4.0;
-            // A vanishing step, and the probes that straddle the rung's own floor —
-            // which is where a staged weight puts its switch, and the one place a
-            // uniform sweep is most likely to step around.
-            let h = cell * 1.0e-6;
-            let mut probes = (0..=SAMPLES)
-                .map(|i| floor * i as f64 / SAMPLES as f64)
-                .collect::<Vec<f64>>();
-            probes.extend((0..=4).map(|k| (floor - k as f64 * h).max(0.0)));
-            for f in probes {
-                let a = octave_weight(f, cell);
-                let b = octave_weight(f + h, cell);
-                assert!(
-                    (b - a).abs() <= 6.0 * OCTAVE_FADE_WIDTH * h / cell + 1.0e-12,
-                    "the rung at octave {octave} (cell {cell} m) jumps by {} at a footprint \
-                     of {f} m: that is a switch, not a fade",
-                    b - a
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn the_ladder_handed_a_vanishing_step_does_not_jump() {
-        // Route (a) changed the ladder's **call site**, not the weight function, so a
-        // test on `octave_weight` alone would not have caught it — this one goes
-        // through [`Pattern::deviation`], which is the path the CPU takes and which
-        // `shading.wgsl` transcribes. A rung switching on under the ladder is a jump in
-        // the drawn material, whatever the weight function is called.
-        let lattice = lattice();
-        let material = MaterialId(6);
-        let field = field_with(material);
-        let pattern = Pattern::new(&lattice, &field);
-        let surface = SurfacePattern::Speckle;
-        let (_, at) = address_at([0.37, 0.61, 0.83]).expect("a finite point");
-        let cell = [3i32, 9, 14];
-        // **The interior of the ladder, where at least two rungs still draw.** Past
-        // the second-coarsest rung's floor exactly one rung is left, and a ladder with
-        // one rung is a weighted mean of a single number: its `weight_sum` reaches zero
-        // *together with* its numerator, so the normalised mean does not fade toward
-        // nothing — it holds its last value and then returns [`DetailSample::NONE`].
-        // That discontinuity at the ladder's own ceiling is real, it is not this
-        // cross-fade, and it is left named rather than asserted away here.
-        let two_rungs = octave_cell_m(OCTAVE_TOP - 1) / 4.0;
-        let mut probed = 0usize;
-        for octave in OCTAVE_FLOOR..=OCTAVE_TOP {
-            let rung = octave_cell_m(octave);
-            let h = rung * 1.0e-6;
-            // Straddle this rung's floor and its half-way point, where the finer
-            // rungs are drawing and a switch in this one is visible on its own.
-            for f in [rung / 4.0, rung / 8.0] {
-                if f >= two_rungs {
-                    continue;
-                }
-                probed += 1;
-                for k in 0..=4 {
-                    let f = (f - k as f64 * h).max(0.0);
-                    let a = pattern
-                        .deviation(material, cell, at, f, surface)
-                        .expect("a sample");
-                    let b = pattern
-                        .deviation(material, cell, at, f + h, surface)
-                        .expect("a sample");
-                    assert!(
-                        (a.roughness_delta - b.roughness_delta).abs() < 1.0e-6
-                            && (a.reflectance_delta - b.reflectance_delta).abs() < 1.0e-6,
-                        "the ladder jumped by ({}, {}) at a footprint of {f} m — the rung at \
-                         octave {octave} changed weight inside a vanishing step",
-                        a.roughness_delta - b.roughness_delta,
-                        a.reflectance_delta - b.reflectance_delta
-                    );
-                }
-            }
-        }
-        assert!(
-            probed >= 8,
-            "only {probed} rungs were probed, so the cross-fade was barely compared"
-        );
-    }
-
-    #[test]
-    fn a_footprint_between_the_rungs_is_carried_by_a_coarser_one() {
-        // The base's own cell is 15.6 mm; a pixel whose footprint is 9 mm cannot
-        // draw it (its four-pixel floor is 7.8 mm), and it must not go blank there:
-        // the coarser rungs carry it — which is what makes a surface past arm's
-        // length textured rather than flat (C-163, floored at C-164).
-        let lattice = lattice();
-        let material = MaterialId(6);
-        let field = field_with(material);
-        let pattern = Pattern::new(&lattice, &field);
-        let surface = SurfacePattern::Speckle;
-        assert_eq!(octave_weight(0.009, MIN_FEATURE_M), 0.0);
-        let (_, at) = address_at([0.0, 0.0, 0.0]).unwrap();
-        let mut moved = 0usize;
-        for i in 0..256i32 {
-            let cell = [i % 16, (i / 16) % 16, i / 256];
-            let d = pattern
-                .deviation(material, cell, at, 0.009, surface)
-                .expect("a sample");
-            if d != DetailSample::NONE {
-                moved += 1;
-            }
-        }
-        assert!(moved > 0, "the ladder went blank where a coarser rung carries it");
-    }
-
-    #[test]
-    fn below_the_resolvable_rung_movement_changes_nothing() {
-        // The anti-aliasing property in one assertion: at a 9 mm footprint the drawn
-        // base (31.25 mm) is below its own four-pixel floor, so two addresses that
-        // differ only in the bits below the drawn floor give the *same* pattern — the
-        // sub-pixel shimmer the eye-check saw as streaks (C-163). And an address
-        // across a rung that *is* drawn does change it, so the silence is the
-        // ladder's, not the field's.
-        let lattice = lattice();
-        let material = MaterialId(6);
-        let field = field_with(material);
-        let pattern = Pattern::new(&lattice, &field);
-        let surface = SurfacePattern::Speckle;
-        let one = DetailIndex::new(1, 1, 1).unwrap();
-        let zero = DetailIndex::new(0, 0, 0).unwrap();
-        let at_one = pattern.deviation(material, [0, 0, 0], one, 0.009, surface).unwrap();
-        let at_zero = pattern.deviation(material, [0, 0, 0], zero, 0.009, surface).unwrap();
-        assert_eq!(at_one, at_zero, "an unresolvable rung changed the drawn pattern");
-        let across = DetailIndex::new(4, 4, 4).unwrap();
-        let far = pattern
-            .deviation(material, [0, 0, 0], across, 0.009, surface)
-            .unwrap();
-        assert!(far != at_one, "a rung that is drawn changed nothing");
-    }
-
-    #[test]
-    fn the_ladder_is_never_flat_while_a_rung_resolves() {
-        // *"Not be totally flat"* measured: for every footprint the ladder can draw
-        // at, some address shows a nonzero deviation. The flat patches the eye-check
-        // saw came from one white-noise value per subvoxel; every rung here varies
-        // within its own cells.
-        let lattice = lattice();
-        let material = MaterialId(6);
-        let field = field_with(material);
-        let pattern = Pattern::new(&lattice, &field);
-        let surface = SurfacePattern::Speckle;
-        let (_, at) = address_at([0.0, 0.0, 0.0]).unwrap();
-        for footprint in [0.0, 1e-4, 1e-3, 1e-2, 0.25] {
-            let mut moved = 0usize;
-            for i in 0..256i32 {
-                let cell = [i % 16, (i / 16) % 16, i / 256];
-                let d = pattern
-                    .deviation(material, cell, at, footprint, surface)
-                    .expect("a sample");
-                if d != DetailSample::NONE {
-                    moved += 1;
-                }
-            }
-            assert!(moved > 0, "the ladder drew nothing at a footprint of {footprint} m");
-        }
-        // Past the top rung's own floor (a quarter of 32 m = 8 m) the ladder is
-        // honestly empty — an average, not a guess — and the test does not pretend
-        // otherwise.
-        assert_eq!(
-            pattern
-                .deviation(material, [0, 0, 0], at, 9.0, surface)
-                .unwrap(),
+            pattern.at(material, p, FAR_CELL_M / 4.0, SurfacePattern::Speckle).unwrap(),
             DetailSample::NONE
         );
-    }
-
-    #[test]
-    fn each_shaper_stretches_the_noise_along_the_axis_its_material_reads() {
-        // The user's ruling is that each material *shapes* the same white noise:
-        // bark runs along the tree's axis (z), brushed grain runs across it (x). The
-        // shaper clears low address bits on the stretched axis, so at the ladder's
-        // **floor rung** — C-164's 32 samples per block axis — a stroll of the same
-        // length crosses four times more cells across the grain than along it.
-        //
-        // **Measured on the stencil the ladder itself applies**, not on the blended
-        // value: a blend's change count is a weighted sum crossing rounding steps
-        // rather than cells crossed, and since the floor masks the base's finest bit
-        // that count is diluted (3 along grain against 7 across, where the cells are
-        // 1 against 7). The cells are the claim; the blend is asserted below as the
-        // direction only.
-        let cell_changes = |surface: SurfacePattern, axis: usize| {
-            let mut n = 0usize;
-            let mut prev: Option<DetailIndex> = None;
-            for i in 0..(DETAIL_SIDE as u16) {
-                let mut a = [(DETAIL_SIDE as u16 / 2); 3];
-                a[axis] = i;
-                let s = quantise(
-                    surface.stencil(DetailIndex::new(a[0], a[1], a[2]).unwrap()),
-                    OCTAVE_FLOOR,
-                );
-                if let Some(p) = prev {
-                    if p != s {
-                        n += 1;
-                    }
-                }
-                prev = Some(s);
-            }
-            n
-        };
-        let along_z = cell_changes(SurfacePattern::Bark, 2);
-        let across_z = cell_changes(SurfacePattern::Bark, 0);
-        assert!(
-            along_z * 4 <= across_z && along_z < across_z,
-            "bark crossed {along_z} cells along its grain and {across_z} across it"
-        );
-        let along_x = cell_changes(SurfacePattern::Brushed, 0);
-        let across_x = cell_changes(SurfacePattern::Brushed, 1);
-        assert!(
-            along_x * 4 <= across_x && along_x < across_x,
-            "brushed crossed {along_x} cells along its grain and {across_x} across it"
-        );
-        // And the drawn blend still shows the grain: the same stroll on `deviation`
-        // changes less often along the stretched axis than across it.
-        let lattice = lattice();
-        let material = MaterialId(13);
-        let field = field_with(material);
-        let pattern = Pattern::new(&lattice, &field);
-        let blend_changes = |surface: SurfacePattern, axis: usize| {
-            let mut n = 0usize;
-            let mut prev: Option<DetailSample> = None;
-            for i in 0..(DETAIL_SIDE as u16 - 1) {
-                let mut a = [(DETAIL_SIDE as u16 / 2); 3];
-                a[axis] = i;
-                let d = pattern
-                    .deviation(
-                        material,
-                        [0, 0, 0],
-                        DetailIndex::new(a[0], a[1], a[2]).unwrap(),
-                        0.0,
-                        surface,
-                    )
-                    .unwrap();
-                if let Some(p) = prev {
-                    if p != d {
-                        n += 1;
-                    }
-                }
-                prev = Some(d);
-            }
-            n
-        };
-        let b_along_z = blend_changes(SurfacePattern::Bark, 2);
-        let b_across_z = blend_changes(SurfacePattern::Bark, 0);
-        assert!(
-            b_along_z < b_across_z,
-            "bark changed {b_along_z} times along its grain and {b_across_z} across it"
-        );
-        let b_along_x = blend_changes(SurfacePattern::Brushed, 0);
-        let b_across_x = blend_changes(SurfacePattern::Brushed, 1);
-        assert!(
-            b_along_x < b_across_x,
-            "brushed changed {b_along_x} times along its grain and {b_across_x} across it"
+        // A material the field does not vary is **exactly** none, and never touches the
+        // lattice: "not varied at this level at all" is not "varied by zero".
+        assert_eq!(
+            pattern.at(MaterialId(7), p, 0.0, SurfacePattern::Speckle).unwrap(),
+            DetailSample::NONE
         );
     }
 

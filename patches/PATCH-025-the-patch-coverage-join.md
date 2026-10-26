@@ -103,3 +103,18 @@ which is why it is a field of the record rather than a sentence in it.
 - **Nothing here refuses.** The three uncovered records the tree would most like to fail on — the nine
   parts and the sixteen unnamed records — are printed, counted and left standing, because the
   alternative is a gate that every build has to route around.
+
+## Recipes
+
+```recipe
+segment: tooling
+axis: evidence_grade
+ticket: T-0954
+site: crates/voxel-package/src/patch.rs:739
+what: keep the coverage join over `crates/<part>/` as `named_paths` extracts it, never over a bare crate name
+because: nine of the twelve census parts were named by no record and no report said so; a record that writes `voxel-model` has written a word, and one naming crates/voxel-model/src/chain.rs has named an artifact
+check: cargo test -p voxel-package --lib patch:: -> failures 0
+witness: crates/voxel-package/src/patch.rs
+expects: 0
+requires: cargo check --workspace
+```

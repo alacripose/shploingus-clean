@@ -2,6 +2,19 @@
 resolver = "2"
 members = [
     "crates/voxel-model",
+    "crates/axis/ladder",
+    "crates/axis/coverage",
+    "crates/axis/unit",
+    "crates/axis/claim",
+    "crates/axis/view",
+    "crates/axis/civilians",
+    "crates/axis/being",
+    "crates/axis/matrix",
+    "crates/axis/verify",
+    "crates/axis/artifact",
+    "crates/axis/security",
+    "crates/axis/mcp",
+    "crates/axis/balance",
     "crates/voxel-noise",
     "crates/voxel-mesh",
     "crates/voxel-shapers",
@@ -45,6 +58,12 @@ license = "Apache-2.0"
 # generator over the same seed must produce the same digests, and this is the
 # one hash function the project accepts for that.
 sha2 = "0.10"
+
+# **The OS entropy source, and the only reason a headless crate names a second dependency.** A signing
+# key drawn from a hash of the clock or the process id is a key an attacker can enumerate; the
+# platform's own random device is the one source this tree does not reimplement. Used by
+# `voxel-axis-security` alone, when it creates a key that does not exist yet.
+getrandom = "0.2"
 
 # The wire format an MCP client speaks. Named once here and used by `voxel-mcp`
 # alone: the gate's other crates still carry no external dependency, which is the

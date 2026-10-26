@@ -25,8 +25,29 @@ use crate::spec::WorldSpec;
 use crate::terrain;
 use voxel_noise::{Fractal, Kind, Vec3};
 
-/// Ticks in one in-game day. Declared; the tick rate is the world's.
-pub const TICKS_PER_DAY: u64 = 24_000;
+/// **The clock's rate: world ticks per second.**
+///
+/// The one rate in the tree — `voxel_client::clock::TICK_HZ` is this number rather than a second
+/// copy of it, so a stage ladder and a frame clock cannot tick at two speeds wearing one name.
+pub const TICKS_PER_SECOND: u64 = 20;
+
+/// Seconds in a real day. The world's day is a *scaled* one; this is the length it is scaled from.
+pub const SECONDS_PER_DAY: u64 = 86_400;
+
+/// **Ticks in one in-game day: a real day at the world's own scale.**
+///
+/// The tree is drawn at one eighth of life — [`crate::scale::REAL_METRES_PER_VOXEL`] is `8.0` —
+/// and the clock is scaled with it: `86,400 s / 8 = 10,800 s` of **3 hours**, which at
+/// [`TICKS_PER_SECOND`] is **216,000 ticks**.
+///
+/// It was `24_000`, a hand-rolled number that read as 20 minutes at this clock. That is a day
+/// nine times too short for a world whose metre is a voxel's eighth, and nothing derived it, so
+/// no scale could be checked against it. The day is now the scale's own statement: one eighth of
+/// a day's *seconds*, at the rate the clock already declares. A full day/night cycle therefore
+/// takes three hours, and every daily cadence in the tree — weather fronts, growth, the seasonal
+/// ramp — keeps its *fraction* of a day and takes three hours of the frame's time.
+pub const TICKS_PER_DAY: u64 =
+    SECONDS_PER_DAY / crate::scale::REAL_METRES_PER_VOXEL as u64 * TICKS_PER_SECOND;
 /// In-game days in one year. Declared for a *playable* cycle: a real 365 would
 /// mean a player never sees a second spring.
 pub const DAYS_PER_YEAR: u64 = 96;

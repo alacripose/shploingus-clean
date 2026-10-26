@@ -85,7 +85,7 @@
 //! to *"we need to evaluate the kinds of windows we want that come with the tabs."*
 use voxel_model::endian::LeBytes;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use voxel_model::{Digest, Identity, Refusal, RefusalKind, RefusalSet};
 
@@ -97,6 +97,21 @@ pub const HEADER: &str = "shploingus.recipe/3";
 pub const ACCEPTED_VERSIONS: &[&str] = &[HEADER];
 
 const MAGIC: &[u8; 8] = b"SHPKG002";
+
+/// **The package that carries its artifacts.** `SHPKG002` is the source frame this tree has
+/// emitted since M10.0; `SHPKG003` is the same frame with the display package's own files after
+/// it, so a shipped cell frame survives compile the way the recipe does. A reader refuses both
+/// magics it does not know rather than converting either.
+const MAGIC_ARTIFACTS: &[u8; 8] = b"SHPKG003";
+
+/// Longest artifact path in a package. A path is a package-relative name (`frames/<id>.frame`),
+/// never a host path, and the ceiling is the grammar's own rather than the filesystem's.
+pub const ARTIFACT_PATH_MAX: usize = 256;
+/// Longest one artifact. The frame grammar already refuses a declaration past its own ceiling;
+/// this bounds the bytes a reader allocates before that grammar runs.
+pub const ARTIFACT_BYTES_MAX: usize = 4 * 1024 * 1024;
+/// How many artifacts one package may carry. A bound stated instead of a growable table.
+pub const ARTIFACT_COUNT_MAX: usize = 1024;
 
 /// Alpha input ceilings — declared resource limits, never silent truncation.
 pub const MAX_RECIPE_BYTES: usize = 1_048_576;
@@ -617,6 +632,10 @@ pub struct Loaded {
     pub source_digest: Digest,
     /// Digest of the whole frame. A different artifact from the same source.
     pub package_digest: Digest,
+    /// **The display package's files the frame carries**, keyed by package-relative path
+    /// (`frames/MAP-0001.frame`, `frames/MAP-0001.md`). Empty for a source-only `SHPKG002`
+    /// package; a mounted package grades its cell frames from this map, not from a checkout.
+    pub artifacts: BTreeMap<String, Vec<u8>>,
 }
 
 impl Recipe {
@@ -1268,23 +1287,132 @@ impl Recipe {
     }
 }
 
-/// The `.shpkg` frame: magic, payload length, payload digest, then the exact source.
+/// The `.shpkg` frame: magic, payload length, payload digest, then the exact source. A
+/// `SHPKG003` frame follows the source with its artifact table; `compile` writes an empty table,
+/// which is the same package `SHPKG002` described.
 ///
 /// The digest binds **these exact source bytes**, so a payload edited after the frame was
 /// written is refused rather than mounted. This is **integrity, not identity** — see
 /// `crate::signing` for why those are two different claims with two different names.
 pub fn compile(source: &[u8]) -> Result<Vec<u8>, RefusalSet> {
+    compile_with_artifacts(source, &BTreeMap::new())
+}
+
+/// **Compile a recipe and the display package's files into one frame.**
+///
+/// The source frame is `SHPKG002`'s, unchanged, followed by an artifact table: a count, then
+/// `path`, `bytes` for each file in path order. **The source digest covers only the recipe**, so
+/// an artifact edit cannot silently rewrite what the package says; the whole-frame digest moves,
+/// which is the fact a mount compares when it asks whether it has this package already.
+///
+/// Paths are **package-relative names**, and every one is checked here and again on load: an
+/// absolute path, a `..` part, a backslash, an empty part, an over-long name, an over-long file,
+/// or more files than [`ARTIFACT_COUNT_MAX`] refuses the compile with each problem named.
+pub fn compile_with_artifacts(
+    source: &[u8],
+    artifacts: &BTreeMap<String, Vec<u8>>,
+) -> Result<Vec<u8>, RefusalSet> {
     // Parse first, so a frame is never produced for a source this build refuses.
     Recipe::parse(source)?;
+    let mut errors = RefusalSet::new();
+    if artifacts.len() > ARTIFACT_COUNT_MAX {
+        note!(
+            errors,
+            format!(
+                "package carries {} artifacts; the ceiling is {ARTIFACT_COUNT_MAX}",
+                artifacts.len()
+            )
+        );
+    }
+    for (path, bytes) in artifacts {
+        if !artifact_path_is_well_formed(path) {
+            note!(
+                errors,
+                format!(
+                    "{path:?} is not a package-relative artifact path: a name is one or more \
+                     non-empty parts separated by `/`, with no `..`, no leading `/` and no \
+                     backslash ({} bytes is the ceiling)",
+                    ARTIFACT_PATH_MAX
+                )
+            );
+        }
+        if bytes.len() > ARTIFACT_BYTES_MAX {
+            note!(
+                errors,
+                format!(
+                    "artifact {path:?} has {} bytes; the ceiling is {ARTIFACT_BYTES_MAX}",
+                    bytes.len()
+                )
+            );
+        }
+    }
+    if !errors.is_empty() {
+        return Err(errors);
+    }
+
     let mut frame = Vec::with_capacity(source.len() + 80);
-    frame.extend_from_slice(MAGIC);
+    frame.extend_from_slice(MAGIC_ARTIFACTS);
     frame.extend_from_slice(&(source.len() as u32).into_le_bytes());
     frame.extend_from_slice(Digest::of(source).as_bytes());
     frame.extend_from_slice(source);
+    frame.extend_from_slice(&(artifacts.len() as u32).into_le_bytes());
+    for (path, bytes) in artifacts {
+        frame.extend_from_slice(&(path.len() as u16).into_le_bytes());
+        frame.extend_from_slice(path.as_bytes());
+        frame.extend_from_slice(&(bytes.len() as u32).into_le_bytes());
+        frame.extend_from_slice(bytes);
+    }
     Ok(frame)
 }
 
-/// Read a frame back, refusing anything that is not the frame this build writes.
+/// Whether a name is a package-relative path and nothing else. **Checked on compile and on
+/// load**, because a frame is bytes and bytes can arrive from anywhere.
+fn artifact_path_is_well_formed(path: &str) -> bool {
+    !path.is_empty()
+        && path.len() <= ARTIFACT_PATH_MAX
+        && !path.starts_with('/')
+        && !path.contains('\\')
+        && path
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..")
+}
+
+/// **Read a package's artifacts out of its folder**, keyed by package-relative path.
+///
+/// This is the one place a package's files are named for the frame, so `build.rs` and a mount
+/// that compiles a folder agree about which files a package carries. A missing `frames/` is a
+/// package with no cell frames — the composed shell, not an error — while an unreadable one is
+/// refused, because absence and a permissions problem are different facts.
+pub fn artifacts_in(folder: &std::path::Path) -> Result<BTreeMap<String, Vec<u8>>, String> {
+    let mut artifacts = BTreeMap::new();
+    let frames = folder.join("frames");
+    let entries = match std::fs::read_dir(&frames) {
+        Ok(entries) => entries,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return Ok(artifacts),
+        Err(why) => {
+            return Err(format!("{} could not be read ({why})", frames.display()));
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let bytes = std::fs::read(&path)
+            .map_err(|why| format!("{} could not be read ({why})", path.display()))?;
+        artifacts.insert(format!("frames/{name}"), bytes);
+    }
+    Ok(artifacts)
+}
+
+/// Read a frame back, refusing anything that is not a frame this build writes.
+///
+/// Two magics are accepted: `SHPKG003` with its artifact table, and `SHPKG002` without one.
+/// **Version-1 is still refused, not converted.** A `SHPKG002` frame is the emitted package
+/// this tree produced before artifacts shipped and is read unchanged; it simply carries none.
 pub fn load(frame: &[u8]) -> Result<Loaded, RefusalSet> {
     let mut errors = RefusalSet::new();
     let head = MAGIC.len() + 4 + 32;
@@ -1292,31 +1420,118 @@ pub fn load(frame: &[u8]) -> Result<Loaded, RefusalSet> {
         note!(errors, "package frame is shorter than its own header");
         return Err(errors);
     }
-    if &frame[..MAGIC.len()] != MAGIC {
-        note!(errors, 
+    let magic = &frame[..MAGIC.len()];
+    let with_artifacts = if magic == MAGIC_ARTIFACTS {
+        true
+    } else if magic == MAGIC {
+        false
+    } else {
+        note!(
+            errors,
             "package frame does not carry this build's magic; a version-1 frame is refused, \
              not converted",
         );
         return Err(errors);
-    }
+    };
+
     let mut length_bytes = [0u8; 4];
     length_bytes.copy_from_slice(&frame[MAGIC.len()..MAGIC.len() + 4]);
     let length = u32::from_le_bytes(length_bytes) as usize;
-    let source = &frame[head..];
-    if source.len() != length {
-        note!(errors, format!(
-            "package frame declares {length} payload bytes and carries {}",
-            source.len()
-        ));
+    let Some(source_end) = head.checked_add(length) else {
+        note!(
+            errors,
+            format!("package frame declares {length} payload bytes, which no frame can hold")
+        );
+        return Err(errors);
+    };
+    if frame.len() < source_end {
+        note!(
+            errors,
+            format!(
+                "package frame declares {length} payload bytes and carries {}",
+                frame.len() - head
+            )
+        );
+        return Err(errors);
     }
+    let source = &frame[head..source_end];
     let mut declared = [0u8; 32];
     declared.copy_from_slice(&frame[MAGIC.len() + 4..head]);
     if Digest::of(source).as_bytes() != &declared {
-        note!(errors, 
+        note!(
+            errors,
             "package payload does not match the digest the frame declares; a payload edited \
              after the frame was written is refused rather than mounted",
         );
     }
+
+    let mut artifacts = BTreeMap::new();
+    if with_artifacts {
+        let mut at = source_end;
+        let count = if at + 4 <= frame.len() {
+            let mut bytes = [0u8; 4];
+            bytes.copy_from_slice(&frame[at..at + 4]);
+            at += 4;
+            u32::from_le_bytes(bytes) as usize
+        } else {
+            note!(errors, "package carries no artifact count after its recipe");
+            0
+        };
+        if count > ARTIFACT_COUNT_MAX {
+            note!(
+                errors,
+                format!(
+                    "package declares {count} artifacts; the ceiling is {ARTIFACT_COUNT_MAX}"
+                )
+            );
+        } else {
+            for _ in 0..count {
+                let path = match read_artifact_path(frame, &mut at, &mut errors) {
+                    Some(path) => path,
+                    None => break,
+                };
+                let bytes = match read_artifact_bytes(frame, &mut at, &mut errors) {
+                    Some(bytes) => bytes,
+                    None => break,
+                };
+                if !artifact_path_is_well_formed(&path) {
+                    note!(
+                        errors,
+                        format!(
+                            "{path:?} is not a package-relative artifact path; a package is read \
+                             by the same rule it was written by"
+                        )
+                    );
+                    continue;
+                }
+                if artifacts.insert(path.clone(), bytes).is_some() {
+                    note!(
+                        errors,
+                        format!("artifact {path:?} appears twice; a package names each file once")
+                    );
+                }
+            }
+        }
+        if at != frame.len() {
+            note!(
+                errors,
+                format!(
+                    "package carries {} bytes after its artifact table; a frame with a tail is a \
+                     frame this build did not write",
+                    frame.len().saturating_sub(at)
+                )
+            );
+        }
+    } else if frame.len() != source_end {
+        note!(
+            errors,
+            format!(
+                "package frame declares {length} payload bytes and carries {}",
+                frame.len() - head
+            )
+        );
+    }
+
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -1326,7 +1541,75 @@ pub fn load(frame: &[u8]) -> Result<Loaded, RefusalSet> {
         source: source.to_vec(),
         source_digest: Digest::of(source),
         package_digest: Digest::of(frame),
+        artifacts,
     })
+}
+
+/// One artifact's path, or `None` when the table ends early. The cursor advances only over bytes
+/// that were read, so a truncated table is one named refusal rather than a slice panic.
+fn read_artifact_path(frame: &[u8], at: &mut usize, errors: &mut RefusalSet) -> Option<String> {
+    if *at + 2 > frame.len() {
+        note!(
+            errors,
+            format!("package artifact table ends before a path at byte {at}")
+        );
+        return None;
+    }
+    let mut length = [0u8; 2];
+    length.copy_from_slice(&frame[*at..*at + 2]);
+    *at += 2;
+    let length = u16::from_le_bytes(length) as usize;
+    if *at + length > frame.len() {
+        note!(
+            errors,
+            format!("package artifact path at byte {at} declares {length} bytes and the frame ends first")
+        );
+        return None;
+    }
+    let bytes = &frame[*at..*at + length];
+    *at += length;
+    match std::str::from_utf8(bytes) {
+        Ok(path) => Some(path.to_string()),
+        Err(why) => {
+            note!(
+                errors,
+                format!("package artifact path at byte {at} is not UTF-8 ({why})")
+            );
+            None
+        }
+    }
+}
+
+/// One artifact's bytes, or `None` when the table ends early.
+fn read_artifact_bytes(frame: &[u8], at: &mut usize, errors: &mut RefusalSet) -> Option<Vec<u8>> {
+    if *at + 4 > frame.len() {
+        note!(
+            errors,
+            format!("package artifact table ends before a length at byte {at}")
+        );
+        return None;
+    }
+    let mut length = [0u8; 4];
+    length.copy_from_slice(&frame[*at..*at + 4]);
+    *at += 4;
+    let length = u32::from_le_bytes(length) as usize;
+    if length > ARTIFACT_BYTES_MAX {
+        note!(
+            errors,
+            format!("package artifact at byte {at} has {length} bytes; the ceiling is {ARTIFACT_BYTES_MAX}")
+        );
+        return None;
+    }
+    if *at + length > frame.len() {
+        note!(
+            errors,
+            format!("package artifact bytes at byte {at} declare {length} bytes and the frame ends first")
+        );
+        return None;
+    }
+    let bytes = frame[*at..*at + length].to_vec();
+    *at += length;
+    Some(bytes)
 }
 
 impl Recipe {
@@ -1798,6 +2081,64 @@ pin\tinventory
         assert_eq!(loaded.source_digest, Digest::of(GOOD.as_bytes()));
         assert_eq!(loaded.package_digest, Digest::of(&frame));
         assert_ne!(loaded.source_digest, loaded.package_digest);
+    }
+
+    fn artifacts() -> BTreeMap<String, Vec<u8>> {
+        BTreeMap::from([
+            (
+                "frames/MAP-0001.frame".to_string(),
+                b"shploingus.cellframe/1\nframe\tMAP-0001\n".to_vec(),
+            ),
+            (
+                "frames/MAP-0001.md".to_string(),
+                b"# Map\n## Grammar\nx\n## Role\ny\n## Reading\nz\n## Evidence\nw\n".to_vec(),
+            ),
+        ])
+    }
+
+    #[test]
+    fn a_package_carries_its_artifacts_and_the_recipe_digest_does_not_cover_them() {
+        let plain = compile(GOOD.as_bytes()).expect("compiles");
+        let carried = compile_with_artifacts(GOOD.as_bytes(), &artifacts()).expect("compiles");
+        assert_ne!(plain, carried);
+
+        let loaded = load(&carried).expect("loads");
+        assert_eq!(loaded.source, GOOD.as_bytes());
+        assert_eq!(loaded.artifacts, artifacts());
+        assert_eq!(loaded.source_digest, Digest::of(GOOD.as_bytes()));
+        assert_eq!(loaded.package_digest, Digest::of(&carried));
+        // The source-only frame still reads, and simply carries none.
+        assert!(load(&plain).expect("loads").artifacts.is_empty());
+    }
+
+    #[test]
+    fn an_artifact_path_that_is_not_package_relative_is_refused_by_name() {
+        for path in ["", "/frames/a.frame", "frames/../a.frame", "frames\\a.frame", "frames//a"] {
+            let carried = BTreeMap::from([(path.to_string(), b"x".to_vec())]);
+            let refusals = compile_with_artifacts(GOOD.as_bytes(), &carried)
+                .expect_err("a host path is not a package path");
+            assert!(
+                refusals
+                    .all()
+                    .iter()
+                    .any(|refusal| refusal.detail().contains("package-relative")),
+                "{path:?}: {refusals}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_tail_after_the_artifact_table_is_refused() {
+        let mut carried = compile_with_artifacts(GOOD.as_bytes(), &artifacts()).expect("compiles");
+        carried.extend_from_slice(b"tail");
+        let refusals = load(&carried).expect_err("a frame with a tail is not this build's");
+        assert!(
+            refusals
+                .all()
+                .iter()
+                .any(|refusal| refusal.detail().contains("after its artifact table")),
+            "{refusals}"
+        );
     }
 
     #[test]

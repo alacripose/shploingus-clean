@@ -1,0 +1,138 @@
+   Compiling unicode-ident v1.0.26
+   Compiling libm v0.2.16
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libunicode_ident-1311fe617de71ba7.rmeta
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling syn v3.0.6
+   Compiling syn v2.0.119
+   Compiling bytemuck_derive v1.12.1
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libcpufeatures-db911beae73f1263.rmeta
+   Compiling musli-macros v0.1.7
+   Compiling bytemuck v1.25.2
+   Compiling musli-core v0.1.7
+   Compiling foldhash v0.2.0
+   Compiling equivalent v1.0.2
+   Compiling num-traits v0.2.19
+   Compiling musli v0.1.8
+   Compiling windows-implement v0.60.2
+   Compiling windows-interface v0.59.3
+   Compiling thiserror-impl v2.0.21
+   Compiling windows-result v0.4.1
+   Compiling windows-strings v0.5.1
+   Compiling once_cell v1.21.4
+   Compiling windows-core v0.62.2
+   Compiling thiserror v2.0.21
+   Compiling hashbrown v0.17.1
+   Compiling indexmap v2.14.2
+   Compiling zerocopy-derive v0.8.59
+   Compiling rustc-hash v1.1.0
+   Compiling smallvec v1.16.2
+   Compiling zerocopy v0.8.59
+   Compiling naga-types v30.0.1
+   Compiling gl_generator v0.14.0
+   Compiling windows-threading v0.2.1
+   Compiling libloading v0.8.9
+   Compiling bit-vec v0.9.1
+   Compiling raw-window-handle v0.6.2
+   Compiling codespan-reporting v0.13.1
+   Compiling bit-set v0.10.0
+   Compiling windows-future v0.3.2
+   Compiling half v2.7.1
+   Compiling glutin_wgl_sys v0.6.1
+   Compiling windows-collections v0.3.2
+   Compiling windows-numerics v0.3.1
+   Compiling spirv v0.4.0+sdk-1.4.341.0
+   Compiling core_maths v0.1.1
+   Compiling arrayvec v0.7.8
+   Compiling allocator-api2 v0.2.21
+   Compiling scopeguard v1.2.0
+   Compiling wgpu-types v30.0.1
+   Compiling lock_api v0.4.14
+   Compiling hashbrown v0.16.1
+   Compiling naga v30.0.1
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+   Compiling windows v0.62.2
+   Compiling ash v0.38.0+1.3.281
+   Compiling parking_lot_core v0.9.12
+   Compiling presser v0.3.1
+   Compiling khronos-egl v6.0.0
+   Compiling parking_lot v0.12.5
+   Compiling wgpu-naga-bridge v30.0.1
+   Compiling ordered-float v5.5.0
+   Compiling font-types v0.12.5
+   Compiling font-types v0.11.3
+   Compiling range-alloc v0.1.5
+   Compiling gpu-allocator v0.28.0
+   Compiling renderdoc-sys v1.1.0
+   Compiling profiling v1.0.18
+   Compiling glow v0.17.0
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+   Compiling wgpu-hal v30.0.1
+   Compiling read-fonts v0.37.0
+   Compiling read-fonts v0.41.0
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1
+   Compiling slotmap v1.1.1
+   Compiling ttf-parser v0.25.1
+   Compiling skrifa v0.44.0
+   Compiling zeno v0.3.3
+   Compiling yazi v0.2.1
+   Compiling memmap2 v0.9.11
+   Compiling tinyvec v1.13.3
+   Compiling swash v0.2.10
+   Compiling fontdb v0.23.0
+   Compiling wgpu-core v30.0.1
+   Compiling skrifa v0.40.0
+   Compiling harfrust v0.5.2
+   Compiling voxel-mesh v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-mesh)
+warning: function `signed_area` is never used
+   --> crates\voxel-mesh\src\mesh.rs:858:4
+    |
+858 | fn signed_area(corners: &[[i16; 2]]) -> i64 {
+    |    ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-mesh` (lib) generated 1 warning
+   Compiling euclid v0.22.14
+   Compiling smol_str v0.3.6
+   Compiling unicode-script v0.5.8
+   Compiling unicode-bidi v0.3.18
+   Compiling self_cell v1.3.0
+   Compiling rustc-hash v2.1.3
+   Compiling rangemap v1.8.0
+   Compiling sys-locale v0.3.2
+   Compiling unicode-linebreak v0.1.5
+   Compiling linebender_resource_handle v0.1.1
+   Compiling cosmic-text v0.19.0
+   Compiling etagere v0.3.0
+   Compiling voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+   Compiling wgpu v30.0.1
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+   Compiling tracing-core v0.1.36
+   Compiling lru v0.16.4
+   Compiling glyphon v0.12.0
+   Compiling tracing v0.1.44
+   Compiling windows-sys v0.52.0
+   Compiling voxel-work v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-work)
+   Compiling shploingus v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\shploingus)
+   Compiling voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+   Compiling voxel-light v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-light)
+   Compiling cursor-icon v1.2.0
+   Compiling voxel-ui v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-ui)
+   Compiling smol_str v0.2.2
+   Compiling dpi v0.1.2
+   Compiling pollster v0.3.0
+   Compiling winit v0.30.13
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+warning: unused import: `voxel_model::MaterialId`
+  --> crates\voxel-client\src\scene.rs:37:5
+   |
+37 | use voxel_model::MaterialId;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-client` (lib) generated 1 warning (run `cargo fix --lib -p voxel-client` to apply 1 suggestion)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 3m 54s

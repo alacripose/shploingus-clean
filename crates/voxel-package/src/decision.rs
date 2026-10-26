@@ -47,6 +47,8 @@ use voxel_model::{RefusalKind, RefusalSet};
 
 use voxel_model::axis::AxisKind;
 
+use voxel_axis_civilians::{CivilianRefusal, LadderReading, LadderReadingState};
+
 use crate::census::{self, Axis, Crate, AXES, AXIS_COUNT, CRATES, CRATE_COUNT};
 use crate::features::{self, Establishment, Feature, FEATURES, FEATURE_COUNT};
 use crate::recipe;
@@ -419,6 +421,36 @@ pub fn rule_for_axis(
         },
         // **The doc stage.** The facts come from `census::observe`; the rule is here so a second
         // instrument is handed the same numbers and rules them its own way.
+        // **The caller question, and the two states that are not a pass.** A crate with no caller
+        // outside its own sources and tests is `inactive` — measured, named, and not a failure of
+        // the build, because the record says a library may be waiting for its first caller. A
+        // crate with no readable source is `refused`: nothing was measured.
+        Axis::Exercised => match &observation.exercised {
+            None => (
+                Establishment::Refused,
+                Some(format!(
+                    "{} has no readable source, so whether anything calls it was not measured",
+                    observation.crate_.name()
+                )),
+            ),
+            Some(sites) if sites.is_empty() => (
+                Establishment::Inactive,
+                Some(format!(
+                    "no call site for {} exists outside its own sources and tests. A re-export is \
+                     not a call, and an inline `#[cfg(test)]` module is not a caller, so this crate \
+                     is named, moduled, tested and still stepped by nothing",
+                    observation.crate_.name()
+                )),
+            ),
+            Some(sites) => (
+                Establishment::Active,
+                Some(format!(
+                    "reached from {} site(s) outside its own sources and tests, first {}",
+                    sites.len(),
+                    sites[0]
+                )),
+            ),
+        },
         Axis::Documented => match &observation.prose {
             None => (
                 Establishment::Refused,
@@ -592,14 +624,15 @@ impl Assessment {
     }
 }
 
-/// **What a civilian ladder's witness means.** The rule the reader does not hold.
+/// **What a civilian ladder's witness means.** The reading, mapped to `Establishment`.
 ///
-/// `civilians::observe` reports whether the governed record carries the ladder's witness;
-/// **this** says what that is worth. Deliberately the same shape as [`rule_for_feature`],
-/// because the two report the same kind of fact: a witness that is there, absent, or
-/// unreadable.
+/// `civilians::observe` reports the two raw facts — whether the witness was readable and whether
+/// it carries the ladder's token — and **`voxel-axis-civilians::LadderReading` owns what those
+/// facts mean**: `Held`, `Absent`, or the refusal that says the record could not be read. This
+/// function is only the mapping to the decision layer's vocabulary, deliberately the same shape
+/// as [`rule_for_feature`] because the two report the same kind of fact.
 ///
-/// **A present witness is `Active`; an absent one is `Unchecked`; an unreadable record is
+/// **A held reading is `Active`; an absent one is `Unchecked`; an unreadable record is
 /// `Refused`.** The difference between the last two is the whole reason there are three:
 /// *"the record could not be read"* is a refusal, and *"the record does not carry this"* is a
 /// state a reader can act on. **Neither is a pass** — the same rule `census`'s `None` arm and
@@ -692,9 +725,15 @@ pub fn rule_for_civilian(
             );
         }
     }
-    match (observation.readable, observation.present) {
-        (true, true) => (Establishment::Active, None),
-        (true, false) => (
+    let reading = LadderReading {
+        ladder: observation.ladder,
+        witness: observation.witness.to_string(),
+        readable: observation.readable,
+        present: observation.present,
+    };
+    match reading.verify() {
+        Ok(LadderReadingState::Held) => (Establishment::Active, None),
+        Ok(LadderReadingState::Absent) => (
             Establishment::Unchecked,
             Some(format!(
                 "the governed record carries no witness for {}, so the civilians have nowhere on \
@@ -706,7 +745,7 @@ pub fn rule_for_civilian(
                 observation.token
             )),
         ),
-        (false, _) => (
+        Err(CivilianRefusal::UnreadableLadder { .. }) => (
             Establishment::Refused,
             Some(format!(
                 "{} could not be read, so whether the record carries {}'s witness is unknown. \
@@ -715,6 +754,7 @@ pub fn rule_for_civilian(
                 observation.ladder.name()
             )),
         ),
+        Err(refusal) => (Establishment::Refused, Some(refusal.describe())),
     }
 }
 
@@ -779,12 +819,18 @@ pub struct Deterministic<'a> {
     /// The recipe source, when the caller has one. Absent is a *refusal* for the recipe subject
     /// rather than a silent `Active`: a decider that was handed no source has decided nothing.
     recipe: Option<&'a [u8]>,
+    /// **One observation pass for the whole decider, not one per subject.** `decide` is called once
+    /// per cell; re-walking the workspace for every cell multiplied the census by the grid, and the
+    /// seventh axis made that cost visible. The walk is the same bytes for every subject, so it is
+    /// taken once and ruled on per subject, which is exactly the read-then-rule split this seam
+    /// already states.
+    observations: std::sync::OnceLock<Result<Vec<crate::census::CrateObservation>, RefusalSet>>,
 }
 
 impl<'a> Deterministic<'a> {
     /// The decider over a workspace, with every subject available except the recipe's source.
     pub fn new(root: &'a Path) -> Self {
-        Deterministic { root, recipe: None }
+        Deterministic { root, recipe: None, observations: std::sync::OnceLock::new() }
     }
 
     /// Hand it the recipe's source, so [`Subject::Recipe`] can be decided.
@@ -805,7 +851,11 @@ impl Decider for Deterministic<'_> {
                 // **Read, then rule.** `census::observe` reports and `rule_for_axis` decides;
                 // going through `census::census` here would be the same pair already applied and
                 // would hide where the rule lives.
-                let observations = census::observe(self.root)?;
+                let observations = self.observations.get_or_init(|| census::observe(self.root));
+                let observations = match observations {
+                    Ok(observations) => observations,
+                    Err(found) => return Err(found.clone()),
+                };
                 let assessment = match observations.iter().find(|observed| observed.crate_ == crate_)
                 {
                     Some(observed) => {
@@ -1970,15 +2020,22 @@ divergences\t0
     fn the_subject_vocabulary_is_closed_and_counted() {
         // A literal, checked against the vocabulary it counts — the same mutation test the axis gate
         // relies on. Change a crate to add an axis and this is the compile error that says so.
-        assert_eq!(AXIS_SUBJECT_COUNT, 96, "16 crates x 6 axes");
-        // **80 → 86 → 98 → 105 → 128 → 152.** The six declared numbers join the vocabulary, then
-        // the doc stage adds a sixth axis, then the civilian ladders, then the bridge's surface,
-        // and then the four crates the census was not measuring: each is decided by the seam and
-        // printed by the gate rather than living in a module nothing calls. A literal, so an arm
+        // **16 → 18 → 19 → 20 → 21 → 22 → 23 crates**: `voxel-axis-being` (PATCH-043),
+        // `voxel-axis-matrix` (PATCH-042 §The calibration matrix), `voxel-axis-verify` (PATCH-042
+        // §The scrubber), `voxel-axis-artifact` (PATCH-042's five requirements), `voxel-axis-security`
+        // (the trust boundary), `voxel-axis-mcp` (the authority layer) and `voxel-axis-balance` (the
+        // CPU/GPU census) each add a row of six, and the grid is the crate table's rather than a
+        // second list, so this number moved with `CRATE_COUNT` and nothing else in this file did.
+        assert_eq!(AXIS_SUBJECT_COUNT, 203, "29 crates x 7 axes");
+        // **80 → 86 → 98 → 105 → 128 → 152 → 164 → 170 → 176 → 182 → 188.** The six declared numbers
+        // join the vocabulary, then the doc stage adds a sixth axis, then the civilian ladders, then
+        // the bridge's surface, then the four crates the census was not measuring, then the two axis
+        // crates this file grew rows for, and then the authority layer: each is decided by the seam
+        // and printed by the gate rather than living in a module nothing calls. A literal, so an arm
         // added without its rows does not compile.
         assert_eq!(
-            SUBJECT_COUNT, 152,
-            "96 axis subjects + 19 features + the recipe + 6 declared numbers + 7 civilian \
+            SUBJECT_COUNT, 262,
+            "161 axis subjects + 20 features + the recipe + 6 declared numbers + 7 civilian \
              ladders + 23 tool rows — the bridge's surface, so a capability is a decided subject \
              rather than a table beside the seam"
         );
@@ -2061,6 +2118,7 @@ divergences\t0
                 named_by_record: Some(true),
                 sources: None,
                 claim: None,
+                exercised: None,
                 prose: Some(census::ProseObservation {
                     measured: true,
                     why_unmeasured: None,

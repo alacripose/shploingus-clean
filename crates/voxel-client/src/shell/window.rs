@@ -80,7 +80,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::shell::arrangement::{Arrangement, Orientation, PaneRef, Side, WindowId};
+use crate::shell::arrangement::{Arrangement, Node, Orientation, PaneRef, Side, WindowId};
 use crate::shell::drop::{self, DropTarget, DropZone};
 use crate::shell::mount::Status;
 use crate::shell::pane::{self, PanePress};
@@ -229,6 +229,16 @@ impl PortalWindow {
     /// Whether this window is drawn on its own; a docked window is drawn by its host.
     pub fn is_standalone(&self) -> bool {
         self.host.is_none()
+    }
+
+    /// **Whether this window's panes draw headers.** One pane holding the window itself does
+    /// not: the title bar already names it, and a header underneath named the same window a
+    /// second time in a 40 dp row the package never reserved — which is what put every window's
+    /// title on screen twice and pushed the body past its declared geometry. A window the
+    /// operator has split, or one holding a foreign pane, draws a header per pane, because then
+    /// the header is the only thing naming each one.
+    pub fn draws_pane_headers(&self) -> bool {
+        !matches!(self.arrangement.root(), Node::Pane(id) if id.as_str() == self.spec.id)
     }
 
     /// The pane tree laid out inside the window's content container — the pass the drawing and
@@ -481,12 +491,12 @@ impl PortalWindow {
         // maximized window's hit tests and its chrome share this pass's arithmetic.
         let layout = splitter::layout(&self.arrangement, composite.content)?;
         let undock_shown = self.arrangement.panes() > 1;
+        let headers = self.draws_pane_headers();
         for (pane_rect, pane) in &layout.panes {
-            // **The tree says which panes are slots**, not the title map: a `PaneRef::Slot` is
-            // the reference's unnamed `WindowPane(app=None)` and draws its own title and the
-            // placeholder; a window pane draws the title the caller titles it with. A window
-            // pane the caller cannot title falls back to its id — the pane is still a pane,
-            // and a blank bar would say nothing about which one.
+            // **A single pane that is the window draws no header** (see
+            // [`PortalWindow::draws_pane_headers`]): the title bar is its chrome, and the row a
+            // header would take is a row of the body the package declared. Its placeholder — an
+            // empty slot — still draws, because a slot has no title bar naming it.
             let (title, slot) = match pane {
                 PaneRef::Window(id) => (
                     titles
@@ -497,17 +507,21 @@ impl PortalWindow {
                 ),
                 PaneRef::Slot(_) => (pane::empty_pane_title(), true),
             };
-            out.extend(pane::elements(
-                *pane_rect,
-                &title,
-                // **A slot cannot be undocked here**: it has no window id, and this model's
-                // registry names windows by id (owed, and named in `arrangement.rs::undock`).
-                undock_shown && !slot,
-                view.hovered_pane_mark,
-                level,
-                opacity,
-                palette,
-            )?);
+            // **An empty slot is never the `headers == false` case** — that case is a root
+            // pane holding this window — so a slot always has a header to draw here.
+            if headers {
+                out.extend(pane::elements(
+                    *pane_rect,
+                    &title,
+                    // **A slot cannot be undocked here**: it has no window id, and this model's
+                    // registry names windows by id (owed, and named in `arrangement.rs::undock`).
+                    undock_shown && !slot,
+                    view.hovered_pane_mark,
+                    level,
+                    opacity,
+                    palette,
+                )?);
+            }
             if slot {
                 out.extend(placeholder::elements(
                     pane::body(*pane_rect),
@@ -659,8 +673,15 @@ impl PortalWindow {
                     .pane_rect(pane)
                     .expect("a pane in the layout has a rect");
                 let undock_shown = self.arrangement.panes() > 1;
-                match pane::press(pane_rect, undock_shown && matches!(pane, PaneRef::Window(_)), at)
-                {
+                // **A header that is not drawn is not hit-tested.** A single self-hosted pane
+                // draws no header, so its top row is body — the reference's own leaf case, with
+                // the split and close controls belonging to the window's title bar instead.
+                let verdict = if self.draws_pane_headers() {
+                    pane::press(pane_rect, undock_shown && matches!(pane, PaneRef::Window(_)), at)
+                } else {
+                    PanePress::Body
+                };
+                match verdict {
                     PanePress::Action(mark) => WindowPress::PaneAction(pane.clone(), mark),
                     PanePress::Body => {
                         // **An empty slot's body is its offer grid**: the placeholder's rows
@@ -1121,6 +1142,67 @@ mod tests {
         assert!(w.pane_ids().contains(&id("host")));
         assert!(w.is_standalone());
         assert_eq!(w.status, Status::Normal);
+    }
+
+    #[test]
+    fn a_window_that_is_one_pane_draws_its_title_once() {
+        // **The regression guard for the doubled title.** The title bar names the window; a
+        // pane header on top of it named the same window again, 40 dp lower.
+        let w = window("host");
+        assert!(!w.draws_pane_headers());
+        let mut out = Vec::new();
+        w.elements(
+            &view("Inventory"),
+            &Palette::declared(),
+            &titles(&[("host", "Inventory")]),
+            &mut out,
+        )
+        .expect("draws");
+        let titles_drawn = out
+            .iter()
+            .filter(|element| matches!(element, Element::Text { text, .. } if text == "Inventory"))
+            .count();
+        assert_eq!(titles_drawn, 1, "the window's name is drawn once");
+    }
+
+    #[test]
+    fn a_split_window_draws_a_header_per_pane() {
+        let mut w = window("host");
+        w.split(
+            Some(&id("host")),
+            Orientation::Horizontal,
+            Side::After,
+            id("other"),
+        )
+        .expect("splits");
+        assert!(w.draws_pane_headers(), "two panes need two headers");
+        let mut out = Vec::new();
+        w.elements(
+            &view("host and other"),
+            &Palette::declared(),
+            &titles(&[("host", "Host"), ("other", "Other")]),
+            &mut out,
+        )
+        .expect("draws");
+        for pane in ["Host", "Other"] {
+            assert!(
+                out.iter()
+                    .any(|element| matches!(element, Element::Text { text, .. } if text == pane)),
+                "each pane is named by its own header"
+            );
+        }
+    }
+
+    #[test]
+    fn the_row_a_header_would_take_is_body_in_a_single_pane_window() {
+        // The pane's top row drew split and close controls; it is not drawn, so it must not be
+        // hit-tested either.
+        let w = window("host");
+        let top_of_content = w.content().y + 1.0;
+        assert_eq!(
+            w.press(&view("Inventory"), (w.content().x + 20.0, top_of_content), false),
+            WindowPress::Pane(PaneRef::Window(id("host")))
+        );
     }
 
     #[test]

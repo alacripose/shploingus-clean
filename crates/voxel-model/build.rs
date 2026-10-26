@@ -26,6 +26,17 @@
 //! materials-generator --features materials-regeneration` can rebuild the
 //! record. Normal builds and the tamper tests never enable it, so the gate
 //! still bites everywhere else.
+//!
+//! # Owed, and deliberately not switched on here
+//!
+//! `PATCH-042`'s security layer refuses a **private key, a `.env` file or a connection string under
+//! `crates/`, `packages/` or `docs/`**. That walk is not in this file. A build script that failed a
+//! checkout the moment a developer kept a local `.env` beside a crate would be deleted from the
+//! script within a week, and a 300-file walk is not what a digest gate is for; the refusal belongs
+//! where the key is read. `voxel-axis-security` refuses a key path inside the checkout by name, and
+//! its tests assert no key file exists in this repository. **The debt recorded here is the walk
+//! itself** — a build-time refusal over the whole tree — so the next reader sees it from the gate
+//! rather than from memory.
 
 use std::env;
 use std::fs;

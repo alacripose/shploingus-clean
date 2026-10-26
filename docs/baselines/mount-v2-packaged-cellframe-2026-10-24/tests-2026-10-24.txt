@@ -1,0 +1,81 @@
+captured 2026-10-24 on working tree at aef0971, uncommitted changes present
+== cargo test --offline -q -p voxel-package --lib cellframe::
+running 13 tests
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 377 filtered out; finished in 0.00s
+exit 0
+== cargo test --offline -q -p voxel-package --lib layer::
+running 11 tests
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 379 filtered out; finished in 0.00s
+exit 0
+== cargo test --offline -q -p voxel-client --lib shell::cells::tests::
+running 15 tests
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 548 filtered out; finished in 0.00s
+exit 0
+== cargo test --offline -q -p voxel-client --test cell_version_refusal
+running 2 tests
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+exit 0
+== cargo test --offline -q -p voxel-client --lib shell::mount::tests::a_shipped_cell_frame
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 562 filtered out; finished in 0.00s
+exit 0
+== cargo test --offline -q -p voxel-client --lib shell::mount::tests::a_package_whose_frame
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 562 filtered out; finished in 0.00s
+exit 0
+== cargo test --offline -q -p voxel-axis-verify --lib
+running 16 tests
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.02s
+exit 0
+== cargo test --offline -q -p voxel-client --lib renderer::tests -- --test-threads=1
+running 22 tests
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 541 filtered out; finished in 86.08s
+exit 0
+-- re-taken after the final pin re-take --
+== cargo test --offline -q -p voxel-axis-verify --lib
+running 16 tests
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.53s
+exit 0
+== cargo test --offline -q -p voxel-package --lib cellframe::
+running 13 tests
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 377 filtered out; finished in 0.00s
+exit 0
+== cargo test --offline -q -p shploingus --test packaged_frame
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+exit 0
+-- re-taken after the audit fix: the format cell is a Subject measured in the one report loop, its
+   grade falls with any row that did not light, and the stale pins were re-derived --
+== cargo test --offline -q -p voxel-axis-verify --lib
+running 19 tests
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.17s
+exit 0
+== cargo test --offline -q -p voxel-axis-mcp
+running 18 tests
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.32s
+exit 0
+== cargo test --offline -q -p voxel-package --lib cellframe::
+running 13 tests
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 377 filtered out; finished in 0.00s
+exit 0
+== cargo test --offline -q -p voxel-client --lib shell::cells::tests::
+running 15 tests
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 548 filtered out; finished in 0.00s
+exit 0
+== cargo test --offline -q -p voxel-client --lib shell::mount::tests::a_shipped_cell_frame
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 562 filtered out; finished in 0.00s
+exit 0
+== cargo test --offline -q -p voxel-client --lib shell::mount::tests::a_package_whose_frame
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 562 filtered out; finished in 0.00s
+exit 0
+== cargo test --offline -q -p shploingus --test packaged_frame
+running 1 test
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+exit 0
+== cargo check --offline --workspace --all-targets
+exit 0 (4 m 55 s)
+== voxel-layers display-packages
+180 lines, sha256:13d93263cf7dd64cd128fc8b4ad8535b658b480bb41e5895a83c4ba75996b7c4
+identical to display-packages-after-2026-10-24.txt
+== voxel-census
+census-folders 16, census-formats 1, census-unclassified 0, census-excluded 2
+exit 0

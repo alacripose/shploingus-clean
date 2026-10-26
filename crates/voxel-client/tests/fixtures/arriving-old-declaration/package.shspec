@@ -1,0 +1,18 @@
+shploingus.recipe/3
+package	arriving-old-declaration	v0
+row	CELL-0005	a package this build could mount whose declaration it cannot read
+window	console
+	title	Console
+	content	console
+	lane	control
+	extent	square-pixels
+	geometry	16 96 640 406
+	min-size	320 192
+	opacity	930
+	elevation	1
+	theme-role	surface
+	pinnable	true
+	layout	close,title-position
+	behavior	drag,close
+	record-id	window-console
+pin	console

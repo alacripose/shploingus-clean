@@ -34,13 +34,20 @@
 //! the same solid pipeline, and the shell's hierarchy reading (`crate::debug::drawing`) stays a
 //! reading about the shell rather than about marks that land on no surface of it.
 //!
-//! # The cost this version accepts
+//! # Shaping is paid for what changed, not for what is on screen
 //!
-//! Every text run is reshaped every frame. A HUD is twenty-odd short lines, and
-//! caching would mean an invalidation rule for text that changes whenever a
-//! counter changes — which is text that changes every frame anyway. The panel
-//! vertex buffer *is* reused, because a rect is a rect. Named, not hidden, in the
-//! same spirit as [`crate::Renderer`]'s per-frame vertex upload.
+//! The first version of this file reshaped every run every frame and named that as
+//! the cost it accepted: a counter that changes every frame is text that changes
+//! every frame. Measured, that was **2.8 ms of a 3.0 ms [`HudRenderer::prepare`]**
+//! over 45 runs — the largest single item in the shell stage — and the argument was
+//! wrong, because a frame changes *one* number and reshaped the 44 beside it.
+//!
+//! So the shaped runs have an owner ([`crate::shaped`]) with a rule of its own: a run
+//! is shaped once per distinct (text, size, wrap width), however many frames or
+//! windows ask for it, and released the first frame nobody does. This file keeps the
+//! other half — where a run is placed, in what ink, in which band — and recomputes
+//! that every frame, because placement is cheap and it is the half a window may
+//! change at will. A settled frame touches no GPU buffer at all.
 //!
 //! # Why `glyphon` is named by this crate and not by the bin
 //!
@@ -48,6 +55,7 @@
 //! see `tests::the_shell_chrome_is_legible_over_the_worst_backdrop`. A HUD that
 //! exists only inside an event loop is a HUD nobody can check.
 
+use crate::shaped::{RunKey, ShapedRuns, LINE_BOX};
 use crate::shading;
 use crate::ClientError;
 use voxel_model::{Digest, Refusal};
@@ -303,10 +311,35 @@ const VERTICES_PER_RECT: usize = 6;
 /// a little over twenty, so this is the round number above that and growth is the
 /// fallback rather than the path.
 const INITIAL_RECTS: usize = 32;
-/// The line box, as a multiple of the type size. This is the one number here
-/// that is a text-shaping convention rather than a design decision, so it lives
-/// beside the shaping call and not in `voxel-ui`'s constant table.
-const LINE_BOX: f32 = 1.25;
+/// **One band of the paint**: the rectangles that come before the text that follows them.
+///
+/// A band is drawn in one pass — its rects, then its text — so a window's body covers the text of
+/// the window behind it. A single text pass above every rect cannot: it is one layer, and every
+/// glyph in it lands above every surface, covered or not.
+#[derive(Clone, Debug, Default)]
+struct Band {
+    /// Vertex indices in [`HudRenderer::vertices`]: whole rectangles, six vertices each.
+    rects: std::ops::Range<u32>,
+    /// Indices into [`HudRenderer::placed`]: the runs drawn after them.
+    texts: std::ops::Range<usize>,
+    /// Which of [`HudRenderer::texts`] carries those runs, once they are prepared.
+    renderer: Option<usize>,
+}
+
+/// **One run where a view put it**: the shaped text it draws, and the box, ink, alignment and
+/// type size it was placed with.
+///
+/// The key says *what* is drawn; everything else says *where and how*, and all of it is compared
+/// frame to frame to tell a settled frame from a changed one. One struct rather than parallel
+/// vectors: a run and its placement cannot drift apart if they are the same value.
+#[derive(Clone, PartialEq, Debug)]
+struct Placed {
+    key: RunKey,
+    rect: Rect,
+    paint: Paint,
+    align: Align,
+    size_px: f32,
+}
 
 /// Glyphon's state plus the panel pipeline: everything the HUD needs to draw.
 pub struct HudRenderer {
@@ -314,15 +347,31 @@ pub struct HudRenderer {
     swash_cache: glyphon::SwashCache,
     viewport: glyphon::Viewport,
     atlas: glyphon::TextAtlas,
-    text: glyphon::TextRenderer,
     solid: wgpu::RenderPipeline,
     vertices: wgpu::Buffer,
     vertex_capacity_bytes: usize,
-    /// One shaped buffer per text element, and the box, paint and type size each
-    /// was shaped for. Two parallel vectors because a `TextArea` has to borrow a
-    /// shaped buffer, and a `Buffer` cannot hold the rect it was shaped into.
-    buffers: Vec<glyphon::Buffer>,
-    boxes: Vec<(Rect, Paint, Align, f32)>,
+    /// **The shaped runs**, held by what they say rather than by where they were drawn: reshaping
+    /// is the expensive half and it does not depend on placement. See [`crate::shaped`].
+    runs: ShapedRuns,
+    /// This frame's runs, in the order the elements emitted them.
+    placed: Vec<Placed>,
+    /// The vertices handed to the GPU last time a frame was prepared, so a frame that builds the
+    /// same bytes is recognised rather than re-uploaded.
+    uploaded: Vec<u8>,
+    /// **One text renderer a band.** A band's glyphs have to live in their own vertex buffer:
+    /// a run cannot be re-uploaded between draw calls, so the paint cannot take what one renderer
+    /// holds and hand it back a band at a time.
+    texts: Vec<glyphon::TextRenderer>,
+    /// The paint's bands, back to front: each one's rectangles and then its text.
+    bands: Vec<Band>,
+    /// The dp-per-pixel ratio [`Self::prepare`] measured with, so a band's text areas are built in
+    /// the same units.
+    scale: f32,
+    /// How many frames [`Self::prepare`] recognised as repeats of the one before it.
+    ///
+    /// **A measurement, not state**: the draw reads nothing from it. It exists because "a settled
+    /// frame costs nothing" is a claim about a path, and a path nothing counts cannot be checked.
+    settled_frames: u64,
     prepared_vertices: u32,
     width: u32,
     height: u32,
@@ -335,14 +384,7 @@ impl HudRenderer {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         let cache = glyphon::Cache::new(device);
         let viewport = glyphon::Viewport::new(device, &cache);
-        let mut atlas = glyphon::TextAtlas::new(device, queue, &cache, format);
-        let text = glyphon::TextRenderer::new(
-            &mut atlas,
-            device,
-            wgpu::MultisampleState::default(),
-            // No depth. A HUD draws in order, in one pass, on top of the world.
-            None,
-        );
+        let atlas = glyphon::TextAtlas::new(device, queue, &cache, format);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("panels.wgsl"),
@@ -425,12 +467,16 @@ impl HudRenderer {
             swash_cache: glyphon::SwashCache::new(),
             viewport,
             atlas,
-            text,
+            texts: Vec::new(),
             solid,
             vertices,
             vertex_capacity_bytes,
-            buffers: Vec::new(),
-            boxes: Vec::new(),
+            runs: ShapedRuns::default(),
+            placed: Vec::new(),
+            uploaded: Vec::new(),
+            bands: Vec::new(),
+            scale: 1.0,
+            settled_frames: 0,
             prepared_vertices: 0,
             width: 1,
             height: 1,
@@ -441,11 +487,21 @@ impl HudRenderer {
         (self.width, self.height)
     }
 
-    /// How many glyphs were shaped for the last [`Self::prepare`]. Not used to
-    /// draw — used by the test that measures a HUD to know whether the shaping
-    /// found any text at all, so an empty HUD cannot pass a test about text.
+    /// **How many runs the last [`Self::prepare`] had to shape.** Not used to draw: a HUD that
+    /// found no text at all and one that found all of it draw the same nothing, so the count is
+    /// what tells a test whether the shaping saw anything.
+    ///
+    /// It is the count of shapes, not the count of runs on screen: a settled frame places every run
+    /// it did last frame and shapes none of them, and this says so.
     pub fn shaped_runs(&self) -> usize {
-        self.buffers.len()
+        self.runs.misses()
+    }
+
+    /// **How many frames [`Self::prepare`] recognised as repeats of the frame before them.** The
+    /// companion measurement to [`Self::shaped_runs`]: together they say whether the settled path is
+    /// the one being taken, which is a claim about a path and therefore needs a witness.
+    pub fn settled_frames(&self) -> u64 {
+        self.settled_frames
     }
 
     /// Shape every text run and build every rect, for a viewport `extent_px`
@@ -453,6 +509,18 @@ impl HudRenderer {
     ///
     /// The layout is in **dp** and only this function knows about pixels, which is
     /// the property that lets a whole design system be tested without a display.
+    ///
+    /// **A frame that says what the last one said is not prepared again.** Only text that changed
+    /// is re-shaped (see [`crate::shaped`]), so a frame costs what moved rather than what is on
+    /// screen; and when nothing was shaped *and* every rect, every placement and the extent are
+    /// the ones this renderer already holds, it returns without touching the GPU at all — the
+    /// vertex buffer, the glyph vertices and the bands are still what this frame would produce.
+    ///
+    /// **Every band or none**, and that rule is what makes the reuse safe. `glyphon`'s atlas frees
+    /// a glyph that was not used in the current epoch when a new one needs its room, so a frame
+    /// that prepared *some* bands could let a fresh glyph evict one that a reused band still points
+    /// at. Preparing every band when anything moved, and none when nothing did, leaves no band
+    /// pointing at an atlas entry the atlas believes is free.
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -463,30 +531,105 @@ impl HudRenderer {
         strokes: &[Stroke],
     ) -> Result<(), ClientError> {
         let (width, height) = (extent_px.0.max(1), extent_px.1.max(1));
+        let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+        let resized = (width, height) != (self.width, self.height);
         self.width = width;
         self.height = height;
-        let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
 
         self.viewport
             .update(queue, glyphon::Resolution { width, height });
 
-        // ---- the rects ---------------------------------------------------
+        // ---- the bands, in element order ---------------------------------
+        //
+        // **A band is a run of rectangles and the text that follows it**, drawn in that order before
+        // the next band starts. That is the whole of the z-order: text is not a layer above the
+        // interface, it is part of the window that emitted it, so a body drawn later covers it.
         let mut bytes: Vec<u8> = Vec::new();
+        let mut bands: Vec<Band> = Vec::new();
+        let mut placed: Vec<Placed> = Vec::new();
+        self.runs.begin();
+        let mut open: Option<Band> = None;
         for element in elements {
-            let (rect, paint, radius) = match element {
-                Element::Surface { rect, paint } => (*rect, *paint, radius_dp()),
-                Element::Rule { rect, paint } => (*rect, *paint, 0.0),
-                Element::Text { .. } => continue,
-            };
-            push_rect(&mut bytes, rect, paint, radius, scale, width, height);
+            match element {
+                Element::Surface { rect, paint } | Element::Rule { rect, paint } => {
+                    // **A rect after text is painted after it**, so it opens the next band.
+                    if open.as_ref().is_some_and(|band| !band.texts.is_empty()) {
+                        if let Some(band) = open.take() {
+                            bands.push(band);
+                        }
+                    }
+                    if open.is_none() {
+                        let at = (bytes.len() / BYTES_PER_VERTEX) as u32;
+                        open = Some(Band {
+                            rects: at..at,
+                            texts: placed.len()..placed.len(),
+                            renderer: None,
+                        });
+                    }
+                    let radius = match element {
+                        Element::Surface { .. } => radius_dp(),
+                        _ => 0.0,
+                    };
+                    push_rect(&mut bytes, *rect, *paint, radius, scale, width, height);
+                    if let Some(band) = open.as_mut() {
+                        band.rects.end = (bytes.len() / BYTES_PER_VERTEX) as u32;
+                    }
+                }
+                Element::Text { .. } => {
+                    let at = (bytes.len() / BYTES_PER_VERTEX) as u32;
+                    if let Some(index) = self.place_run(element, &mut placed, scale) {
+                        match open.as_mut() {
+                            Some(band) => band.texts.end = index + 1,
+                            None => {
+                                open = Some(Band {
+                                    rects: at..at,
+                                    texts: index..index + 1,
+                                    renderer: None,
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(band) = open.take() {
+            bands.push(band);
         }
         // ---- the vector overlay ------------------------------------------
         // Strokes are drawn on top of the shell's own rects, in the order the view emitted them
-        // (the change view emits in record order). **Not [`Element`]s**: see the module docs.
+        // (the change view emits in record order). **Not [`Element`]s**: see the module docs, and
+        // they are their own band because nothing in the shell follows them.
+        let first = (bytes.len() / BYTES_PER_VERTEX) as u32;
         for stroke in strokes {
             push_segment(&mut bytes, stroke, scale, width, height);
         }
-        self.prepared_vertices = (bytes.len() / BYTES_PER_VERTEX) as u32;
+        let after = (bytes.len() / BYTES_PER_VERTEX) as u32;
+        if after > first {
+            bands.push(Band {
+                rects: first..after,
+                texts: placed.len()..placed.len(),
+                renderer: None,
+            });
+        }
+        self.prepared_vertices = after;
+
+        // ---- a frame that says nothing new -------------------------------
+        //
+        // Everything the draw depends on, and nothing else: the vertex bytes, the placement of
+        // every run, the band partition, the scale it was all measured at, and the extent. If all
+        // of it equals what was last prepared, this frame's picture is last frame's picture.
+        let settled = !resized
+            && self.runs.misses() == 0
+            && scale == self.scale
+            && bytes == self.uploaded
+            && placed == self.placed
+            && same_partition(&bands, &self.bands);
+        if settled {
+            self.settled_frames += 1;
+            self.runs.settle();
+            return Ok(());
+        }
+
         if bytes.len() > self.vertex_capacity_bytes {
             // Grow once and keep it. A window resize changes the HUD's size; a
             // counter changing does not.
@@ -497,96 +640,88 @@ impl HudRenderer {
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
+            // The new buffer is empty: what was uploaded is gone with the old one.
+            self.uploaded.clear();
         }
-        if !bytes.is_empty() {
+        if !bytes.is_empty() && bytes != self.uploaded {
             queue.write_buffer(&self.vertices, 0, &bytes);
         }
+        self.uploaded = bytes;
 
-        // ---- the glyphs ---------------------------------------------------
-        // The shaped buffers have to outlive the text areas that borrow them, so
-        // they live in `self` and the areas are built from them below.
-        self.buffers.clear();
-        self.boxes.clear();
-        for element in elements {
-            let Element::Text { rect, text, paint, size_dp, align } = element else {
+        // ---- the glyphs, one renderer a band ------------------------------
+        //
+        // **Prepared before the paint starts, not during it.** A glyph run is uploaded into its
+        // renderer's vertex buffer, which cannot happen inside a render pass — so each band that
+        // has text gets its own renderer here, and the paint then draws them in band order.
+        let mut renderer = 0usize;
+        for band in bands.iter_mut() {
+            if band.texts.is_empty() {
                 continue;
-            };
-            let size_px = (*size_dp as f32) * scale;
-            let mut buffer = glyphon::Buffer::new(
-                &mut self.font_system,
-                glyphon::Metrics::new(size_px, size_px * LINE_BOX),
-            );
-            buffer.set_size(
-                Some((rect.width_dp as f32) * scale),
-                // One line box, rounded up: a readout that wrapped would be a
-                // readout that acquired a second line nobody laid out.
-                Some(size_px * LINE_BOX * 2.0),
-            );
-            buffer.set_text(
-                text,
-                &glyphon::Attrs::new().family(glyphon::Family::SansSerif),
-                glyphon::Shaping::Advanced,
-                None,
-            );
-            buffer.shape_until_scroll(&mut self.font_system, false);
-            self.boxes.push((*rect, *paint, *align, size_px));
-            self.buffers.push(buffer);
+            }
+            if self.texts.len() <= renderer {
+                self.texts.push(glyphon::TextRenderer::new(
+                    &mut self.atlas,
+                    device,
+                    wgpu::MultisampleState::default(),
+                    // No depth. A HUD draws in order, on top of the world.
+                    None,
+                ));
+            }
+            let areas = text_areas(&self.runs, &placed, band.texts.clone(), scale);
+            self.texts[renderer]
+                .prepare(
+                    device,
+                    queue,
+                    &mut self.font_system,
+                    &mut self.atlas,
+                    &self.viewport,
+                    areas,
+                    &mut self.swash_cache,
+                )
+                .map_err(|e| ClientError::TextRender { detail: e.to_string() })?;
+            band.renderer = Some(renderer);
+            renderer += 1;
         }
-
-        let areas: Vec<glyphon::TextArea<'_>> = self
-            .buffers
-            .iter()
-            .zip(self.boxes.iter())
-            .map(|(buffer, (rect, paint, align, size_px))| {
-                // Right alignment is computed here because a shaping engine does
-                // not do it: it is the run's own measured width that has to be
-                // subtracted, not the box's.
-                let line_w = buffer.layout_runs().next().map(|run| run.line_w).unwrap_or(0.0);
-                let left = match align {
-                    Align::Start => (rect.x as f32) * scale,
-                    Align::End => ((rect.x + rect.width_dp) as f32) * scale - line_w,
-                };
-                // The rect is sized to the type and the line box is taller, so
-                // the box is pulled up by half the difference. That centres the
-                // glyphs in the rect the layout gave them, which is what makes
-                // the layout's 48 dp row mean anything to a reader.
-                let top = (rect.y as f32) * scale - (size_px * LINE_BOX - size_px) / 2.0;
-                glyphon::TextArea {
-                    buffer,
-                    left,
-                    top,
-                    scale: 1.0,
-                    bounds: glyphon::TextBounds {
-                        left: (rect.x as f32 * scale) as i32,
-                        top: ((rect.y as f32) * scale) as i32,
-                        right: (((rect.x + rect.width_dp) as f32) * scale).ceil() as i32,
-                        bottom: (((rect.y + rect.height_dp) as f32) * scale).ceil() as i32,
-                    },
-                    default_color: glyphon::Color::rgba(
-                        paint.rgb.r,
-                        paint.rgb.g,
-                        paint.rgb.b,
-                        (255.0 * paint.alpha.clamp(0.0, 1.0)) as u8,
-                    ),
-                    custom_glyphs: &[],
-                }
-            })
-            .collect();
-
-        self.text
-            .prepare(
-                device,
-                queue,
-                &mut self.font_system,
-                &mut self.atlas,
-                &self.viewport,
-                areas,
-                &mut self.swash_cache,
-            )
-            .map_err(|e| ClientError::TextRender { detail: e.to_string() })
+        self.bands = bands;
+        self.placed = placed;
+        self.scale = scale;
+        self.runs.settle();
+        Ok(())
     }
 
+    /// **One text run, shaped and placed.** The buffer belongs to the [`ShapedRuns`] store, keyed by
+    /// what was said and at what size, so a run that only moved is not shaped again; this records
+    /// where and how it is drawn, which is the half that may change every frame for free.
+    ///
+    /// `None` for an element that is not text; the caller is iterating a sequence that can hold
+    /// both kinds.
+    fn place_run(
+        &mut self,
+        element: &Element,
+        placed: &mut Vec<Placed>,
+        scale: f32,
+    ) -> Option<usize> {
+        let Element::Text { rect, text, paint, size_dp, align } = element else {
+            return None;
+        };
+        let size_px = (*size_dp as f32) * scale;
+        let key = RunKey::of(text, size_px, (rect.width_dp as f32) * scale);
+        self.runs.ensure(&mut self.font_system, &key);
+        placed.push(Placed {
+            key,
+            rect: *rect,
+            paint: *paint,
+            align: *align,
+            size_px,
+        });
+        Some(placed.len() - 1)
+    }
+
+
     /// Draw the prepared HUD into `target`, on top of whatever is already there.
+    ///
+    /// **In band order, in one pass**: a band's rects, then that band's text, then the next band's
+    /// rects — which is what keeps a covered window's text under the window covering it.
     pub fn draw(&mut self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("hud"),
@@ -605,13 +740,19 @@ impl HudRenderer {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        pass.set_pipeline(&self.solid);
-        pass.set_vertex_buffer(0, self.vertices.slice(..));
-        pass.draw(0..self.prepared_vertices, 0..1);
-        if let Err(e) = self.text.render(&self.atlas, &self.viewport, &mut pass) {
-            // Nothing to draw on, but an event loop must not die inside a render
-            // pass. The panic-free path is to draw what is there and say so.
-            eprintln!("shploingus: the HUD's text pass failed: {e}");
+        for band in &self.bands {
+            if !band.rects.is_empty() {
+                pass.set_pipeline(&self.solid);
+                pass.set_vertex_buffer(0, self.vertices.slice(..));
+                pass.draw(band.rects.clone(), 0..1);
+            }
+            if let Some(renderer) = band.renderer {
+                if let Err(e) = self.texts[renderer].render(&self.atlas, &self.viewport, &mut pass) {
+                    // Nothing to draw on, but an event loop must not die inside a render pass. The
+                    // panic-free path is to draw what is there and say so.
+                    eprintln!("shploingus: the HUD's text pass failed: {e}");
+                }
+            }
         }
     }
 
@@ -620,6 +761,72 @@ impl HudRenderer {
     pub fn trim(&mut self) {
         self.atlas.trim();
     }
+}
+
+/// The text areas of one band, in the units [`HudRenderer::prepare`] measured with.
+///
+/// One area per [`Placed`] run: the shaped layout comes from the [`ShapedRuns`] store by key, and
+/// the position, ink and alignment come from the placement. Keeping them apart is what lets a run
+/// be shaped once and placed anywhere.
+///
+/// Right alignment is computed here because a shaping engine does not do it: it is the run's own
+/// measured width that has to be subtracted, not the box's. The rect is sized to the type and the
+/// line box is taller, so the box is pulled up by half the difference — that centres the glyphs in
+/// the rect the layout gave them, which is what makes the layout's 48 dp row mean anything to a
+/// reader.
+fn text_areas<'a>(
+    runs: &'a ShapedRuns,
+    placed: &[Placed],
+    texts: std::ops::Range<usize>,
+    scale: f32,
+) -> Vec<glyphon::TextArea<'a>> {
+    texts
+        .map(|index| {
+            let run = &placed[index];
+            let buffer = runs.get(&run.key);
+            let (rect, paint, align, size_px) = (run.rect, run.paint, run.align, run.size_px);
+            let line_w = buffer.layout_runs().next().map(|run| run.line_w).unwrap_or(0.0);
+            let left = match align {
+                Align::Start => (rect.x as f32) * scale,
+                Align::End => ((rect.x + rect.width_dp) as f32) * scale - line_w,
+            };
+            let top = (rect.y as f32) * scale - (size_px * LINE_BOX - size_px) / 2.0;
+            glyphon::TextArea {
+                buffer,
+                left,
+                top,
+                scale: 1.0,
+                bounds: glyphon::TextBounds {
+                    left: (rect.x as f32 * scale) as i32,
+                    top: ((rect.y as f32) * scale) as i32,
+                    right: (((rect.x + rect.width_dp) as f32) * scale).ceil() as i32,
+                    bottom: (((rect.y + rect.height_dp) as f32) * scale).ceil() as i32,
+                },
+                default_color: glyphon::Color::rgba(
+                    paint.rgb.r,
+                    paint.rgb.g,
+                    paint.rgb.b,
+                    (255.0 * paint.alpha.clamp(0.0, 1.0)) as u8,
+                ),
+                custom_glyphs: &[],
+            }
+        })
+        .collect()
+}
+
+/// **Whether two band lists cut the frame into the same layers**, ignoring which renderer each
+/// band was given.
+///
+/// The partition is part of what a frame draws — a rect before a run is under it, the same rect
+/// after it covers it — and it is not recoverable from the vertex bytes, so it is compared. The
+/// renderers are what a prepare *assigns*, so comparing them would compare this frame against the
+/// work it is trying not to redo.
+fn same_partition(left: &[Band], right: &[Band]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(left, right)| left.rects == right.rects && left.texts == right.texts)
 }
 
 /// Append one rectangle as two triangles, in the layout [`SOLID_FLOATS`]
@@ -976,7 +1183,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_shell_chrome_is_legible_over_the_worst_backdrop() {
         // The design system's contrast floor, checked on pixels a GPU actually
         // produced — and checked on the **shell's** chrome rather than on four
@@ -1005,7 +1211,8 @@ mod tests {
             mount.set_viewport(Rect::new(0.0, 0.0, width as f64, height as f64));
             mount
         };
-        let views = crate::shell::hud::views(&state(&f, None), mount.console());
+        let views =
+            crate::shell::hud::views(&state(&f, None), mount.console(), mount.api_view().cloned());
         let viewport = mount.viewport();
         let elements = crate::shell::hud::frame(&mut mount, &palette, viewport, &views)
             .expect("the shell layer lays out");

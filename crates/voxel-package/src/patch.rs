@@ -39,6 +39,70 @@ pub const STATUSES: [&str; 7] = [
 /// Words a record writes when its base digest was never established (PATCH-009).
 pub const PLACEHOLDER_DIGESTS: [&str; 4] = ["tbd", "todo", "none", "recorded source digest"];
 
+/// The keys a `recipe` block may carry, in the order the calibration matrix renders them. **A key
+/// outside this list is refused**, because a recipe the matrix cannot compile is prose in a fence.
+pub const RECIPE_KEYS: [&str; 10] = [
+    "segment",
+    "axis",
+    "ticket",
+    "site",
+    "what",
+    "because",
+    "check",
+    "witness",
+    "expects",
+    "requires",
+];
+
+/// **One machine-readable recipe a patch declares**: the cell it acts on, the edit, the command that
+/// must move, and the gates the tree requires to accept it.
+///
+/// This is the join the patch format was missing. A prose patch says what was done; a recipe says
+/// *what to type, at which `file:line`, how it is checked, and what the game requires* — the shape
+/// `voxel-axis-matrix::Recipe` renders and `get_axis_recipe` already speaks. A block that does not
+/// fill every field is carried with its `problems` rather than silently dropped.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PatchRecipe {
+    /// The segment the act belongs to, by the matrix's own word (`shell`, `world`, `tooling`, …).
+    pub segment: String,
+    /// The axis, by the matrix's own word (`evidence_grade`, `grade`, …).
+    pub axis: String,
+    /// The ticket the act is filed under.
+    pub ticket: String,
+    /// `path:line` — one-based, and the path is workspace-relative.
+    pub site: String,
+    /// What to type, in one statement.
+    pub what: String,
+    /// Why, with the numbers in it.
+    pub because: String,
+    /// The command and the movement it must print.
+    pub check: String,
+    /// Where the measurement is kept afterwards.
+    pub witness: String,
+    /// The count the check must reach.
+    pub expects: Option<u32>,
+    /// **What the game requires**: every gate that must hold for this act to be accepted.
+    pub requires: Vec<String>,
+    /// What is wrong with the block. Empty for a block the matrix can compile.
+    pub problems: Vec<String>,
+}
+
+impl PatchRecipe {
+    /// A block with no problems. Anything else is not compiled by `get_patch_recipes`.
+    pub fn complete(&self) -> bool {
+        self.problems.is_empty()
+    }
+
+    /// The site's two halves, `(path, line)`, or `None` when the site is not `path:line`.
+    pub fn site_parts(&self) -> Option<(&str, u32)> {
+        let (path, line) = self.site.rsplit_once(':')?;
+        if path.trim().is_empty() {
+            return None;
+        }
+        Some((path, line.trim().parse::<u32>().ok()?))
+    }
+}
+
 /// One patch record, as read. `problems` is a list because the first problem is not the only one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PatchRecord {
@@ -52,6 +116,10 @@ pub struct PatchRecord {
     pub live_mutation: bool,
     /// How many of [`SECTIONS`] the body carries.
     pub sections_present: usize,
+    /// **Every recipe block the record declares**, in file order. Empty is not a defect in this
+    /// module — the records written before the format existed have none — but a block that is
+    /// present and incomplete puts its problems in `problems`, so `complete()` sees it.
+    pub recipes: Vec<PatchRecipe>,
     /// **Every workspace path this record names**, sorted and deduplicated. What the coverage join
     /// reads, and what `get_ownership` answers from, so the two cannot disagree about a path.
     pub named_paths: Vec<String>,
@@ -171,6 +239,10 @@ impl PatchSet {
         let dangling = self.dangling();
         let mut out = String::new();
         out.push_str(&format!("patch-set-records\t{}\n", self.records.len()));
+        out.push_str(&format!(
+            "patch-set-recipes\t{}\n",
+            self.records.iter().map(|record| record.recipes.len()).sum::<usize>()
+        ));
         out.push_str(&format!("patch-set-applied\t{applied}\n"));
         out.push_str(&format!("patch-set-owed\t{}\n", self.records.len() - applied));
         out.push_str(&format!("patch-set-unevaluable\t{unevaluable}\n"));
@@ -552,6 +624,113 @@ impl Coverage {
     }
 }
 
+/// Whether a line opens a ```` ```recipe ```` block.
+fn opens_recipe(line: &str) -> bool {
+    line.trim()
+        .strip_prefix("```")
+        .is_some_and(|rest| rest.trim() == "recipe")
+}
+
+/// **Every ```` ```recipe ```` block in a record**, in file order, each carried with its own problems.
+/// A block that is not closed by a fence is itself a problem, not a block that runs to the end of the
+/// file: a recipe an edit could not delimit is a recipe nobody can trust.
+pub fn recipes(text: &str) -> Vec<PatchRecipe> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut found = Vec::new();
+    let mut at = 0usize;
+    while at < lines.len() {
+        if !opens_recipe(lines[at]) {
+            at += 1;
+            continue;
+        }
+        let start = at + 1;
+        let mut end = lines.len();
+        let mut closed = false;
+        for (offset, line) in lines[start..].iter().enumerate() {
+            if line.trim() == "```" {
+                end = start + offset;
+                closed = true;
+                break;
+            }
+        }
+        found.push(recipe_block(&lines[start..end], closed));
+        at = end + 1;
+    }
+    found
+}
+
+/// One block, parsed into the fields the matrix compiles, with every defect named rather than dropped.
+fn recipe_block(body: &[&str], closed: bool) -> PatchRecipe {
+    let mut recipe = PatchRecipe::default();
+    let mut problems = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    for raw in body {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = line.split_once(':') else {
+            problems.push(format!("`{line}` is not `key: value`"));
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim().to_string();
+        if !RECIPE_KEYS.contains(&key) {
+            problems.push(format!(
+                "`{key}` is not a recipe key; the format is {RECIPE_KEYS:?}"
+            ));
+            continue;
+        }
+        if key != "requires" && seen.iter().any(|earlier| earlier == key) {
+            problems.push(format!("`{key}` is declared twice"));
+            continue;
+        }
+        seen.push(key.to_string());
+        match key {
+            "segment" => recipe.segment = value,
+            "axis" => recipe.axis = value,
+            "ticket" => recipe.ticket = value,
+            "site" => recipe.site = value,
+            "what" => recipe.what = value,
+            "because" => recipe.because = value,
+            "check" => recipe.check = value,
+            "witness" => recipe.witness = value,
+            "requires" if !value.is_empty() => recipe.requires.push(value),
+            "requires" => {}
+            "expects" => match value.parse::<u32>() {
+                Ok(count) => recipe.expects = Some(count),
+                Err(_) => problems.push(format!("`expects` is {value:?}, not a count")),
+            },
+            _ => problems.push(format!("`{key}` is not a recipe key")),
+        }
+    }
+    for (key, value) in [
+        ("segment", recipe.segment.as_str()),
+        ("axis", recipe.axis.as_str()),
+        ("ticket", recipe.ticket.as_str()),
+        ("site", recipe.site.as_str()),
+        ("what", recipe.what.as_str()),
+        ("because", recipe.because.as_str()),
+        ("check", recipe.check.as_str()),
+        ("witness", recipe.witness.as_str()),
+    ] {
+        if value.trim().is_empty() {
+            problems.push(format!("no `{key}`"));
+        }
+    }
+    if recipe.expects.is_none() && !problems.iter().any(|problem| problem.contains("expects")) {
+        problems.push("no `expects`".to_string());
+    }
+    if !recipe.site.is_empty() && recipe.site_parts().is_none() {
+        problems.push(format!("site {:?} is not `path:line`", recipe.site));
+    }
+    if !closed {
+        problems.push("the block is not closed by a ``` fence".to_string());
+    }
+    recipe.problems = problems;
+    recipe
+}
+
 /// Every workspace path a record names, deduplicated and sorted.
 ///
 /// Mechanical on purpose: a path starts at `crates/` and runs while the characters are path
@@ -637,6 +816,7 @@ pub fn read_dir(dir: &Path) -> PatchSet {
             dependencies: Vec::new(),
             live_mutation: false,
             sections_present: 0,
+            recipes: Vec::new(),
             named_paths: Vec::new(),
             problems: vec![format!("{undecodable} record(s) could not be decoded and are in no count above")],
         });
@@ -646,9 +826,13 @@ pub fn read_dir(dir: &Path) -> PatchSet {
 
 /// One record, from its text and the name of the file it came from.
 pub fn parse(file_name: &str, text: &str) -> PatchRecord {
-    let mut problems = Vec::new();
+    // **The blocks are read whatever the frontmatter says.** A record that cannot say who it is still
+    // says what to type; hiding its acts made an unevaluable record look like a prose one.
+    let recipes = recipes(text);
+    let mut problems = recipe_problems(&recipes);
     let front = frontmatter(text);
     let Some(front) = front else {
+        problems.push("no frontmatter block, so the record declares nothing".to_string());
         return PatchRecord {
             id: file_name.to_string(),
             title: String::new(),
@@ -658,8 +842,9 @@ pub fn parse(file_name: &str, text: &str) -> PatchRecord {
             dependencies: Vec::new(),
             live_mutation: false,
             sections_present: 0,
+            recipes,
             named_paths: Vec::new(),
-            problems: vec!["no frontmatter block, so the record declares nothing".to_string()],
+            problems,
         };
     };
     let field = |key: &str| -> Option<String> { front.iter().find_map(|line| value_of(line, key)) };
@@ -718,9 +903,35 @@ pub fn parse(file_name: &str, text: &str) -> PatchRecord {
         dependencies,
         live_mutation,
         sections_present,
+        recipes,
         named_paths: named_paths(text),
         problems,
     }
+}
+
+/// **Every defect a record's blocks carry**, numbered by block, including two blocks on one
+/// `(segment, axis)`. Both the parse and the no-frontmatter path report the same list.
+fn recipe_problems(recipes: &[PatchRecipe]) -> Vec<String> {
+    let mut problems = Vec::new();
+    for (at, recipe) in recipes.iter().enumerate() {
+        for problem in &recipe.problems {
+            problems.push(format!("recipe {}: {problem}", at + 1));
+        }
+    }
+    for (at, recipe) in recipes.iter().enumerate() {
+        if recipes[..at]
+            .iter()
+            .any(|earlier| earlier.segment == recipe.segment && earlier.axis == recipe.axis)
+        {
+            problems.push(format!(
+                "recipe {}: {}/{} is declared twice in this record",
+                at + 1,
+                recipe.segment,
+                recipe.axis
+            ));
+        }
+    }
+    problems
 }
 
 /// The lines between the first two `---` markers.
@@ -1115,5 +1326,95 @@ mod tests {
                 println!("{} {:?}", record.id, record.problems);
             }
         }
+    }
+
+    const A_RECIPE: &str = concat!(
+        "```recipe\n",
+        "segment: world\n",
+        "axis: evidence_grade\n",
+        "ticket: T-0954\n",
+        "site: crates/voxel-model/src/lib.rs:12\n",
+        "what: add the missing contract sentence\n",
+        "because: missing-docs, one of 954\n",
+        "check: cargo check -p voxel-model -> warnings 954 -> 953\n",
+        "witness: conformance/missing-docs.txt\n",
+        "expects: 953\n",
+        "requires: cargo test -p voxel-model\n",
+        "requires: cargo check --workspace\n",
+        "```\n",
+    );
+
+    #[test]
+    fn a_recipe_block_parses_into_every_field_the_matrix_compiles() {
+        let found = recipes(A_RECIPE);
+        assert_eq!(found.len(), 1, "{found:?}");
+        let recipe = &found[0];
+        assert!(recipe.complete(), "{:?}", recipe.problems);
+        assert_eq!(recipe.segment, "world");
+        assert_eq!(recipe.axis, "evidence_grade");
+        assert_eq!(recipe.expects, Some(953));
+        assert_eq!(recipe.requires.len(), 2, "two gates, two lines");
+        assert_eq!(recipe.site_parts(), Some(("crates/voxel-model/src/lib.rs", 12)));
+    }
+
+    #[test]
+    fn a_recipe_that_cannot_be_compiled_names_every_defect() {
+        let broken = "```recipe\nsegment: world\ncolour: blue\nexpects: many\nsite: no-line-here\n```\n";
+        let found = recipes(broken);
+        assert_eq!(found.len(), 1);
+        let problems = &found[0].problems;
+        for named in ["colour", "expects", "site", "axis", "ticket"] {
+            assert!(
+                problems.iter().any(|problem| problem.contains(named)),
+                "{named} is not named in {problems:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_record_carries_its_recipes_and_their_problems() {
+        let text = format!("{A_RECORD}\n{A_RECIPE}");
+        let record = parse("PATCH-101-a-record.md", &text);
+        assert!(record.complete(), "{:?}", record.problems);
+        assert_eq!(record.recipes.len(), 1);
+
+        let twice = format!("{A_RECORD}\n{A_RECIPE}\n{A_RECIPE}");
+        let record = parse("PATCH-101-a-record.md", &twice);
+        assert!(
+            record.problems.iter().any(|problem| problem.contains("declared twice")),
+            "one cell, two acts: {:?}",
+            record.problems
+        );
+    }
+
+    #[test]
+    fn a_record_without_frontmatter_keeps_its_recipes_and_stays_unevaluable() {
+        let record = parse("PATCH-101-a-record.md", A_RECIPE);
+        assert_eq!(record.recipes.len(), 1, "the act is readable without frontmatter");
+        assert!(
+            record.recipes[0].complete(),
+            "{:?}",
+            record.recipes[0].problems
+        );
+        assert!(!record.complete(), "the record still declares nothing");
+        assert!(
+            record
+                .problems
+                .iter()
+                .any(|problem| problem.contains("no frontmatter")),
+            "the defect is named: {:?}",
+            record.problems
+        );
+    }
+
+    #[test]
+    fn an_unclosed_recipe_fence_is_a_problem_rather_than_a_block_to_the_end_of_file() {
+        let found = recipes(&A_RECIPE.replace("```\n", ""));
+        assert_eq!(found.len(), 1);
+        assert!(
+            found[0].problems.iter().any(|problem| problem.contains("not closed")),
+            "{:?}",
+            found[0].problems
+        );
     }
 }

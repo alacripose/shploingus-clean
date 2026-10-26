@@ -447,6 +447,7 @@ pub fn fluid_surface_cpu(
     open: f64,
     rig: &LightRig,
     model: &crate::skylight::SkyModel,
+    reflectance_deviation: f64,
 ) -> Result<(LinearRgb, Terms), voxel_model::RefusalSet> {
     let (body, terms) = shade_cpu(inputs, normal, view, open, rig)?;
     let ray = voxel_appearance::fluid::reflected_ray(view, normal);
@@ -456,8 +457,18 @@ pub fn fluid_surface_cpu(
     } else {
         LinearRgb::BLACK
     };
+    // **The boundary's own LOD reading**, applied exactly where the shader applies `lod.y`: the
+    // water's `WATER_F0` moved by the reflectance deviation the material carries, so a caller with
+    // no reading (`0.0`) gets the plain fluid and a caller with one gets the same law the GPU
+    // draws.
+    let f0 = (voxel_appearance::fluid::WATER_F0
+        + reflectance_deviation * (1.0 - voxel_appearance::fluid::WATER_F0))
+        .clamp(0.0, 1.0);
     let cos_theta = normal.normalise().dot(view.normalise()).clamp(0.0, 1.0);
-    Ok((voxel_appearance::fluid::surface_radiance(body, reflected, cos_theta), terms))
+    Ok((
+        voxel_appearance::fluid::surface_radiance_with(body, reflected, cos_theta, f0),
+        terms,
+    ))
 }
 
 #[cfg(test)]
@@ -613,14 +624,31 @@ mod tests {
             );
         }
 
+        // **The corpus's own promise is the gate, not the declaration's size.** The
+        // declaration now carries the technology tree (PATCH-057/058), whose substances are
+        // measured against the tree, not against the appearance corpus: their missing
+        // reflectance is printed above as the appearance pass's work list and is not
+        // asserted away here. What must stay true is that every row the corpus *claims*
+        // is admitted with a reflectance, and that no tree row lacks a density — a
+        // density is the materials table's own field.
+        let corpus_debt: Vec<&str> = voxel_shapers::corpus::ROWS
+            .iter()
+            .map(|row| row.name)
+            .filter(|name| !admitted.contains_key(*name))
+            .collect();
         assert!(
-            missing_density.is_empty() && missing_source.is_empty(),
-            "{} of {} declared substances have no admitted material: {} lack a density and {} \
-             lack a sourced reflectance — see the printed work list",
-            missing_density.len() + missing_source.len(),
-            declared.substances.len(),
+            corpus_debt.is_empty(),
+            "the appearance corpus claims {} substances and {} have no admitted material: \
+             {corpus_debt:?}",
+            voxel_shapers::corpus::ROWS.len(),
+            corpus_debt.len()
+        );
+        assert!(
+            missing_density.is_empty(),
+            "{} of {} declared substances have no density: {:?} — see the printed work list",
             missing_density.len(),
-            missing_source.len(),
+            declared.substances.len(),
+            missing_density
         );
     }
 

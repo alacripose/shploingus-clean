@@ -1,0 +1,32 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libshlex-e3cfa4f8f6e8146d.rmeta
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+    Checking voxel-noise v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-noise)
+warning: esaxx-rs@0.1.10: cl : Command line warning D9002 : ignoring unknown option '-std=c++11'
+    Checking voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+    Checking voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+    Checking voxel-audio v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-audio)
+warning: doc list item overindented
+  --> crates\voxel-audio\src\lib.rs:32:5
+   |
+32 | //!    the difference between "more rain" and "different rain".
+   |     ^^^ help: try using `  ` (2 spaces)
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#doc_overindented_list_items
+   = note: `#[warn(clippy::doc_overindented_list_items)]` on by default
+
+warning: this assertion has a constant value
+   --> crates\voxel-audio\src\lib.rs:430:9
+    |
+430 |         assert!(DROP_SECONDS < BUFFER_SECONDS, "a drop outlasts the buffer it is in");
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider moving this into a const block: `const { assert!(..) }`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#assertions_on_constants
+    = note: `#[warn(clippy::assertions_on_constants)]` on by default
+
+warning: `voxel-audio` (lib test) generated 2 warnings
+warning: `voxel-audio` (lib) generated 1 warning (1 duplicate)
+    Checking voxel-von v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-von)
+    Checking voxel-mcp v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-mcp)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 14.18s

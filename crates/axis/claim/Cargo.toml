@@ -1,0 +1,12 @@
+[package]
+name = "voxel-axis-claim"
+description = "The claims: one per unit, quoting the unit's exact text, carrying a prose kind with its recorded basis, and a support level only derive can compute."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-axis-ladder = { path = "../ladder" }
+voxel-axis-unit = { path = "../unit" }
+voxel-model = { path = "../../voxel-model" }

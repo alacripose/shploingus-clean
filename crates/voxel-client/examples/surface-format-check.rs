@@ -18,10 +18,11 @@
 //! these are what a person judges it from.
 
 use voxel_appearance::sky::SkyInputs;
-use voxel_appearance::DetailLattice;
 
 use voxel_client::shading::GpuRig;
-use voxel_client::{offscreen_device, skylight, Camera, Scene, WorldPipeline, DEPTH_FORMAT, GAME_TICK};
+use voxel_client::{
+    offscreen_device_for, skylight, Camera, Scene, WorldPipeline, DEPTH_FORMAT, GAME_TICK,
+};
 use voxel_shapers::{Config, WorldSpec};
 
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8UnormSrgb;
@@ -29,8 +30,8 @@ const WIDTH: u32 = 320;
 const HEIGHT: u32 = 180;
 
 fn main() {
-    let (device, queue, adapter) = offscreen_device().expect("a GPU");
-    println!("adapter: {adapter}, target format {FORMAT:?}");
+    let (device, queue, adapter, samples) = offscreen_device_for(FORMAT).expect("a GPU");
+    println!("adapter: {adapter}, target format {FORMAT:?}, drawn at {samples}x samples");
 
     let spec = WorldSpec::new(voxel_client::GAME_SEED, Config::default());
     let registry = voxel_shapers::materials::registry().expect("the registry");
@@ -42,7 +43,7 @@ fn main() {
     let daylight = skylight::daylight_of(&spec, GAME_TICK, SkyInputs::default(), 0)
         .expect("an atmosphere at the shipped tick");
     let gpu_rig = GpuRig::from_rig(&skylight::exposed(&daylight.rig)).expect("the rig fits");
-    let mut world = WorldPipeline::new(&device, &queue, FORMAT, &materials, &gpu_rig)
+    let mut world = WorldPipeline::new(&device, &queue, FORMAT, &materials, &gpu_rig, samples)
         .expect("the world pipeline builds on the surface format");
     let build_error = pollster::block_on(build_scope.pop());
     println!("pipeline build validation: {build_error:?}");
@@ -66,17 +67,40 @@ fn main() {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     });
+    // **The same count the window's own surface is drawn at**, so the state this checks is the
+    // state the game runs: a multisampled attachment, a resolve into the presentable target, and
+    // the depth buffer at the same count. `colour` above holds the resolved picture — it is what
+    // the readback and the `COPY_SRC` usage are for — while the draws go into this one.
+    let multisampled = (samples > 1).then(|| {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("surface-format-check colour msaa"),
+            size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: samples,
+            dimension: wgpu::TextureDimension::D2,
+            format: FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        })
+    });
     let depth = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("surface-format-check depth"),
         size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
         mip_level_count: 1,
-        sample_count: 1,
+        sample_count: samples,
         dimension: wgpu::TextureDimension::D2,
         format: DEPTH_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         view_formats: &[],
     });
     let colour_view = colour.create_view(&wgpu::TextureViewDescriptor::default());
+    let msaa_view = multisampled
+        .as_ref()
+        .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
+    let (target, resolve) = match &msaa_view {
+        Some(msaa) => (msaa, Some(&colour_view)),
+        None => (&colour_view, None),
+    };
     let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
 
     // **And the cloud, because this is the only target the veil blends on.** `veil_blend` is
@@ -136,20 +160,22 @@ fn main() {
     );
     // The same frame **without** the cloud as well: the `F4` view's own pixels are counted
     // against it below, which is a measurement of the outlines rather than a guess at a colour.
-    let bare = Scene::build_with_detail(streamer.meshes(), eye, &DetailLattice::new(0));
+    let bare = Scene::build_with_detail(streamer.meshes(), eye);
     let terrain_records = bare.records.len();
     let scene = bare.clone().with_clouds(&cubes);
+    // The cloud's rectangles are their own array since 2026-10-22, so the total is the
+    // terrain's `records` plus the cloud's — `scene.records.len()` alone is the terrain's, and
+    // printing it as the total made 57 175 + 12 127 read as 57 175.
+    let outlined = terrain_records + cubes.records.len();
     println!(
-        "frame: {} terrain rectangles + {} cloud rectangles = {} outlined",
-        terrain_records,
+        "frame: {terrain_records} terrain rectangles + {} cloud rectangles = {outlined} outlined",
         cubes.records.len(),
-        scene.records.len()
     );
 
     let draw_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("check") });
-    world.draw(&mut encoder, &colour_view, &depth_view, &scene, &camera, pixel_angle);
+    world.draw(&mut encoder, target, &depth_view, resolve, &scene, &camera, pixel_angle);
     queue.submit(Some(encoder.finish()));
     let draw_error = pollster::block_on(draw_scope.pop());
     println!("draw validation: {draw_error:?}");
@@ -177,7 +203,7 @@ fn main() {
     // horizon to be read against.
     let mut encoder =
         device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("wire") });
-    world.draw_wireframe(&mut encoder, &colour_view, &depth_view, &scene, &camera, pixel_angle);
+    world.draw_wireframe(&mut encoder, target, &depth_view, resolve, &scene, &camera, pixel_angle);
     queue.submit(Some(encoder.finish()));
     let wire = read_back(&device, &queue, &colour);
     write_png("target/wireframe.png", &wire);
@@ -194,7 +220,7 @@ fn main() {
     let mut reference = |scene: &Scene, label: &'static str| {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
-        world.draw_wireframe(&mut encoder, &colour_view, &depth_view, scene, &camera, pixel_angle);
+        world.draw_wireframe(&mut encoder, target, &depth_view, resolve, scene, &camera, pixel_angle);
         queue.submit(Some(encoder.finish()));
         read_back(&device, &queue, &colour)
     };
@@ -202,7 +228,6 @@ fn main() {
     let nothing = Scene::build_with_detail(
         Vec::<voxel_mesh::Mesh>::new().iter(),
         eye,
-        &DetailLattice::new(0),
     );
     let cloud_only = nothing.clone().with_clouds(&cubes);
     let cloud_only_wire = reference(&cloud_only, "cloud-only");
@@ -241,7 +266,7 @@ fn main() {
         "F4 view: {} rectangles outlined ({} terrain + {} cloud), {} of {} pixels are the outlines \
          themselves ({} terrain + {} cloud); warm/cool is {} / {} over the terrain's lines and \
          {} / {} over the cloud's; wrote target/clouds.png and target/wireframe.png",
-        scene.records.len(),
+        outlined,
         terrain_records,
         cubes.records.len(),
         all_lines.len(),

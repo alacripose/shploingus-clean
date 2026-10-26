@@ -1,0 +1,71 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libcpufeatures-db911beae73f1263.rmeta
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+warning: voxel-model@0.1.0: the `materials-regeneration` feature is on: this build verifies no digest, so that the generator can rewrite a stale record. Run `cargo run -p voxel-model --bin materials-generator --features materials-regeneration` now; every normal build verifies again.
+    Finished `dev` profile [optimized + debuginfo] target(s) in 42.08s
+     Running `target\debug\materials-generator.exe`
+gate clean: 2 tiers, 70 substances, 11 processes, 1 vocabulary entries
+open: amethyst: an end product: a gem is held for its appearance, not consumed by a process — gem-setting is an assembly this table has not declared
+open: andesite: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: ash: an end product: what a fire leaves that is still solid. It is mass the ledger can point at, which is the whole reason a burn declares it rather than rounding the loss away
+open: basalt: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: bismuthinite: the smelt that consumes it lands with the metal age; the ore-to-blade rung is blocked on the grade row SOURCES.md has not sourced ([NS]) — an invented grade would make the ledger look sourced while being invented
+open: borax: its real uses — the flux and the cleanser — are consumers no declared age reaches; it stands as content with its reason stated
+open: brick: laid by a build, not by a process row: the first brick wall is a bill of materials a task plans, which is the sim's business rather than this table's. The process that would consume it — laying a fired wall — needs a mortar, and mortar needs the lime row SOURCES.md has not sourced yet
+open: cassiterite: the smelt that consumes it lands with the metal age; the ore-to-blade rung is blocked on the grade row SOURCES.md has not sourced ([NS]) — an invented grade would make the ledger look sourced while being invented
+open: chalk: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: chert: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: cinnabar: its real consumers — the red pigment ground from it and the mercury roast — land with ages this table has not declared; the roast would also owe a hazard row ([NS])
+open: claystone: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: coal: the fuel of the coal ages: nothing burns anything until the smelt lands, and the smelt needs SOURCES [NS] rows (coke per tonne, blast temperature)
+open: conglomerate: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: cryolite: its real consumption is as the flux in aluminium smelting, which is modern industry outside the declared ages; declared with that reason rather than left implied
+open: dacite: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: diamond: an end product: a gem is held for its appearance, not consumed by a process — gem-setting is an assembly this table has not declared
+open: diorite: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: dolomite: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: emerald: an end product: a gem is held for its appearance, not consumed by a process — gem-setting is an assembly this table has not declared
+open: fibre_dust: an end product: short fibres too fine to twist
+open: flue_gas: what leaves a fire, and it leaves nowhere a person can hold it: the first substance whose declared sink is the atmosphere (Q114 — decay goes to a destination account, never to nothing), and it is why the `Gas` unit exists
+open: forage: eaten by a person, which is a need rather than a process row (Q51): the metabolism that would make it a process — food in, body mass and waste out — is the coupling phase 7 owns
+open: gabbro: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: garnierite: the smelt that consumes it lands with the metal age; the ore-to-blade rung is blocked on the grade row SOURCES.md has not sourced ([NS]) — an invented grade would make the ledger look sourced while being invented
+open: gneiss: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: granite: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: graphite: its real uses — crucibles, lubricant — are modern industry; the ages that would consume it are not declared
+open: gypsum: the calcination that makes plaster of Paris lands with the kiln age; unburnt it is the raw sulfate row
+open: halite: salt: its real consumers are food and preservation, which arrive with the couplings phase 7 owns (the same place forage's hunger sits)
+open: hatchet: a tool is held and used, not consumed by a process: what consumes it is wear, which is the MAINTAIN half of phase 3 and not a row in this rung
+open: hematite: the smelt that consumes it lands with the metal age; the ore-to-blade rung is blocked on the grade row SOURCES.md has not sourced ([NS]) — an invented grade would make the ledger look sourced while being invented
+open: iron_ore: the metal ages' input: the ore-to-blade rung is blocked on the iron ore grade row in SOURCES.md, which is [NS] — and an invented grade would make the whole ledger look sourced while being declared
+open: lapis_lazuli: an end product: a gem, and the historic source of the ultramarine pigment — the pigment lands with the colour coupling this table has not declared
+open: lignite: fuel: it burns, and nothing burns anything until the smelt lands, which is blocked on the charcoal and grade rows SOURCES.md has not sourced ([NS])
+open: limestone: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: limonite: the smelt that consumes it lands with the metal age; the ore-to-blade rung is blocked on the grade row SOURCES.md has not sourced ([NS]) — an invented grade would make the ledger look sourced while being invented
+open: magnetite: the smelt that consumes it lands with the metal age; the ore-to-blade rung is blocked on the grade row SOURCES.md has not sourced ([NS]) — an invented grade would make the ledger look sourced while being invented
+open: malachite: the smelt that consumes it lands with the metal age; the ore-to-blade rung is blocked on the grade row SOURCES.md has not sourced ([NS]) — an invented grade would make the ledger look sourced while being invented
+open: marble: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: opal: an end product: a gem is held for its appearance, not consumed by a process — gem-setting is an assembly this table has not declared
+open: phyllite: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: pyrite: an end product in TFC's gem class: its real consumers — the sulfur roast and the historical iron source — are the same rung that keeps the other ores waiting ([NS])
+open: quartzite: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: rhyolite: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: ruby: an end product: a gem is held for its appearance, not consumed by a process — gem-setting is an assembly this table has not declared
+open: saltpeter: its real consumer is black powder — saltpeter, sulfur and charcoal — which is an age this table has not declared; the fertiliser use is the same missing coupling
+open: sand: the aggregate half of glass and mortar: glass waits for the kiln and mortar for the lime process, both of which need SOURCES [NS] rows
+open: sapphire: an end product: a gem is held for its appearance, not consumed by a process — gem-setting is an assembly this table has not declared
+open: schist: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: shale: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: slate: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: sphalerite: the smelt that consumes it lands with the metal age; the ore-to-blade rung is blocked on the grade row SOURCES.md has not sourced ([NS]) — an invented grade would make the ledger look sourced while being invented
+open: stone_flakes: an end product: debitage. Salvage (Q71) is where it earns a consumer
+open: sulfur: its real consumers — black powder and the sulfuric chemistry of later ages — are not declared; it stands as the element source
+open: sylvite: its real use is potash fertiliser, which lands with the farming couplings this table has not declared
+open: tetrahedrite: the smelt that consumes it lands with the metal age; the ore-to-blade rung is blocked on the grade row SOURCES.md has not sourced ([NS]) — an invented grade would make the ledger look sourced while being invented
+open: timber_offcuts: an end product: offcuts leave the process and accumulate. They are mass the ledger can still point at, which is why a loss is declared as an output rather than subtracted from the total
+open: topaz: an end product: a gem is held for its appearance, not consumed by a process — gem-setting is an assembly this table has not declared
+open: trim_waste: an end product: mixed-material trimmings, and the one declared destination for a process whose losses are not one material
+open: tuff: the masonry processes that consume the rock rows land with the kiln age; until then the stone rung consumes the generic `stone` row
+open: water: drinking, washing and irrigation arrive with phase 7's couplings; the world already draws it, so the substance exists and the consumer does not
+spectra clean: 56 samples, 2 channel grids
+wrote src/materials/generated.rs, src/materials/spectra.rs and materials/digest.txt

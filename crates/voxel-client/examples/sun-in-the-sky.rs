@@ -3,7 +3,7 @@
 //!
 //! # Why this exists when a test already measures the body
 //!
-//! `renderer::tests::the_sun_is_drawn_as_the_disc_the_model_says` compares the drawn pixels
+//! `renderer::tests::the_sun_is_drawn_as_the_cuboid_the_model_says` compares the drawn pixels
 //! against the model's own ray test, which is the stronger claim and the one that can fail. It
 //! is also a set of numbers. This is the same frame **written where a person can look at it**,
 //! which is what the crate's `png` dev-dependency is declared for and what no example did until
@@ -90,7 +90,6 @@ fn main() {
     let scene = Scene::build_with_detail(
         Vec::<voxel_mesh::Mesh>::new().iter(),
         eye,
-        &voxel_appearance::DetailLattice::new(0),
     )
     .with_bodies(&bodies);
     let frame = renderer.render(&scene, &camera).expect("a frame");

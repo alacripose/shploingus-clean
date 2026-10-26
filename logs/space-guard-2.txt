@@ -1,0 +1,44 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libcpufeatures-db911beae73f1263.rmeta
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.68s
+     Running `target\debug\examples\space-guard.exe`
+space-guard	short
+space-target	C:\Users\ala\Documents\shploingus-clean\target
+space-volume	C:	free-bytes	2008743936	floor-bytes	8589934592	measured-by	cmd /C dir
+space-trigger	volume-below-floor	the volume was below 8.00 GiB and the parts below were taken, cheapest first
+space-tree-bytes	7264698960
+space-measured	found before this pass; the removals below are what changed it (779.79 MiB freed)
+space-part	doc	empty	searched	C:\Users\ala\Documents\shploingus-clean\target\doc
+space-part	examples	bytes	55237381	files	12	cost	the examples rebuild, only when one is asked for
+space-part	incremental	bytes	307898955	files	1205	cost	the next build of those crates is a full rebuild
+space-part	symbols	bytes	509771776	files	18	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-kept	C:\Users\ala\Documents\shploingus-clean\target\debug\deps	bytes	4080590992	files	1707	reason	reusable compiled artefacts: removing them is a full rebuild, which is the cost this guard exists to avoid
+space-kept	C:\Users\ala\Documents\shploingus-clean\target\release	bytes	1984717377	files	3778	reason	the profile that ships, and its artefacts are reused across runs
+space-kept	C:\Users\ala\Documents\shploingus-clean\target\debug\.fingerprint	bytes	1156423	files	4465	reason	cargo's own freshness record: the fewest bytes in the tree and the most expensive thing in it to lose
+space-kept	C:\Users\ala\Documents\shploingus-clean\target\debug\build	bytes	325326056	files	650	reason	sources and artefacts other crates include through OUT_DIR
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\incremental	bytes	0	files	0	cost	the next build of those crates is a full rebuild
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\incremental.kache-auto	bytes	307898955	files	1205	cost	the next build of those crates is a full rebuild
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\answer_audit-e9318d08a726891d.pdb	bytes	28512256	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\board_report-89a8ab5cef0be441.pdb	bytes	29691904	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\chain_repair-f8256a4050aab1c9.pdb	bytes	29487104	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\claimed_by_spec-9bf5f46f334ea781.pdb	bytes	28020736	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\filed_record-efe11b61d3be4a65.pdb	bytes	30076928	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\file_civilian_scope-c48373a4cb6dfe55.pdb	bytes	29544448	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\file_civilian_sim_scope-650c47a085909657.pdb	bytes	29544448	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\file_questions-44fec8c61d49225a.pdb	bytes	29888512	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\file_the_ledger-026f17a467233cb1.pdb	bytes	30322688	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\file_work-df56ca92b1beed5f.pdb	bytes	30838784	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\first_ticket-5f692300c9996638.pdb	bytes	30404608	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\materials_generator-8f09d423669a21a7.pdb	bytes	3043328	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\open_questions-1a1776f9e7fb212c.pdb	bytes	28512256	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\retire_the_broken_rows-0cb1c5ed6c6269b3.pdb	bytes	30126080	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\round_trip-9c89eb77a0a17c6a.pdb	bytes	29962240	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\two_views-9630314e990ef9ad.pdb	bytes	29921280	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\voxel_model-ca41a483af86565b.pdb	bytes	26644480	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-removed	C:\Users\ala\Documents\shploingus-clean\target\debug\deps\voxel_shapers-6bbf3fb230a19fd8.pdb	bytes	35229696	files	1	cost	line numbers in a backtrace, until that unit is relinked; measured to cost no relink now
+space-freed	817670731
+space-floor-reached	no
+space-shortfall	5732818944
+space-moved-out	the kache store	outside the build tree; `kache gc` is the lever, and this guard will not delete another tool's cache to make its own number look good
+space-moved-out	logs/	the workspace's retained evidence, not an artefact: deleting it is a human decision
+space-guard-is-not	a claim about the volume: it measures the tree it owns and reads the free space with the tools the machine has. A trimmed artefact is regenerated by cargo at the cost printed beside it, and a removal happens while this build runs — cargo treats a missing part as absent and produces it again.

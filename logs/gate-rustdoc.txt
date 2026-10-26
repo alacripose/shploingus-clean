@@ -1,0 +1,17 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libunicode_ident-1311fe617de71ba7.rmeta
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libcpufeatures-db911beae73f1263.rmeta
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+   Compiling voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+   Compiling voxel-noise v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-noise)
+   Compiling voxel-mesh v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-mesh)
+   Compiling voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+   Compiling voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+   Compiling shploingus v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\shploingus)
+   Compiling voxel-work v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-work)
+   Compiling voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+   Compiling voxel-light v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-light)
+   Compiling voxel-ui v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-ui)
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 4m 53s

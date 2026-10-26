@@ -58,6 +58,8 @@ pub mod board {
     }
 }
 pub mod bridge;
+pub mod cellframe;
+pub mod cells;
 pub mod census;
 pub mod civilians;
 pub mod compendium;
@@ -68,6 +70,7 @@ pub mod decision;
 pub mod features;
 pub mod filing;
 pub mod ingest;
+pub mod layer;
 pub mod migration;
 pub mod numbers;
 pub mod oracle;

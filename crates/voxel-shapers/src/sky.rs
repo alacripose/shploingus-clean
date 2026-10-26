@@ -290,14 +290,123 @@ pub fn day_of_year(tick: u64) -> u64 {
 /// than as *the* algorithm, because a reader who needs arcsecond declination
 /// should know from the doc comment that this is not it.
 pub fn declination_deg(day_of_year: u64) -> f64 {
-    // `T` in Julian centuries from J2000. The world's year is the *playable*
-    // cycle rather than 365.25 days, so this is the world's own elapsed time
-    // expressed in the units the formula wants — which is exactly the kind of
-    // substitution that has to be said out loud, so it is: the formula is the
-    // Earth's and `T` is the world's, and the two are the same only in the first
-    // few centuries of play.
-    let days = day_of_year as f64;
-    let t = days / 365.25;
+    ecliptic_declination_deg(day_of_year, solar_longitude_deg(day_of_year))
+}
+
+/// Days in the Julian century the published solar formulas are stated in.
+///
+/// **Not a year length.** Meeus' `T` is centuries from J2000, and a century is `36,525` days; the
+/// first version divided by `365.25`, which made `T` a hundred times too large. That is half of
+/// the defect [`formula_days`] documents.
+const JULIAN_CENTURY_DAYS: f64 = 36_525.0;
+
+/// The length of the year the published solar formulas are written for, days.
+const PUBLISHED_YEAR_DAYS: f64 = 365.25;
+
+/// **A world day index, in the days the published solar formula is written for.**
+///
+/// This was a missing conversion, and it is the reported moon that jumped in the sky at midnight.
+/// `sun_longitude_and_obliquity` was handed the *day index* as if it were days of a 365.25-day
+/// year, and `T` was divided by `365.25` instead of `36,525` — two errors in one direction. The
+/// pair advanced the Sun's mean longitude by `36,000.76983 / 365.25 = 98.57°` per **world** day
+/// instead of `360 / 96 = 3.75°`, so a 96-day world year swept **9,463° — 26.3 turns** — and the
+/// declination crossed its whole `±23.44°` range every 3.7 days.
+///
+/// The day boundary is where that showed. At `tick % TICKS_PER_DAY == 0` the Sun's declination
+/// stepped by up to **31°** in one tick, and the Moon's — read from the same longitude plus the
+/// elongation ([`moon_position`]) — by **33°**, so the disc moved a third of the sky in one
+/// frame while the stars and the terrain did not. The altitude read `66.38° → 33.62°` across the
+/// boundary at the shipped world, which is the measurement `the_day_boundary_does_not_move_a_body`
+/// holds.
+///
+/// One world day is `365.25 / 96 = 3.804…` formula days, and a world year is exactly one turn of
+/// λ. The seasons then agree with [`crate::climate::season_phase`]: day `0` is `λ = 280.47°`, a
+/// declination of `−23.03°` and the mid-winter the phase ramp already declares.
+fn formula_days(day_of_year: u64) -> f64 {
+    day_of_year as f64 * (PUBLISHED_YEAR_DAYS / crate::climate::DAYS_PER_YEAR as f64)
+}
+
+/// **Where in the year a tick falls, in the formula's days** — continuous inside a day.
+///
+/// The integer day index is a step function, and a declination read from it moves in steps: once
+/// [`formula_days`] had removed the 26-turns-a-year defect, a body still stepped by the day's own
+/// `3.75°` of λ — up to **1.50° of declination** — in one tick at midnight, which is the residual
+/// the witness measures. A declination is a continuous property of the orbit, so the year is read
+/// as its fraction and the day's `3.75°` is spent a tick at a time.
+fn formula_days_at(tick: u64) -> f64 {
+    let year = crate::climate::YEAR_TICKS;
+    (tick % year) as f64 / year as f64 * PUBLISHED_YEAR_DAYS
+}
+
+/// The Sun's declination at a tick, degrees — the continuous reading `solar_position` uses.
+fn declination_at(tick: u64) -> f64 {
+    let days = formula_days_at(tick);
+    ecliptic_declination_in_days(days, sun_longitude_and_obliquity(days).0)
+}
+
+/// **The Sun's apparent ecliptic longitude** for a day of the year, degrees.
+///
+/// The `λ` of the Meeus form above, exposed because it is the **longitude a day stands at** and
+/// not only an intermediate: [`ecliptic_declination_deg`] asks it of a point the Sun is not at,
+/// which is how the Moon's own declination is read without a second astronomy.
+pub fn solar_longitude_deg(day_of_year: u64) -> f64 {
+    sun_longitude_and_obliquity(formula_days(day_of_year)).0
+}
+
+/// **The declination of a point on the ecliptic**, degrees: `asin(sin ε · sin λ)`.
+///
+/// `longitude_deg` is that point's apparent ecliptic longitude, so a caller with a body that
+/// stands at `λ` asks this and not [`declination_deg`] — which is the Sun's longitude and only
+/// the Sun's. The obliquity is the day's own, because the nutation term is what `λ` was already
+/// corrected for; a body a few degrees off the Sun shares the day, and one half a turn off shares
+/// it to within a day's nutation (`2.56e-3°` of obliquity at most, `4.5e-5°` of declination).
+///
+/// **The clamp is the model's own guard rather than a rounding convenience**: a value outside
+/// `[-1, 1]` would be a NaN, and this module refuses to hand out a NaN position.
+pub fn ecliptic_declination_deg(day_of_year: u64, longitude_deg: f64) -> f64 {
+    ecliptic_declination_in_days(formula_days(day_of_year), longitude_deg)
+}
+
+/// [`ecliptic_declination_deg`] at a position in the year already in the formula's days.
+fn ecliptic_declination_in_days(days: f64, longitude_deg: f64) -> f64 {
+    let (_, obliquity) = sun_longitude_and_obliquity(days);
+    // **Both factors are in radians**: `longitude_deg` is a longitude in degrees and `.sin()` on it
+    // unconverted is a silent, plausible wrong answer — it produced declinations of ±23° on every
+    // day of the year, which the obliquity test below caught.
+    let s = obliquity.to_radians().sin() * longitude_deg.to_radians().sin();
+    s.clamp(-1.0, 1.0).asin().to_degrees()
+}
+
+/// **The right ascension of a point on the ecliptic**, degrees: `atan2(sin λ cos ε, cos λ)`.
+///
+/// The conversion the Moon's hour angle needs and the one this module was missing. An hour angle is
+/// `local angle − right ascension`, and the elongation is a difference of **ecliptic longitudes**;
+/// the two are equal only at the equinoxes and at the solstices. Between them the sky's rotation
+/// carries `dα = dλ · cos ε / cos²α` — up to `1/cos ε = 1.09` and, near a solstice where `α` is a
+/// right angle, as much as `cos ε` — so a body placed by subtracting `E` from the Sun's hour angle
+/// stands off its own orbit by up to `(1 − cos ε)·E ≈ 4.2°` at `E = 107°`. That is the defect the
+/// drawn Moon used to show, and it is a conversion, not an angle anybody chose.
+///
+/// `atan2` rather than `atan`, because a longitude in the other half of the circle has a cosine of
+/// the opposite sign and the arc tangent would put it a half turn away.
+fn ecliptic_right_ascension_deg(longitude_deg: f64, obliquity_deg: f64) -> f64 {
+    let longitude = longitude_deg.to_radians();
+    let obliquity = obliquity_deg.to_radians();
+    (longitude.sin() * obliquity.cos())
+        .atan2(longitude.cos())
+        .to_degrees()
+}
+
+/// The apparent longitude and the obliquity of a day, degrees — the two terms the Sun's own
+/// declination and a body's declination share.
+///
+/// `days` is in the units the published form wants — **days of a 365.25-day year, which are not
+/// this world's days**. [`formula_days`] is the conversion and carries the measurement that says
+/// why it cannot be skipped.
+fn sun_longitude_and_obliquity(days: f64) -> (f64, f64) {
+    // `T` in Julian centuries from J2000 — **36,525 days to a century**, which is the divisor the
+    // first version wrote as a year length.
+    let t = days / JULIAN_CENTURY_DAYS;
     let l0 = 280.466_46 + 36_000.769_83 * t + 0.000_303_2 * t * t;
     let m = 357.529_11 + 35_999.050_29 * t - 0.000_153_7 * t * t;
     let mr = m.to_radians();
@@ -306,17 +415,8 @@ pub fn declination_deg(day_of_year: u64) -> f64 {
         + 0.000_289 * (3.0 * mr).sin();
     let true_longitude = l0 + c;
     let apparent = true_longitude - 0.005_69 - 0.004_78 * (125.04 - 1934.136 * t).to_radians().sin();
-    let obliquity = (OBLIQUITY_DEG + 0.002_56 * (125.04 - 1934.136 * t).to_radians().cos())
-        .to_radians();
-    // `asin(sin ε · sin λ)`, the declination itself. **Both factors are in
-    // radians**: `apparent` is a longitude in degrees and `.sin()` on it
-    // unconverted is a silent, plausible wrong answer — it produced declinations
-    // of ±23° on every day of the year, which the obliquity test below caught.
-    // The clamp is the model's own guard rather than a rounding convenience: a
-    // value outside [-1, 1] would be a NaN, and this module refuses to hand out
-    // a NaN position.
-    let s = obliquity.sin() * apparent.to_radians().sin();
-    s.clamp(-1.0, 1.0).asin().to_degrees()
+    let obliquity = OBLIQUITY_DEG + 0.002_56 * (125.04 - 1934.136 * t).to_radians().cos();
+    (apparent, obliquity)
 }
 
 /// The local hour angle for a tick, degrees.
@@ -341,7 +441,7 @@ pub fn hour_angle_deg(tick: u64) -> f64 {
 pub fn solar_position(spec: &WorldSpec, tick: u64) -> SolarPosition {
     position_of(
         spec.config.origin_latitude_deg,
-        declination_deg(day_of_year(tick)),
+        declination_at(tick),
         hour_angle_deg(tick),
     )
 }
@@ -568,7 +668,12 @@ pub fn air_mass(altitude_deg: f64) -> Option<f64> {
 /// what makes their difference an angle a sky has rather than the difference of two numbers that
 /// happen to be measured from different things.
 fn mean_longitude_deg(tick: u64, epoch: u64, period_days: f64) -> f64 {
-    let days = tick.wrapping_sub(epoch) as f64 / crate::climate::TICKS_PER_DAY as f64;
+    // **An epoch ahead of the tick is a real state, not an overflow.** A world can open *before*
+    // the next new moon — that is what a full moon at the opening tick is — and
+    // `tick.wrapping_sub(epoch)` reads that as `1.8e19` ticks and answers an angle of `2.4e21`
+    // degrees, whose cosine is noise. Signed, the two longitudes are simply negative and so is the
+    // elongation: a Moon still *behind* the Sun, which is what a waning body is.
+    let days = (tick as i128 - epoch as i128) as f64 / crate::climate::TICKS_PER_DAY as f64;
     360.0 * days / period_days
 }
 
@@ -589,6 +694,15 @@ pub fn moon_elongation_deg(tick: u64, new_moon_tick: u64) -> f64 {
     mean_longitude_deg(tick, new_moon_tick, SIDEREAL_MONTH_DAYS)
         - mean_longitude_deg(tick, new_moon_tick, crate::climate::DAYS_PER_YEAR as f64)
 }
+
+/// **Half a synodic month, in ticks** — the offset from a new moon to a full one.
+///
+/// Derived from [`SYNODIC_MONTH_DAYS`] and the day, so a world that opens at a full moon can say
+/// *how far before its next new moon* it opens without restating the month. The Moon's own orbit is
+/// the period; this is the half of it a phase needs, and `the_moon_is_dark_at_new_and_full_at_the_
+/// half_cycle` is the measurement that says the half is a full.
+pub const HALF_SYNODIC_TICKS: u64 =
+    (SYNODIC_MONTH_DAYS * 0.5 * crate::climate::TICKS_PER_DAY as f64) as u64;
 
 /// The Moon's **phase**, as the illuminated fraction of its disc.
 ///
@@ -622,9 +736,9 @@ pub struct MoonPosition {
     pub elongation_deg: f64,
     /// The illuminated fraction of the disc, from the elongation and nothing else.
     pub phase_fraction: f64,
-    /// **The Moon's own hour angle**, degrees — the Sun's less the elongation, reduced into one
-    /// turn. It is what the altitude above is read from, carried so a caller can see the orbit's
-    /// own circuit rather than infer it from a rise time.
+    /// **The Moon's own hour angle**, degrees — the Sun's less the **right-ascension** difference
+    /// between the two bodies, reduced into one turn. It is what the altitude above is read from,
+    /// carried so a caller can see the orbit's own circuit rather than infer it from a rise time.
     pub hour_angle_deg: f64,
 }
 
@@ -633,25 +747,43 @@ pub struct MoonPosition {
 /// # One triangle, two bodies
 ///
 /// The Moon rides [`position_of`] — the same spherical triangle the Sun does — with one thing
-/// changed: its **hour angle is the Sun's less the elongation**. That single subtraction is the
-/// orbit, and it is worth saying why it is the right one:
+/// changed: its **hour angle is the Sun's less the right-ascension difference between them**. The
+/// elongation is a difference of **ecliptic longitudes**, and an hour angle is measured in right
+/// ascension; the conversion is [`ecliptic_right_ascension_deg`]'s, and skipping it is what put the
+/// drawn Moon `4.22°` off its own orbit. With it:
 ///
-/// * the hour angle is `local angle − right ascension`, and the Moon's right ascension is the
-///   Sun's plus the elongation, since the Moon leads the Sun eastwards by `E`;
-/// * so the Moon rises **later** than the Sun by `E/15` hours — 48 minutes a day at this world's
-///   synodic month, which is the observed lag;
+/// * the Moon's right ascension is the Sun's plus `Δα(λ_sun, E)`, so it rises **later** than the
+///   Sun — 48 minutes a day at this world's synodic month, which is the observed lag;
 /// * and it puts the phases where they belong: `E = 0` is the Moon **with** the Sun (up at noon,
 ///   down at midnight), `E = 90°` is the first quarter on the meridian **at sunset**, and
-///   `E = 180°` is the full Moon up all night and down all day.
+///   `E = 180°` is the full Moon up all night and down all day — the ends of the orbit, where
+///   `Δα` and `E` agree and the conversion costs nothing.
+///
+/// * and its **declination is the declination of the ecliptic point it stands at**, which is
+///   `λ = λ_sun + E` — the same `asin(sin ε · sin λ)` the Sun's own declination is read from. At
+///   `E = 0` that is the Sun's longitude and the two bodies are one; at `E = 180°` it is
+///   `λ_sun + 180°`, and `sin(λ + 180°) = −sin λ` makes the full Moon's declination **exactly the
+///   Sun's negated**. Then its altitude is the Sun's negated too, at every hour: a full Moon is
+///   on the horizon as the Sun sets and is highest at midnight.
 ///
 /// # What the orbit does not model, named
 ///
-/// The orbit is taken **circular and coplanar with the ecliptic**, so the Moon's declination is
-/// the Sun's and its ecliptic latitude is zero. The real Moon's 5.145° inclination and the
-/// regression of its nodes move the declination and set the eclipse seasons; neither is here, and
-/// the honest reading is that this is a first-order orbit rather than an ephemeris. What it does
-/// give — the elongation, the phase, the Moon's own hour angle and its own altitude, hence its
-/// own rise and set — is what the light model and the sky pass actually ask for.
+/// The orbit is taken **circular and coplanar with the ecliptic**, so the Moon's ecliptic latitude
+/// is zero. The real Moon's 5.145° inclination and the regression of its nodes move the declination
+/// and set the eclipse seasons; neither is here, and the honest reading is that this is a
+/// first-order orbit rather than an ephemeris.
+///
+/// **What this used to say, and why it was wrong to leave it.** Until the fix this paragraph read
+/// *"the Moon's declination is the Sun's and its ecliptic latitude is zero"*, which gave the Moon
+/// the Sun's *declination* at the Moon's *hour angle*: at `E = 180°` the two offsets cancelled on
+/// the meridian and fought everywhere else, so at this world's latitude a **full Moon sat 34° under
+/// the horizon at sunset** and rose only minutes into the night — while the rig's own moonlight
+/// (PATCH-066) was already arriving. A declination is a property of the point on the ecliptic, and
+/// a body half a turn from the Sun is half a turn away there too.
+///
+/// What the orbit does give — the elongation, the phase, the Moon's own hour angle, its own
+/// declination and so its own altitude, hence its own rise and set — is what the light model and
+/// the sky pass actually ask for.
 /// **The unit vector toward a body**, in the world frame: `x` east, `y` up, `z` south — so a
 /// body due north is `−z` and azimuth runs clockwise from north.
 ///
@@ -674,14 +806,27 @@ pub fn direction_of(altitude_deg: f64, azimuth_deg: f64) -> [f64; 3] {
 /// The Moon's position in the local sky, and how much of it is lit.
 pub fn moon_position(spec: &WorldSpec, tick: u64, new_moon_tick: u64) -> MoonPosition {
     let elongation_deg = moon_elongation_deg(tick, new_moon_tick);
-    // The Moon's hour angle: the Sun's less the elongation, reduced into one turn because a
-    // negative hour angle is a morning body and `atan2` reads the sign of it.
-    let hour_angle = (hour_angle_deg(tick) - elongation_deg).rem_euclid(360.0);
-    let position = position_of(
-        spec.config.origin_latitude_deg,
-        declination_deg(day_of_year(tick)),
-        hour_angle,
-    );
+    // **The elongation is a longitude difference, and an hour angle is a right ascension.**
+    // `dα ≠ dλ` away from the equinoxes and solstices: subtracting `E` from the Sun's hour angle
+    // places the Moon by an angle it does not have, which is the `4.22°` the drawn body stood off
+    // its own orbit at `E = 107°`. Both longitudes are converted through the day's own obliquity and
+    // the *difference* of the two right ascensions is what the hour angle moves by.
+    let days = formula_days_at(tick);
+    let (sun_longitude, obliquity) = sun_longitude_and_obliquity(days);
+    let moon_longitude = sun_longitude + elongation_deg;
+    let right_ascension_difference = ecliptic_right_ascension_deg(moon_longitude, obliquity)
+        - ecliptic_right_ascension_deg(sun_longitude, obliquity);
+    // Reduced into one turn because a negative hour angle is a morning body and `atan2` reads the
+    // sign of it.
+    let hour_angle = (hour_angle_deg(tick) - right_ascension_difference).rem_euclid(360.0);
+    // **The Moon's declination is the ecliptic point's, not the Sun's.** The Moon leads the Sun by
+    // the elongation, so its longitude is the Sun's plus `E` — and a declination is a property of
+    // a point on the ecliptic. Handing the Moon the Sun's declination instead put a full Moon 34°
+    // below the horizon at this world's sunset; see this function's doc for the measurement.
+    // **The year is read continuously, for the same reason the Sun's is**: a declination taken
+    // from the integer day would step the Moon by the day's own 1.50° at midnight.
+    let declination = ecliptic_declination_in_days(days, moon_longitude);
+    let position = position_of(spec.config.origin_latitude_deg, declination, hour_angle);
     MoonPosition {
         altitude_deg: position.altitude_deg,
         azimuth_deg: position.azimuth_deg,
@@ -774,28 +919,34 @@ mod tests {
         // declination and hour angle the way the algorithm says.
         let mut worst: f64 = 0.0;
         for latitude in [-60.0, -23.44, 0.0, 23.44, 45.0, 66.56] {
-            // Search the year for the day whose declination is nearest zero, and
-            // stand at solar noon on it.
-            let (best_day, best_decl) = (0..crate::climate::DAYS_PER_YEAR)
-                .map(|d| (d, declination_deg(d).abs()))
-                .min_by(|a, b| a.1.total_cmp(&b.1))
-                .expect("the year is not empty");
-            assert!(best_decl < 0.5, "no equinox found in the year, nearest was {best_decl}");
-
+            // **Search the year's noons for the one nearest the equinox.** The declination is
+            // continuous now, so a *day* has a declination only as a range: the noon nearest zero
+            // is up to half a day's `1.5°` of declination away from it, and the identity below has
+            // to be stated at that noon's own declination rather than at zero.
             let noon = crate::climate::TICKS_PER_DAY / 2;
-            let tick = best_day * crate::climate::TICKS_PER_DAY + noon;
+            let (tick, declination) = (0..crate::climate::DAYS_PER_YEAR)
+                .map(|d| d * crate::climate::TICKS_PER_DAY + noon)
+                .map(|t| (t, declination_at(t)))
+                .min_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+                .expect("the year is not empty");
+            assert!(
+                declination.abs() < 0.8,
+                "no equinox noon found in the year, nearest declination was {declination}"
+            );
             let position = solar_position(&spec_at(latitude), tick);
-            let expected = 90.0 - latitude.abs();
+            // `h = 0` is `alt = 90 − |φ − δ|`, which is the source's own identity with the
+            // declination the noon actually stands at rather than an assumed zero.
+            let expected = 90.0 - (latitude - declination).abs();
             let error = (position.altitude_deg - expected).abs();
             worst = worst.max(error);
             assert!(
-                error < 0.6,
+                error < 0.1,
                 "latitude {latitude}: equinox noon altitude was {} where the \
                  identity requires {expected}",
                 position.altitude_deg
             );
         }
-        assert!(worst < 0.6, "the worst equinox error over six latitudes was {worst}");
+        assert!(worst < 0.1, "the worst equinox error over six latitudes was {worst}");
     }
 
     #[test]
@@ -833,6 +984,85 @@ mod tests {
         }
     }
 
+    /// **The reported bug, as a measurement**: a day boundary is not a place the sky moves.
+    ///
+    /// The Sun's mean longitude was advancing `98.57°` per *world* day because the day index was
+    /// handed to a formula written for days of a 365.25-day year, so at every midnight the Sun's
+    /// declination stepped by up to `31°` and the Moon's — the same longitude plus the elongation
+    /// — by `33°`. A body that moves a third of the sky in one tick while the terrain does not is
+    /// the moon that jumped in the sky, and it jumped once every day.
+    ///
+    /// Each body is held to **one tick of its own motion**: the hour angle sweeps `360/24,000 =
+    /// 0.015°` a tick, and its declination may add a few thousandths, so `0.1°` is generous and
+    /// three orders of magnitude below the defect.
+    #[test]
+    fn the_day_boundary_does_not_move_a_body() {
+        let world = spec();
+        // The phase is fixed so the Moon's declination is read at one elongation; where the cycle
+        // starts cannot matter to whether a position is continuous.
+        let new_moon = crate::climate::TICKS_PER_DAY * 7;
+        let mut worst_sun = 0.0f64;
+        let mut worst_moon = 0.0f64;
+        for day in 1..crate::climate::DAYS_PER_YEAR {
+            let boundary = day * crate::climate::TICKS_PER_DAY;
+            let sun = (solar_position(&world, boundary - 1).altitude_deg
+                - solar_position(&world, boundary).altitude_deg)
+                .abs();
+            worst_sun = worst_sun.max(sun);
+            let before = moon_position(&world, boundary - 1, new_moon);
+            let after = moon_position(&world, boundary, new_moon);
+            let mut azimuth_step = (after.azimuth_deg - before.azimuth_deg).abs();
+            if azimuth_step > 180.0 {
+                azimuth_step = 360.0 - azimuth_step;
+            }
+            let altitude_step = (after.altitude_deg - before.altitude_deg).abs();
+            worst_moon = worst_moon.max(altitude_step.hypot(azimuth_step));
+        }
+        assert!(
+            worst_sun < 0.1,
+            "the Sun stepped {worst_sun}° across a day boundary, so the seasons are not the world's"
+        );
+        assert!(
+            worst_moon < 0.1,
+            "the Moon stepped {worst_moon}° across a day boundary, which is the jump in the sky"
+        );
+        println!("the worst day-boundary step: Sun {worst_sun:.5}°, Moon {worst_moon:.5}°");
+    }
+
+    /// **One world year is one turn of the Sun's longitude**, so the declination traces the range
+    /// the source gives and comes back: `−23.03°` at the year's own mid-winter, `+23.03°` at its
+    /// mid-summer, and zero twice between them.
+    ///
+    /// This is the other half of the conversion [`formula_days`] carries. Without it the 96-day
+    /// year swept 26 turns, so *every* day was a season and the declination's extremes were
+    /// reached every 3.7 days — which is why a midnight could cross the whole range at once.
+    #[test]
+    fn one_world_year_is_one_turn_of_the_declination() {
+        let year = crate::climate::DAYS_PER_YEAR;
+        let start = declination_deg(0);
+        let middle = declination_deg(year / 2);
+        assert!(
+            (start + 23.03).abs() < 0.6,
+            "day 0's declination was {start}°, where the source's mid-winter is −23.03°"
+        );
+        assert!(
+            (middle - 23.03).abs() < 0.6,
+            "mid-year's declination was {middle}°, where the source's mid-summer is +23.03°"
+        );
+        // The declination crosses zero between the two, and only there: a year that swept more
+        // than one turn would cross zero more than twice.
+        let mut crossings = 0;
+        let mut previous = start;
+        for day in 1..=year {
+            let value = declination_deg(day % year);
+            if (previous < 0.0) != (value < 0.0) {
+                crossings += 1;
+            }
+            previous = value;
+        }
+        assert_eq!(crossings, 2, "a world year crossed the equinoxes {crossings} times, not twice");
+    }
+
     #[test]
     fn the_sun_rises_in_the_east_and_sets_in_the_west() {
         // **A sign error in the azimuth is invisible until a shadow points the
@@ -862,8 +1092,14 @@ mod tests {
         // not the mirror relation at all — it failed on values that were already
         // correct. A test whose expected value is wrong in the same way twice
         // teaches nothing.)
+        // **The tolerance is the declination's own motion, not a slackened assertion.** The mirror
+        // identity is exact for one declination; this world's declination is now continuous, so
+        // the two times — a quarter of a day apart — stand at declinations up to `0.375°` apart,
+        // and the measured residual is `0.29°` at this latitude. A day-granular declination made
+        // the sum exact by holding the body still between the two readings, which is the same step
+        // `formula_days_at` exists to remove.
         assert!(
-            (morning + evening - 360.0).abs() < 1e-6,
+            (morning + evening - 360.0).abs() < 1.0,
             "morning {morning} and evening {evening} are not mirror images about the meridian"
         );
     }
@@ -1053,6 +1289,34 @@ mod tests {
     }
 
     #[test]
+    fn an_epoch_ahead_of_the_tick_is_a_waning_moon_and_not_an_overflow() {
+        // **A world may open before the next new moon**, and that is what makes the shipped world
+        // open at a full one: its epoch is half a month *after* its tick. Measured here because
+        // `mean_longitude_deg` used to subtract the epoch with `wrapping_sub`, which reads the
+        // same state as `1.8e19` ticks — an angle of `2.4e21` degrees, whose cosine is noise.
+        let tick = 9_000u64;
+        let epoch = tick + HALF_SYNODIC_TICKS;
+        let elongation = moon_elongation_deg(tick, epoch);
+        assert!(
+            elongation.is_finite() && elongation < 0.0 && (elongation + 180.0).abs() < 0.5,
+            "an epoch half a month ahead gave an elongation of {elongation}°, not a full moon's"
+        );
+        let phase = moon_phase_fraction(tick, epoch);
+        println!("half a month before the epoch: elongation {elongation:.3}°, phase {phase:.6}");
+        assert!((phase - 1.0).abs() < 1e-3, "the phase is {phase}, not a full moon's");
+        // And a small lead is a small *negative* elongation, the mirror of a small lag: the orbit
+        // runs through the epoch instead of starting at it, so the two sides are one function.
+        let lead = moon_elongation_deg(tick, tick + 1_000);
+        let lag = moon_elongation_deg(tick, tick - 1_000);
+        assert!(lead < 0.0 && lag > 0.0, "a lead of {lead}° and a lag of {lag}° are not opposite");
+        assert!(
+            (lead + lag).abs() < 1e-9,
+            "the two sides miss each other by {}°, so the elongation is not continuous at the epoch",
+            lead + lag
+        );
+    }
+
+    #[test]
     fn the_sidereal_month_is_the_published_relation() {
         // **The formula is the source's, and this is the measurement that says so.** For a
         // prograde orbit `1/P = 1/S + 1/Y`; evaluated on the Earth's own published figures — the
@@ -1128,29 +1392,96 @@ mod tests {
         );
     }
 
+    /// **The Moon stands on its own orbit, and the sky can measure it.**
+    ///
+    /// Two bodies in one frame: the directions the model's own altitude and azimuth give are
+    /// separated by exactly the elongation, because an elongation *is* the angle between them from
+    /// the planet — that is why the phase is read from it. This is the invariant that was missing
+    /// while the hour angle subtracted the elongation as if it were a right-ascension difference:
+    /// `dα ≠ dλ`, and the drawn Moon stood **4.22°** off its own orbit at `E = 107°`, which is what
+    /// a sky witness saw.
+    ///
+    /// The second half is the conversion's own witness: the rule this replaced — the Sun's hour
+    /// angle less `E` — is put on the same triangle and measured against the same orbit, so the
+    /// `4.2°` is a number here rather than a sentence in a comment.
     #[test]
-    fn the_moons_hour_angle_is_the_suns_less_the_elongation() {
-        // **The one line that is the orbit.** The Moon's right ascension is the Sun's plus the
-        // elongation, and the hour angle is the local angle less the right ascension — so the
-        // Moon's hour angle is the Sun's less `E`, which is what makes it rise later than the Sun
-        // by `E` and what puts the phases at the hours they happen at.
+    fn the_two_bodies_stand_apart_by_their_elongation_to_the_last_digit() {
         let world = spec_at(45.0);
-        for step in 0..48 {
-            let tick = step * 977 + 13;
+        let day = crate::climate::TICKS_PER_DAY;
+        let month = (SYNODIC_MONTH_DAYS * day as f64).round() as u64;
+        let (mut worst_error, mut worst_stale) = (0.0f64, 0.0f64);
+        let (mut at_worst, mut stale_at) = (0u64, 0u64);
+        for step in 0..360u64 {
+            let tick = 11 + step * month / 360;
+            let sun = solar_position(&world, tick);
             let moon = moon_position(&world, tick, 0);
-            let sun_hour_angle = hour_angle_deg(tick);
-            let expected = (sun_hour_angle - moon.elongation_deg).rem_euclid(360.0);
-            let error = (moon.hour_angle_deg - expected)
+            // **The angle between the two directions the frame draws**, from the same convention
+            // every consumer converts an altitude and an azimuth with.
+            let s = direction_of(sun.altitude_deg, sun.azimuth_deg);
+            let m = direction_of(moon.altitude_deg, moon.azimuth_deg);
+            let separation = (s[0] * m[0] + s[1] * m[1] + s[2] * m[2])
+                .clamp(-1.0, 1.0)
+                .acos()
+                .to_degrees();
+            // `E` is a longitude difference and can be many turns; the sky's own separation is one
+            // angle in `[0, 180]`, so the expectation is the elongation folded into a half turn.
+            let turns = moon.elongation_deg.rem_euclid(360.0);
+            let expected = if turns <= 180.0 { turns } else { 360.0 - turns };
+            let error = (separation - expected).abs();
+            if error > worst_error {
+                worst_error = error;
+                at_worst = tick;
+            }
+
+            // **And the hour angle is the Sun's less the right-ascension difference**, which is the
+            // conversion: `α = atan2(sin λ cos ε, cos λ)` at both longitudes, and the difference
+            // of the two is what the hour angle moves by.
+            let days = formula_days_at(tick);
+            let (lambda, obliquity) = sun_longitude_and_obliquity(days);
+            let ra = ecliptic_right_ascension_deg(lambda + moon.elongation_deg, obliquity)
+                - ecliptic_right_ascension_deg(lambda, obliquity);
+            let stated = (hour_angle_deg(tick) - ra).rem_euclid(360.0);
+            let hour_error = (moon.hour_angle_deg - stated)
                 .rem_euclid(360.0)
-                .min((expected - moon.hour_angle_deg).rem_euclid(360.0));
+                .min((stated - moon.hour_angle_deg).rem_euclid(360.0));
             assert!(
-                error < 1e-9,
-                "at tick {tick} the Moon's hour angle is {} where the Sun's {sun_hour_angle} less \
-                 the elongation {} gives {expected}",
+                hour_error < 1e-9,
+                "at tick {tick} the Moon's hour angle is {} where the Sun's {} less the \
+                 right-ascension difference {ra} gives {stated}",
                 moon.hour_angle_deg,
-                moon.elongation_deg
+                hour_angle_deg(tick)
             );
+
+            // **The rule this replaced**, on the same triangle and against the same orbit: the
+            // declination is the correct one, so what the number isolates is the hour angle alone.
+            let declination = ecliptic_declination_in_days(days, lambda + moon.elongation_deg);
+            let stale_hour = (hour_angle_deg(tick) - moon.elongation_deg).rem_euclid(360.0);
+            let stale = position_of(world.config.origin_latitude_deg, declination, stale_hour);
+            let d = direction_of(stale.altitude_deg, stale.azimuth_deg);
+            let stale_separation = (s[0] * d[0] + s[1] * d[1] + s[2] * d[2])
+                .clamp(-1.0, 1.0)
+                .acos()
+                .to_degrees();
+            let stale_error = (stale_separation - expected).abs();
+            if stale_error > worst_stale {
+                worst_stale = stale_error;
+                stale_at = tick;
+            }
         }
+        assert!(
+            worst_error < 1e-9,
+            "the drawn bodies are {worst_error} deg apart from the elongation at tick {at_worst} \
+             rather than on it: the Moon is not where its own orbit says"
+        );
+        assert!(
+            worst_stale > 4.0,
+            "the rule this replaced is only {worst_stale} deg off the orbit at tick {stale_at}, so \
+             this test would not have caught the defect it exists for"
+        );
+        println!(
+            "separation against elongation: {worst_error:.3e} deg after the conversion, \
+             {worst_stale:.4} deg before it (at tick {stale_at})"
+        );
     }
 
     #[test]

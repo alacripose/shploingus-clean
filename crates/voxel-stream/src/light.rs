@@ -471,6 +471,11 @@ fn march_tree(
         if path_m <= 0.0 {
             continue;
         }
+        // **A `Mixed` leaf arrives already split at its own grid.** `Spans` answers a non-uniform
+        // leaf cell by cell (`SUBVOXEL_SIDE` per voxel), so `material_at_entry()` here is the
+        // material of the stretch this span covers and never one of sixty-four cells speaking for
+        // the metre. The question is the walk's, and this is its answer being spent — not a second
+        // grid walked inside this loop.
         let Some(material) = span.material_at_entry() else {
             continue;
         };
@@ -773,6 +778,34 @@ mod tests {
             1.0,
             "a ray through the emptied subvoxels was shadowed by the quarter beside it"
         );
+    }
+
+    /// **The tree's own walk, through a voxel that is only partly solid.**
+    ///
+    /// The per-voxel walk above has always asked the subvoxel address; the *tree* walk did not —
+    /// `Spans` hands it one span per leaf and one subvoxel per span, so a beam that entered a
+    /// half-dug voxel through an empty corner was charged nothing for the rock it crossed. That is
+    /// the light leak this test is for: the solid cell sits at the **top** of the voxel, so the ray
+    /// enters through an empty one and only meets the rock three quarters of a metre later.
+    #[test]
+    fn a_mixed_voxels_shadow_follows_its_own_subvoxel_grid() {
+        use voxel_mesh::octree::local_from;
+        let mut tree = SparseVoxelOctree::new();
+        let voxel = local_from([4, 4, 4]).expect("a voxel");
+        // The top corner of the voxel: `y` in `[4.75, 5)`, `x` and `z` in `[4, 4.25)`.
+        let top = SubvoxelIndex::new(0, 3, 0).expect("a subvoxel");
+        tree.set_subvoxel(voxel, top, MaterialId(7));
+        let matter = ChunkMatter::new(&tree, [0, 0, 0]);
+
+        // Straight up through the solid cell, entering the voxel through an *empty* one.
+        let stopped = transmittance_tree(&matter, &tree, [4.125, 3.0, 4.125], [0.0, 1.0, 0.0], 8.0);
+        assert_eq!(
+            stopped, 0.0,
+            "a beam through the emptied corner passed the rock above it: {stopped}"
+        );
+        // And the dug quarter on the other side of the same voxel is still clear.
+        let clear = transmittance_tree(&matter, &tree, [4.875, 3.0, 4.875], [0.0, 1.0, 0.0], 8.0);
+        assert_eq!(clear, 1.0, "the emptied quarter stopped a beam: {clear}");
     }
 
     #[test]

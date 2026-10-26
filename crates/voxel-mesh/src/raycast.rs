@@ -27,9 +27,11 @@
 //! inside the hit voxel; that is a declared refinement, not an oversight, and it
 //! is the only thing standing between this and exact shape picking.
 
-use voxel_model::{Face, LocalPos, MaterialId, SubvoxelIndex, CHUNK_SIDE, SUBVOXEL_SIDE};
+use voxel_model::{
+    Face, LocalPos, MaterialId, SubvoxelIndex, CHUNK_SIDE, SUBVOXEL_SIDE,
+};
 
-use crate::octree::{local_from, Node, SparseVoxelOctree};
+use crate::octree::{local_from, Node, SparseVoxelOctree, SUBVOXEL_SIDE_I32};
 
 /// A ray in **voxel** units, so one unit is one metre. `dir` need not be
 /// normalised; [`Hit::distance`] is in units of `dir`'s length.
@@ -303,7 +305,11 @@ impl SparseVoxelOctree {
     /// The spans are **in order and never overlap**: each is the ray's own intersection with the
     /// box of a non-empty node. **The gap between two spans is empty space** — the walk yields no
     /// span for it, which is the whole of the saving — and `exit_t` and the next `entry_t` are the
-    /// two ends of that gap rather than a beat the walk missed. A caller accumulating along the
+    /// two ends of that gap rather than a beat the walk missed.
+    ///
+    /// **A `Mixed` leaf that is not uniform is reported cell by cell**, at [`SUBVOXEL_SIDE`] per
+    /// voxel: the stretch is split at the grid the matter is stored in, so `material_at_entry` is
+    /// never one of sixty-four cells speaking for the metre. See [`Spans::split`]. A caller accumulating along the
     /// path (a transmittance, a distance to first solid) therefore charges the spans and lets the
     /// gaps cost nothing, instead of reconstructing the geometry from them.
     ///
@@ -412,10 +418,25 @@ struct Pending<'a> {
     entry_face: Option<Face>,
 }
 
+/// One cell of a leaf being subdivided: the stretch of the ray inside one subvoxel, and the leaf
+/// it belongs to.
+#[derive(Clone, Copy)]
+struct Cell<'a> {
+    node: &'a Node,
+    voxel: [i32; 3],
+    at: SubvoxelIndex,
+    near: f64,
+    far: f64,
+    entry_face: Option<Face>,
+}
+
 /// The walk [`SparseVoxelOctree::spans`] returns. See it for what a span is.
 pub struct Spans<'a> {
     ray: Ray,
     stack: Vec<Pending<'a>>,
+    /// The cells of the leaf currently being subdivided, in reverse so that a pop yields the
+    /// nearest. Only ever holds one leaf's cells — the stack is not touched until they are spent.
+    cells: Vec<Cell<'a>>,
 }
 
 impl<'a> Spans<'a> {
@@ -436,7 +457,102 @@ impl<'a> Spans<'a> {
             }
             None => Vec::new(),
         };
-        Some(Spans { ray, stack })
+        Some(Spans { ray, stack, cells: Vec::new() })
+    }
+
+    /// **One `Mixed` leaf's stretch, as the cells the ray actually crosses.**
+    ///
+    /// A leaf's answer is sixty-four subvoxels and [`Span::material_at_entry`] is one of them —
+    /// the one the ray entered through. Reported as a single metre-wide span, that cell speaks for
+    /// the rest, and both directions of the error are the same mistake: a beam through a dug
+    /// corner passes the rock beside it, and a beam through a solid corner is charged for rock it
+    /// never met. *What does this stretch of the path hold* is this walk's question, so it is
+    /// answered here rather than by each consumer re-walking the grid for itself.
+    ///
+    /// **A uniform leaf is not split.** All sixty-four cells hold the same material, so the entry
+    /// cell's answer *is* the leaf's for the whole metre and a split would be arithmetic spent
+    /// arriving where the caller already was; a dig or a mix is the only thing that makes a leaf
+    /// non-uniform, and this is the check for it. What stays coarse at the split is a leaf of two
+    /// materials — the entry cell answers for the metre — which is the same answer the whole-metre
+    /// span gave and is exact while `Matter::blocking` is per-material and no record declares a
+    /// per-material extinction.
+    fn split(
+        &mut self,
+        node: &'a Node,
+        voxel: [i32; 3],
+        entry_face: Option<Face>,
+        near: f64,
+        far: f64,
+    ) {
+        let side = SUBVOXEL_SIDE_I32;
+        let cell_m = 1.0 / side as f64;
+        let entry = point_at(self.ray.origin, self.ray.dir, near);
+        let mut cell = [0i32; 3];
+        for axis in 0..3 {
+            let local = ((entry[axis] - voxel[axis] as f64) * side as f64).floor();
+            cell[axis] = (local as i32).clamp(0, side - 1);
+        }
+        // A line through a 4×4×4 grid crosses at most three planes per axis, so at most ten
+        // cells; sixteen is the bound the array is written against and `far` ends the walk anyway.
+        let mut runs = [([0i32; 3], 0.0f64, 0.0f64, None); 16];
+        let mut count = 0usize;
+        let mut t = near;
+        let mut face = entry_face;
+        while count < runs.len() {
+            let mut end = far;
+            let mut crossed: Option<usize> = None;
+            for axis in 0..3 {
+                let d = self.ray.dir[axis];
+                if d == 0.0 {
+                    continue;
+                }
+                let ahead = if d > 0.0 { (cell[axis] + 1) as f64 } else { cell[axis] as f64 };
+                let plane = voxel[axis] as f64 + ahead * cell_m;
+                let candidate = (plane - self.ray.origin[axis]) / d;
+                if candidate < end {
+                    end = candidate;
+                    crossed = Some(axis);
+                }
+            }
+            // A plane crossed at exactly the entry is a zero-length run, not a cell.
+            if end > t + 1e-12 {
+                runs[count] = (cell, t, end, face);
+                count += 1;
+            }
+            if end >= far {
+                break;
+            }
+            let Some(axis) = crossed else { break };
+            t = end;
+            cell[axis] += if self.ray.dir[axis] > 0.0 { 1 } else { -1 };
+            if !(0..side).contains(&cell[axis]) {
+                break;
+            }
+            // The face this cell is entered through, by the same rule `Crossings` writes.
+            face = Some(match (axis, self.ray.dir[axis] > 0.0) {
+                (0, true) => Face::NegX,
+                (0, false) => Face::PosX,
+                (1, true) => Face::NegY,
+                (1, false) => Face::PosY,
+                (2, true) => Face::NegZ,
+                _ => Face::PosZ,
+            });
+        }
+        for (cell, near, far, entry_face) in runs[..count].iter().rev() {
+            // The clamp above is the proof these are in `0..4`, exactly as `subvoxel_of`'s is.
+            self.cells.push(Cell {
+                node,
+                voxel,
+                at: SubvoxelIndex {
+                    x: cell[0].clamp(0, side - 1) as u8,
+                    y: cell[1].clamp(0, side - 1) as u8,
+                    z: cell[2].clamp(0, side - 1) as u8,
+                },
+                near: *near,
+                far: *far,
+                entry_face: *entry_face,
+            });
+        }
     }
 }
 
@@ -444,10 +560,46 @@ impl<'a> Iterator for Spans<'a> {
     type Item = Span<'a>;
 
     fn next(&mut self) -> Option<Span<'a>> {
-        while let Some(pending) = self.stack.pop() {
+        loop {
+            // A leaf's own cells come first: they were pushed last and belong to the leaf the
+            // stack has already yielded.
+            if let Some(cell) = self.cells.pop() {
+                return Some(Span {
+                    node: cell.node,
+                    voxel: cell.voxel,
+                    entry_face: cell.entry_face,
+                    entry_t: cell.near,
+                    exit_t: cell.far,
+                    level: 0,
+                    at: cell.at,
+                });
+            }
+            let Some(pending) = self.stack.pop() else {
+                return None;
+            };
             match pending.node {
                 Node::Empty => continue,
-                Node::Uniform(_) | Node::Mixed(_) => {
+                Node::Mixed(shape) => {
+                    let entry_t = pending.near.max(0.0);
+                    let point = point_at(self.ray.origin, self.ray.dir, entry_t);
+                    let voxel = first_voxel(point, pending.min, pending.level);
+                    let first = shape.cells()[0];
+                    let uniform = shape.cells().iter().all(|material| *material == first);
+                    if !uniform && pending.level == 0 {
+                        self.split(pending.node, voxel, pending.entry_face, entry_t, pending.far);
+                        continue;
+                    }
+                    return Some(Span {
+                        node: pending.node,
+                        voxel,
+                        entry_face: pending.entry_face,
+                        entry_t,
+                        exit_t: pending.far,
+                        level: pending.level,
+                        at: subvoxel_of(point, voxel),
+                    });
+                }
+                Node::Uniform(_) => {
                     let entry_t = pending.near.max(0.0);
                     let point = point_at(self.ray.origin, self.ray.dir, entry_t);
                     let voxel = first_voxel(point, pending.min, pending.level);
@@ -505,7 +657,6 @@ impl<'a> Iterator for Spans<'a> {
                 }
             }
         }
-        None
     }
 }
 
@@ -810,6 +961,51 @@ mod tests {
         holed.set(voxel_model::SubvoxelIndex { x: 0, y: 0, z: 0 }, MaterialId::EMPTY);
         tree.set_voxel(local_from([24, 20, 24]).unwrap(), holed);
         tree
+    }
+
+    /// **A leaf that is not uniform is answered cell by cell.** A `Mixed` voxel's answer is
+    /// sixty-four cells, and a span that reported one of them for the whole metre left every
+    /// consumer either wrong (a beam through the dug corner passing the rock) or re-walking the
+    /// grid for itself. The split is at the grid the matter is stored in, so the spans come out
+    /// quarter of a metre long and in order — and a uniform leaf is still the one span it was.
+    #[test]
+    fn a_leaf_with_a_hole_is_reported_cell_by_cell() {
+        let mut tree = SparseVoxelOctree::new();
+        let voxel = local_from([4, 4, 4]).expect("a voxel");
+        let mut shape = VoxelShape::solid(STONE);
+        // The bottom cell dug out, so the ray enters the voxel through emptiness.
+        shape.set(SubvoxelIndex { x: 0, y: 0, z: 0 }, MaterialId::EMPTY);
+        tree.set_voxel(voxel, shape);
+
+        let ray = Ray::new([4.125, 3.5, 4.125], [0.0, 1.0, 0.0]);
+        let spans: Vec<Span> = tree.spans(&ray, 8.0).unwrap().collect();
+        assert_eq!(spans.len(), 4, "a holed voxel was reported as {} span(s)", spans.len());
+        for span in &spans {
+            assert_eq!(span.voxel, [4, 4, 4], "a cell left its own voxel");
+            assert_eq!(span.level, 0, "a cell claimed a level");
+            assert!(
+                span.exit_t - span.entry_t <= 0.25 + 1e-12,
+                "a cell spanned {} m",
+                span.exit_t - span.entry_t
+            );
+            assert!(span.entry_t >= 0.0 && span.exit_t > span.entry_t);
+        }
+        assert_eq!(spans[0].material_at_entry(), None, "the dug cell was not empty");
+        assert!(
+            spans[1..].iter().all(|s| s.material_at_entry() == Some(STONE)),
+            "a cell above the dig did not hold the voxel's material"
+        );
+        // And the split did not move: the four cells are the four quarters of the metre.
+        assert!((spans[0].entry_t - 0.5).abs() < 1e-12, "entry at {}", spans[0].entry_t);
+        assert!((spans[3].exit_t - 1.5).abs() < 1e-12, "exit at {}", spans[3].exit_t);
+
+        // **A uniform leaf is not split**: the entry cell answers for the whole metre and the
+        // walk does not spend a crossing per quarter on a block nobody has dug into.
+        let mut solid = SparseVoxelOctree::new();
+        solid.set_voxel(voxel, VoxelShape::solid(STONE));
+        let one: Vec<Span> = solid.spans(&ray, 8.0).unwrap().collect();
+        assert_eq!(one.len(), 1, "a solid voxel was split into {} spans", one.len());
+        assert!((one[0].exit_t - one[0].entry_t - 1.0).abs() < 1e-12);
     }
 
     /// **The acceleration may not answer a different question.** Every ray of the battery gives

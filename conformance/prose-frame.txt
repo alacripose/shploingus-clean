@@ -47,6 +47,19 @@
 
 # crate	plain-percent	(the frame's own measurement; rustdoc excluded)
 voxel-model	3
+voxel-axis-ladder	0
+voxel-axis-coverage	0
+voxel-axis-unit	0
+voxel-axis-claim	0
+voxel-axis-view	0
+voxel-axis-civilians	0
+voxel-axis-being	3
+voxel-axis-matrix	0
+voxel-axis-verify	3
+voxel-axis-artifact	0
+voxel-axis-security	4
+voxel-axis-mcp	0
+voxel-axis-balance	0
 voxel-noise	7
 voxel-light	11
 voxel-mesh	10

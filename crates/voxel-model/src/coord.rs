@@ -121,6 +121,45 @@ impl VoxelPos {
         }
     }
 
+    /// **The voxel a world point in metres stands in** — the one address law the light's cells
+    /// share, and the reason it lives here rather than in the crate that reads it.
+    ///
+    /// A cell of the world's light is a **voxel**: `floor(p)` per axis, in metres, with the
+    /// scale contract above as the whole of the definition. The scene's corner rig, the field's
+    /// key and the measurer's addresses are all this function, so a marched cell's light is the
+    /// light the corner that named it receives. The draft this replaced had the scene asking at
+    /// subvoxel grain (`floor(p / 0.25 m)`) and the field reading those integers as metres, which
+    /// put every cell four chunks from the corner's own and measured **zero** of them.
+    ///
+    /// `None` for a point with a non-finite axis: a NaN corner is a fact about a broken quad and
+    /// not a cell, so it reads as unmeasured and the rig lights it. A *finite* point outside the
+    /// coordinate contract is clamped to the representable end rather than refused — the clamp is
+    /// what keeps the cast from being a saturating conversion whose result depends on the cast.
+    pub fn of_point(point_m: [f64; 3]) -> Option<Self> {
+        let mut out = [0i32; 3];
+        for axis in 0..3 {
+            let v = point_m[axis].floor();
+            if !v.is_finite() {
+                return None;
+            }
+            out[axis] = v.clamp(i32::MIN as f64 + 1.0, i32::MAX as f64 - 1.0) as i32;
+        }
+        Some(VoxelPos { x: out[0], y: out[1], z: out[2] })
+    }
+
+    /// The centre of this voxel, in metres — **the point a shadow ray leaves from** when the
+    /// cell's own light is measured.
+    ///
+    /// Half a metre in from the cell's low face: the cell is the unit the march charges matter
+    /// against, so the ray starts at its middle rather than on a face two neighbours share.
+    pub fn centre_m(&self) -> [f64; 3] {
+        [
+            self.x as f64 + 0.5,
+            self.y as f64 + 0.5,
+            self.z as f64 + 0.5,
+        ]
+    }
+
     /// True when this voxel is inside the first playable band (C-6) — the **starting
     /// column**, not a world height.
     ///
@@ -194,6 +233,63 @@ impl LocalPos {
     }
 }
 
+/// Spread one axis' low 16 bits to every third bit: the software half of a
+/// Morton (Z-order) code, after the `zorder` crate's own `index_of`. A loop
+/// rather than magic masks, so the bit placement is read directly.
+const fn spread3(v: u32) -> u64 {
+    let mut out = 0u64;
+    let mut i = 0;
+    while i < 16 {
+        if (v >> i) & 1 == 1 {
+            out |= 1u64 << (3 * i);
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Gather every third bit back into one axis: the inverse of [`spread3`].
+const fn gather3(v: u64) -> u32 {
+    let mut out = 0u32;
+    let mut i = 0;
+    while i < 16 {
+        if (v >> (3 * i)) & 1 == 1 {
+            out |= 1u32 << i;
+        }
+        i += 1;
+    }
+    out
+}
+
+/// A 3D cell address as one locality-preserving 1D code: Morton (Z-order)
+/// order, with `x` in bits `0, 3, 6, …`, `y` in `1, 4, 7, …`, `z` in
+/// `2, 5, 8, …` — the `zorder` crate's own bit layout, implemented here so the
+/// order is available offline (the crate joins when the network does).
+///
+/// Axes are `u16`: callers with signed world coordinates bias first (the light
+/// field marches chunk-local `0..32`, which needs no bias). Only the low 16
+/// bits of each axis enter the code; anything wider must be split by the
+/// caller rather than silently truncated.
+///
+/// The named consumer is the light march queue (`voxel-client/src/field.rs`):
+/// unmeasured cells marched in Morton order fill the frame as a spatially
+/// coherent sweep rather than in mesh order, so the measured/rig frontier
+/// moves like a scan instead of churning. Buffer layout (records, origins) is
+/// the second candidate; both stay follow-ups until the frame numbers pick
+/// one.
+pub const fn morton3(x: u16, y: u16, z: u16) -> u64 {
+    spread3(x as u32) | (spread3(y as u32) << 1) | (spread3(z as u32) << 2)
+}
+
+/// The cell address a Morton code names: the inverse of [`morton3`].
+pub const fn morton3_of(code: u64) -> [u16; 3] {
+    [
+        gather3(code) as u16,
+        gather3(code >> 1) as u16,
+        gather3(code >> 2) as u16,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +329,50 @@ mod tests {
     }
 
     #[test]
+    fn morton_codes_pack_x_y_z_at_bits_0_1_2() {
+        // The `zorder` layout: x in bits 0, 3, 6, …, y in 1, 4, 7, …, z in
+        // 2, 5, 8, … — so unit steps read 1, 2, 4 and the corner reads 7.
+        assert_eq!(morton3(1, 0, 0), 0b001);
+        assert_eq!(morton3(0, 1, 0), 0b010);
+        assert_eq!(morton3(0, 0, 1), 0b100);
+        assert_eq!(morton3(1, 1, 1), 0b111);
+        assert_eq!(morton3(2, 0, 0), 0b1_000);
+        assert_eq!(morton3(0, 0, 0), 0);
+        assert_eq!(morton3(0xFFFF, 0xFFFF, 0xFFFF), 0xFFFFFFFFFFFF);
+    }
+
+    #[test]
+    fn morton_codes_round_trip() {
+        for [x, y, z] in [
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 31, 17],
+            [31, 31, 31],
+            [5, 129, 30000],
+            [0xFFFF, 0xFFFF, 0xFFFF],
+        ] {
+            assert_eq!(morton3_of(morton3(x, y, z)), [x, y, z]);
+        }
+    }
+
+    #[test]
+    fn morton_order_keeps_neighbours_close() {
+        // Adjacent cells along one axis land a bounded step apart in code
+        // space — the locality a march queue spends. A stride across the whole
+        // domain is orders of magnitude further.
+        let here = morton3(10, 10, 10);
+        let neighbours = [
+            morton3(11, 10, 10).abs_diff(here),
+            morton3(10, 11, 10).abs_diff(here),
+            morton3(10, 10, 11).abs_diff(here),
+        ];
+        let far = morton3(500, 500, 500).abs_diff(here);
+        for step in neighbours {
+            assert!(step < far, "neighbour step {step} is not local against {far}");
+        }
+    }
+
+    #[test]
     fn the_playable_band_is_half_open() {
         assert!(VoxelPos::new(0, 0, BAND_MIN_Z).in_playable_band());
         assert!(VoxelPos::new(0, 0, BAND_MAX_Z - 1).in_playable_band());
@@ -255,6 +395,63 @@ mod tests {
         let b = VoxelPos::new(2, -1, 5);
         assert_eq!(a.manhattan(b), 5 + 5 + 5);
         assert_eq!(a.manhattan(b), b.manhattan(a));
+    }
+
+    /// **The address law, held to its own words.** A cell is the voxel a point stands in, its
+    /// centre is inside it, and the chunk it names is the chunk that holds the point — the one
+    /// property the frame's corner rig, the field's key and the measurer's queue all spend.
+    ///
+    /// The regression this refuses is the draft's: the scene asked at `floor(p / 0.25 m)` and the
+    /// field read those integers as metres, so every cell named here would have been four times
+    /// the point's own address, in a chunk four times away, with no world under it. The last
+    /// assertion is the sharp one — a subvoxel address and a metre address of the same point are
+    /// **not** the same cell, and only one of them is inside the point's own voxel.
+    #[test]
+    fn a_cell_is_the_voxel_a_point_stands_in() {
+        for (point, cell) in [
+            ([0.0, 0.0, 0.0], [0, 0, 0]),
+            ([0.25, 0.25, 0.25], [0, 0, 0]),
+            ([31.999, 0.0, 0.0], [31, 0, 0]),
+            ([32.0, 0.0, 0.0], [32, 0, 0]),
+            ([-0.001, -0.001, 0.0], [-1, -1, 0]),
+            ([-32.0, 7.5, 63.0], [-32, 7, 63]),
+            ([1234.9, -9.0, -1.0], [1234, -9, -1]),
+        ] {
+            let named = VoxelPos::of_point(point).expect("a finite point has a cell");
+            assert_eq!([named.x, named.y, named.z], cell, "{point:?} named {named:?}");
+            // The centre is inside the cell, and the chunk is the point's own.
+            let centre = named.centre_m();
+            for axis in 0..3 {
+                assert!(
+                    centre[axis] > cell[axis] as f64 && centre[axis] < (cell[axis] + 1) as f64,
+                    "a centre outside its own cell on axis {axis}: {centre:?}"
+                );
+            }
+            assert_eq!(
+                named.chunk(),
+                VoxelPos::of_point(centre).expect("a centre").chunk(),
+                "a cell and its own centre named different chunks"
+            );
+        }
+        // **A subvoxel address is not a metre address.** `floor(2.0 / 0.25)` is 8, which is a
+        // real cell of this world and not the one the point at 2.0 m stands in.
+        assert_ne!(
+            VoxelPos::of_point([2.0, 0.0, 0.0]),
+            Some(VoxelPos::new(8, 0, 0)),
+            "the subvoxel grain came back as the light's address law"
+        );
+        // A non-finite axis is no cell at all; a finite one off the end is clamped, so the cast
+        // is deterministic rather than saturating.
+        assert_eq!(VoxelPos::of_point([f64::NAN, 0.0, 0.0]), None);
+        assert_eq!(VoxelPos::of_point([0.0, f64::INFINITY, 0.0]), None);
+        assert_eq!(
+            VoxelPos::of_point([1.0e30, 0.0, 0.0]),
+            Some(VoxelPos::new(i32::MAX - 1, 0, 0))
+        );
+        assert_eq!(
+            VoxelPos::of_point([-1.0e30, 0.0, 0.0]),
+            Some(VoxelPos::new(i32::MIN + 1, 0, 0))
+        );
     }
 
     #[test]

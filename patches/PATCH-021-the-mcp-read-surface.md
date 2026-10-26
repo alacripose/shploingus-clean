@@ -124,3 +124,18 @@ refusals it was reporting.
   and the docs) and are not cached between calls. The measurement is right; the cost is unmeasured.
 - **No client is configured.** Nothing in this tree's shell, editor or CI calls the server yet, so
   the surface is verified by transcript rather than by a real client.
+
+## Recipes
+
+```recipe
+segment: tooling
+axis: evidence_grade
+ticket: T-0954
+site: crates/voxel-mcp/src/lib.rs:766
+what: keep `get_ownership` reading both the record's `target` and every path its body names
+because: the first draft read `target` alone and answered 0 records for crates/voxel-package/src/bloat.rs, a file PATCH-017 plainly changed
+check: cargo test -p voxel-mcp --test protocol -> failures 0
+witness: crates/voxel-mcp/src/lib.rs
+expects: 0
+requires: cargo check --workspace
+```

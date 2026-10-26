@@ -57,6 +57,7 @@ pub mod spectra;
 
 pub use solver::{
     air_mass, cloud_extinction_per_m, direct_beam, droplet_extinction_per_m, mixed_phase,
+    CLOUD_EXTINCTION_PER_M,
     moon_radiance, moon_sky_power, moonlight, night_sky_radiance_w_m2_sr, path_in_layer,
     phase_weighted_scatter, rgb_response, rgb_weights, sky_radiance, sun_visible_fraction,
     transmittance, twilight_fraction, visible_rgb, Air, MoonPath, SolverError, SunPath,

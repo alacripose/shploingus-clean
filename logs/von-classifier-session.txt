@@ -1,0 +1,70 @@
+# The laya/von classifier, live on this tree's own work
+
+## 1. The classifier is real: jigor + the von export, judged on one of our own files
+```
+loading model.onnx into memory...
+loaded model.onnx in 22s
+classifier	von
+model	Zatsepin/von-onnx-fp16
+cache	F:/planet-models
+cached	true
+questions	3
+answer	belongs	noul	{"noul":0.4411,"type":"noul"}
+answer	documented	noul	{"noul":0.5142,"type":"noul"}
+answer	rung	score	{"confidence":0.277,"legend":{"0":"nothing","1":"a start","2":"mostly","3":"wholly"},"probabilities":{"0":0.4944,"1":0.192,"2":0.0961,"3":0.2174},"score":1.04,"type":"score"}
+load-ms	20406
+ask-ms	2326
+```
+
+## 2. The package format's ballot, judged by the same model
+the ballot: packages/voxel-von.ballot
+```
+shploingus.ballot/1
+ballot	belongs
+claim	PATCH-023
+artifact	crates/voxel-von/src/lib.rs
+kind	noul
+instruction	Does this module belong to the recipe it claims — a classifier port whose answers are evidence rather than authority, with the origin written by the instrument and not by the caller?
+presenter	ala
+max-age	1200
+ballot	documented
+claim	PATCH-023
+artifact	crates/voxel-von/src/lib.rs
+kind	noul
+instruction	Is this documented where a reader would look for it, rather than only in comments inside the code?
+presenter	ala
+max-age	1200
+```
+the judgment (verbatim):
+```
+classifier	von
+model	Zatsepin/von-onnx-fp16
+cache	F:/planet-models
+ballots	2
+judgment	belongs	belongs	noul	confidence 0.9651	origin A	artifact crates/voxel-von/src/lib.rs (6021 bytes)	3487ms
+grade	belongs	ticket_evidence	A
+finding	belongs	belongs	probability of yes 0.9651 against the declared threshold 0.5000	Does this module belong to the recipe it claims — a classifier port whose answers are evidence rather than authority, with the origin written by the instrument and not by the caller?
+judgment	documented	belongs	noul	confidence 0.5704	origin A	artifact crates/voxel-von/src/lib.rs (6021 bytes)	3092ms
+grade	documented	ticket_evidence	A
+finding	documented	documented	probability of yes 0.5704 against the declared threshold 0.5000	Is this documented where a reader would look for it, rather than only in comments inside the code?
+judged	2
+passing	2
+non-readings	0
+```
+
+## 3. The MCP agent judging its own work, over the wire
+the requests (id 1 with the capability its row needs, id 2 without):
+```
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"judge_work","arguments":{"ballot":"packages/voxel-von.ballot"},"capabilities":["present"]}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"judge_work","arguments":{"ballot":"packages/voxel-von.ballot"},"capabilities":["observe"]}}
+```
+the replies:
+```
+{"id":1,"jsonrpc":"2.0","result":{"content":[{"text":"judge-model\tZatsepin/von-onnx-fp16\njudge-cache\tF:/planet-models\njudge-cached\ttrue\njudge-ballots\t2\njudgment\tbelongs\tbelongs\tnoul\tconfidence 0.9651\torigin A\tartifact crates/voxel-von/src/lib.rs\t3669ms\ngrade\tbelongs\tticket_evidence\tA\nfinding\tbelongs\tbelongs\tprobability of yes 0.9651 against the declared threshold 0.5000\tDoes this module belong to the recipe it claims — a classifier port whose answers are evidence rather than authority, with the origin written by the instrument and not by the caller?\njudgment\tdocumented\tbelongs\tnoul\tconfidence 0.5704\torigin A\tartifact crates/voxel-von/src/lib.rs\t3305ms\ngrade\tdocumented\tticket_evidence\tA\nfinding\tdocumented\tdocumented\tprobability of yes 0.5704 against the declared threshold 0.5000\tIs this documented where a reader would look for it, rather than only in comments inside the code?\njudgments\t2\njudged-belongs\t2\njudged-non-readings\t0\n","type":"text"}],"isError":false}}
+{"id":2,"jsonrpc":"2.0","result":{"content":[{"text":"verify_package refused — checks ran: tool_has_a_row — verify_package needs the present capability and this session does not hold it; silence is not permission","type":"text"}],"isError":true}}
+```
+the model load stderr (the only thing on stderr):
+```
+loading model.onnx into memory...
+loaded model.onnx in 20s
+```

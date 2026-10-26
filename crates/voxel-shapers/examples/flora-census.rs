@@ -8,17 +8,17 @@
 use voxel_shapers::chunk_fields;
 use voxel_shapers::materials;
 use voxel_shapers::spec::{Config, WorldSpec};
-use voxel_shapers::{flora, terrain};
+use voxel_shapers::{gaia, terrain};
 
 fn main() {
     let spec = WorldSpec::new(2468, Config::default());
 
     // The spawn window's stand, counted by cells.
-    let cells = 512 / flora::TREE_CELL_M;
+    let cells = 512 / gaia::TREE_CELL_M;
     let (mut conifer, mut broadleaf) = (0u32, 0u32);
     for cell_x in -cells..=cells {
         for cell_z in -cells..=cells {
-            if let Some(tree) = flora::memoized_tree_of_cell(&spec, cell_x, cell_z) {
+            if let Some(tree) = gaia::memoized_tree_of_cell(&spec, cell_x, cell_z) {
                 if tree.conifer {
                     conifer += 1;
                 } else {
@@ -29,7 +29,7 @@ fn main() {
     }
     println!(
         "within ±512 m: {conifer} conifer, {broadleaf} broadleaf ({} m cells)",
-        flora::TREE_CELL_M
+        gaia::TREE_CELL_M
     );
 
     // The first conifer the lattice grows near the origin, and a slice through it.
@@ -37,7 +37,7 @@ fn main() {
     'scan: for radius in 1..cells {
         for cell_z in -radius..=radius {
             for cell_x in [-radius, radius] {
-                if let Some(tree) = flora::memoized_tree_of_cell(&spec, cell_x, cell_z) {
+                if let Some(tree) = gaia::memoized_tree_of_cell(&spec, cell_x, cell_z) {
                     if tree.conifer {
                         found = Some(tree);
                         break 'scan;
@@ -75,7 +75,7 @@ fn main() {
     let (mut world_conifer, mut world_broadleaf) = (0u32, 0u32);
     for cell_x in -750..750 {
         for cell_z in -750..750 {
-            if let Some(tree) = flora::memoized_tree_of_cell(&spec, cell_x, cell_z) {
+            if let Some(tree) = gaia::memoized_tree_of_cell(&spec, cell_x, cell_z) {
                 if tree.conifer {
                     world_conifer += 1;
                 } else {

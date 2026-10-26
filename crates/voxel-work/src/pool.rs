@@ -33,6 +33,7 @@
 //! ~4.8 MB of half-filled raster, and cannot be abandoned and reused by another
 //! job. So an in-flight chunk finishes and its result is discarded by the caller —
 //! bounded waste, chosen over a torn raster.
+#[cfg(test)]
 use voxel_model::endian::LeBytes;
 
 use std::cmp::Reverse;
@@ -240,13 +241,18 @@ struct Shared {
     closed: AtomicBool,
     world: RwLock<World>,
     config: MeshConfig,
+    /// **The scratch the workers hold right now**, in bytes.
+    ///
+    /// Not `workers × one raster`: the rasters are held only while there is work
+    /// (see [`work`]), so the settled pool's own footprint is zero and the number a
+    /// HUD reads is the number the process is holding.
+    scratch: AtomicUsize,
 }
 
 /// A bounded, deterministic pool of worker threads.
 pub struct Pool {
     shared: Arc<Shared>,
     workers: Vec<JoinHandle<()>>,
-    scratch_bytes: usize,
 }
 
 /// A hand edit, **named rather than positional**.
@@ -292,7 +298,6 @@ impl Pool {
                 "a pool with 0 workers accepts work and never runs it, so it is refused rather than started",
             ));
         }
-        let scratch_bytes = workers * Mesher::new().scratch_bytes();
         let shared = Arc::new(Shared {
             queue: Mutex::new(Queue {
                 pending: BinaryHeap::new(),
@@ -310,6 +315,7 @@ impl Pool {
             failures: Mutex::new(Vec::new()),
             running: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
+            scratch: AtomicUsize::new(0),
             world: RwLock::new(World { source, generation: 0 }),
             config,
         });
@@ -319,7 +325,7 @@ impl Pool {
             let shared = Arc::clone(&shared);
             handles.push(std::thread::spawn(move || work(shared)));
         }
-        Ok(Pool { shared, workers: handles, scratch_bytes })
+        Ok(Pool { shared, workers: handles })
     }
 
     /// Ask for a chunk. See [`Submitted`] for the four answers.
@@ -370,9 +376,19 @@ impl Pool {
         self.workers.len()
     }
 
-    /// Scratch bytes the pool's threads hold between them — one raster each.
+    /// **The scratch the workers hold right now** — one raster each while there is
+    /// work, none when the queue has drained. See [`work`] for why it is not
+    /// `workers × raster`.
     pub fn scratch_bytes(&self) -> usize {
-        self.scratch_bytes
+        self.shared.scratch.load(Ordering::SeqCst)
+    }
+
+    /// The most scratch this pool can hold: one raster per worker.
+    ///
+    /// What a caller budgeting for a *streaming* pool must set aside, which is not
+    /// what it is holding at rest.
+    pub fn scratch_ceiling(&self) -> usize {
+        self.workers.len() * Mesher::new().scratch_bytes()
     }
 
     pub fn queue_capacity(&self) -> usize {
@@ -548,11 +564,17 @@ impl Drop for Pool {
 
 /// One worker: take a job, mesh it, hand it over. Repeat.
 fn work(shared: Arc<Shared>) {
-    // **One mesher per worker.** The scratch is never shared, which is both why
-    // there is no lock on the hot path and why worker count cannot change output.
-    let mut mesher = Mesher::new();
+    // **One raster, held only while there is work.** Never shared, which is why there is no
+    // lock on the hot path; kept across jobs and given back when the queue drains, so a
+    // settled world holds none of the 4.8 MB a raster costs.
+    let mut mesher: Option<Mesher> = None;
     while let Some(pos) = next_request(&shared) {
-        let built = build_one(&mut mesher, &shared, pos);
+        let raster = mesher.get_or_insert_with(|| {
+            let made = Mesher::new();
+            shared.scratch.fetch_add(made.scratch_bytes(), Ordering::SeqCst);
+            made
+        });
+        let built = build_one(raster, &shared, pos);
         match built {
             Ok(built) => deliver(&shared, built),
             Err(refusal) => shared.failures.lock().unwrap().push((pos, refusal)),
@@ -569,6 +591,15 @@ fn work(shared: Arc<Shared>) {
         // empty while a mesh was in flight.
         shared.running.fetch_sub(1, Ordering::SeqCst);
         shared.idle.notify_all();
+        // **The last job hands the scratch back**, checked under the queue's own lock so a
+        // submit either woke a worker for a job it still has or rebuilds the raster.
+        if let Some(held) = mesher.as_ref() {
+            if shared.queue.lock().unwrap().pending.is_empty() {
+                let bytes = held.scratch_bytes();
+                mesher = None;
+                shared.scratch.fetch_sub(bytes, Ordering::SeqCst);
+            }
+        }
     }
 }
 
@@ -839,13 +870,47 @@ mod tests {
     }
 
     #[test]
-    fn a_pool_holds_one_raster_of_scratch_per_worker() {
-        let one = pool(1);
-        assert_eq!(one.scratch_bytes(), Mesher::new().scratch_bytes());
-        let four = pool(4);
-        assert_eq!(four.scratch_bytes(), 4 * Mesher::new().scratch_bytes());
-        one.shutdown();
-        four.shutdown();
+    fn a_pool_holds_its_scratch_only_while_it_has_work() {
+        // Two numbers: the ceiling a streaming caller must set aside, and what is held now.
+        let pool = pool(4);
+        assert_eq!(pool.scratch_bytes(), 0, "an idle pool held a raster");
+        assert_eq!(
+            pool.scratch_ceiling(),
+            4 * Mesher::new().scratch_bytes(),
+            "the bound is one raster a worker"
+        );
+        for r in requests(2) {
+            pool.submit(r);
+        }
+        let mut held = false;
+        for _ in 0..200 {
+            if pool.scratch_bytes() > 0 {
+                held = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(held, "no worker held a raster while a build was under way");
+        pool.wait_until_idle();
+        let _ = pool.collect();
+        for _ in 0..500 {
+            if pool.scratch_bytes() == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert_eq!(pool.scratch_bytes(), 0, "a settled pool kept its scratch");
+        // And the pool still works after giving it back.
+        for r in requests(1) {
+            pool.submit(r);
+        }
+        pool.wait_until_idle();
+        let again = pool.collect();
+        assert!(
+            !again.meshes.is_empty() || !again.failures.is_empty(),
+            "the pool did not build after re-allocating its raster"
+        );
+        pool.shutdown();
     }
 
     #[test]

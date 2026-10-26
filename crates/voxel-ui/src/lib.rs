@@ -395,6 +395,17 @@ pub enum UiRefusal {
     /// that spills past its window's declared rect is a layout that does not fit. The numbers
     /// travel with the refusal so a reader can see which one is wrong.
     ContentExceedsPane { window: String, panel_dp: f64, pane_dp: f64 },
+
+    /// A package's cell frame was refused while the package was mounted.
+    ///
+    /// **The package's own sentence, not a second summary.** The reader names the file, the frame,
+    /// the window or the record that failed, and the shell refuses the whole package rather than
+    /// drawing a frame it could not grade. The detail is carried verbatim because a reader who
+    /// sees only `InvalidPackage` has to open the source to learn what was wrong.
+    FrameRefused {
+        /// The format reader's own sentence, with the file and frame it names.
+        detail: String,
+    },
 }
 
 /// Which of the two screen axes a measurement or constraint is about.
@@ -513,6 +524,7 @@ impl std::fmt::Display for UiRefusal {
                      pane; the two numbers have to be the same number"
                 )
             }
+            UiRefusal::FrameRefused { detail } => f.write_str(detail),
         }
     }
 }

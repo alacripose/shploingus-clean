@@ -963,6 +963,17 @@ mod tests {
         // **The rate is declared and pinned.** A later edit that thins or thickens the world's
         // clouds has to change this line and say so: it is the number the ruling was given in.
         assert_eq!(CLOUD_EXTINCTION_PER_M, 0.01, "the cloud's extinction moved");
+        // **And the sky's optics are the same cloud.** `voxel_light`'s solver carries the rate
+        // this field's march integrates, so the two must be one number: the sky used to reach its
+        // cloud extinction through the fog visibility fit instead, which diverges as the water
+        // path goes to zero and stepped the horizon band by 8.2% on the first tick a column had
+        // any water at all.
+        assert!(
+            (CLOUD_EXTINCTION_PER_M as f64 - voxel_light::CLOUD_EXTINCTION_PER_M).abs() < 1.0e-9,
+            "the field's extinction {} and the sky's cloud optics {} disagree",
+            CLOUD_EXTINCTION_PER_M,
+            voxel_light::CLOUD_EXTINCTION_PER_M
+        );
     }
 
     #[test]

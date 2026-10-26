@@ -77,12 +77,20 @@ pub enum AxisKind {
     /// Per ticket evidence: how the evidence came to exist
     /// ([`crate::ticket::EvidenceOrigin`], `ala-cities::gov::Evidence`).
     TicketEvidence,
+    /// Per prose unit: what kind of statement it is (the scrubber's `prose_kind` ladder).
+    ///
+    /// **A kind, not a rank.** The eight labels carry no order, and the type
+    /// deliberately derives no `Ord`; ranking one against another is the
+    /// representation rule 51 forbids.
+    ProseKind,
+    /// Per observed thing: whether it is established (the census's own five states).
+    Establishment,
 }
 
 /// How many axes this build knows. **Written down rather than derived** — the
 /// chain of pins in [`COVERAGE_IS_TOTAL`] and [`AxisKind::declared_values`] is
 /// what closes the gap a hand-written count leaves.
-pub const AXIS_COUNT: usize = 7;
+pub const AXIS_COUNT: usize = 9;
 
 impl AxisKind {
     /// Every axis this build knows.
@@ -94,6 +102,8 @@ impl AxisKind {
         AxisKind::OrgRank,
         AxisKind::SupportLevel,
         AxisKind::TicketEvidence,
+        AxisKind::ProseKind,
+        AxisKind::Establishment,
     ];
 
     /// The recorded name.
@@ -106,6 +116,8 @@ impl AxisKind {
             AxisKind::OrgRank => "org_rank",
             AxisKind::SupportLevel => "support_level",
             AxisKind::TicketEvidence => "ticket_evidence",
+            AxisKind::ProseKind => "prose_kind",
+            AxisKind::Establishment => "establishment",
         }
     }
 
@@ -124,6 +136,8 @@ impl AxisKind {
             AxisKind::OrgRank => OrgRank::TOKENS,
             AxisKind::SupportLevel => EvidenceLevel::TOKENS,
             AxisKind::TicketEvidence => crate::ticket::EvidenceOrigin::TOKENS,
+            AxisKind::ProseKind => ProseKind::TOKENS,
+            AxisKind::Establishment => Establishment::TOKENS,
         }
     }
 
@@ -1000,6 +1014,8 @@ pub fn bare_token_axes(token: &str) -> Vec<AxisKind> {
         (AxisKind::Grade, Grade::TOKENS),
         (AxisKind::OrgRank, OrgRank::TOKENS),
         (AxisKind::TicketEvidence, EvidenceOrigin::TOKENS),
+        (AxisKind::ProseKind, ProseKind::TOKENS),
+        (AxisKind::Establishment, Establishment::TOKENS),
     ] {
         if tokens.contains(&token) {
             claimants.push(axis);
@@ -1018,6 +1034,8 @@ pub fn ambiguous_tokens() -> BTreeMap<String, Vec<AxisKind>> {
         Grade::TOKENS,
         OrgRank::TOKENS,
         EvidenceOrigin::TOKENS,
+        ProseKind::TOKENS,
+        Establishment::TOKENS,
     ] {
         for token in tokens {
             let claimants = bare_token_axes(token);
@@ -1066,6 +1084,202 @@ pub fn refuse_bare(token: &str) -> Result<(), Refusal> {
                     .join(" or ")
             ),
         )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The prose-kind ladder: what a sentence is, never how strong it is
+// ---------------------------------------------------------------------------
+
+/// What kind of statement a prose unit makes.
+///
+/// The eight labels come from `agent_god_files/prose_logic/src/claim.rs`'s `AtomKind`, and
+/// **there is no order**: a definition does not outrank a condition, and a permission is not a
+/// weaker obligation. The type therefore derives no `Ord`, which is the same rule
+/// [`EvidenceOrigin`](crate::ticket::EvidenceOrigin) follows for the same reason.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(musli::Encode, musli::Decode)]
+pub enum ProseKind {
+    /// A term is given its meaning.
+    Definition,
+    /// A duty the text imposes.
+    Obligation,
+    /// An act the text forbids.
+    Prohibition,
+    /// An act the text allows.
+    Permission,
+    /// A statement of what is the case.
+    Fact,
+    /// A rule or rule-like premise.
+    Principle,
+    /// A condition on another statement.
+    Condition,
+    /// An ordered step in a procedure.
+    Procedure,
+}
+
+impl ProseKind {
+    /// Every kind, in the declaration's order.
+    pub const ALL: [ProseKind; 8] = [
+        ProseKind::Definition,
+        ProseKind::Obligation,
+        ProseKind::Prohibition,
+        ProseKind::Permission,
+        ProseKind::Fact,
+        ProseKind::Principle,
+        ProseKind::Condition,
+        ProseKind::Procedure,
+    ];
+
+    /// The recorded tokens.
+    pub const TOKENS: &'static [&'static str] = &[
+        "definition",
+        "obligation",
+        "prohibition",
+        "permission",
+        "fact",
+        "principle",
+        "condition",
+        "procedure",
+    ];
+
+    /// The recorded name. **A label, not a rank.**
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ProseKind::Definition => "definition",
+            ProseKind::Obligation => "obligation",
+            ProseKind::Prohibition => "prohibition",
+            ProseKind::Permission => "permission",
+            ProseKind::Fact => "fact",
+            ProseKind::Principle => "principle",
+            ProseKind::Condition => "condition",
+            ProseKind::Procedure => "procedure",
+        }
+    }
+
+    /// Parse a recorded name. An unknown kind is refused rather than defaulted.
+    pub fn parse(word: &str) -> Result<Self, String> {
+        Self::ALL
+            .into_iter()
+            .find(|candidate| candidate.as_str() == word.trim())
+            .ok_or_else(|| format!("unknown prose kind {word:?}"))
+    }
+}
+
+impl Ladder for ProseKind {
+    const AXIS: AxisKind = AxisKind::ProseKind;
+
+    fn as_str(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for ProseKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The establishment ladder: checked, and what the check found
+// ---------------------------------------------------------------------------
+
+/// The state of one thing that was supposed to be checked.
+///
+/// These five states were declared in `voxel-package/src/features.rs` for the feature rows and
+/// the census cells. They are a ladder, not a score: `active` is not "better" than `inactive`
+/// in the way a number would be, and `unchecked` is never a pass. The type moved here so the
+/// axis set has one declaration of it; `features` re-exports this type rather than keeping a
+/// second copy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(musli::Encode, musli::Decode)]
+pub enum Establishment {
+    /// Checked, and it holds.
+    Active,
+    /// Checked, and it is not under this project's root.
+    Inactive,
+    /// **Checked, and what it read has since changed.**
+    Stale,
+    /// **No instrument ran.** Never checked. Not a pass.
+    Unchecked,
+    /// Checked, and it failed — or it could not be checked.
+    Refused,
+}
+
+impl Establishment {
+    /// Every state, in the census's order.
+    pub const ALL: [Establishment; 5] = [
+        Establishment::Active,
+        Establishment::Inactive,
+        Establishment::Stale,
+        Establishment::Unchecked,
+        Establishment::Refused,
+    ];
+
+    /// The recorded tokens.
+    pub const TOKENS: &'static [&'static str] =
+        &["active", "inactive", "stale", "unchecked", "refused"];
+
+    /// The recorded name.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Establishment::Active => "active",
+            Establishment::Inactive => "inactive",
+            Establishment::Stale => "stale",
+            Establishment::Unchecked => "unchecked",
+            Establishment::Refused => "refused",
+        }
+    }
+
+    /// The same recorded name under the name the census adopted.
+    pub const fn slug(self) -> &'static str {
+        self.as_str()
+    }
+
+    /// The rendering. A state with no rendering is a blank row, and a blank row reads as
+    /// "nothing to report".
+    pub const fn describe(self) -> &'static str {
+        match self {
+            Establishment::Active => "active — checked, and it holds",
+            Establishment::Inactive => {
+                "inactive — checked, and not under this project's root. A grant is a recorded \
+                 decision, not a toggle"
+            }
+            Establishment::Stale => {
+                "stale — checked, and the bytes it was checked over have since changed, so the \
+                 reading describes a tree this one is not. Re-derive it rather than reading it as \
+                 an answer about this build"
+            }
+            Establishment::Unchecked => {
+                "unchecked — no instrument ran, so this was never checked. A missing instrument \
+                 is not a pass"
+            }
+            Establishment::Refused => {
+                "refused — checked, and it failed, or it could not be checked"
+            }
+        }
+    }
+
+    /// Parse a recorded name. An unknown state is refused rather than defaulted.
+    pub fn parse(word: &str) -> Result<Self, String> {
+        Self::ALL
+            .into_iter()
+            .find(|candidate| candidate.as_str() == word.trim())
+            .ok_or_else(|| format!("unknown establishment state {word:?}"))
+    }
+}
+
+impl Ladder for Establishment {
+    const AXIS: AxisKind = AxisKind::Establishment;
+
+    fn as_str(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+impl std::fmt::Display for Establishment {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 
@@ -1138,7 +1352,21 @@ pub const COVERAGE: [CoverageRow; AXIS_COUNT] = [
         axis: AxisKind::TicketEvidence,
         ladder: "EvidenceOrigin",
         values: EvidenceOrigin::TOKENS,
-        source: "crates/voxel-model/src/ticket.rs (EvidenceOrigin), from ala-cities::gov::Evidence",
+        source: "crates/voxel-model/src/ticket.rs (EvidenceOrigin), from ala-cities::gov::Evidence; \
+                 D is this tree's derivation rung, not upstream's",
+    },
+    CoverageRow {
+        axis: AxisKind::ProseKind,
+        ladder: "ProseKind",
+        values: ProseKind::TOKENS,
+        source: "agent_god_files/prose_logic/src/claim.rs (AtomKind), eight labels with no order",
+    },
+    CoverageRow {
+        axis: AxisKind::Establishment,
+        ladder: "Establishment",
+        values: Establishment::TOKENS,
+        source: "crates/voxel-model/src/axis.rs (Establishment), moved from voxel-package's \
+                 features.rs; the census's five cells already carried these states",
     },
 ];
 

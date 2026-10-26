@@ -52,6 +52,36 @@ png = "0.18"
 [dependencies]
 voxel-model = { path = "../voxel-model" }
 voxel-package = { path = "../voxel-package" }
+#   voxel-axis-matrix — the API window's per-segment rows: the star a predicate lit, the
+#                   tier the cell's own requirements hold, and the unchecked cells with
+#                   their reasons. The pane renders the matrix's own `value()` rather than
+#                   formatting the star and the tier a second time, which is how a window
+#                   and a report come to disagree about the same cell.
+voxel-axis-matrix = { path = "../axis/matrix" }
+#   voxel-axis-verify — **the cells.** The API window's matrix is measured, not assembled by this
+#                   crate: `verify(tree, ticket)` reads the census and its pins, the conformance
+#                   files, the workspace's witnesses and the ladders, and answers with one cell per
+#                   segment or the decline that names the source that could not witness it. A client
+#                   that built its own readings would be the second verifier, and the first time the
+#                   two disagreed the window would show a table the gate never measured.
+voxel-axis-verify = { path = "../axis/verify" }
+#   voxel-axis-artifact — **the package.** The verifier measures the cells; this crate turns them
+#                   into the format `PATCH-042` states: one statement per line, each cited at its
+#                   witness and laddered with the cell's own reading, a pin over the bytes, and the
+#                   files a reproduction re-reads. The shell produces it and prints it, so a package
+#                   that cannot be signed is refused on the console rather than assumed away.
+voxel-axis-artifact = { path = "../axis/artifact" }
+#   voxel-axis-security — **the key the pin is checked against.** The package's pin gate asks a
+#                   `Verifier`; this is the backend: a key held outside the checkout (a key inside it
+#                   is in every clone), the signature over the package's bytes, and the refusals that
+#                   name a missing key, a foreign key and a signature over other bytes.
+voxel-axis-security = { path = "../axis/security" }
+#   voxel-axis-mcp — **the authority an agent speaks through.** Not a second server: it takes the
+#                   cells and the package this mount already produced, hands out the recipe for a
+#                   named ticket, and decides an apply only under a ticket-scoped grant signed by the
+#                   security layer. The console prints a grant issued and a grant refused, because a
+#                   refusal nobody sees is a refusal the player assumes did not happen.
+voxel-axis-mcp = { path = "../axis/mcp" }
 voxel-noise = { path = "../voxel-noise" }
 voxel-shapers = { path = "../voxel-shapers" }
 voxel-mesh = { path = "../voxel-mesh" }

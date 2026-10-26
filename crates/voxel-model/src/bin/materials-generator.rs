@@ -21,7 +21,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use voxel_model::materials::schema::{
-    Availability, Family, HeatKind, Hue, Qty, Sink, Source, Table, Tag, Unit, VocabKind,
+    Availability, Family, HeatKind, Hue, Qty, Sink, Source, State, Table, Tag, Unit, VocabKind,
 };
 use voxel_model::materials::declaration;
 use voxel_model::refusal::RefusalSet;
@@ -65,6 +65,14 @@ fn main() {
         fail(&defects);
     }
 
+    // The rows being individually sound is not the tree being whole. The walk
+    // owns reachability and coverage, and it refuses to write a record with a
+    // stranded tier, a made substance nothing produces, or a dead process.
+    let tree = table.tree();
+    if !tree.is_complete() {
+        fail(tree.defects());
+    }
+
     println!(
         "gate clean: {} tiers, {} substances, {} processes, {} vocabulary entries",
         table.tiers.len(),
@@ -72,6 +80,7 @@ fn main() {
         table.processes.len(),
         table.vocabulary.len(),
     );
+    println!("tree whole: {}", tree.coverage().report());
     for reason in table.open_reasons() {
         println!("open: {reason}");
     }
@@ -843,6 +852,16 @@ fn unit(value: Unit) -> &'static str {
     }
 }
 
+fn state(value: State) -> &'static str {
+    match value {
+        State::Solid => "State::Solid",
+        State::Liquid => "State::Liquid",
+        State::Molten => "State::Molten",
+        State::Solution => "State::Solution",
+        State::Gas => "State::Gas",
+    }
+}
+
 fn source(value: Source) -> &'static str {
     match value {
         Source::Mined => "Source::Mined",
@@ -924,8 +943,8 @@ fn emit(table: &Table) -> String {
     );
     out.push_str(
         "use crate::material::Ratio;\nuse crate::materials::schema::{\n    Availability, Family, \
-         HeatKind, Hue, Mechanism, Process, Qty, Requires, Sink, Source, Substance, Table, Tag, \
-         Tier, Unit, VocabKind, Vocabulary,\n};\n\n",
+         HeatKind, Hue, Mechanism, Process, Qty, Requires, Sink, Source, State, Substance, Table, \
+         Tag, Tier, Unit, VocabKind, Vocabulary,\n};\n\n",
     );
     // **One `vec![]` literal per table, and not `Vec::new()` followed by a run of `push`es.**
     // The emitted file is compiled under the workspace's own clippy bar (`-D warnings`), and
@@ -952,6 +971,11 @@ fn emit(table: &Table) -> String {
         out.push_str(&format!("            family: {},\n", family(substance.family)));
         out.push_str(&format!("            hue: {},\n", hue(substance.hue)));
         out.push_str(&format!("            unit: {},\n", unit(substance.unit)));
+        out.push_str(&format!("            state: {},\n", state(substance.state)));
+        out.push_str(&format!(
+            "            phase_of: {},\n",
+            option_string(&substance.phase_of)
+        ));
         out.push_str(&format!(
             "            density_g_ml: {},\n",
             option_ratio(substance.density_g_ml)
@@ -1034,6 +1058,7 @@ fn emit(table: &Table) -> String {
             option_string(&process.requires.tool),
             option_string(&process.requires.skill)
         ));
+        out.push_str(&format!("            source: {}.to_string(),\n", lit(&process.source)));
         out.push_str(&format!(
             "            provenance: {},\n",
             availability(process.provenance)

@@ -1,0 +1,79 @@
+    Checking voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+    Checking voxel-mesh v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-mesh)
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+    Checking voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+error: approximate value of `f{32, 64}::consts::FRAC_1_SQRT_2` found
+   --> crates\voxel-stream\src\light.rs:129:6
+    |
+129 |     [0.707_106_781_186_547_6, 0.707_106_781_186_547_6, 0.0],
+    |      ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#approx_constant
+    = note: `#[deny(clippy::approx_constant)]` on by default
+
+error: approximate value of `f{32, 64}::consts::FRAC_1_SQRT_2` found
+   --> crates\voxel-stream\src\light.rs:129:31
+    |
+129 |     [0.707_106_781_186_547_6, 0.707_106_781_186_547_6, 0.0],
+    |                               ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#approx_constant
+
+error: approximate value of `f{32, 64}::consts::FRAC_1_SQRT_2` found
+   --> crates\voxel-stream\src\light.rs:130:11
+    |
+130 |     [0.0, 0.707_106_781_186_547_6, 0.707_106_781_186_547_6],
+    |           ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#approx_constant
+
+error: approximate value of `f{32, 64}::consts::FRAC_1_SQRT_2` found
+   --> crates\voxel-stream\src\light.rs:130:36
+    |
+130 |     [0.0, 0.707_106_781_186_547_6, 0.707_106_781_186_547_6],
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#approx_constant
+
+error: approximate value of `f{32, 64}::consts::FRAC_1_SQRT_2` found
+   --> crates\voxel-stream\src\light.rs:131:7
+    |
+131 |     [-0.707_106_781_186_547_6, 0.707_106_781_186_547_6, 0.0],
+    |       ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#approx_constant
+
+error: approximate value of `f{32, 64}::consts::FRAC_1_SQRT_2` found
+   --> crates\voxel-stream\src\light.rs:131:32
+    |
+131 |     [-0.707_106_781_186_547_6, 0.707_106_781_186_547_6, 0.0],
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#approx_constant
+
+error: approximate value of `f{32, 64}::consts::FRAC_1_SQRT_2` found
+   --> crates\voxel-stream\src\light.rs:132:11
+    |
+132 |     [0.0, 0.707_106_781_186_547_6, -0.707_106_781_186_547_6],
+    |           ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#approx_constant
+
+error: approximate value of `f{32, 64}::consts::FRAC_1_SQRT_2` found
+   --> crates\voxel-stream\src\light.rs:132:37
+    |
+132 |     [0.0, 0.707_106_781_186_547_6, -0.707_106_781_186_547_6],
+    |                                     ^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider using the constant directly
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#approx_constant
+
+error: could not compile `voxel-stream` (lib) due to 8 previous errors
+warning: build failed, waiting for other jobs to finish...

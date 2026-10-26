@@ -22,7 +22,11 @@
 //! directory appears **and the thing each row names is actually there** — which is why each
 //! module below states what it does and does not yet do.
 
+pub mod api;
 pub mod arrangement;
+// The cell raster: the package designer shell's 8 × 16 surface, and the Android 4 schema every
+// shell paint is retinted to. Declared here so the draw boundary and its tests share one path.
+pub mod cells;
 pub mod changes;
 pub mod console;
 pub mod debug;
@@ -39,4 +43,5 @@ pub mod theme;
 pub mod titlebar;
 pub mod window;
 
+pub use api::ApiView;
 pub use mount::{BarEntry, Button, ContentViews, Mount, Status, WheelDelta};

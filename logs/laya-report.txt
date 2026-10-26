@@ -1,6 +1,38 @@
-laya gate: 223 artifact(s) judged, 0 cleared, calibration ["accuracy 1.0000", "majority class 0.5000", "accuracy if the reading were inverted 0.0000", "readings used 104", "verdict distribution belongs 52 / not_belongs 52 / no_reading 0"]
+laya gate: 317 artifact(s) judged, 1 cleared, calibration ["accuracy 1.0000", "majority class 0.5000", "accuracy if the reading were inverted 0.0000", "readings used 104", "verdict distribution belongs 52 / not_belongs 52 / no_reading 0"]
+  not_belongs crates/axis/artifact/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/artifact/src/line.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/artifact/src/package.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/artifact/src/reproduce.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/balance/src/inventory.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/balance/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/balance/src/measure.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/balance/src/report.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/being/src/being.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/being/src/face.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/being/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/being/src/life.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/being/src/refusal.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/being/src/signature.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/matrix/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/matrix/src/matrix.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/matrix/src/reading.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/matrix/src/recipe.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/matrix/src/refusal.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/matrix/src/segment.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/matrix/src/star.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/mcp/src/grant.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/mcp/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/security/src/attest.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/security/src/hmac.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/security/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/verify/src/evidence.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/verify/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/verify/src/report.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/verify/src/source.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/axis/verify/src/subject.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/shploingus/build.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/shploingus/src/main.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/shploingus/tests/packaged_frame.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-appearance/src/composition.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-appearance/src/detail.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-appearance/src/fluid.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
@@ -16,28 +48,50 @@ laya gate: 223 artifact(s) judged, 0 cleared, calibration ["accuracy 1.0000", "m
   not_belongs crates/voxel-client/examples/adapter-features.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/examples/daylight-hue.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/examples/exposure-steps.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/face-pattern.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/face-refined.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/face-square.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/gpu-shadow-check.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/ladder-view.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/light-budget.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/light-shot.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/light-terms.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/measured-light.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/moon-report.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/night-check.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/examples/pattern-flicker.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/examples/remesh-timing.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/rig-balance.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/examples/rung-attribution.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/shadow-lattice.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/examples/shell-shot.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/examples/sun-in-the-sky.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/examples/surface-colours.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/examples/surface-format-check.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/atmosphere.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/camera.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/camera_overhaul.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/clock.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/cloud_cubes.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/cloud_field.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/debug.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/field.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/fog_cubes.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/frame.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/game.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-client/src/hud.rs [-] A08 hand-rolled byte encoding at crates/voxel-client/src/hud.rs:668: `bytes.extend_from_slice(&value.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 3 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/hud.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/measure.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/motion.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/pattern.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-client/src/quad.rs [-] A08 hand-rolled byte encoding at crates/voxel-client/src/quad.rs:71: `out.extend_from_slice(&rel_x.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 11 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-client/src/renderer.rs [-] A08 hand-rolled byte encoding at crates/voxel-client/src/renderer.rs:239: `*cell = f32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]])` — a wire format rolled by hand over untrusted bytes; 1 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-client/src/scene.rs [-] A08 hand-rolled byte encoding at crates/voxel-client/src/scene.rs:154: `out.extend_from_slice(&v.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 8 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-client/src/shading.rs [-] A08 hand-rolled byte encoding at crates/voxel-client/src/shading.rs:192: `out[i..i + 4].copy_from_slice(&v.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 9 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/quad.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/renderer.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/scene.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/shading.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/shaped.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/shell/api.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/shell/arrangement.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/shell/cells.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/shell/changes.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/shell/console.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/shell/debug.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
@@ -56,25 +110,39 @@ laya gate: 223 artifact(s) judged, 0 cleared, calibration ["accuracy 1.0000", "m
   not_belongs crates/voxel-client/src/shell/window.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/skylight.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-client/src/sun.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-client/src/world.rs [-] A08 hand-rolled byte encoding at crates/voxel-client/src/world.rs:618: `bytes.extend_from_slice(&v.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 13 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/sun_shadow.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/work.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/src/world.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/tests/cell_version_refusal.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-client/tests/settled_frame.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-instrument/src/band.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-instrument/src/gauge_wall.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-instrument/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-instrument/src/stock.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-light/examples/bands.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-light/examples/sky-strip.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-light/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-light/src/spectra.rs [-] A08 hand-rolled byte encoding at crates/voxel-light/src/spectra.rs:331: `out.extend_from_slice(&SPECTRA_VERSION.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 5 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-light/src/solver.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-light/src/spectra.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-mcp/src/bin/voxel-patch-recipes.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-mcp/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-mcp/src/main.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-mcp/tests/api_layer.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-mcp/tests/axis_route.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-mcp/tests/protocol.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-mesh/src/chunk.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-mesh/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-mesh/src/mesh.rs [-] A08 hand-rolled byte encoding at crates/voxel-mesh/src/mesh.rs:437: `t.extend_from_slice(&self.chunk.x.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 10 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-mesh/src/octree.rs [-] A08 hand-rolled byte encoding at crates/voxel-mesh/src/octree.rs:472: `out.extend_from_slice(&m.0.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 2 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-mesh/src/mesh.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-mesh/src/octree.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-mesh/src/raycast.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-mesh/src/refine.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-mesh/src/source.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-model/build.rs [-] A08 hand-rolled byte encoding at crates/voxel-model/build.rs:177: `hasher.update((tag.len() as u64).to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 3 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/build.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/admission.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/axis.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/bin/materials-generator.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-model/src/chain.rs [-] A08 hand-rolled byte encoding at crates/voxel-model/src/chain.rs:372: `let year = index.to_le_bytes();` — a wire format rolled by hand over untrusted bytes; 3 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/bin/materials-options.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/chain.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/civilian/agency/action.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/civilian/agency/actor.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/civilian/agency/evidence.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
@@ -90,10 +158,11 @@ laya gate: 223 artifact(s) judged, 0 cleared, calibration ["accuracy 1.0000", "m
   not_belongs crates/voxel-model/src/civilian/sim/task.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/conservation.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/coord.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/endian.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/envelope.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/grant.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-model/src/identity.rs [-] A08 hand-rolled byte encoding at crates/voxel-model/src/identity.rs:36: `h.update((tag.len() as u64).to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 3 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-model/src/laya.rs [-] A08 hand-rolled byte encoding at crates/voxel-model/src/laya.rs:615: `"from_le_bytes",` — a wire format rolled by hand over untrusted bytes; 5 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/identity.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  belongs crates/voxel-model/src/laya.rs [B]
   not_belongs crates/voxel-model/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/material.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/materials/declaration.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
@@ -101,23 +170,26 @@ laya gate: 223 artifact(s) judged, 0 cleared, calibration ["accuracy 1.0000", "m
   not_belongs crates/voxel-model/src/materials/mod.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/materials/schema.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/materials/spectra.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/materials/stock.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/materials/tree.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/matter/mod.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/matter/rational.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/observer/mod.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/observer/recorder.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/plan.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/profile.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/proof.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/refusal.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/shaper.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/subvoxel.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/ticket.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-model/src/wire.rs [-] A08 hand-rolled byte encoding at crates/voxel-model/src/wire.rs:445: `out.extend_from_slice(&WIRE_VERSION.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 12 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-model/src/world/book.rs [-] A08 hand-rolled byte encoding at crates/voxel-model/src/world/book.rs:845: `input.extend_from_slice(&(bytes.len() as u64).to_be_bytes());` — a wire format rolled by hand over untrusted bytes; 6 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/wire.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/world/book.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/world/change.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/world/governed.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/world/mod.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/src/world/region.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-model/src/world/transition.rs [-] A08 hand-rolled byte encoding at crates/voxel-model/src/world/transition.rs:215: `&self.epoch.to_be_bytes(),` — a wire format rolled by hand over untrusted bytes; 2 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-model/src/world/transition.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/tests/materials_declaration.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-model/tests/spectra.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-noise/src/fractal.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
@@ -125,27 +197,40 @@ laya gate: 223 artifact(s) judged, 0 cleared, calibration ["accuracy 1.0000", "m
   not_belongs crates/voxel-noise/src/noise.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-noise/src/point.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-noise/src/rng.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/examples/ingest.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/examples/space-guard.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/apidoc.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/ballot.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/bin/voxel-census.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/bin/voxel-layers.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/bloat.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/bridge.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/cellframe.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/cells.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/census/folders.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/census.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/civilians.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/compendium.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-package/src/compiler.rs [-] A08 hand-rolled byte encoding at crates/voxel-package/src/compiler.rs:1341: `Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))` — a wire format rolled by hand over untrusted bytes; 1 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/compiler.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/conformance.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/context.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/decision.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/features.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/filing.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/ingest.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/layer.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/migration.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/numbers.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/oracle.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/patch.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/policy.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/projection.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/provenance.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-package/src/recipe.rs [-] A08 hand-rolled byte encoding at crates/voxel-package/src/recipe.rs:1198: `frame.extend_from_slice(&(source.len() as u32).to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 2 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/recipe.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/record.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/src/signing.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-package/src/space.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/tests/answer_audit.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/tests/board_report.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-package/tests/chain_repair.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
@@ -172,6 +257,7 @@ laya gate: 223 artifact(s) judged, 0 cleared, calibration ["accuracy 1.0000", "m
   not_belongs crates/voxel-shapers/examples/flora-census.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/examples/habitat-census.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/examples/onset-profile.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-shapers/examples/process-cost.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/examples/process-tick.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/examples/relief-profile.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/examples/rock-census.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
@@ -185,22 +271,24 @@ laya gate: 223 artifact(s) judged, 0 cleared, calibration ["accuracy 1.0000", "m
   not_belongs crates/voxel-shapers/src/chunk_fields.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/climate.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/clouds.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-shapers/src/column.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/corpus.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/delta.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-shapers/src/earthworks.rs [-] A08 hand-rolled byte encoding at crates/voxel-shapers/src/earthworks.rs:101: `&x.to_be_bytes(),` — a wire format rolled by hand over untrusted bytes; 5 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-shapers/src/earthworks.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/ecology.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/erosion.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-shapers/src/field_sampler.rs [-] A08 hand-rolled byte encoding at crates/voxel-shapers/src/field_sampler.rs:384: `identity_field(payload, &resolution.origin().x.to_be_bytes());` — a wire format rolled by hand over untrusted bytes; 12 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-shapers/src/fields.rs [-] A08 hand-rolled byte encoding at crates/voxel-shapers/src/fields.rs:194: `tolerance[1..9].copy_from_slice(&n.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 3 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-shapers/src/field_sampler.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-shapers/src/fields.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/flora.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/fluid_state.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/fluidics.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-shapers/src/fog.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/geology.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/habitat.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/hydrology.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-shapers/src/process.rs [-] A08 hand-rolled byte encoding at crates/voxel-shapers/src/process.rs:1630: `payload.extend_from_slice(&(n as i64).to_be_bytes());` — a wire format rolled by hand over untrusted bytes; 8 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-shapers/src/materials.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-shapers/src/process.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-shapers/src/scale.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/sky.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/spec.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-shapers/src/stages.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
@@ -213,12 +301,18 @@ laya gate: 223 artifact(s) judged, 0 cleared, calibration ["accuracy 1.0000", "m
   not_belongs crates/voxel-shapers/src/weather.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-stream/src/horizons.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-stream/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-stream/src/resident.rs [-] A08 hand-rolled byte encoding at crates/voxel-stream/src/resident.rs:344: `t.extend_from_slice(&(self.chunks.len() as u64).to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 8 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-stream/src/light.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-stream/src/resident.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-stream/src/world_source.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-ui/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-von/examples/ask.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-von/examples/judge.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-von/src/judge.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-von/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-work/examples/tick-driver.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-work/src/budget.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
   not_belongs crates/voxel-work/src/lib.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-work/src/pool.rs [-] A08 hand-rolled byte encoding at crates/voxel-work/src/pool.rs:684: `t.extend_from_slice(&m.chunk.x.to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 3 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-work/src/stream.rs [-] A08 hand-rolled byte encoding at crates/voxel-work/src/stream.rs:467: `t.extend_from_slice(&(self.meshes.len() as u64).to_le_bytes());` — a wire format rolled by hand over untrusted bytes; 4 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
-  not_belongs crates/voxel-work/src/tick.rs [-] A08 hand-rolled byte encoding at crates/voxel-work/src/tick.rs:493: `payload.extend_from_slice(&tick.to_be_bytes());` — a wire format rolled by hand over untrusted bytes; 9 byte-level site(s) in this artifact; no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-work/src/objects.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-work/src/pool.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-work/src/stream.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail
+  not_belongs crates/voxel-work/src/tick.rs [-] no proof of work on record: no claim, no evidence, no origin — the default is fail

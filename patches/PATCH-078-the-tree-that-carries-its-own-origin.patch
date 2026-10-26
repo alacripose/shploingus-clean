@@ -1,0 +1,716 @@
+diff --git a/crates/shploingus/src/forest.rs b/crates/shploingus/src/forest.rs
+new file mode 100644
+index 0000000..9d40d4c
+--- /dev/null
++++ b/crates/shploingus/src/forest.rs
+@@ -0,0 +1,141 @@
++//! **The tree mob: a being with an identity and an origin, drawn at the lattice floor.**
++//!
++//! `voxel_shapers::gaia` decides where a tree stands and what it is — the cell, the species,
++//! the height, the crown, and the id that is the tree's own. This module is the other half:
++//! a body for one of those records, placed at the tree's own voxel origin through
++//! [`Mesh::placed_at`] rather than at a chunk corner, so the tree carries its position into
++//! the frame. The body is a drawing: the trunk is one voxel of wood, the crown is its
++//! envelope with a declared gap fraction, and the mass a tree would have is not claimed by
++//! either.
++//!
++//! Residency is the forest's own. A cell within [`FOREST_CELLS`] of the eye that has a tree
++//! is meshed once and kept; a cell that leaves is dropped, and a cell that is in range with
++//! no body yet is absent from the frame rather than stood in for. One body a frame.
++
++use std::collections::BTreeMap;
++
++use voxel_mesh::{Chunk, Mesh, MeshConfig, Mesher, SparseVoxelOctree};
++use voxel_model::{ChunkPos, LocalPos, VoxelShape};
++use voxel_shapers::gaia::{self, Tree};
++use voxel_shapers::materials;
++use voxel_shapers::spec::WorldSpec;
++
++/// **Cells around the eye that hold a drawn tree** — 3 × 8 m, so a 24 m radius.
++pub const FOREST_CELLS: i32 = 3;
++
++/// The local voxel the trunk stands on inside its own body frame, so a crown of ±4 m has
++/// room on every side of it.
++const PAD: i32 = 8;
++
++/// **The share of a crown's envelope that holds leaf**, declared: a crown is mostly air, and
++/// a filled envelope would be the block tree with more steps.
++const CROWN_SHARE: u32 = 24;
++
++/// One body a resident cell, keyed by the cell the being belongs to.
++#[derive(Default)]
++pub struct Forest {
++    bodies: BTreeMap<(i32, i32), Mesh>,
++}
++
++impl Forest {
++    pub fn new() -> Self {
++        Self::default()
++    }
++
++    /// Build at most one tree body this frame, and drop the ones the eye has left.
++    ///
++    /// Returns the body it built, for the report.
++    pub fn update(&mut self, spec: &WorldSpec, eye_m: [f64; 3]) -> Option<[i32; 3]> {
++        let side = (gaia::TREE_CELL_M as f64).max(1.0);
++        let eye_cell = [
++            (eye_m[0] / side).floor() as i32,
++            (eye_m[2] / side).floor() as i32,
++        ];
++        self.bodies.retain(|(cx, cz), _| {
++            (cx - eye_cell[0]).abs() <= FOREST_CELLS && (cz - eye_cell[1]).abs() <= FOREST_CELLS
++        });
++        for cell_z in (eye_cell[1] - FOREST_CELLS)..=(eye_cell[1] + FOREST_CELLS) {
++            for cell_x in (eye_cell[0] - FOREST_CELLS)..=(eye_cell[0] + FOREST_CELLS) {
++                if self.bodies.contains_key(&(cell_x, cell_z)) {
++                    continue;
++                }
++                let Some(tree) = gaia::memoized_tree_of_cell(spec, cell_x, cell_z) else {
++                    continue;
++                };
++                self.bodies.insert((cell_x, cell_z), body(&tree));
++                return Some(tree.origin_voxel());
++            }
++        }
++        None
++    }
++
++    /// The bodies this frame draws, in the streamer's own shape.
++    pub fn bodies(&self) -> impl Iterator<Item = (ChunkPos, u64, &Mesh)> {
++        self.bodies
++            .values()
++            .map(|mesh| (mesh.chunk, 0u64, mesh))
++    }
++
++    pub fn len(&self) -> usize {
++        self.bodies.len()
++    }
++}
++
++/// **One tree's body**: a trunk of wood and a crown sampled on its envelope.
++fn body(tree: &Tree) -> Mesh {
++    let mut octree = SparseVoxelOctree::new();
++    let at = |dx: i32, dy: i32, dz: i32| {
++        LocalPos::new((PAD + dx) as u32, dy as u32, (PAD + dz) as u32)
++            .expect("a body's own frame is inside its chunk")
++    };
++    for dy in 0..tree.trunk_height {
++        octree.set_voxel(at(0, dy, 0), VoxelShape::solid(materials::WOOD));
++    }
++    let top = tree.trunk_height;
++    for dy in 0..=(top + 2) {
++        for dx in -4..=4 {
++            for dz in -4..=4 {
++                if !in_crown(tree, dx, dy, dz) || !holds_leaf(tree.id, dx, dy, dz) {
++                    continue;
++                }
++                octree.set_voxel(at(dx, dy, dz), VoxelShape::solid(tree.canopy_material));
++            }
++        }
++    }
++    let chunk = Chunk::from_tree(ChunkPos::new(0, 0, 0), octree);
++    let mesh = Mesher::new()
++        .build(&chunk, &MeshConfig::air_only(), None)
++        .expect("an isolated body has no neighbour to refuse");
++    mesh.placed_at([tree.base_x - PAD, tree.base_y + 1, tree.base_z - PAD])
++}
++
++/// Whether a body-frame voxel lies inside the tree's crown envelope.
++fn in_crown(tree: &Tree, dx: i32, dy: i32, dz: i32) -> bool {
++    let r = tree.canopy_radius_m;
++    let (dxf, dzf) = (dx as f64, dz as f64);
++    if tree.conifer {
++        let skirt = tree.trunk_height - 3;
++        if dy < skirt || dy > tree.trunk_height {
++            return false;
++        }
++        let t = (dy - skirt) as f64 / 3.0;
++        let taper = r * (1.0 - 0.45 * t);
++        dxf * dxf + dzf * dzf <= taper * taper
++    } else {
++        let centre = tree.trunk_height as f64 + 0.5;
++        let dyf = (dy as f64 + 0.5 - centre) * 1.15;
++        dxf * dxf + dzf * dzf + dyf * dyf <= r * r
++    }
++}
++
++/// **The declared gap fraction**, as a hash of the tree's identity and the voxel: the same
++/// tree keeps the same gaps on every rebuild, and a different tree gets different ones.
++fn holds_leaf(id: u64, dx: i32, dy: i32, dz: i32) -> bool {
++    let h = id
++        ^ (dx as i64 as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
++        ^ (dy as i64 as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F)
++        ^ (dz as i64 as u64).wrapping_mul(0x1656_67B1_9E37_79F9);
++    let h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
++    let h = (h ^ (h >> 33)).wrapping_mul(0xC4CE_B9FE_1A85_EC53);
++    ((h ^ (h >> 33)) % 100) < CROWN_SHARE as u64
++}
+diff --git a/crates/shploingus/src/main.rs b/crates/shploingus/src/main.rs
+index acafce0..5823e6f 100644
+--- a/crates/shploingus/src/main.rs
++++ b/crates/shploingus/src/main.rs
+@@ -109,6 +109,8 @@ use std::collections::BTreeSet;
+ use std::sync::Arc;
+ use std::time::{Duration, Instant};
+ 
++mod forest;
++
+ use voxel_appearance::sky::SkyInputs;
+ use voxel_client::shell::notifications::{write_the_gate_queue, NotificationStream};
+ use voxel_client::shell::{
+@@ -967,6 +969,8 @@ struct App {
+     /// **The distant terrain**: resident chunks meshed at the coarse cell's own level and drawn
+     /// past the handover ring (docs/lighting-sky-and-moon.md, "The far surface").
+     far_surface: voxel_client::FarSurface,
++    /// **The tree mob**: Gaia's records drawn as bodies at their own origins (docs/trees.md).
++    forest: forest::Forest,
+     /// **The frame's own work, and the one place that decides how much of it happens**: a slice of
+     /// quads, a slice of upload bytes and a slice of cells every frame, each independent of the
+     /// others. A chunk arriving used to mean a full rebuild and a 20 MB upload on one frame — 70 ms
+@@ -1713,6 +1717,7 @@ impl App {
+             resident
+         },
+         far_surface: voxel_client::FarSurface::new(),
++        forest: forest::Forest::new(),
+         residency: voxel_client::Residency::default(),
+         walk: std::env::var_os("SHPLOINGUS_WALK").is_some(),
+         walk_started: false,
+@@ -2856,6 +2861,14 @@ impl App {
+         // Nine a frame: a crossing only owes the chunks that entered (docs/lighting-sky-and-moon.md,
+         // "The horizon's streaming rules").
+         const HORIZON_CHUNKS_PER_FRAME: usize = 9;
++        // ---- the forest: Gaia's records, one body a frame ------------------
++        // A tree is a being with an id and an origin; its body is drawn from that record and
++        // placed at the tree's own corner, and a cell the eye has left loses its body.
++        {
++            let spec = *self.spec();
++            let eye_m = self.camera.position_m;
++            self.forest.update(&spec, eye_m);
++        }
+         if let Some(graphics) = self.graphics.as_mut() {
+             let eye = self.camera.position_m;
+             graphics.world.horizon_recenter(eye);
+@@ -2941,6 +2954,7 @@ impl App {
+                 .drawn_meshes()
+                 .filter(|(pos, _, _)| voxel_client::far_surface::is_near(eye_chunk, *pos))
+                 .chain(self.far_surface.drawn(eye_chunk))
++                .chain(self.forest.bodies());
+             self.resident.sync(
+                 drawn,
+                 eye_chunk,
+diff --git a/crates/voxel-client/examples/face-square.rs b/crates/voxel-client/examples/face-square.rs
+index a8bd72e..ae0a75e 100644
+--- a/crates/voxel-client/examples/face-square.rs
++++ b/crates/voxel-client/examples/face-square.rs
+@@ -264,6 +264,7 @@ fn main() {
+ 
+     let mesh = |quad: Quad| Mesh {
+         chunk: ChunkPos::new(0, 0, 0),
++        origin: [0, 0, 0],
+         quads: vec![quad],
+         loops: Vec::new(),
+         stats: MeshStats::default(),
+diff --git a/crates/voxel-client/examples/gpu-shadow-check.rs b/crates/voxel-client/examples/gpu-shadow-check.rs
+index aba2b58..f0f024a 100644
+--- a/crates/voxel-client/examples/gpu-shadow-check.rs
++++ b/crates/voxel-client/examples/gpu-shadow-check.rs
+@@ -63,6 +63,7 @@ fn shipped_shadow_range() -> f32 {
+ fn mesh(faces: &[(Face, u16, [u16; 2], [u16; 2])]) -> Mesh {
+     Mesh {
+         chunk: ChunkPos::new(0, 0, 0),
++        origin: [0, 0, 0],
+         quads: faces
+             .iter()
+             .map(|(face, slice, uv, extent)| Quad {
+diff --git a/crates/voxel-client/examples/shadow-lattice.rs b/crates/voxel-client/examples/shadow-lattice.rs
+index 996f418..37ec730 100644
+--- a/crates/voxel-client/examples/shadow-lattice.rs
++++ b/crates/voxel-client/examples/shadow-lattice.rs
+@@ -78,6 +78,7 @@ fn main() {
+     // ---- one face, one metre square, its outward face up ---------------------------------
+     let mesh = Mesh {
+         chunk: voxel_model::ChunkPos::new(0, 0, 0),
++        origin: [0, 0, 0],
+         quads: vec![Quad {
+             face: Face::PosY,
+             slice: 4,
+diff --git a/crates/voxel-client/src/renderer.rs b/crates/voxel-client/src/renderer.rs
+index 4f1fd5d..74456d7 100644
+--- a/crates/voxel-client/src/renderer.rs
++++ b/crates/voxel-client/src/renderer.rs
+@@ -1116,6 +1116,7 @@ mod tests {
+         let inputs = shading::inputs_for(&registry, material).expect("the material derives");
+         let only = Mesh {
+             chunk: pos,
++            origin: pos.origin(),
+             quads: vec![quad],
+             loops: Vec::new(),
+             stats: MeshStats::default(),
+diff --git a/crates/voxel-client/src/scene.rs b/crates/voxel-client/src/scene.rs
+index 696642c..727903d 100644
+--- a/crates/voxel-client/src/scene.rs
++++ b/crates/voxel-client/src/scene.rs
+@@ -2226,6 +2226,7 @@ mod tests {
+     fn one_block_face(face: Face, material: MaterialId) -> Mesh {
+         Mesh {
+             chunk: voxel_model::ChunkPos::new(0, 0, 0),
++            origin: [0, 0, 0],
+             quads: vec![Quad { face, slice: 4, uv: [0, 0], extent: [4, 4], material }],
+             loops: Vec::new(),
+             stats: voxel_mesh::MeshStats {
+@@ -2678,6 +2679,7 @@ mod tests {
+         use voxel_mesh::{Mesh, Quad};
+         let mesh = Mesh {
+             chunk: voxel_model::ChunkPos::new(0, 0, 0),
++            origin: [0, 0, 0],
+             quads: vec![Quad {
+                 face: Face::PosY,
+                 slice: 4,
+@@ -2739,6 +2741,7 @@ mod tests {
+         use voxel_mesh::{Mesh, Quad};
+         let mesh = Mesh {
+             chunk: voxel_model::ChunkPos::new(0, 0, 0),
++            origin: [0, 0, 0],
+             quads: vec![Quad {
+                 face: Face::PosY,
+                 slice: 4,
+@@ -3485,6 +3488,7 @@ mod tests {
+         use voxel_model::{Face, MaterialId};
+         Mesh {
+             chunk: pos,
++            origin: pos.origin(),
+             quads: vec![Quad {
+                 face: Face::PosY,
+                 slice: 4,
+@@ -3886,6 +3890,7 @@ mod tests {
+     fn merged_face(extent: u16, material: MaterialId) -> Mesh {
+         Mesh {
+             chunk: voxel_model::ChunkPos::new(0, 0, 0),
++            origin: [0, 0, 0],
+             quads: vec![Quad { face: Face::PosY, slice: extent, uv: [0, 0], extent: [extent, extent], material }],
+             loops: Vec::new(),
+             stats: voxel_mesh::MeshStats {
+diff --git a/crates/voxel-client/src/world.rs b/crates/voxel-client/src/world.rs
+index 67e9e10..b0e0c15 100644
+--- a/crates/voxel-client/src/world.rs
++++ b/crates/voxel-client/src/world.rs
+@@ -2973,6 +2973,7 @@ mod tests {
+ 
+         let mesh = |faces: &[(u16, [u16; 2], [u16; 2])]| Mesh {
+             chunk: ChunkPos::new(0, 0, 0),
++            origin: [0, 0, 0],
+             quads: faces
+                 .iter()
+                 .map(|(slice, uv, extent)| Quad {
+@@ -3112,6 +3113,7 @@ mod tests {
+ 
+         let floor = Mesh {
+             chunk: ChunkPos::new(0, 0, 0),
++            origin: [0, 0, 0],
+             quads: vec![Quad { face: Face::PosY, slice: 0, uv: [0, 0], extent: [8, 8], material: MaterialId(0) }],
+             loops: Vec::new(),
+             stats: MeshStats { solid_voxels: 1, visible_faces: 1, quads: 1, loops: 0 },
+@@ -3211,6 +3213,7 @@ mod tests {
+ 
+         let floor = Mesh {
+             chunk: ChunkPos::new(0, 0, 0),
++            origin: [0, 0, 0],
+             quads: vec![Quad { face: Face::PosY, slice: 0, uv: [0, 0], extent: [8, 8], material: MaterialId(0) }],
+             loops: Vec::new(),
+             stats: MeshStats { solid_voxels: 1, visible_faces: 1, quads: 1, loops: 0 },
+diff --git a/crates/voxel-mesh/src/mesh.rs b/crates/voxel-mesh/src/mesh.rs
+index 1d3d9c3..115f814 100644
+--- a/crates/voxel-mesh/src/mesh.rs
++++ b/crates/voxel-mesh/src/mesh.rs
+@@ -386,6 +386,13 @@ impl MeshStats {
+ #[derive(Clone, PartialEq, Eq, Debug)]
+ pub struct Mesh {
+     pub chunk: ChunkPos,
++    /// **The voxel corner the quads are measured from**, which is not always the chunk's.
++    ///
++    /// A chunk mesh is placed at its chunk's own corner, and `chunk` carries that. A *body* — a
++    /// tree, or anything else with a position of its own — is drawn from the corner of the voxel
++    /// its base stands on, and may span a chunk boundary without lying about which chunk it is
++    /// in. [`Mesh::digest`] still covers `chunk` alone, so no chunk's identity moves.
++    pub origin: [i32; 3],
+     pub quads: Vec<Quad>,
+     /// Boundary loops for the same surface `quads` covers, in the same plane order.
+     pub loops: Vec<Loop>,
+@@ -393,8 +400,19 @@ pub struct Mesh {
+ }
+ 
+ impl Mesh {
+-    /// The chunk's low corner, in voxels.
++    /// The voxel corner the quads are measured from.
+     pub fn origin_voxel(&self) -> [i32; 3] {
++        self.origin
++    }
++
++    /// **Place this body at its own corner**, rather than at its chunk's.
++    pub fn placed_at(mut self, origin: [i32; 3]) -> Self {
++        self.origin = origin;
++        self
++    }
++
++    /// The chunk's own low corner, which is where a chunk mesh belongs.
++    pub fn chunk_origin(&self) -> [i32; 3] {
+         let o = self.chunk.origin();
+         [o.x, o.y, o.z]
+     }
+@@ -569,7 +587,16 @@ impl Mesher {
+ 
+         stats.quads = quads.len() as u64;
+         stats.loops = loops.len() as u64;
+-        Ok(Mesh { chunk: chunk.pos, quads, loops, stats })
++        Ok(Mesh {
++            chunk: chunk.pos,
++            origin: {
++                let o = chunk.pos.origin();
++                [o.x, o.y, o.z]
++            },
++            quads,
++            loops,
++            stats,
++        })
+     }
+ 
+     /// Build the same mesh **without merging**: one quad per visible face.
+@@ -599,6 +626,10 @@ impl Mesher {
+         let visible_faces = quads.len() as u64;
+         Ok(Mesh {
+             chunk: chunk.pos,
++            origin: {
++                let o = chunk.pos.origin();
++                [o.x, o.y, o.z]
++            },
+             stats: MeshStats {
+                 solid_voxels: chunk.tree().solid_count(),
+                 visible_faces,
+diff --git a/crates/voxel-shapers/src/chunk_fields.rs b/crates/voxel-shapers/src/chunk_fields.rs
+index 46c6664..119f323 100644
+--- a/crates/voxel-shapers/src/chunk_fields.rs
++++ b/crates/voxel-shapers/src/chunk_fields.rs
+@@ -57,7 +57,7 @@ use crate::field_sampler::{
+     FieldSamplerIdentity, FieldValue, FixedValue, ResolutionLevel, SamplingPolicy, SeamPolicy, Unit,
+     VerticalDependence,
+ };
+-use crate::flora;
++use crate::gaia;
+ use crate::geology::{self, Lithology};
+ use crate::habitat;
+ use crate::process::{self, Site};
+@@ -691,15 +691,11 @@ pub fn material_of<Q: FieldQuery + ?Sized>(
+ 
+     let surface = f64_of(fields.sample(FieldId::Elevation, coord)?, FieldId::Elevation)?;
+     if fy > surface {
+-        // Above ground: sea where the ground is below sea level; a tree where one reaches
+-        // this voxel — `flora` is a pure function of position (C-159.11) — and air
+-        // otherwise.
++        // Above ground: sea where the ground is below sea level, and air otherwise. A tree
++        // is a being drawn from `gaia`'s record, not a material (PATCH-043, RM1).
+         if fy <= sea {
+             return Ok(materials::WATER);
+         }
+-        if let Some(material) = flora::tree_material_at(spec, x, y, z, surface) {
+-            return Ok(material);
+-        }
+         return Ok(materials::AIR);
+     }
+ 
+@@ -1153,17 +1149,15 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn the_field_plane_grows_trees_above_the_ground() {
+-        // A tree's voxels are **above** the ground and its canopy spans columns, so this
+-        // walks one real tree's trunk and canopy through the public single-voxel entry
+-        // point and asks the plane for the wood. The tree branch is the one place the
+-        // material law returns something other than ground or sky, and it is reached by
+-        // reading `Elevation` rather than by being handed a profile.
++    fn the_field_plane_holds_no_wood_above_the_ground() {
++        // **RM1, on the material law itself**: a tree is a being with a drawn body now, so
++        // no chunk stores one. The walk takes a cell the lattice does grow a tree in and
++        // asks the plane for wood over that tree's whole band; the answer is none.
+         let spec = world();
+         let mut found = None;
+         'search: for cell_x in 0..64 {
+             for cell_z in 0..64 {
+-                if let Some(tree) = flora::tree_of_cell(&spec, cell_x, cell_z) {
++                if let Some(tree) = gaia::tree_of_cell(&spec, cell_x, cell_z) {
+                     found = Some(tree);
+                     break 'search;
+                 }
+@@ -1171,25 +1165,18 @@ mod tests {
+         }
+         let tree = found.expect("no tree in the first 64x64 cells of this world");
+         let mut wood = 0u32;
+-        let mut canopy = 0u32;
+         for dy in 0..=(tree.trunk_height + 2) {
+             for dx in -3..=3 {
+                 for dz in -3..=3 {
+-                    let (x, z) = (tree.base_x + dx, tree.base_z + dz);
+-                    let y = tree.base_y + dy;
+-                    let m = material_at(&spec, x, y, z)
++                    let m = material_at(&spec, tree.base_x + dx, tree.base_y + dy, tree.base_z + dz)
+                         .expect("the material path is total here");
+-                    if m == materials::WOOD {
++                    if m == materials::WOOD || m == materials::LEAF || m == materials::CONIFER {
+                         wood += 1;
+-                    } else if m == materials::LEAF || m == materials::CONIFER {
+-                        canopy += 1;
+                     }
+                 }
+             }
+         }
+-        assert!(wood > 0, "the walk found no wood: the trunk never reached the plane");
+-        assert!(canopy > 0, "the walk found no canopy above the trunk");
+-        println!("field plane: {wood} trunk voxels, {canopy} canopy voxels in one tree");
++        assert_eq!(wood, 0, "the block tree came back: {wood} voxels of tree in the plane");
+     }
+ 
+     #[test]
+diff --git a/crates/voxel-shapers/src/flora.rs b/crates/voxel-shapers/src/gaia.rs
+similarity index 77%
+rename from crates/voxel-shapers/src/flora.rs
+rename to crates/voxel-shapers/src/gaia.rs
+index 80f5af8..8439c9a 100644
+--- a/crates/voxel-shapers/src/flora.rs
++++ b/crates/voxel-shapers/src/gaia.rs
+@@ -47,12 +47,6 @@ use crate::terrain;
+ /// neighbours (a canopy reaches at most half a cell).
+ pub const TREE_CELL_M: i32 = 8;
+ 
+-/// How far above its own ground a tree voxel can be, in metres — the band the material
+-/// rule bounds itself with before asking flora at all. Declared from the shapes below:
+-/// the tallest trunk is `12`, and the canopy extends a little past it; `16` is that
+-/// rounded up, stated so a taller tree is a change to this constant and not a surprise.
+-pub const MAX_TREE_ABOVE_GROUND_M: f64 = 16.0;
+-
+ /// The most any canopy can reach from its own column, in metres. Declared from the shapes
+ /// (the widest canopy is `3.2`), and it is what chooses how many cells a column asks
+ /// about: `(x ± 4 m)` spans at most two cells per axis.
+@@ -69,10 +63,18 @@ fn roll(h: u64, window: u32) -> f64 {
+ 
+ /// One standing tree: where it is rooted, how tall it is, and what its canopy is made of.
+ ///
+-/// Public because a caller (a test, a census, a future spawn rule) may want to ask the
+-/// lattice for trees as trees; the material rule only wants [`tree_material_at`].
++/// Public because the census asks the lattice for trees and the client draws a body from
++/// the record — the tree is a `Being` whose identity is its own, not a material rule.
+ #[derive(Clone, Copy, PartialEq, Debug)]
+ pub struct Tree {
++    /// **The tree's identity**, a digest of the world and the cell it is rooted in.
++    ///
++    /// Never a counter and never a function of the tick: two calls for one cell answer the
++    /// same id, and a store that names a tree can name it again after a restart.
++    pub id: u64,
++    /// The lattice cell it belongs to.
++    pub cell_x: i32,
++    pub cell_z: i32,
+     /// The column the trunk stands in.
+     pub base_x: i32,
+     pub base_z: i32,
+@@ -96,49 +98,10 @@ impl Tree {
+         dx <= self.canopy_radius_m + 0.5 && dz <= self.canopy_radius_m + 0.5
+     }
+ 
+-    /// The material at a voxel, if this tree holds it.
+-    ///
+-    /// The trunk is its own column from `base_y + 1` to the trunk's top. A conifer's
+-    /// canopy is a **cone** widening downward over the last three trunk voxels; a
+-    /// broadleaf's is a slightly flattened **sphere** centred on the trunk's top. Both are
+-    /// sampled at voxel centres so that a canopy has a top surface rather than terminating
+-    /// on a half-metre.
+-    pub fn voxel_at(&self, x: i32, y: i32, z: i32) -> Option<MaterialId> {
+-        let dx = x - self.base_x;
+-        let dz = z - self.base_z;
+-        let dy = y - self.base_y;
+-        if dy <= 0 || dy > self.trunk_height + 1 {
+-            return None;
+-        }
+-        if dx == 0 && dz == 0 && dy <= self.trunk_height {
+-            return Some(materials::WOOD);
+-        }
+-        let dxf = dx as f64;
+-        let dzf = dz as f64;
+-        if self.conifer {
+-            // The skirt: the lowest canopy voxel sits three above the trunk's midpoint,
+-            // and the radius tapers from the canopy's own base radius to a tip.
+-            let skirt_bottom = self.trunk_height - 3;
+-            if dy < skirt_bottom || dy > self.trunk_height {
+-                return None;
+-            }
+-            let t = (dy - skirt_bottom) as f64 / 3.0;
+-            let r = self.canopy_radius_m * (1.0 - 0.45 * t);
+-            if dxf * dxf + dzf * dzf <= r * r {
+-                Some(self.canopy_material)
+-            } else {
+-                None
+-            }
+-        } else {
+-            let centre = self.trunk_height as f64 + 0.5;
+-            let dyf = (dy as f64 + 0.5 - centre) * 1.15;
+-            let r = self.canopy_radius_m;
+-            if dxf * dxf + dzf * dzf + dyf * dyf <= r * r {
+-                Some(self.canopy_material)
+-            } else {
+-                None
+-            }
+-        }
++    /// **The voxel corner the body is drawn from**: the ground the trunk stands on, plus the
++    /// one voxel that is the tree's own. A body placed here is the tree's, not the chunk's.
++    pub fn origin_voxel(&self) -> [i32; 3] {
++        [self.base_x, self.base_y + 1, self.base_z]
+     }
+ }
+ 
+@@ -237,6 +200,11 @@ pub fn tree_of_cell(spec: &WorldSpec, cell_x: i32, cell_z: i32) -> Option<Tree>
+         2.4 + ((h >> 44) % 2) as f64 * 0.8
+     };
+     Some(Tree {
++        // The cell, its world and nothing else: the id a body, a census row and a record
++        // all agree on.
++        id: voxel_noise::mix(h ^ 0x51ED_2701_9E37_79B9),
++        cell_x,
++        cell_z,
+         base_x,
+         base_z,
+         base_y: (surface_m - 0.5).floor() as i32,
+@@ -299,28 +267,6 @@ pub fn trees_over_column(spec: &WorldSpec, x: i32, z: i32) -> [Option<Tree>; 4]
+     out
+ }
+ 
+-/// The material a tree holds at a voxel, if any — **the one call the material rules make**.
+-///
+-/// `surface_m` is the column's own ground, so the band bound costs no work beyond a
+-/// comparison: above it the answer is `None` and no cell is asked.
+-pub fn tree_material_at(
+-    spec: &WorldSpec,
+-    x: i32,
+-    y: i32,
+-    z: i32,
+-    surface_m: f64,
+-) -> Option<MaterialId> {
+-    if y as f64 > surface_m + MAX_TREE_ABOVE_GROUND_M {
+-        return None;
+-    }
+-    for tree in trees_over_column(spec, x, z).into_iter().flatten() {
+-        if let Some(material) = tree.voxel_at(x, y, z) {
+-            return Some(material);
+-        }
+-    }
+-    None
+-}
+-
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -380,29 +326,14 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn a_standing_tree_has_a_wood_trunk_and_a_canopy() {
++    fn a_tree_carries_an_identity_and_an_origin_of_its_own() {
+         let s = spec();
+         let tree = first_tree(&s);
+-        assert_eq!(
+-            tree.voxel_at(tree.base_x, tree.base_y + 1, tree.base_z),
+-            Some(materials::WOOD),
+-            "the first voxel above the ground is not trunk"
+-        );
+-        assert_eq!(
+-            tree.voxel_at(tree.base_x, tree.base_y, tree.base_z),
+-            None,
+-            "a tree stands *above* the ground, not in it"
+-        );
+-        let canopy = (-3..=3)
+-            .flat_map(|dx| (-3..=3).map(move |dz| (dx, dz)))
+-            .flat_map(|(dx, dz)| {
+-                (tree.base_y + 2..=tree.base_y + tree.trunk_height + 1)
+-                    .map(move |y| (tree.base_x + dx, y, tree.base_z + dz))
+-            })
+-            .filter_map(|(x, y, z)| tree.voxel_at(x, y, z))
+-            .filter(|m| *m == tree.canopy_material)
+-            .count();
+-        assert!(canopy > 0, "a tree stood with no canopy material anywhere");
++        assert_eq!(tree.id, tree_of_cell(&s, tree.cell_x, tree.cell_z).unwrap().id);
++        assert_ne!(tree.id, first_tree(&WorldSpec::new(97531, Config::default())).id);
++        // The origin is the base the body is drawn from: above the ground, one voxel per
++        // metre in this client's frame.
++        assert_eq!(tree.origin_voxel(), [tree.base_x, tree.base_y + 1, tree.base_z]);
+     }
+ 
+     #[test]
+@@ -491,26 +422,4 @@ mod tests {
+         assert!(trees_per_formation(Biome::Grassland) > 0.0, "a savanna is trees");
+         assert!(trees_per_formation(Biome::Tundra) > 0.0);
+     }
+-
+-    #[test]
+-    fn the_band_bound_is_above_every_tree_voxel() {
+-        let s = spec();
+-        let tree = first_tree(&s);
+-        // The highest voxel the shape can hold, found by walking the shape itself.
+-        let mut highest = 0;
+-        for dy in 1..=(tree.trunk_height + 3) {
+-            for dx in -4..=4 {
+-                for dz in -4..=4 {
+-                    if tree.voxel_at(tree.base_x + dx, tree.base_y + dy, tree.base_z + dz).is_some()
+-                    {
+-                        highest = dy;
+-                    }
+-                }
+-            }
+-        }
+-        assert!(
+-            (highest as f64) < MAX_TREE_ABOVE_GROUND_M,
+-            "a tree voxel at +{highest} m escaped the {MAX_TREE_ABOVE_GROUND_M} m band"
+-        );
+-    }
+ }
+diff --git a/crates/voxel-shapers/src/lib.rs b/crates/voxel-shapers/src/lib.rs
+index 76870b0..406433d 100644
+--- a/crates/voxel-shapers/src/lib.rs
++++ b/crates/voxel-shapers/src/lib.rs
+@@ -48,6 +48,7 @@
+ //! | [`delta`] | Shields 1936; Hjulström 1935; Gilbert 1885; Slingerland & Smith 2004 |
+ //! | [`transition`] | Shepard 1968 |
+ //! | [`earthworks`] | F10's conservation ruling |
++//! | [`gaia`] | `docs/GAIA_comprehensive.md` §1–§2 — the stand is a spawn rule and a tree is a being, not a material |
+ //! | [`materials`] | the admitted rows, their 256-level shapers, and the fluid/solid predicates |
+ //! | [`voxel`] | the **voxel shapers**: `slab` (physical), `loop-cut` and `pillar` (material) |
+ //!
+@@ -76,7 +77,7 @@ pub mod ecology;
+ pub mod erosion;
+ pub mod field_sampler;
+ pub mod fields;
+-pub mod flora;
++pub mod gaia;
+ pub mod fluid_state;
+ pub mod fluidics;
+ pub mod fog;
+diff --git a/crates/voxel-shapers/src/spec.rs b/crates/voxel-shapers/src/spec.rs
+index df9da80..41defd6 100644
+--- a/crates/voxel-shapers/src/spec.rs
++++ b/crates/voxel-shapers/src/spec.rs
+@@ -249,7 +249,7 @@ impl WorldSpec {
+ 
+     /// **A value that changes whenever anything a shaper can read changes.**
+     ///
+-    /// For **cache keys only**. `flora` memoizes a pure function per `(world, cell)`, and
++    /// For **cache keys only**. `gaia` memoizes a pure function per `(world, cell)`, and
+     /// two different worlds must not share a row — the `seed` alone is not enough, because
+     /// tests and examples build several `Config`s over one seed inside one process, and a
+     /// cache that answered one world's tree for another's would be a wrong world rather
+diff --git a/crates/voxel-stream/src/resident.rs b/crates/voxel-stream/src/resident.rs
+index ccc71b8..8ef866d 100644
+--- a/crates/voxel-stream/src/resident.rs
++++ b/crates/voxel-stream/src/resident.rs
+@@ -662,6 +662,7 @@ mod tests {
+         // `len() * size_of` would get wrong.
+         let empty = Mesh {
+             chunk: ChunkPos::new(0, 0, 0),
++            origin: [0, 0, 0],
+             quads: Vec::new(),
+             loops: Vec::new(),
+             stats: MeshStats::default(),

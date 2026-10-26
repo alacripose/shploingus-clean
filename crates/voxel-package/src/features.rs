@@ -72,6 +72,13 @@ use std::path::{Path, PathBuf};
 
 use voxel_model::{Refusal, RefusalKind, RefusalSet};
 
+/// **The state of one thing that was supposed to be checked.**
+///
+/// Five states, one meaning each. The declaration moved to `voxel_model::axis` on 2026-10-25 so
+/// the axis set has one home for it; this module re-exports the one type rather than keeping a
+/// second five-state enum that could drift from the ladder's tokens.
+pub use voxel_model::axis::Establishment;
+
 /// How many features this project declares: **a literal, on purpose**.
 ///
 /// The obvious version — `Feature::ALL.len()` — is a cycle: `ALL`'s *type* is
@@ -87,7 +94,7 @@ use voxel_model::{Refusal, RefusalKind, RefusalSet};
 /// from a silent drift into a compile error — which is the property this module
 /// exists to have. Deriving the count would make the two sides agree by
 /// construction, and then the check would be checking nothing.
-pub const FEATURE_COUNT: usize = 19;
+pub const FEATURE_COUNT: usize = 20;
 
 /// The declared features of the v1 alpha.
 ///
@@ -137,6 +144,12 @@ pub enum Feature {
     SaveLoad,
     /// The vector change view: what changed, as a view over the chain.
     ChangeView,
+    /// **A window's cells are a declared frame the mount grades** (`shploingus.cellframe/1`).
+    ///
+    /// The format, its join to the recipe's rows and the content-space restriction have landed
+    /// (PATCH-076); what this row still waits for is the generator that fills a frame from the
+    /// world — a declared frame is drawn today, a streamed one is not.
+    CellFrames,
 }
 
 impl Feature {
@@ -163,6 +176,7 @@ impl Feature {
         Feature::StageCadences,
         Feature::SaveLoad,
         Feature::ChangeView,
+        Feature::CellFrames,
     ];
 
     /// A stable, machine-readable name. Never prose.
@@ -187,6 +201,7 @@ impl Feature {
             Feature::StageCadences => "stage_cadences",
             Feature::SaveLoad => "save_load",
             Feature::ChangeView => "change_view",
+            Feature::CellFrames => "cell_frames",
         }
     }
 
@@ -254,6 +269,10 @@ pub const fn witness_of(feature: Feature) -> &'static str {
         Feature::StageCadences => "crates/voxel-shapers/src/stages.rs",
         Feature::SaveLoad => "crates/voxel-stream/src/resident.rs",
         Feature::ChangeView => "crates/voxel-client/src/shell/changes.rs",
+        // **The declaration, not the drawing.** A frame is graded here — grammar, recipe row,
+        // window join, extent — and the client draws only what this module accepted, so the
+        // witness is the grader rather than the raster that trusts it.
+        Feature::CellFrames => "crates/voxel-package/src/cellframe.rs",
     }
 }
 
@@ -293,6 +312,7 @@ pub const FEATURES: [FeatureRow; FEATURE_COUNT] = [
     FeatureRow { feature: Feature::StageCadences, declared_by: "H-8.3", means: "a 20 Hz base clock with each stage's cadence declared" },
     FeatureRow { feature: Feature::SaveLoad, declared_by: "C-56", means: "a world round-trips through disk and back to the same digests" },
     FeatureRow { feature: Feature::ChangeView, declared_by: "C-56", means: "what changed is a view over the chain, not a second record" },
+    FeatureRow { feature: Feature::CellFrames, declared_by: "R-64.1", means: "a window's cells are a declared frame the mount grades, and the raster draws no cells without one" },
 ];
 
 /// **Check 2 of 3.** The row count is pinned to the feature count *in a `const`*.
@@ -301,67 +321,6 @@ pub const FEATURES: [FeatureRow; FEATURE_COUNT] = [
 /// is why adding a feature without a row is a compile error rather than a red
 /// test someone can delete.
 pub const FEATURES_ARE_TOTAL: [(); FEATURE_COUNT] = [(); FEATURES.len()];
-
-/// The state of one thing that was supposed to be checked.
-///
-/// Five states, one meaning each, used for **both** feature implementation and
-/// signature verification. See the module header for why those are one question.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Establishment {
-    /// Checked, and it holds.
-    Active,
-    /// Checked, and it is not under this project's root.
-    Inactive,
-    /// **Checked, and what it read has since changed.**
-    ///
-    /// A reading that is not re-derived per build — a compiler count, a survey, a census taken by
-    /// hand — is true of the bytes it was taken over. [`Stale`](Establishment::Stale) is what
-    /// those bytes having moved is called: the number is not wrong, it is *about a tree this one is
-    /// not*, and the difference is invisible unless something compares the two. Neither a pass nor
-    /// a failure, and deliberately not fatal: the repair is a command, not an edit.
-    Stale,
-    /// **No instrument ran.** Never checked. Not a pass.
-    Unchecked,
-    /// Checked, and it failed — or it could not be checked.
-    Refused,
-}
-
-impl Establishment {
-    pub const fn slug(self) -> &'static str {
-        match self {
-            Establishment::Active => "active",
-            Establishment::Inactive => "inactive",
-            Establishment::Stale => "stale",
-            Establishment::Unchecked => "unchecked",
-            Establishment::Refused => "refused",
-        }
-    }
-
-    /// The rendering. A state with no rendering is a blank row, and a blank row
-    /// in the Mods or feature view reads as "nothing to report".
-    ///
-    /// D48's requirement, carried: a third state needs a *description*, not a
-    /// status flip.
-    pub const fn describe(self) -> &'static str {
-        match self {
-            Establishment::Active => "active — checked, and it holds",
-            Establishment::Inactive => {
-                "inactive — checked, and not under this project's root. A grant is a recorded \
-                 decision, not a toggle"
-            }
-            Establishment::Stale => {
-                "stale — checked, and the bytes it was checked over have since changed, so the \
-                 reading describes a tree this one is not. Re-derive it rather than reading it as \
-                 an answer about this build"
-            }
-            Establishment::Unchecked => {
-                "unchecked — no instrument ran, so this was never checked. A missing instrument \
-                 is not a pass"
-            }
-            Establishment::Refused => "refused — checked, and it failed, or it could not be checked",
-        }
-    }
-}
 
 /// One feature's evaluated state, and the reason it is in that state.
 #[derive(Clone, Debug, PartialEq, Eq)]

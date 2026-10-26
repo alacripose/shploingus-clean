@@ -1,0 +1,23 @@
+captured 2026-10-24T23:13:11Z on working tree at aef0971, uncommitted changes present
+== cargo test -p voxel-client --lib shell::cells::tests ==
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 546 filtered out; finished in 0.38s
+== cargo test -p voxel-client --test cell_version_refusal ==
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+== cargo test -p voxel-client --lib clock::tests ==
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 548 filtered out; finished in 0.03s
+
+-- re-taken after PATCH-076 added the cell frame, same tree --
+== cargo test -p voxel-package --lib cellframe:: ==
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 374 filtered out
+== cargo test -p voxel-package --lib layer:: ==
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 374 filtered out
+== cargo test -p voxel-client --lib renderer::tests -- --test-threads=1 ==
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 539 filtered out; finished in 86.66s
+# the same suite under the default parallel harness was not stable: one run reported
+# 16 passed / 6 failed and one run did not finish within 400s; the serial reading is the recorded one.
+== cargo test -p voxel-axis-verify ==
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.25s
+== cargo test -p voxel-client --lib shell::cells::tests (after the frame wiring) ==
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 546 filtered out
+== cargo test -p voxel-client --test cell_version_refusal (after the frame wiring) ==
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s

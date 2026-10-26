@@ -166,6 +166,25 @@ impl QuadRecord {
     /// The record's fields, in the order they are written.
     pub const FIELDS: usize = 8;
 
+    /// **A rectangle with no extent** — the tombstone a departed chunk's records become.
+    ///
+    /// `vs_quad` expands a record into its rectangle from `uv` and `extent`; an extent of zero is
+    /// a quad of zero area, which covers no pixel and needs no branch in the shader. The face is a
+    /// real one rather than a sentinel, so `face_axis` is well defined for the corners it still
+    /// emits, and the origin zero is live whenever anything is resident.
+    pub const fn blank() -> Self {
+        QuadRecord {
+            face: 0,
+            material: 0,
+            slice: 0,
+            uv: 0,
+            extent: 0,
+            chunk: 0,
+            light_y: 0,
+            light_z: 0,
+        }
+    }
+
     /// The record's stride in bytes — what the GPU's `array<QuadRecord>` uses.
     pub const SIZE: u64 = Self::FIELDS as u64 * 4;
 
@@ -313,10 +332,25 @@ impl QuadRecord {
     /// The records as the bytes a storage buffer takes, `SIZE` per record.
     pub fn bytes(records: &[QuadRecord]) -> Vec<u8> {
         let mut out = Vec::with_capacity(records.len() * Self::SIZE as usize);
-        for r in records {
-            r.write(&mut out);
-        }
+        Self::write_into(records, &mut out);
         out
+    }
+
+    /// **The same bytes, appended to a buffer the caller owns.** Not cleared: a caller writing
+    /// two arrays into one buffer (`records`, then `bodies`) appends the second after the first,
+    /// and a clear here would drop the first — which is exactly what an empty `bodies` did to a
+    /// full record array the first time this existed.
+    ///
+    /// The difference from [`QuadRecord::bytes`] is not the encoding: it is the **allocation**.
+    /// A frame that allocates 1.8 MB for a 55 000-record scene pays the global allocator's lock
+    /// while the mesher workers are allocating for a streaming world, and that contention was
+    /// measured at 11–16 ms of a frame — most of what `records` cost, with the encoding itself at
+    /// 2.2 ms. A buffer that is cleared and refilled pays neither.
+    pub fn write_into(records: &[QuadRecord], out: &mut Vec<u8>) {
+        out.reserve(records.len() * Self::SIZE as usize);
+        for r in records {
+            r.write(out);
+        }
     }
 }
 

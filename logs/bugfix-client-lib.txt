@@ -1,0 +1,504 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libunicode_ident-1311fe617de71ba7.rmeta
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libcpufeatures-db911beae73f1263.rmeta
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libsimd_adler32-18b66ceb6ebbbb8d.rmeta
+warning: function `signed_area` is never used
+   --> crates\voxel-mesh\src\mesh.rs:858:4
+    |
+858 | fn signed_area(corners: &[[i16; 2]]) -> i64 {
+    |    ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `voxel-mesh` (lib) generated 1 warning
+   Compiling miniz_oxide v0.8.9
+   Compiling fdeflate v0.3.7
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libfdeflate-8d8697c6c291c0f3.rmeta
+   Compiling png v0.18.1
+   Compiling voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+warning: unused import: `voxel_model::MaterialId`
+  --> crates\voxel-client\src\scene.rs:37:5
+   |
+37 | use voxel_model::MaterialId;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `CHUNK_SIDE`
+   --> crates\voxel-client\src\scene.rs:548:35
+    |
+548 |     use voxel_model::{MaterialId, CHUNK_SIDE};
+    |                                   ^^^^^^^^^^
+
+warning: function `empty_light` is never used
+   --> crates\voxel-client\src\scene.rs:552:8
+    |
+552 |     fn empty_light(_x: i32, _y: i32, _z: i32) -> Option<[f32; 6]> {
+    |        ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `mesh_at` is never used
+   --> crates\voxel-client\src\scene.rs:556:8
+    |
+556 |     fn mesh_at(x: i32, y: i32, z: i32) -> Mesh {
+    |        ^^^^^^^
+
+warning: `voxel-client` (lib test) generated 4 warnings (run `cargo fix --lib -p voxel-client --tests` to apply 2 suggestions)
+    Finished `test` profile [optimized + debuginfo] target(s) in 54.12s
+     Running unittests src\lib.rs (target\debug\deps\voxel_client-a39abb0453707c55.exe)
+
+running 446 tests
+test camera::tests::a_positive_roll_banks_the_camera_to_the_left ... ok
+test camera::tests::a_point_straight_ahead_lands_at_the_centre_of_the_screen ... ok
+test camera::tests::a_point_behind_the_eye_has_a_negative_w ... ok
+test camera::tests::yaw_zero_looks_down_positive_z ... ok
+test camera::tests::the_depth_range_is_zero_to_one_and_never_reversed ... ok
+test camera_overhaul::tests::a_fast_right_flick_banks_and_decays ... ok
+test camera::tests::moving_the_eye_far_out_does_not_move_the_picture ... ok
+test camera_overhaul::tests::a_right_strafe_rolls_opposite_to_a_right_turn ... ok
+test camera_overhaul::tests::the_contexts_crossfade_rather_than_switch ... ok
+test camera::tests::the_basis_is_orthonormal_and_right_handed ... ok
+test camera_overhaul::tests::the_offsets_are_added_to_a_copy_and_never_touch_the_players_camera ... ok
+test camera_overhaul::tests::a_bad_frame_delta_changes_nothing ... ok
+test camera_overhaul::tests::the_sway_fades_in_while_still_and_out_when_the_player_acts ... ok
+test camera_overhaul::tests::the_noise_is_deterministic_and_bounded ... ok
+test camera_overhaul::tests::the_forward_pitch_follows_the_reference_factor ... ok
+test camera_overhaul::tests::the_turning_easing_is_the_references_cubic ... ok
+test camera_overhaul::tests::the_vertical_pitch_ignores_slow_falls_and_follows_fast_ones ... ok
+test camera_overhaul::tests::walking_does_not_smooth_the_look_where_sprinting_does ... ok
+test clock::tests::a_clock_at_rest_does_not_move_and_a_tick_advances_by_exactly_one ... ok
+test clock::tests::a_frame_at_exactly_the_bound_is_honoured_and_one_past_it_is_not ... ok
+test clock::tests::a_long_frame_is_capped_and_what_it_dropped_is_counted ... ok
+test clock::tests::a_negative_or_non_finite_frame_is_refused_rather_than_clamped ... ok
+test clock::tests::a_resumed_world_starts_at_its_saved_tick_not_at_zero ... ok
+test clock::tests::hitting_the_bound_does_not_drift_the_remainder ... ok
+test clock::tests::interpolation_is_the_fraction_of_the_current_tick ... ok
+test clock::tests::the_base_rate_is_the_ruling_and_the_seconds_are_derived_from_it ... ok
+test clock::tests::the_bound_is_a_round_fraction_of_a_second_not_a_round_number_of_ticks ... ok
+test clock::tests::the_sub_tick_remainder_is_carried_so_no_time_is_lost ... ok
+test clock::tests::twenty_ticks_of_real_time_are_twenty_ticks_of_world ... ok
+test clock::tests::two_clocks_given_the_same_time_reach_the_same_tick ... ok
+test cloud_cubes::tests::the_ladder_coarsens_with_distance_and_is_floored_and_capped ... ok
+test cloud_field::tests::the_cloud_lattice_is_stated_in_chunks_and_is_not_the_chunk_lattice ... ok
+test cloud_field::tests::the_field_can_be_asked_between_its_own_texels ... ok
+test cloud_field::tests::the_kind_encoding_is_injective_over_every_kind ... ok
+test cloud_cubes::tests::a_cloud_thinner_than_its_own_cells_is_still_drawn ... ok
+test cloud_cubes::tests::the_tree_spans_the_atmosphere_and_subdivides_only_where_the_water_crosses_the_cut ... ok
+test cloud_cubes::tests::the_cells_edge_is_fainter_than_its_core ... ok
+test cloud_cubes::tests::a_clear_field_draws_nothing ... ok
+test cloud_field::tests::the_profile_is_zero_outside_the_layer ... ok
+test cloud_cubes::tests::the_geometry_is_the_surfaces_rectangles_and_not_the_cells_faces ... ok
+test debug::tests::a_lane_draws_its_outline_and_its_label_at_its_own_position ... ok
+test cloud_cubes::tests::a_wetter_column_is_drawn_as_a_taller_fatter_cloud ... ok
+test debug::tests::a_lane_exactly_on_the_surface_edge_is_inside_it ... ok
+test debug::tests::a_lane_that_leaves_the_surface_is_refused_rather_than_clamped ... ok
+test debug::tests::a_lane_with_no_label_is_refused ... ok
+test debug::tests::a_pixel_lane_is_never_inside_a_world_lane ... ok
+test debug::tests::a_world_lane_is_not_projected_by_guesswork ... ok
+test debug::tests::an_inverted_cuboid_is_refused_rather_than_sorted ... ok
+test debug::tests::every_class_declares_a_distinct_hue_that_reads_over_the_surfaces_lanes_land_on ... ok
+test debug::tests::the_budget_is_per_unit_and_declared ... ok
+test debug::tests::the_vocabulary_covers_every_class_or_says_which_one_is_empty ... ok
+test frame::tests::a_frame_of_one_colour_is_not_a_picture_and_says_so ... ok
+test debug::tests::validate_collects_every_refusal_rather_than_the_first ... ok
+test debug::tests::the_vocabulary_is_frozen_and_a_lane_outside_it_has_no_class ... ok
+test frame::tests::a_non_finite_pixel_is_refused_rather_than_counted ... ok
+test frame::tests::a_two_tone_frame_passes_the_bars_band_count ... ok
+test frame::tests::indexing_is_row_major_from_the_top_left_and_out_of_range_is_none ... ok
+test frame::tests::luminance_goes_through_the_crates_own_function ... ok
+test frame::tests::terms_travel_with_the_measurement_rather_than_being_guessed ... ok
+test cloud_cubes::tests::the_same_field_and_eye_build_the_same_cubes ... ok
+test game::tests::a_world_carries_its_seed_and_its_tick ... ok
+test game::tests::the_eye_is_the_eye_height_above_the_spawn_feet ... ok
+test hud::tests::a_partly_shading_world_reports_the_count_without_the_note ... ok
+test hud::tests::a_stroke_is_a_quad_in_the_segment_s_own_frame ... ok
+test hud::tests::a_world_with_no_reflectance_says_why_it_is_black ... ok
+test hud::tests::the_digest_readout_is_absent_rather_than_wrong_when_nothing_is_resident ... ok
+test hud::tests::the_panel_geometry_is_the_grid_the_design_system_declares ... ok
+test game::tests::the_spawn_is_ground_the_body_can_stand_on ... ok
+test hud::tests::the_shell_chrome_is_legible_over_the_worst_backdrop ... ignored, needs a GPU adapter; run explicitly with --ignored
+test hud::tests::the_refusal_panel_is_a_note_when_there_is_nothing_to_report ... ok
+test hud::tests::the_worker_count_is_reported_beside_the_digest_as_a_knob ... ok
+test motion::tests::a_held_jump_falling_into_water_keeps_eighty_percent_of_its_fall ... ok
+test motion::tests::a_body_in_a_shallow_sea_comes_to_rest_on_the_sea_floor ... ok
+test motion::tests::a_held_jump_skips_the_ground_friction_a_released_one_keeps ... ok
+test motion::tests::a_diagonal_walk_is_not_faster_than_a_straight_one ... ok
+test motion::tests::a_released_key_costs_exactly_the_slipperiness_each_step ... ok
+test motion::tests::a_jump_reaches_the_apex_the_reference_arithmetic_describes ... ok
+test motion::tests::a_one_voxel_ledge_still_needs_a_jump ... ok
+test motion::tests::a_sprint_jump_adds_no_horizontal_boost ... ok
+test motion::tests::a_stalled_frame_costs_time_rather_than_queueing_a_burst ... ok
+test motion::tests::a_stalled_or_backwards_frame_moves_nothing ... ok
+test motion::tests::a_sneaking_jump_over_the_base_speed_trimp_and_it_stays_enabled ... ok
+test motion::tests::a_step_up_of_this_size_cannot_fire_on_a_voxel_grid_at_all ... ok
+test motion::tests::crouching_lowers_the_eye_and_not_the_body ... ok
+test motion::tests::holding_the_jump_key_re_launches_on_every_landing ... ok
+test cloud_field::tests::the_worlds_own_clouds_are_mostly_transparent ... ok
+test motion::tests::sharking_holds_a_held_jump_at_the_surface_and_never_sinks ... ok
+test motion::tests::sneaking_walks_at_the_references_sneak_speed ... ok
+test motion::tests::the_air_acceleration_caps_the_projection_and_never_decays ... ok
+test motion::tests::the_body_cannot_walk_into_a_solid_wall ... ok
+test motion::tests::the_body_never_ends_a_step_inside_a_solid_voxel ... ok
+test motion::tests::the_interpolated_eye_stays_between_the_last_two_steps ... ok
+test motion::tests::the_models_constants_are_the_references_own_numbers ... ok
+test motion::tests::the_body_rests_on_the_floor_instead_of_falling_through_it ... ok
+test motion::tests::the_eye_is_the_eye_height_above_the_feet ... ok
+test motion::tests::the_reference_caps_are_inert_at_their_own_thresholds ... ok
+test motion::tests::the_step_is_the_world_clocks_tick ... ok
+test motion::tests::the_trajectory_is_a_function_of_the_step_count_and_not_of_the_framing ... ok
+test motion::tests::the_walk_direction_is_where_the_camera_looks ... ok
+test pattern::tests::a_material_the_field_does_not_vary_shows_no_deviation ... ok
+test motion::tests::the_walk_speed_is_the_declared_one_and_not_a_multiple_of_it ... ok
+test pattern::tests::a_point_addresses_to_its_own_world_subvoxel_and_lattice_cell ... ok
+test pattern::tests::a_footprint_between_the_rungs_is_carried_by_a_coarser_one ... ok
+test pattern::tests::a_prefiltered_rung_does_not_slide_within_its_own_coarse_cell ... ok
+test pattern::tests::a_rung_s_weight_does_not_move_under_a_walk_sized_step ... ok
+test pattern::tests::below_the_resolvable_rung_movement_changes_nothing ... ok
+test pattern::tests::each_shaper_stretches_the_noise_along_the_axis_its_material_reads ... ok
+test pattern::tests::no_rung_s_weight_has_a_step_in_it ... ok
+test pattern::tests::the_blend_cannot_tell_the_vertical_axis_from_the_horizontal_one ... ok
+test pattern::tests::the_footprint_is_one_pixel_carried_out_to_the_surface ... ok
+test motion::tests::no_speed_gets_the_body_through_a_one_voxel_wall ... ok
+test pattern::tests::the_ladder_handed_a_vanishing_step_does_not_jump ... ok
+test pattern::tests::the_ladder_s_geometry_is_the_lattice_s_own ... ok
+test pattern::tests::the_shader_recovers_the_world_cell_from_the_eye_s_two_halves ... ok
+test pattern::tests::every_deviation_stays_inside_the_range_the_model_states ... ok
+test pattern::tests::the_ladder_is_never_flat_while_a_rung_resolves ... ok
+test pattern::tests::the_staged_weight_keeps_the_ladder_s_silence_and_its_draw ... ok
+test pattern::tests::two_points_a_block_apart_share_their_lattice_address_and_not_their_cell ... ok
+test quad::tests::an_origin_carries_the_veil_in_its_own_w ... ok
+test quad::tests::bytes_are_the_fields_in_order ... ok
+test quad::tests::of_composition_packs_two_ids ... ok
+test renderer::tests::a_frame_with_no_sky_written_is_the_black_it_was_before ... ignored, needs a GPU adapter; run explicitly with --ignored
+test quad::tests::of_yields_a_record_whose_rectangle_is_the_quad ... ok
+test renderer::tests::the_cloud_is_a_veil_and_its_alpha_is_the_columns_own_transmittance ... ignored, needs a GPU adapter; run explicitly with --ignored
+test quad::tests::round_trip_keeps_the_rectangle ... ok
+test renderer::tests::the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe ... ignored, needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored
+test renderer::tests::the_derived_rig_reaches_the_pixels_and_moves_with_the_tick ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_dither_moves_a_shade_by_less_than_a_step_and_not_the_average ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_gpu_presents_a_radiance_the_crate_says_it_does ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_gpu_shades_a_surface_exactly_as_the_crate_does ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_pattern_is_drawn_where_the_greedy_mesh_has_no_geometry ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_player_starts_on_the_ground_and_the_frame_proves_it ... ignored, needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored
+test renderer::tests::the_quad_format_and_the_vertex_format_draw_the_same_surface ... ignored, needs a GPU adapter
+test renderer::tests::the_shipped_view_is_not_a_black_screen ... ignored, needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored
+test renderer::tests::the_sky_is_drawn_where_there_is_no_geometry_and_never_claims_to_be_geometry ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_sun_is_drawn_as_the_cuboid_the_model_says ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_water_surface_reflects_the_sky_the_model_says_it_does ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::the_wireframe_outlines_the_records_and_withholds_the_materials ... ignored, needs a GPU adapter; run explicitly with --ignored
+test renderer::tests::what_six_hundred_chunks_cost_the_cpu_every_frame ... ignored, needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored
+test scene::tests::a_vertex_encodes_to_exactly_one_stride_of_bytes ... ok
+test scene::tests::the_cloud_is_appended_as_a_suffix_and_its_own_origins_carry_the_veil ... ok
+test scene::tests::the_stride_matches_the_attributes_that_claim_offsets_into_it ... ok
+test shading::tests::a_present_input_packs_its_value_and_its_flag ... ok
+test shading::tests::a_rig_with_more_lights_than_the_buffer_holds_is_refused_not_truncated ... ok
+test shading::tests::an_absent_input_packs_as_absent_and_not_as_zero ... ok
+test shading::tests::bytes_are_little_endian_in_field_order ... ok
+test shading::tests::an_unadmitted_material_is_refused_by_the_table ... ok
+test shading::tests::no_absent_openpbr_term_is_unexplained ... ok
+test shading::tests::no_material_loses_its_rim_to_arithmetic ... ok
+test shading::tests::no_openpbr_term_is_silently_dropped_on_the_way_to_the_gpu ... ok
+test shading::tests::every_admitted_material_gets_a_row_and_the_rest_are_absent ... ok
+test shading::tests::not_every_admitted_material_derives_a_roughness_and_the_table_says_so ... ok
+test shading::tests::the_corpus_names_what_each_unadmitted_substance_is_missing ... ok
+test shading::tests::the_cpu_reference_is_the_crate_and_refuses_what_the_crate_refuses ... ok
+test shading::tests::the_named_debt_is_zero_and_is_named ... ok
+test shading::tests::the_packed_sizes_are_the_strides_wgsl_will_use ... ok
+test shell::arrangement::tests::a_matching_orientation_inserts_and_re_divides ... ok
+test shell::arrangement::tests::a_deeper_target_is_lifted_out_of_its_own_parent_not_the_whole_subtree ... ok
+test shell::arrangement::tests::a_same_orientation_parent_inserts_beside_the_target ... ok
+test shell::arrangement::tests::a_seam_drag_moves_a_boundary_and_keeps_the_splitters_total ... ok
+test shell::arrangement::tests::a_seam_drag_stops_at_the_floor_and_refuses_a_pair_already_under_it ... ok
+test shell::arrangement::tests::a_seam_the_tree_does_not_hold_is_refused_by_name ... ok
+test shading::tests::the_shading_report_counts_materials_and_not_the_never_read_sentinel_row ... ok
+test shell::arrangement::tests::a_slot_is_a_pane_for_close ... ok
+test shell::arrangement::tests::a_slot_is_addressed_by_the_path_the_tree_walks ... ok
+test shell::arrangement::tests::a_slot_split_creates_the_reference_s_unnamed_pane ... ok
+test shell::arrangement::tests::a_window_with_no_split_is_one_pane ... ok
+test shell::arrangement::tests::a_window_cannot_be_in_two_panes ... ok
+test shell::arrangement::tests::a_wrap_preserves_the_outer_splits_shares ... ok
+test shell::arrangement::tests::closing_collapses_one_child_splitters_all_the_way_up ... ok
+test shell::arrangement::tests::an_insert_before_lands_at_the_targets_own_index ... ok
+test shell::arrangement::tests::closing_the_last_pane_has_no_arrangement_left ... ok
+test shell::arrangement::tests::filling_a_slot_gives_it_the_window_once ... ok
+test shell::arrangement::tests::the_floor_accumulates_through_nesting ... ok
+test shell::arrangement::tests::splitting_a_bare_root_wraps_it ... ok
+test shell::arrangement::tests::the_seam_index_walks_nested_splitters_in_tree_order ... ok
+test shell::arrangement::tests::undock_leaves_the_window_free_floating ... ok
+test shell::changes::tests::a_change_expires_and_the_window_is_declared_and_half_open ... ok
+test shell::changes::tests::a_change_with_no_reason_is_refused ... ok
+test shell::changes::tests::a_degenerate_viewport_projects_nothing ... ok
+test shell::changes::tests::a_point_behind_the_eye_is_refused_rather_than_drawn_at_an_edge ... ok
+test shell::changes::tests::a_point_on_the_axis_lands_at_the_viewport_centre ... ok
+test shell::changes::tests::a_region_draws_as_its_boundary_edges_in_world_order ... ok
+test shell::changes::tests::a_point_to_the_right_lands_to_the_right_of_centre ... ok
+test shell::changes::tests::a_solid_block_draws_its_own_surface_and_no_interior_face ... ok
+test shell::changes::tests::an_edge_crossing_the_camera_plane_is_cut_and_not_dropped ... ok
+test shell::changes::tests::an_edit_that_changed_nothing_is_refused_rather_than_drawn_as_an_empty_box ... ok
+test shell::changes::tests::an_l_shape_keeps_the_step_that_a_box_would_hide ... ok
+test shell::changes::tests::negative_cells_are_cells_rather_than_an_error ... ok
+test shell::changes::tests::one_cell_is_a_cube_of_six_faces_and_twelve_edges ... ok
+test shell::changes::tests::only_the_live_regions_are_drawn_and_they_come_back_in_record_order ... ok
+test shell::changes::tests::an_expired_change_draws_nothing ... ok
+test shell::changes::tests::the_outline_is_the_same_whichever_order_the_edits_arrived_in ... ok
+test shell::changes::tests::two_adjacent_cells_are_one_outline_and_not_two_boxes ... ok
+test shell::changes::tests::two_changes_recorded_in_the_same_instant_are_both_live ... ok
+test shell::changes::tests::world_edges_come_from_the_declared_cell_size ... ok
+test shell::changes::tests::world_positions_come_from_the_declared_cell_size ... ok
+test shell::console::tests::a_filtered_console_shows_one_level_and_says_so ... ok
+test shell::console::tests::a_record_with_no_tick_says_so_rather_than_reading_as_tick_zero ... ok
+test shell::console::tests::an_unknown_verb_is_refused_by_name_and_names_the_whole_vocabulary ... ok
+test shell::console::tests::autoscroll_off_freezes_the_view_and_counts_what_it_is_not_showing ... ok
+test shell::console::tests::clearing_the_output_keeps_what_you_typed ... ok
+test shell::console::tests::clearing_the_output_re_anchors_the_frozen_view ... ok
+test shell::console::tests::every_verb_in_the_table_is_reachable_by_parsing_its_own_name ... ok
+test shell::console::tests::the_filter_cycles_through_the_reference_s_entries_and_back_to_all ... ok
+test shell::console::tests::log_is_the_only_way_in_and_the_console_is_bounded ... ok
+test shell::console::tests::the_help_text_is_generated_from_the_table_it_documents ... ok
+test shell::console::tests::the_level_vocabulary_is_five_and_closed ... ok
+test shell::console::tests::the_parser_agrees_with_the_help_text_about_arity ... ok
+test shell::console::tests::the_search_box_filters_the_view_and_never_executes ... ok
+test shell::console::tests::the_verb_table_is_total_and_covers_every_variant ... ok
+test shell::console::tests::the_wrong_number_of_arguments_is_a_different_refusal_from_an_unknown_verb ... ok
+test shell::console::tests::warn_is_the_only_level_that_is_persistent ... ok
+test shell::debug::tests::a_bar_cell_lane_is_the_cell_the_bar_drew ... ok
+test shell::debug::tests::a_control_lane_is_the_rectangle_the_pointer_hits ... ok
+test shell::debug::tests::a_lane_that_leaves_the_viewport_is_refused_rather_than_clamped ... ok
+test shell::debug::tests::every_lane_is_drawn_in_its_class_hue_and_the_palette_is_not_asked_for_one ... ok
+test shell::debug::tests::a_pinned_window_is_claimed_on_both_layers_and_an_unpinned_one_only_on_the_shell ... ok
+test shell::debug::tests::every_lane_the_shell_declares_is_in_the_frozen_vocabulary ... ok
+test shell::debug::tests::the_bar_is_claimed_only_while_the_shell_is_shown ... ok
+test shell::debug::tests::every_lane_the_shell_declares_is_inside_the_viewport_and_within_budget ... ok
+test shell::debug::tests::the_lane_set_is_bounded_by_the_declared_pixel_budget ... ok
+test shell::debug::tests::the_lanes_draw_as_outlines_over_the_shell_without_asking_the_palette_for_a_role ... ok
+test shell::desktop::tests::a_docked_window_keeps_its_own_desktop_entry ... ok
+test shell::desktop::tests::a_press_resolves_the_topmost_window_and_the_background_clears_focus ... ok
+test shell::desktop::tests::adding_a_window_focuses_it_and_puts_it_on_top ... ok
+test shell::desktop::tests::focusing_a_window_the_desktop_does_not_hold_is_a_no_op ... ok
+test shell::desktop::tests::removing_the_focused_window_focuses_the_topmost_one_still_drawn ... ok
+test shell::desktop::tests::minimize_clears_focus_and_restore_returns_it ... ok
+test shell::desktop::tests::removing_the_last_window_leaves_nothing_focused ... ok
+test shell::desktop::tests::the_desktop_draws_no_ground_at_all ... ok
+test shell::desktop::tests::toggle_maximize_runs_the_windows_own_arithmetic_and_focuses_it ... ok
+test shell::drop::tests::a_tie_prefers_left_then_right_then_top_as_the_reference_orders_it ... ok
+test shell::drop::tests::a_point_outside_the_window_has_no_target ... ok
+test shell::drop::tests::a_tiny_pane_s_preview_still_meets_the_twenty_dp_floor ... ok
+test shell::drop::tests::inside_a_pane_the_nearest_edge_dominates_and_the_pane_is_the_target ... ok
+test shell::drop::tests::no_pane_under_the_point_falls_back_to_the_reference_s_right ... ok
+test shell::drop::tests::the_label_is_the_reference_s_own_words_with_the_declared_marks ... ok
+test shell::drop::tests::the_bands_are_the_window_s_own_wherever_the_window_sits ... ok
+test shell::drop::tests::the_outer_band_wins_over_the_pane_under_it ... ok
+test shell::drop::tests::the_preview_is_a_dashed_wash_with_the_label_on_a_declared_pill ... ok
+test cloud_field::tests::equality_ignores_the_measurement ... ok
+test shell::drop::tests::the_preview_splits_the_panes_own_rect_and_docks_into_the_window_s_content ... ok
+test shell::drop::tests::the_top_band_is_measured_from_below_the_title_bar_as_the_reference_measures_it ... ok
+test shell::hud::tests::a_pinned_window_stays_in_the_view_while_the_shell_is_hidden ... ok
+test shell::mount::tests::a_bar_entry_that_is_not_a_tab_opens_its_window_without_a_menu ... ok
+test shell::mount::tests::a_click_on_the_close_glyph_closes_the_window_and_not_its_neighbour ... ok
+test shell::hud::tests::a_toast_is_drawn_on_both_layers_and_after_the_one_it_covers ... ok
+test shell::mount::tests::a_double_click_on_the_bar_maximizes_where_the_declaration_permits_it ... ok
+test shell::mount::tests::a_docked_window_draws_with_its_content_bounded_to_the_pane ... ok
+test shell::hud::tests::the_pinned_layer_draws_no_bar_and_no_menu ... ok
+test shell::mount::tests::a_drag_shows_the_landing_and_the_release_lands_where_it_showed ... ok
+test shell::mount::tests::a_filing_with_no_workspace_is_refused_by_name_rather_than_guessing_a_path ... ok
+test shell::mount::tests::a_maximized_window_keeps_the_rect_it_will_restore_to ... ok
+test shell::mount::tests::a_missing_argument_and_an_unknown_window_are_two_different_refusals ... ok
+test shell::mount::tests::a_pane_tree_that_cannot_hold_its_floor_is_refused_before_it_is_drawn ... ok
+test shell::mount::tests::a_filing_onto_an_unfiled_workspace_is_refused_because_grow_refuses_to_create ... ok
+test shell::mount::tests::a_panel_that_does_not_fit_its_pane_is_refused_with_both_numbers ... ok
+test cloud_field::tests::above_the_cloud_the_beam_is_clear_and_below_it_is_dimmed ... ok
+test shell::mount::tests::a_placeholder_offer_fills_a_slot_with_its_window ... ok
+test camera::tests::the_far_plane_reaches_the_cloud_fields_own_corner ... ok
+test cloud_field::tests::the_medium_and_the_closed_form_are_one_law ... ok
+test shell::mount::tests::a_refusal_is_logged_and_never_toasted_and_a_timeless_record_is_not_raised ... ok
+test shell::mount::tests::a_refused_command_is_logged_with_its_reason_and_not_only_the_attempt ... ok
+test shell::mount::tests::a_resize_edge_drag_moves_that_edge_and_leaves_the_far_one ... ok
+test shell::mount::tests::a_seam_drag_moves_the_boundary_and_stops_at_the_floor ... ok
+test shell::mount::tests::a_tab_s_menu_offers_its_own_window_and_the_windows_filed_under_it ... ok
+test shell::mount::tests::a_report_the_reader_cannot_understand_is_refused_by_name_and_says_nothing_is_wrong ... ok
+test shell::mount::tests::a_transient_record_goes_on_screen_as_a_toast_and_its_timer_runs_down ... ok
+test shell::mount::tests::a_window_split_beside_another_derives_its_title_from_the_pane_set ... ok
+test shell::mount::tests::a_verb_with_no_target_in_this_shell_is_refused_by_name_and_with_the_reason ... ok
+test shell::mount::tests::a_window_verb_moves_the_window_and_takes_the_keyboard_with_it ... ok
+test shell::mount::tests::an_edge_trigger_splits_the_window_and_the_new_pane_is_an_empty_slot ... ok
+test shell::mount::tests::a_windows_declared_elevation_is_the_one_drawn ... ok
+test shell::mount::tests::a_filed_ticket_is_emitted_to_disk_and_the_shell_reloads_from_it ... ok
+test shell::mount::tests::an_empty_enter_is_nothing_at_all ... ok
+test shell::mount::tests::an_empty_notifications_window_says_why_it_is_empty ... ok
+test shell::mount::tests::an_empty_console_is_a_named_absence_rather_than_a_blank_pane ... ok
+test shell::mount::tests::a_filing_whose_package_declares_nothing_is_compiled_again_under_a_new_name ... ok
+test shell::mount::tests::a_filed_ticket_puts_a_recipe_in_the_agents_inbox_and_the_agent_stream_reads_it ... ok
+test shell::mount::tests::hand_the_boards_tickets_to_the_agent_on_the_real_record ... ignored, hands the whole real board's recipes over on the repository's own record
+test shell::mount::tests::a_ticket_whose_package_would_take_the_console_window_is_refused_and_nothing_is_lost ... ok
+test shell::mount::tests::a_typed_ticket_lands_on_the_chain_and_compiles_to_a_solution ... ok
+test shell::mount::tests::an_unpermitted_control_is_absent_rather_than_drawn_disabled ... ok
+test shell::mount::tests::backspace_on_an_empty_draft_says_nothing_changed ... ok
+test shell::mount::tests::closing_a_host_releases_its_panes_instead_of_taking_them_with_it ... ok
+test shell::mount::tests::every_window_on_screen_draws_with_the_palette_the_record_declares ... ok
+test shell::mount::tests::history_recalls_the_last_line_and_empties_past_the_end ... ok
+test shell::mount::tests::a_package_emitted_while_the_game_runs_is_adopted_exactly_once ... ok
+test shell::mount::tests::the_console_s_controls_act_where_they_are_drawn ... ok
+test shell::mount::tests::keys_reach_the_console_only_while_it_holds_focus ... ok
+test shell::mount::tests::the_console_window_clamps_at_both_ends_and_reserves_the_note_row ... ok
+test shell::mount::tests::the_console_s_wheel_moves_the_view_and_a_step_back_is_the_freeze_request ... ok
+test shell::mount::tests::the_console_window_is_hosted_by_the_console_and_not_by_the_empty_view_rule ... ok
+test shell::mount::tests::one_window_that_refuses_does_not_take_the_others_with_it ... ok
+test shell::mount::tests::the_bar_is_the_declared_tabs_in_strip_order_then_the_entries_that_are_not_tabs ... ok
+test shell::mount::tests::the_console_window_is_the_reference_s_toolbar_output_and_command_bar ... ok
+test shell::mount::tests::the_draft_is_a_row_on_the_panel_so_a_command_can_be_checked_before_it_is_run ... ok
+test shell::mount::tests::the_console_window_is_bounded_by_the_pane_it_is_drawn_in_and_says_what_it_holds ... ok
+test shell::mount::tests::the_gate_is_read_before_the_window_opens_and_survives_a_reload ... ok
+test shell::mount::tests::the_gates_pass_is_on_the_console_with_every_unsettled_subject_and_its_reason ... ok
+test shell::mount::tests::the_ink_used_by_the_bar_and_the_windows_is_measured_not_assumed ... ok
+test shell::mount::tests::the_log_window_has_its_own_scroll_and_it_is_not_the_console_s ... ok
+test shell::mount::tests::the_log_window_is_the_event_record_and_not_the_console_s_view ... ok
+test shell::mount::tests::the_notifications_window_reads_the_persistent_records_and_not_the_console_s_view ... ok
+test shell::mount::tests::the_pane_close_control_closes_that_pane_and_not_the_host ... ok
+test shell::mount::tests::the_shipped_package_declares_windows_that_can_hold_the_views_they_host ... ok
+test shell::mount::tests::the_boards_tickets_are_handed_to_the_agent_once_and_then_skipped ... ok
+test shell::mount::tests::the_sizing_rule_is_the_drawing_s_own_arithmetic ... ok
+test shell::mount::tests::the_loader_reads_the_path_it_is_given_and_refuses_rather_than_serving_the_last_package ... ok
+test shell::mount::tests::the_trigger_lanes_follow_the_pointer_onto_a_window_and_off_it ... ok
+test shell::mount::tests::the_typed_command_is_on_the_record_before_anything_acts_on_it ... ok
+test cloud_field::tests::the_field_is_deterministic_and_the_span_is_four_blocks ... ok
+test shell::notifications::tests::a_committed_act_is_minted_into_one_proof_of_work_on_the_artifact_that_committed_it ... ok
+test shell::notifications::tests::a_queued_toast_gets_its_whole_life_from_the_tick_it_is_promoted_not_from_its_enqueue_tick ... ok
+test shell::notifications::tests::a_toast_lasts_the_duration_the_design_system_declares_in_the_world_s_ticks ... ok
+test shell::notifications::tests::a_minted_proof_reaches_the_gate_on_its_artifact_with_axis_rs_grading ... ok
+test shell::notifications::tests::a_toast_queue_renders_one_record_at_a_time_and_each_record_once ... ok
+test shell::notifications::tests::a_tampered_artifact_is_refused_before_it_is_shown ... ok
+test shell::mount::tests::the_pass_compiles_the_ledgers_ticket_and_the_read_names_both_worlds ... ok
+test shell::pane::tests::a_hovered_lane_is_drawn_one_step_raised_and_its_glyph_at_full_ink ... ok
+test shell::pane::tests::a_press_lower_than_the_header_is_the_body_and_focuses_it ... ok
+test shell::pane::tests::a_press_on_a_control_answers_that_control_and_a_hidden_one_never_answers ... ok
+test shell::pane::tests::an_empty_slot_carries_the_reference_s_own_title ... ok
+test shell::pane::tests::the_actions_are_the_reference_s_four_and_undock_hides_with_one_pane ... ok
+test shell::pane::tests::the_header_is_one_pointer_row_and_the_body_starts_under_it ... ok
+test shell::notifications::tests::the_games_own_pass_writes_one_notification_per_decision ... ok
+test shell::pane::tests::the_lanes_are_pointer_targets_flush_with_the_end_and_carry_the_gap ... ok
+test shell::pane::tests::the_title_never_runs_under_the_controls ... ok
+test shell::notifications::tests::the_agent_inbox_streams_the_recipe_laya_wrote_for_the_package ... ok
+test cloud_field::tests::the_model_is_asked_on_its_own_lattice_and_the_between_is_interpolated ... ok
+test shell::placeholder::tests::a_press_inside_an_offer_returns_its_index_and_elsewhere_is_none ... ok
+test shell::placeholder::tests::an_empty_slot_says_why_it_is_empty ... ok
+test shell::placeholder::tests::the_border_is_drawn_as_dashes_not_a_single_rule ... ok
+test shell::placeholder::tests::the_note_names_the_record_s_unit_and_the_offer_rows_meet_the_target ... ok
+test shell::placeholder::tests::the_offers_are_laid_out_three_per_row_and_a_short_row_is_centred ... ok
+test shell::splitter::tests::a_hovered_seam_brightens_one_ink_step ... ok
+test shell::splitter::tests::a_nested_split_lays_out_inside_its_parent_s_half ... ok
+test shell::splitter::tests::a_point_on_a_seam_picks_the_seam_and_never_two_panes ... ok
+test shell::splitter::tests::one_pane_is_the_whole_rect_and_has_no_seams ... ok
+test shell::splitter::tests::the_floor_is_the_arrangements_own_arithmetic ... ok
+test shell::splitter::tests::a_pane_the_tree_does_not_hold_has_no_rect ... ok
+test shell::splitter::tests::two_equal_shares_meet_at_a_seam_centred_on_the_boundary ... ok
+test shell::splitter::tests::a_seam_carries_the_splitter_and_boundary_it_divides ... ok
+test shell::taskbar::tests::a_label_is_the_reference_s_own_derivation ... ok
+test shell::taskbar::tests::a_press_names_the_reference_s_three_cases_in_order ... ok
+test shell::taskbar::tests::a_running_entry_is_a_bar_entry_that_is_not_a_tab ... ok
+test shell::taskbar::tests::an_entry_is_checked_only_when_focused_and_not_minimized ... ok
+test shell::taskbar::tests::the_clock_s_format_is_the_reference_s_two_settings ... ok
+test shell::theme::tests::an_unadmitted_field_refuses_by_name_the_same_way_the_palette_does ... ok
+test shell::theme::tests::the_coverage_is_the_reference_s_own_field_list_in_its_own_order ... ok
+test shell::theme::tests::the_desktop_s_ground_is_the_world_and_resolves_to_nothing ... ok
+test shell::theme::tests::every_field_states_a_source_and_the_debt_is_exactly_the_accent ... ok
+test shell::theme::tests::no_field_carries_a_colour_literal ... ok
+test shell::theme::tests::the_admitted_fields_resolve_through_the_same_palette_the_rest_of_the_shell_uses ... ok
+test shell::theme::tests::the_five_reference_themes_are_carried_as_candidates_and_not_admitted ... ok
+test shell::titlebar::tests::a_double_press_maximizes_only_where_the_policy_permits ... ok
+test shell::titlebar::tests::a_policy_without_title_position_draws_no_bar_and_answers_nothing ... ok
+test shell::titlebar::tests::a_press_on_a_control_is_never_a_drag ... ok
+test shell::titlebar::tests::a_window_narrower_than_its_controls_keeps_the_close_control ... ok
+test shell::titlebar::tests::the_bar_is_one_pointer_row_and_its_glyphs_are_the_dense_pointer_pair ... ok
+test shell::titlebar::tests::the_controls_are_the_declared_ones_in_the_reference_order_and_not_one_more ... ok
+test shell::titlebar::tests::the_lanes_are_targets_flush_with_the_end_and_separated_by_eight ... ok
+test shell::titlebar::tests::the_title_never_runs_under_the_controls ... ok
+test shell::titlebar::tests::the_unfocused_title_dims_one_step_and_the_contrast_is_measured ... ok
+test shell::window::tests::a_double_click_asks_the_bar_first_and_answers_maximize ... ok
+test shell::window::tests::a_drag_keeps_the_offset_and_the_preview_it_is_showing ... ok
+test shell::window::tests::a_drag_over_two_windows_targets_the_topmost_and_the_pane_under_the_cursor ... ok
+test shell::window::tests::a_maximized_rect_never_goes_below_the_declared_minimum_size ... ok
+test shell::window::tests::a_new_window_is_one_pane_holding_itself ... ok
+test shell::window::tests::a_press_on_an_empty_slot_s_offer_answers_the_offer_and_the_body_focuses_it ... ok
+test shell::window::tests::a_press_on_the_resize_strip_resizes_and_a_press_on_the_bar_drags ... ok
+test shell::window::tests::a_pane_split_control_carries_the_reference_s_own_axis ... ok
+test shell::window::tests::a_window_without_title_position_has_no_bar_and_the_content_is_the_inner_rect ... ok
+test shell::window::tests::an_edge_trigger_press_is_the_zone_the_lane_shows ... ok
+test shell::window::tests::docking_keeps_the_input_order_on_both_sides ... ok
+test shell::window::tests::docking_into_a_pane_target_splits_that_pane_and_its_zone_decides_the_axis ... ok
+test shell::window::tests::an_empty_slot_draws_the_placeholder_and_says_so ... ok
+test shell::window::tests::closing_a_guest_keeps_the_window_and_closing_the_last_pane_does_not ... ok
+test shell::window::tests::maximize_saves_the_previous_rect_and_restore_returns_to_it ... ok
+test shell::window::tests::minimize_and_restore_move_the_state_and_not_the_rect ... ok
+test shell::window::tests::the_composite_is_the_border_then_the_bar_then_the_content ... ok
+test cloud_field::tests::the_field_is_snapped_to_its_own_columns ... ok
+test shell::window::tests::the_drawing_and_the_hit_tests_resolve_the_same_pane_rects ... ok
+test shell::window::tests::the_edge_triggers_appear_inside_the_band_and_answer_their_zone ... ok
+test shell::window::tests::the_focused_windows_outline_is_one_ink_step_brighter ... ok
+test shell::window::tests::the_resize_arithmetic_grows_from_the_far_edge_and_stops_at_the_floor ... ok
+test shell::window::tests::the_drop_preview_is_drawn_by_the_window_the_drop_lands_in ... ok
+test shell::window::tests::the_resize_strip_answers_one_edge_per_axis_and_its_cursor ... ok
+test shell::window::tests::the_trigger_lanes_hold_the_rect_the_window_is_drawn_at ... ok
+test shell::window::tests::undocking_a_pane_frees_it_and_closes_an_emptied_window ... ok
+test skylight::tests::a_flat_water_surface_reflects_the_sky_in_the_mirror_direction ... ok
+test skylight::tests::the_ambient_is_the_skys_own_dome_radiance_and_not_a_constant ... ok
+test skylight::tests::a_hazier_world_normalises_against_its_own_dimmer_sun ... ok
+test skylight::tests::a_night_has_no_sun_light_and_a_black_ambient ... ok
+test skylight::tests::a_shorter_sky_table_is_still_read_at_its_own_endpoints ... ok
+test skylight::tests::an_atmosphere_the_model_refuses_yields_no_rig_rather_than_a_black_one ... ok
+test skylight::tests::the_declared_ambient_fraction_is_half_and_is_counted ... ok
+test skylight::tests::the_declared_couplings_are_named_and_counted ... ok
+test skylight::tests::the_direction_convention_is_the_one_the_shaders_use ... ok
+test skylight::tests::the_exposure_scales_both_terms_or_neither ... ok
+test skylight::tests::the_normaliser_is_measured_through_the_air_it_normalises_and_not_above_it ... ok
+test skylight::tests::the_readout_fields_are_the_rigs_own_fields_and_not_a_second_computation ... ok
+test skylight::tests::the_rig_carries_a_direction_that_moves_and_an_intensity_that_is_one_at_noon ... ok
+test skylight::tests::the_rig_is_pure_in_the_tick ... ok
+test skylight::tests::the_rig_is_one_unit_so_no_field_of_it_is_a_raw_radiance ... ok
+test skylight::tests::the_sky_and_the_rig_that_lights_the_world_share_one_exposure ... ok
+test skylight::tests::the_onset_reaches_the_sky_even_where_the_mean_never_moves ... ok
+test skylight::tests::the_sky_is_a_normalised_ratio_like_the_rig_is ... ok
+test skylight::tests::the_sky_table_is_black_at_night_and_the_sky_below_the_horizon_clamps ... ok
+test skylight::tests::the_sky_table_reproduces_the_model_it_samples ... ok
+test skylight::tests::the_sun_direction_moves_across_the_day_and_points_up_at_noon ... ok
+test skylight::tests::the_sun_moves_across_the_day_and_the_readout_moves_with_it ... ok
+test skylight::tests::the_sky_does_not_step_across_ground_while_walking ... ok
+test skylight::tests::the_tick_the_client_opens_at_is_not_a_black_world ... ok
+test skylight::tests::the_sky_is_driven_by_the_worlds_weather_and_not_by_a_default ... ok
+test sun::tests::a_fully_blocked_sun_is_dark_and_says_so ... ok
+test sun::tests::a_clear_sky_lights_a_whole_surface ... ok
+test sun::tests::a_sun_below_the_horizon_is_refused_and_not_a_light_from_underneath ... ok
+test sun::tests::no_samples_is_not_a_claim_of_daylight ... ok
+test sun::tests::an_occluder_edge_gives_a_penumbra_and_not_a_step ... ok
+test sun::tests::the_derived_angular_size_is_the_sky_s_own_diameter ... ok
+test skylight::tests::where_this_worlds_day_actually_is ... ok
+test sun::tests::the_body_is_drawn_exactly_when_the_rig_carries_a_sun ... ok
+test sun::tests::the_drawn_radiance_is_the_irradiance_over_the_body_s_own_solid_angle ... ok
+test sun::tests::the_eye_relative_centre_costs_under_two_e_minus_seven_radians ... ok
+test sun::tests::the_drawn_face_is_a_square_and_not_a_disc ... ok
+test sun::tests::the_drawn_body_points_where_the_rig_s_light_points ... ok
+test sun::tests::the_penumbra_is_centimetres_at_a_ten_metre_occluder ... ok
+test sun::tests::the_shadow_rule_refuses_a_sun_the_drawn_body_still_places ... ok
+test sun::tests::the_sun_is_about_one_hundred_and_sixty_thousand_kilometres_across ... ok
+test sun::tests::the_sun_is_one_object_in_the_world_and_not_one_per_observer ... ok
+test world::tests::the_display_stage_is_one_file_and_every_presenting_pass_receives_it ... ok
+test world::tests::every_composed_pass_is_valid_wgsl ... ok
+test cloud_field::tests::the_fill_reports_what_it_costs_the_cadence ... ok
+test skylight::tests::the_dome_table_is_the_directional_model_it_samples ... ok
+test skylight::tests::the_clamp_is_what_holds_the_sky_inside_the_models_range ... ok
+test shell::mount::tests::the_console_window_counts_records_it_dropped_rather_than_reading_as_complete ... ok
+test cloud_cubes::tests::the_shipped_fields_clouds_are_reported_as_geometry ... ok
+test cloud_field::tests::the_stride_is_reported_against_the_full_rate_model ... ok
+test shell::notifications::tests::the_queue_streams_every_decision_the_gate_made ... ok
+test shell::mount::tests::the_board_read_catches_the_ledgers_tickets_on_the_real_record ... ok
+test shell::mount::tests::a_persons_plain_prose_ticket_files_and_compiles_like_any_other ... ok
+test shell::mount::tests::the_console_files_against_the_real_chain_bytes_and_not_only_a_scratch_one ... ok
+test shell::mount::tests::the_evaluator_hands_the_whole_real_board_to_the_agent ... ok
+test game::tests::the_collider_sees_the_players_own_edits has been running for over 60 seconds
+test game::tests::the_collider_sees_the_players_own_edits ... ok
+
+test result: ok. 428 passed; 0 failed; 18 ignored; 0 measured; 0 filtered out; finished in 127.14s
+

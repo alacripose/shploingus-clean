@@ -5,8 +5,8 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-# Two workspace dependencies, and no external one — which is the whole point of
-# the "package API" boundary this repository was created to consume (C-1):
+# Three workspace dependencies, and no external one — which is the whole point
+# of the "package API" boundary this repository was created to consume (C-1):
 # intake is built on the model's own identity and refusal types rather than on a
 # second hashing library or a second error vocabulary.
 #
@@ -19,6 +19,10 @@ license.workspace = true
 #   voxel-shapers — `Stage` and `Declared`, so a package's stage requirements
 #                   are conformance-checked against the stages the world
 #                   actually runs rather than against a list of strings.
+#   voxel-axis-civilians — the one owner of a civilian ladder reading's state, so
+#                   `decision::rule_for_civilian` maps that reading rather than
+#                   re-deciding whether an absent witness is a refusal.
 [dependencies]
 voxel-model = { path = "../voxel-model" }
 voxel-shapers = { path = "../voxel-shapers" }
+voxel-axis-civilians = { path = "../axis/civilians" }

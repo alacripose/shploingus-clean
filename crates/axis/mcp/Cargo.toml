@@ -1,0 +1,17 @@
+[package]
+name = "voxel-axis-mcp"
+description = "The authority layer an agent-facing surface speaks through: the verified matrix and its package, a recipe for a named ticket, and an apply that decides only under a ticket-scoped grant signed by the security layer."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-model = { path = "../../voxel-model" }
+voxel-axis-matrix = { path = "../matrix" }
+voxel-axis-verify = { path = "../verify" }
+voxel-axis-artifact = { path = "../artifact" }
+voxel-axis-security = { path = "../security" }
+# The signing seam's traits and `Signature`: the grant's public surface names them, so they are a
+# direct dependency rather than a re-export this crate would have to invent.
+voxel-package = { path = "../../voxel-package" }

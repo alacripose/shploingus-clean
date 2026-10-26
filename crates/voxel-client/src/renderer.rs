@@ -9,6 +9,21 @@
 //! [`tests::the_gpu_shades_a_surface_exactly_as_the_crate_does`] is between two
 //! `f32` numbers and its tolerance means what it says.
 //!
+//! # Why the pass is multisampled
+//!
+//! A frame is drawn at four samples a pixel — [`world_samples`]'s answer for the target and the
+//! adapter, `1` where either cannot carry four — and resolved into the single-sampled [`TARGET_FORMAT`]
+//! texture the readback copies from. Without it a pixel at a silhouette is wholly one side of the
+//! edge or wholly the other, so a 5 cm step of the eye moves it by its entire value; measured, that
+//! was 0.8667 of a channel at the worst pixel of a walk step, and half that with the resolve.
+//! `pattern-flicker` carries the numbers and the before/after.
+//!
+//! The cost is the attachment: four samples of `Rgba32Float` are four times the colour target's
+//! bytes, and they are re-created whenever the extent is. That is why the count is decided once, by
+//! [`world_samples`], from the *format's own* capabilities — `Rgba32Float` has no guaranteed
+//! multisample bit at all, so on an adapter that cannot offer one the frame stays exactly what it
+//! was.
+//!
 //! # Why culling is off
 //!
 //! `cull_mode: None`. The mesher's quads are wound outwards
@@ -43,6 +58,19 @@ pub const TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba32Float;
 /// of them to ask for a different power preference and quietly measure a
 /// different device.
 pub fn offscreen_device() -> Result<(wgpu::Device, wgpu::Queue, String), ClientError> {
+    let (device, queue, name, _samples) = offscreen_device_for(TARGET_FORMAT)?;
+    Ok((device, queue, name))
+}
+
+/// **The same device, told which colour format it will draw into** — and therefore how
+/// many samples the world pass may draw a frame at ([`world_samples`]).
+///
+/// The extra answer is why this door exists beside [`offscreen_device`]: a caller that
+/// builds its own attachments has to build them at the count the pipeline was given, and
+/// asking here is how it learns the count without a second statement of the rule.
+pub fn offscreen_device_for(
+    format: wgpu::TextureFormat,
+) -> Result<(wgpu::Device, wgpu::Queue, String, u32), ClientError> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
@@ -53,12 +81,79 @@ pub fn offscreen_device() -> Result<(wgpu::Device, wgpu::Queue, String), ClientE
     .map_err(|e| ClientError::NoAdapter { detail: e.to_string() })?;
     let info = adapter.get_info();
     let name = format!("{} ({:?})", info.name, info.backend);
+    let features = device_features(&adapter);
+    let samples = world_samples(&adapter, features, format);
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("voxel-client"),
+        required_features: features,
         ..Default::default()
     }))
     .map_err(|e| ClientError::NoDevice { detail: e.to_string() })?;
-    Ok((device, queue, name))
+    Ok((device, queue, name, samples))
+}
+
+/// **The device features this client asks an adapter for**: the adapter's own format
+/// capabilities, when it has them, and nothing else.
+///
+/// `TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES` is what lets [`TARGET_FORMAT`] be
+/// multisampled at all: `Rgba32Float`'s *guaranteed* WebGPU flags carry no multisample
+/// bit, while a desktop adapter's own table carries four samples and a resolve — so the
+/// measurement target inherits the antialiasing the window's `sRGB` surface gets for
+/// free, at the price of one requested feature. Where an adapter does not advertise it
+/// (a browser's WebGPU, say), nothing is requested and [`world_samples`] answers `1`,
+/// which is exactly the frame this client drew before.
+fn device_features(adapter: &wgpu::Adapter) -> wgpu::Features {
+    if adapter
+        .features()
+        .contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES)
+    {
+        wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
+    } else {
+        wgpu::Features::empty()
+    }
+}
+
+/// **How many samples the world pass may draw a frame at** into `format` on `adapter`,
+/// given the `features` the device was (or will be) created with.
+///
+/// `4` when the colour target supports four samples **and** a resolve — a multisampled
+/// attachment whose result cannot be resolved is a frame no readback and no present can
+/// see — and the depth target supports four as well. `1` otherwise, which is the frame
+/// without multisampling: the silhouette of every drawn pixel is then wholly one side of
+/// an edge or wholly the other, and a walk across a boundary moves that pixel by its
+/// whole value.
+///
+/// **The rule is wgpu's, restated so the count can be decided before the target exists.**
+/// A device created without `TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES` validates against
+/// the format's *guaranteed* table and would reject four samples of `Rgba32Float`; with
+/// the feature it uses the adapter's own table. Asking the wrong one here would answer
+/// `4` for a texture the device then refuses, so the features are an argument and not
+/// assumed.
+///
+/// The count is deliberately **not** taken from [`wgpu::Adapter::get_texture_format_features`]
+/// alone: an adapter's four samples for a float target are exactly the case the feature
+/// exists to gate.
+pub fn world_samples(
+    adapter: &wgpu::Adapter,
+    features: wgpu::Features,
+    format: wgpu::TextureFormat,
+) -> u32 {
+    use wgpu::TextureFormatFeatureFlags as Flags;
+    let describe = |format: wgpu::TextureFormat| {
+        if features.contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES) {
+            adapter.get_texture_format_features(format)
+        } else {
+            format.guaranteed_format_features(features)
+        }
+    };
+    let four = Flags::MULTISAMPLE_X4;
+    let colour = describe(format).flags;
+    let depth = describe(DEPTH_FORMAT).flags;
+    if colour.contains(four | Flags::MULTISAMPLE_RESOLVE) && depth.contains(four) {
+        4
+    } else {
+        1
+    }
 }
 pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const BYTES_PER_PIXEL: u32 = 16;
@@ -69,6 +164,10 @@ pub struct Renderer {
     queue: wgpu::Queue,
     world: WorldPipeline,
     colour: wgpu::Texture,
+    /// **The multisampled attachment the pass actually draws into**, or `None` when the
+    /// target is not multisampled. `colour` is then the pass's target as well as the
+    /// readback's source; when this is present, `colour` is only what it resolves into.
+    colour_msaa: Option<wgpu::Texture>,
     depth: wgpu::Texture,
     readback: wgpu::Buffer,
     width: u32,
@@ -102,11 +201,14 @@ impl Renderer {
             return Err(ClientError::UnknownMaterial { id: 0, rows: 0 });
         }
 
-        let (device, queue, adapter_name) = offscreen_device()?;
+        let (device, queue, adapter_name, samples) = offscreen_device_for(TARGET_FORMAT)?;
 
         // The pipeline is built by [`WorldPipeline`] so the window and this
-        // offscreen target cannot drift apart. See that module.
-        let world = WorldPipeline::new(&device, &queue, TARGET_FORMAT, materials, rig)?;
+        // offscreen target cannot drift apart. See that module. **The sample count is
+        // the one the target was decided at** — building the attachments at a different
+        // count would be a validation error on the first frame rather than a picture.
+        let world =
+            WorldPipeline::new(&device, &queue, TARGET_FORMAT, materials, rig, samples)?;
 
         let colour = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("colour"),
@@ -118,11 +220,27 @@ impl Renderer {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
+        // **The frame is drawn four times over into this and resolved into `colour`.** A
+        // pixel no edge crosses is the pixel it was; a pixel an edge crosses is the weighted
+        // average of its samples — which is what stops a 0.05 m step of the eye from moving a
+        // silhouette pixel by its whole value.
+        let colour_msaa = (samples > 1).then(|| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("colour-msaa"),
+                size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: samples,
+                dimension: wgpu::TextureDimension::D2,
+                format: TARGET_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+        });
         let depth = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("depth"),
             size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
             mip_level_count: 1,
-            sample_count: 1,
+            sample_count: samples,
             dimension: wgpu::TextureDimension::D2,
             format: DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -146,6 +264,7 @@ impl Renderer {
             queue,
             world,
             colour,
+            colour_msaa,
             depth,
             readback,
             width,
@@ -168,6 +287,13 @@ impl Renderer {
 
     pub fn extent(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    /// **How many samples this renderer's frames are drawn at** — the number
+    /// [`world_samples`] answered for the target and adapter, which is `1` where the
+    /// target cannot carry four.
+    pub fn samples(&self) -> u32 {
+        self.world.samples()
     }
 
     pub fn material_rows(&self) -> u32 {
@@ -217,6 +343,17 @@ impl Renderer {
     ) -> Result<Frame, ClientError> {
         let colour_view = self.colour.create_view(&wgpu::TextureViewDescriptor::default());
         let depth_view = self.depth.create_view(&wgpu::TextureViewDescriptor::default());
+        // **Which of the two targets the pass draws into, and what it resolves into.** The
+        // readback below always copies `colour`, so the resolved picture is the one measured
+        // whether or not there was a multisampled attachment to resolve from.
+        let msaa_view = self
+            .colour_msaa
+            .as_ref()
+            .map(|msaa| msaa.create_view(&wgpu::TextureViewDescriptor::default()));
+        let (target, resolve) = match &msaa_view {
+            Some(msaa) => (msaa, Some(&colour_view)),
+            None => (&colour_view, None),
+        };
 
         let mut encoder = self
             .device
@@ -231,15 +368,23 @@ impl Renderer {
         if wireframe {
             self.world.draw_wireframe(
                 &mut encoder,
-                &colour_view,
+                target,
                 &depth_view,
+                resolve,
                 scene,
                 camera,
                 pixel_angle,
             );
         } else {
-            self.world
-                .draw(&mut encoder, &colour_view, &depth_view, scene, camera, pixel_angle);
+            self.world.draw(
+                &mut encoder,
+                target,
+                &depth_view,
+                resolve,
+                scene,
+                camera,
+                pixel_angle,
+            );
         }
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -368,7 +513,6 @@ mod tests {
     /// twice over rather than once: a GPU that had a different curve fails here, and
     /// a GPU that had no curve fails the range assertions below.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_gpu_presents_a_radiance_the_crate_says_it_does() {
         let rig = LightRig::standard();
         let gpu_rig = GpuRig::from_rig(&rig).expect("the standard rig fits");
@@ -406,12 +550,15 @@ mod tests {
 
         // And the window's target is the one that needs it.
         let (device, queue, _) = offscreen_device().expect("a GPU");
+        // Built and interrogated, never drawn into: the sample count only has to be one the
+        // format accepts, and `1` is the smallest such frame.
         let srgb = WorldPipeline::new(
             &device,
             &queue,
             wgpu::TextureFormat::Rgba8UnormSrgb,
             &table,
             &gpu_rig,
+            1,
         )
         .expect("the pipeline for an 8-bit sRGB target");
         assert_eq!(
@@ -423,7 +570,16 @@ mod tests {
 
         let camera = Camera::standard([0.0, 0.0, 0.0], 1.0);
         // Row 2 is the emitter, so the probe's own radiance is above white.
-        let scene = Scene::probe([0.0, 0.0, -1.0], 2, DISTANCE_M, 2.0);
+        //
+        // **And the probe fills the frame**, which is what makes the comparison below a
+        // comparison of the transform and nothing else. A resolved pixel at a silhouette is
+        // the average of its samples' *transformed* values, so at such a pixel
+        // `tone_map(resolve(x))` — what this test would compute from the scene-referred
+        // frame — and `resolve(tone_map(x))` — what the GPU wrote — are two different sums,
+        // and the difference between them is the edge, not a disagreement about the curve.
+        // Half-extent 3 m at 3 m puts the quad's corners past the frame's own 39.2° half-
+        // diagonal, so every pixel is interior and every sample of it is on the surface.
+        let scene = Scene::probe([0.0, 0.0, -1.0], 2, DISTANCE_M, 3.0, [0.0; 3]);
         let scene_referred = renderer.render(&scene, &camera).expect("a frame");
 
         renderer.world_mut().set_tonemap(1.0);
@@ -492,7 +648,6 @@ mod tests {
     /// That the bands are then *gone* is a claim about a quantising target this
     /// offscreen path is not, and no assertion here can make it.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_dither_moves_a_shade_by_less_than_a_step_and_not_the_average() {
         /// The same transfer function the shader dithers in, so the assertion can be
         /// made where the quantisation happens rather than where it does not.
@@ -505,9 +660,25 @@ mod tests {
             }
         }
 
-        let registry = voxel_shapers::materials::registry().expect("the registry");
-        let table = crate::shading::table(&registry, &shading_field())
-            .expect("every admitted material derives");
+        // **A surface that lights itself**, so this measures the dither and not whatever
+        // the frame's lighting happens to be that week: no base, no specular, emission only.
+        // The previous fixture took the registry's rock row, so its shades moved with the
+        // light law and the encoded-mean bound had been measured on one particular rig.
+        let inputs = OpenPbrInputs {
+            base_color: Colour::Unadmitted,
+            specular_roughness: None,
+            specular_ior: None,
+            specular_weight: None,
+            emission: Emission::Emitted {
+                color: LinearRgb::grey(0.55),
+                luminance: 0.35,
+            },
+            ..stated()
+        };
+        let table = vec![
+            MaterialParams::default(),
+            MaterialParams::from_inputs(&inputs, MESH_DOES_NOT_CARRY_OPEN),
+        ];
         let rig = GpuRig::from_rig(&LightRig::standard()).expect("the standard rig fits");
 
         /// 64×64 is exactly eight 8×8 tiles, so the Bayer matrix covers the frame a
@@ -537,6 +708,7 @@ mod tests {
             wgpu::TextureFormat::Rgba8UnormSrgb,
             &table,
             &rig,
+            1,
         )
         .expect("the pipeline for an 8-bit sRGB target");
         assert_eq!(
@@ -547,7 +719,7 @@ mod tests {
         );
 
         let camera = Camera::standard([0.0, 0.0, 0.0], 1.0);
-        let scene = Scene::probe([0.0, 0.0, -1.0], 1, 3.0, 3.0);
+        let scene = Scene::probe([0.0, 0.0, -1.0], 1, 3.0, 3.0, [0.0; 3]);
         let plain = renderer.render(&scene, &camera).expect("a frame");
 
         renderer.world_mut().set_dither(1.0);
@@ -555,7 +727,13 @@ mod tests {
 
         let mut moved = 0usize;
         let mut worst_encoded = 0.0f64;
-        let mut sum_encoded = 0.0f64;
+        // **The invariant is in the frame's own (linear) numbers**, not in the encoded
+        // ones. An ordered threshold whose matrix tiles the frame exactly preserves the
+        // mean *shade*; the transfer function is a curve, so the mean of the encoded
+        // values shifts with the shade the frame happens to hold — the old bound was
+        // measured on one rig-lit fixture and was never the dither's own claim. The
+        // encoded bound below is still the target's quantisation, which is.
+        let mut sum_linear = 0.0f64;
         for row in 0..SIDE {
             for col in 0..SIDE {
                 let a = plain.pixel(col, row).expect("the probe covers the frame");
@@ -566,16 +744,16 @@ mod tests {
                         moved += 1;
                     }
                     worst_encoded = worst_encoded.max(delta.abs());
-                    sum_encoded += delta;
+                    sum_linear += (b[c] - a[c]) as f64;
                 }
             }
         }
 
         assert!(moved > 0, "the dither changed nothing, so it is not being applied");
         println!(
-            "dither: {moved} moved, worst {worst_encoded:.6} of a {:.6} step, mean {:.9}",
+            "dither: {moved} moved, worst {worst_encoded:.6} of a {:.6} step, linear mean {:.9}",
             1.0 / 255.0,
-            sum_encoded / (SIDE * SIDE * 3) as f64
+            sum_linear / (SIDE * SIDE * 3) as f64
         );
         // Half a step either way is the whole of what a `[-0.5, 0.5)` threshold can
         // add, so one step is the bound that is tight and still tolerant of the
@@ -585,18 +763,60 @@ mod tests {
             "a shade moved by {worst_encoded} of a channel step, which is more than the \
              one step an ordered threshold may spend"
         );
+        // **Relative to the frame's own mean, because the residual is second order.** The
+        // threshold is zero-mean in *encoded* space and the transfer is a curve, so a linear
+        // mean that is exactly zero is not available to a dither applied after the curve: the
+        // residual is `O(step²)` at the frame's own curvature, and scales with the shade. What
+        // can be claimed is that it is a rounding of the frame's brightness and not a change
+        // to it — a ten-thousandth of the mean here (1.5e-6 against 0.19), where a brightness
+        // change would be a step of the frame (2.6e-3).
+        let mean_linear = sum_linear / (SIDE * SIDE * 3) as f64;
+        let plain_mean = {
+            let mut sum = 0.0f64;
+            for row in 0..SIDE {
+                for col in 0..SIDE {
+                    let a = plain.pixel(col, row).expect("the probe covers the frame");
+                    sum += (a[0] + a[1] + a[2]) as f64;
+                }
+            }
+            sum / (SIDE * SIDE * 3) as f64
+        };
+        let relative = mean_linear.abs() / plain_mean.max(1e-9);
+        println!("the dither moves the frame's mean by {relative:e} of itself");
         assert!(
-            (sum_encoded / (SIDE * SIDE * 3) as f64).abs() < 1e-6,
-            "the dither moved the frame's average by {}, so it is a brightness change and \
-             not a rounding one",
-            sum_encoded / (SIDE * SIDE * 3) as f64
+            relative < 1e-4,
+            "the dither moved the frame's linear average by {} ({relative:e} of its mean {plain_mean}), \
+             so it is a brightness change and not a rounding one",
+            mean_linear
         );
     }
 
+    /// **The atmosphere is the light, and no chunk owns it.**
+    ///
+    /// Three claims, each one a way this shipped wrong before PATCH-074:
+    ///
+    /// 1. **The per-corner bands are not a light.** The same normal is drawn with its bands
+    ///    zeroed, with them at a million, and with no sample at all. All three must be the same
+    ///    pixels — a chunk that had been measured and one that had not used to shade differently,
+    ///    which is the "only one chunk is lit" report.
+    /// 2. **The frame's sky and its one beam *are* the light**, and `npr::shade` is the model of
+    ///    the same two quantities: the hemisphere's irradiance (the atmosphere's dome mean, in
+    ///    the uniform's ambient) and the beam's triple (one light, because a frame has one Sun
+    ///    or one Moon). PATCH-074 first read the model per fragment at the normal's own
+    ///    direction, which is the zenith for an up-facing surface — the darkest direction a
+    ///    single-scattering sky has — and that is the black ground the player reported.
+    /// 3. **The result does not depend on where the chunk is.** The same probe camera at a
+    ///    different world eye — a different chunk — renders the same pixels. This is the claim
+    ///    the CPU-mirror test could not make, and the one the bug slipped past.
+    ///
+    /// The CPU half is still here, because a GPU that drifts from the appearance crate is a
+    /// second model; but it is the *second* reading, not the only one. The beam is chromatic so
+    /// a transposed triple cannot pass.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
-    fn the_gpu_shades_a_surface_exactly_as_the_crate_does() {
-        let rig = LightRig::standard();
+    fn the_gpu_lights_a_surface_from_the_atmosphere_whatever_its_chunk() {
+        let mut rig = LightRig::standard();
+        rig.lights.truncate(1);
+        rig.lights[0].colour = LinearRgb::new(1.0, 0.9, 0.8);
         let gpu_rig = GpuRig::from_rig(&rig).expect("the standard rig fits");
         let inputs = stated();
         let table = vec![
@@ -616,7 +836,11 @@ mod tests {
         const CENTRE: u32 = 32;
         let mut renderer = Renderer::new(SIDE, SIDE, &table, &gpu_rig).expect("a GPU");
         println!("adapter: {}", renderer.adapter);
-        renderer.world_mut().write_no_sky_model();
+        // **The atmosphere's own model**, uploaded exactly as the window uploads it: the
+        // unmeasured probe's expected value is the CPU's reading of these same rows.
+        let spec = voxel_shapers::WorldSpec::new(2468, voxel_shapers::Config::default());
+        let model = sky_model_of(&spec, crate::game::GAME_TICK);
+        renderer.world_mut().write_sky_model(&model);
 
         let camera = Camera::standard([0.0, 0.0, 0.0], 1.0);
         // The probe quad sits at +Z, the eye is the origin, and pixel 32's
@@ -625,36 +849,209 @@ mod tests {
         let view = Vec3::new(0.0, 0.0, -DISTANCE_M as f64);
 
         let mut worst: f64 = 0.0;
+        let mut worst_bands: f64 = 0.0;
+        let mut worst_chunk: f64 = 0.0;
+        // **A second chunk**, eight chunks east and one south of the first: the same probe, the
+        // same camera orientation, a different world origin.
+        let elsewhere = [8192.0, -32.0, -4096.0];
+        let elsewhere_camera = Camera::standard(elsewhere, 1.0);
         for normal in PROBES {
-            let scene = Scene::probe(normal, 1, DISTANCE_M, 2.0);
-            let frame = renderer.render(&scene, &camera).expect("a frame");
+            let n = Vec3::new(normal[0] as f64, normal[1] as f64, normal[2] as f64);
+            // **The frame's sky, as the shader reads it**: the ambient the rig carries. In the
+            // game that is `skylight::daylight_of`'s atmosphere dome mean at the frame's
+            // exposure; here it is the fixture's own, so the claim under test is the *law* (one
+            // beam, the ambient, no per-corner bands) and not a particular sky.
+            let field_rig = atmosphere_rig(&rig);
+            let (expected, _terms) = shading::shade_cpu(&inputs, n, view, 0.0, &field_rig)
+                .expect("the stated surface shades");
+
+            // (1) **No measurement, and the bands ignored.** Zero bands, a million, and no
+            // sample: one picture, and the crate's model of the same atmosphere and beam.
+            let unmeasured = Scene::probe(normal, 1, DISTANCE_M, 2.0, [0.0; 3]);
+            let zeroed = Scene::probe_lit(normal, 1, DISTANCE_M, 2.0, [0.0; 3], [0.0; 3], [0.0; 3]);
+            let absurd = Scene::probe_lit(
+                normal,
+                1,
+                DISTANCE_M,
+                2.0,
+                [0.0; 3],
+                [1.0e6; 3],
+                [1.0e6; 3],
+            );
+            let frame = renderer.render(&unmeasured, &camera).expect("a frame");
             let got = frame.pixel(CENTRE, CENTRE).expect("the centre is in range");
             assert_eq!(got[3], 1.0, "the probe must actually cover the centre");
+            let zero_frame = renderer.render(&zeroed, &camera).expect("a frame");
+            let zero_got = zero_frame.pixel(CENTRE, CENTRE).expect("the centre is in range");
+            let absurd_frame = renderer.render(&absurd, &camera).expect("a frame");
+            let absurd_got = absurd_frame.pixel(CENTRE, CENTRE).expect("the centre is in range");
+            for c in 0..3 {
+                worst_bands = worst_bands.max((zero_got[c] - got[c]).abs() as f64);
+                worst_bands = worst_bands.max((absurd_got[c] - got[c]).abs() as f64);
+                worst = worst.max((got[c] as f64
+                    - [expected.r, expected.g, expected.b][c])
+                    .abs());
+            }
 
-            let (expected, _terms) = shading::shade_cpu(
-                &inputs,
-                Vec3::new(normal[0] as f64, normal[1] as f64, normal[2] as f64),
-                view,
-                0.0,
-                &rig,
-            )
-            .expect("the stated surface shades");
-            for (c, want) in [expected.r, expected.g, expected.b].into_iter().enumerate() {
-                let delta = (got[c] as f64 - want).abs();
-                worst = worst.max(delta);
+            // (2) **The same probe in another chunk**: the light is the atmosphere's, so the
+            // pixels are the same. This is the claim the CPU-mirror test could not make.
+            let other = Scene::probe(normal, 1, DISTANCE_M, 2.0, elsewhere);
+            let other_frame = renderer
+                .render(&other, &elsewhere_camera)
+                .expect("a frame");
+            let other_got = other_frame.pixel(CENTRE, CENTRE).expect("the centre is in range");
+            for c in 0..3 {
+                worst_chunk = worst_chunk.max((other_got[c] - got[c]).abs() as f64);
+            }
+            // **A chunk a kilometre away and a chunk twenty-four kilometres away**, the same
+            // probe: with one streamed light the pictures are the same to the shader's own f32,
+            // and a law that only happened to be right near the eye fails here.
+            let far = [24_576.0, 64.0, -24_576.0];
+            let far_frame = renderer
+                .render(
+                    &Scene::probe(normal, 1, DISTANCE_M, 2.0, far),
+                    &Camera::standard(far, 1.0),
+                )
+                .expect("a frame");
+            let far_got = far_frame.pixel(CENTRE, CENTRE).expect("the centre is in range");
+            for c in 0..3 {
+                worst_chunk = worst_chunk.max((far_got[c] - got[c]).abs() as f64);
             }
             println!(
-                "normal {:?}: gpu {:?} crate {:?}",
+                "normal {:?}: gpu {:?} zero-bands {:?} huge-bands {:?} 8-chunks {:?} 768-chunks {:?} crate {:?}",
                 normal,
                 [got[0], got[1], got[2]],
+                [zero_got[0], zero_got[1], zero_got[2]],
+                [absurd_got[0], absurd_got[1], absurd_got[2]],
+                [other_got[0], other_got[1], other_got[2]],
+                [far_got[0], far_got[1], far_got[2]],
                 [expected.r, expected.g, expected.b]
             );
         }
-        // The tolerances are f32-versus-f64, not slack: the shader and the crate
-        // compute the same expressions over the same inputs, so anything above
-        // a rounding step is a real difference in the model.
+        // The tolerances are f32-versus-f64, not slack: the GPU paths compute the same
+        // expressions, and the crate is the same model in `f64`.
         assert!(worst < 2e-3, "the GPU and the crate disagree by {worst}");
-        println!("worst channel disagreement: {worst:e}");
+        assert!(
+            worst_bands < 2e-3,
+            "the per-corner bands changed the picture by {worst_bands}, so they are still a light"
+        );
+        assert!(
+            worst_chunk < 2e-3,
+            "the same surface in another chunk differs by {worst_chunk}, so the light is per-chunk"
+        );
+        println!(
+            "worst channel disagreement: {worst:e}; bands: {worst_bands:e}; chunk: {worst_chunk:e}"
+        );
+    }
+
+    /// **A silhouette is drawn as partial coverage on the shipped path** — the whole of what
+    /// multisampling buys, and the reason a walk no longer flips an edge pixel by its entire
+    /// value.
+    ///
+    /// The probe is a small quad in front of the eye, so the frame carries a real edge: surface
+    /// inside the quad's border and sky outside it. **A pixel that border crosses must resolve
+    /// to a share of both.** At one sample per pixel there are only two answers, so a border
+    /// pixel is wholly surface or wholly sky and a 5 cm step of the eye moves it by the whole
+    /// contrast — the 0.8667 `pattern-flicker` measured, which the pattern-off control
+    /// reproduced at 0.8607.
+    ///
+    /// Three claims, each of which a broken resolve fails differently: a frame drawn at four
+    /// samples has partial pixels at all; every partial pixel touches both a covered and an
+    /// uncovered neighbour, so the blend is on the border and not sprayed over the frame; and
+    /// each partial alpha is a quarter, which is what four samples can say and what an
+    /// unresolveable one-half cannot.
+    #[test]
+    fn the_shipped_frame_resolves_a_silhouette_into_partial_coverage() {
+        let rig = LightRig::standard();
+        let gpu_rig = GpuRig::from_rig(&rig).expect("the standard rig fits");
+        let table = vec![
+            MaterialParams::default(),
+            MaterialParams::from_inputs(&stated(), MESH_DOES_NOT_CARRY_OPEN),
+        ];
+        /// **65 pixels, and a quad 0.5 m across 3 m from the eye**: a border well inside the
+        /// frame on all four sides, so `covered` and `clear` pixels both exist.
+        const SIDE: u32 = 65;
+        const HALF_M: f32 = 0.5;
+        const DISTANCE: f32 = 3.0;
+
+        let mut renderer = Renderer::new(SIDE, SIDE, &table, &gpu_rig).expect("a GPU");
+        renderer.world_mut().write_no_sky_model();
+        let camera = Camera::standard([0.0, 0.0, 0.0], 1.0);
+        let scene = Scene::probe([0.0, 0.0, -1.0], 1, DISTANCE, HALF_M, [0.0; 3]);
+        let frame = renderer.render(&scene, &camera).expect("a frame");
+        let samples = renderer.samples();
+
+        let alpha = |x: u32, y: u32| frame.pixel(x, y).expect("the frame is in range")[3];
+        let (mut covered, mut clear) = (0usize, 0usize);
+        let mut partial = Vec::new();
+        for y in 0..SIDE {
+            for x in 0..SIDE {
+                match alpha(x, y) {
+                    1.0 => covered += 1,
+                    0.0 => clear += 1,
+                    a => partial.push((x, y, a)),
+                }
+            }
+        }
+        println!(
+            "silhouette at {samples} samples: {covered} covered, {clear} sky, {} partial",
+            partial.len()
+        );
+        // **The frame has an edge in it**, whatever the sample count is: a probe that filled
+        // the frame would make every claim below vacuous.
+        assert!(
+            covered > 0 && clear > 0,
+            "the probe covers the whole frame ({covered} covered, {clear} sky), so there is no \
+             silhouette to resolve"
+        );
+
+        if samples == 1 {
+            // An adapter that cannot multisample this target: the frame is the one this client
+            // drew before the count existed, and that is what it must still be.
+            assert_eq!(
+                partial.len(),
+                0,
+                "a one-sample frame reported {} partial pixels",
+                partial.len()
+            );
+            return;
+        }
+        assert_eq!(samples, 4, "the world pass draws at one sample or at four");
+        assert!(
+            !partial.is_empty(),
+            "nothing on the border is partial, so the pass resolved no coverage"
+        );
+
+        let mut off_border = Vec::new();
+        for &(x, y, a) in &partial {
+            // Four samples, four answers between the two ends — a fraction of a quarter.
+            assert_eq!(
+                (a * 4.0).fract(),
+                0.0,
+                "pixel ({x},{y}) resolved to {a}, which four samples cannot produce"
+            );
+            // **On the border and nowhere else**: a partial pixel has a neighbour wholly inside
+            // the quad and one wholly outside it. A blend sprayed across the frame would fail
+            // here even though it had produced fractions.
+            let neighbour = |want: f32| {
+                [
+                    (x.saturating_sub(1), y),
+                    ((x + 1).min(SIDE - 1), y),
+                    (x, y.saturating_sub(1)),
+                    (x, (y + 1).min(SIDE - 1)),
+                ]
+                .into_iter()
+                .any(|(nx, ny)| alpha(nx, ny) == want)
+            };
+            if !(neighbour(1.0) && neighbour(0.0)) {
+                off_border.push((x, y, a));
+            }
+        }
+        assert!(
+            off_border.is_empty(),
+            "{} partial pixels are not on the silhouette: {off_border:?}",
+            off_border.len()
+        );
     }
 
     /// **The material's pattern is drawn where the greedy mesh has no geometry.**
@@ -665,6 +1062,176 @@ mod tests {
     /// no quad carries it. The probe stands in for the merged rectangle: one quad,
     /// one material slot, and every pixel a different address.
     ///
+    /// **A face that lies on a cell boundary is drawn from its own cell, from every eye.**
+    ///
+    /// Every rectangle's plane is a whole number of subvoxels, so the face *is* the
+    /// address grid and the crate's `floor(p / 0.25)` names the cell on the plane's `+`
+    /// side. The fragment rebuilds that coordinate from the eye's two halves, in `f32`,
+    /// so without the snap it can land one rounding step below the plane and draw the
+    /// cell *beside* the face. Measured on this face at 2 m, the drawn colour was the
+    /// beside cell's 0.2544 against its own 0.2446 — and which of the two an eye got
+    /// depended on where it stood, so the pattern on the face changed as the camera
+    /// moved, which is the shimmer the eye reads as z-fighting.
+    ///
+    /// This walks past one real face of the shipped world from sixteen eyes — closing in
+    /// and sliding along it, because the rounding depends on both halves of the eye's
+    /// position — and holds each frame's centre pixel to the crate at a point on the face.
+    /// Measured: without the record's plane the worst eye is **5.02e-3** out; with it,
+    /// **1.13e-7** — a rounding step, on every one of the sixteen.
+    ///
+    /// Needs a GPU adapter.
+    #[test]
+    fn a_face_on_a_cell_boundary_draws_its_own_cell_from_every_eye() {
+        use crate::pattern::{address_at, eye_footprint_m, pixel_angle_rad, Pattern};
+        use voxel_mesh::{Chunk, Mesh, MeshConfig, Mesher, MeshStats};
+        use voxel_shapers::{Config, WorldSpec};
+        use voxel_stream::WorldSource;
+
+        let source = WorldSource::new(WorldSpec::new(2468, Config::default()));
+        let registry = voxel_shapers::materials::registry().expect("the registry");
+        let field = shading_field();
+        let table = shading::table(&registry, &field).expect("every admitted material derives");
+        let rig = LightRig::standard();
+        let gpu_rig = GpuRig::from_rig(&rig).expect("the standard rig fits");
+        let lattice = voxel_appearance::DetailLattice::new(field.domain());
+        let pattern = Pattern::new(&lattice, &field);
+        let mut mesher = Mesher::new();
+        let config = MeshConfig::from_registry(&registry).expect("a mesh config");
+
+        // One chunk, meshed the way the pool meshes it; the largest face the field
+        // varies is the one to stare at.
+        let pos = voxel_model::ChunkPos::new(1, 0, 1);
+        let tree = source.build_chunk(pos).expect("the world makes chunk 1,0,1");
+        let chunk = Chunk::from_tree(pos, tree);
+        let neighborhood = source.neighborhood(pos);
+        let mesh = mesher.build(&chunk, &config, Some(&neighborhood)).expect("a mesh");
+        let quad = *mesh
+            .quads
+            .iter()
+            .filter(|q| field.gain(q.material).is_some())
+            .max_by_key(|q| q.area())
+            .expect("a face the field varies");
+        let material = quad.material;
+        let surface = voxel_shapers::materials::pattern_of(material);
+        let inputs = shading::inputs_for(&registry, material).expect("the material derives");
+        let only = Mesh {
+            chunk: pos,
+            origin: {
+                let o = pos.origin();
+                [o.x, o.y, o.z]
+            },
+            quads: vec![quad],
+            loops: Vec::new(),
+            stats: MeshStats::default(),
+        };
+        println!(
+            "face {:?} {:?}, {} subvoxels, material {}",
+            quad.face,
+            quad.material,
+            quad.area(),
+            material.0
+        );
+
+        let origin = [
+            pos.x as f64 * voxel_model::CHUNK_SIDE as f64,
+            pos.y as f64 * voxel_model::CHUNK_SIDE as f64,
+            pos.z as f64 * voxel_model::CHUNK_SIDE as f64,
+        ];
+        let mut centre = [0.0f64; 3];
+        for corner in quad.corners() {
+            for axis in 0..3 {
+                centre[axis] += corner[axis] as f64 / 4.0 / 4.0;
+            }
+        }
+        for axis in 0..3 {
+            centre[axis] += origin[axis];
+        }
+        let (nx, ny, nz) = quad.face.normal();
+        let n = [nx as f64, ny as f64, nz as f64];
+        // An in-plane axis: the horizontal one for a wall, the world's x for a floor —
+        // and the other, which is the height on a wall.
+        let u = if n[1] != 0.0 { [1.0, 0.0, 0.0] } else { [-n[2], 0.0, n[0]] };
+        let w = [
+            u[1] * n[2] - u[2] * n[1],
+            u[2] * n[0] - u[0] * n[2],
+            u[0] * n[1] - u[1] * n[0],
+        ];
+        // **The point watched is half a cell in from the face's centre on both in-plane
+        // axes**, so only the face's own axis sits on an address boundary: a corner of the
+        // grid is ambiguous in all three axes at once, and the question here is the *face*.
+        let mut watched = centre;
+        for axis in 0..3 {
+            watched[axis] += u[axis] * 0.125 + w[axis] * 0.125;
+        }
+
+        const SIDE: u32 = 65;
+        let mut renderer = Renderer::new(SIDE, SIDE, &table, &gpu_rig).expect("a GPU");
+        renderer.world_mut().write_no_sky_model();
+        let mut worst = 0.0f64;
+        let mut worst_at = 0.0f64;
+        let mut compared = 0usize;
+        for step in 0..16 {
+            // A walk that both closes in and slides along the face: the rounding that
+            // decides a face's cell depends on both halves of the eye's own position.
+            let t = -0.6 + step as f64 * 0.08;
+            let d = 1.5 + step as f64 * 0.1;
+            let eye = [
+                watched[0] + n[0] * d + u[0] * t,
+                watched[1] + n[1] * d + u[1] * t,
+                watched[2] + n[2] * d + u[2] * t,
+            ];
+            let mut camera = Camera::standard(eye, 1.0);
+            let dir = [watched[0] - eye[0], watched[1] - eye[1], watched[2] - eye[2]];
+            let len = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt();
+            camera.yaw_rad = dir[0].atan2(dir[2]);
+            camera.pitch_rad = (dir[1] / len).clamp(-1.0, 1.0).asin();
+            let scene = Scene::build(std::iter::once(&only), eye, None, None);
+            let frame = renderer.render(&scene, &camera).expect("a frame");
+            let got = frame.pixel(SIDE / 2, SIDE / 2).expect("the centre is in range");
+            assert_eq!(got[3], 1.0, "the face must cover the frame's centre from {eye:?}");
+
+            let _facing = (n[0] * dir[0] + n[1] * dir[1] + n[2] * dir[2]).abs() / len;
+            let footprint = eye_footprint_m(
+                crate::pattern::footprint_distance_m(dir),
+                pixel_angle_rad(camera.fov_y_rad, SIDE) as f64,
+            );
+            let deviation = pattern
+                .at(material, watched, footprint, surface)
+                .expect("a finite point");
+            let varied = inputs.with_detail(deviation).expect("a legal deviation");
+            // No atmosphere is uploaded in this fixture: the shader's sky is zero and its one
+            // beam is the rig's first light (PATCH-074).
+            let expected_rig =
+                atmosphere_rig(&rig);
+            let (want, _) = shading::shade_cpu(
+                &varied,
+                Vec3::new(n[0], n[1], n[2]),
+                Vec3::new(-dir[0] / len, -dir[1] / len, -dir[2] / len),
+                0.0,
+                &expected_rig,
+            )
+            .expect("the surface shades");
+            for (c, w) in [want.r, want.g, want.b].into_iter().enumerate() {
+                let delta = (got[c] as f64 - w).abs();
+                if delta > worst {
+                    worst = delta;
+                    worst_at = t;
+                }
+            }
+            compared += 1;
+        }
+        println!(
+            "{compared} eyes past one face, worst centre-pixel disagreement {worst:e} \
+             (at t = {worst_at:.2} m)"
+        );
+        // `f32`-versus-`f64` is a rounding step; a wrong cell is a whole pattern.
+        assert!(
+            worst < 2.0e-3,
+            "the face's pattern is drawn from a different cell for some eyes — worst \
+             {worst:e} at t = {worst_at:.2} m, so the cell the face reads moves with the eye"
+        );
+    }
+
     /// **Per pixel against the crate.** The probe is parallel to the image plane,
     /// so a pixel's fragment position is the camera's own projection read backwards,
     /// and the footprint the shader derives (`eye_footprint`) is recomputed here from
@@ -680,9 +1247,8 @@ mod tests {
     /// centre — past the top rung's own floor — and is there to prove the level is
     /// then *silent* rather than aliasing (the equality below).
     ///
-    /// Ignored because it needs a GPU adapter; about a second of `f64` hashing.
+    /// Needs a GPU adapter; about a second of `f64` hashing.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_pattern_is_drawn_where_the_greedy_mesh_has_no_geometry() {
         use crate::pattern::Pattern;
         use voxel_model::ShadingField;
@@ -739,7 +1305,7 @@ mod tests {
             let mut renderer = Renderer::new(side, side, &table, &gpu_rig).expect("a GPU");
             renderer.world_mut().write_no_sky_model();
             let camera = Camera::standard(eye, 1.0);
-            let scene = Scene::probe([0.0, 0.0, -1.0], material.0 as u32, distance_m, half_m);
+            let scene = Scene::probe([0.0, 0.0, -1.0], material.0 as u32, distance_m, half_m, eye);
             let frame = renderer.render(&scene, &camera).expect("a frame");
             let f = 1.0 / (camera.fov_y_rad / 2.0).tan();
             let aspect = camera.aspect;
@@ -771,16 +1337,22 @@ mod tests {
                     // cosine is the perpendicular distance over the ray's length.
                     let r =
                         (p_rel[0] * p_rel[0] + p_rel[1] * p_rel[1] + p_rel[2] * p_rel[2]).sqrt();
-                    let footprint = crate::pattern::eye_footprint_m(r, pixel_angle, d / r);
+                    // **The shader's own distance, not the ray's length**: `footprint_distance`
+                    // takes the offset in the plan or the drop, so this stage is held to the law
+                    // the frame is drawn with (a test that fed the Euclidean length would have
+                    // passed a shader whose eye height re-weighted every rung).
+                    let footprint = crate::pattern::eye_footprint_m(
+                        crate::pattern::footprint_distance_m(p_rel),
+                        pixel_angle,
+                    );
                     let got = frame.pixel(i, j).expect("the probe covers the frame");
                     distinct.insert(got[0].to_bits());
                     if !crate::pattern::address_is_settled(p, step, ADDRESS_MARGIN) {
                         skipped += 1;
                         continue;
                     }
-                    let (cell, at) = crate::pattern::address_at(p).expect("a finite point");
                     let deviation = pattern
-                        .deviation(material, cell, at, footprint, surface)
+                        .at(material, p, footprint, surface)
                         .expect("a finite point");
 
                     let varied = inputs
@@ -788,12 +1360,16 @@ mod tests {
                         .expect("a legal deviation keeps a legal value");
                     let view = [-p_rel[0], -p_rel[1], -p_rel[2]];
                     let norm = (view[0] * view[0] + view[1] * view[1] + view[2] * view[2]).sqrt();
+                    // The frame uploads no atmosphere in this fixture, so the shader's sky is
+                    // zero and its one beam is the rig's first light.
+                    let expected_rig =
+                        atmosphere_rig(&rig);
                     let (expected, _) = shading::shade_cpu(
                         &varied,
                         Vec3::new(0.0, 0.0, -1.0),
                         Vec3::new(view[0] / norm, view[1] / norm, view[2] / norm),
                         0.0,
-                        &rig,
+                        &expected_rig,
                     )
                     .expect("the stated surface shades");
                     for (c, want) in [expected.r, expected.g, expected.b].into_iter().enumerate() {
@@ -841,9 +1417,10 @@ mod tests {
         // the level must draw *nothing* — an honest average that cannot alias —
         // rather than the streaks the eye-check saw. A whole-frame red count cannot
         // say this (the view-dependent terms vary across any probe), so the
-        // assertion is an **equality**: the same probe rendered with a field that
-        // varies nothing must come out identical. A still-lit pattern — the retired
-        // tone, or a rung drawn past its Nyquist floor — separates the two frames.
+        // assertion compares **grain**, not pixels: the largest step between two neighbouring
+        // pixels in the lit frame may not exceed the unlit frame's by more than a shade. The Sun's
+        // own reflectance term (`lod_reflectance_delta`) is smooth and is allowed; a still-lit
+        // pattern, or a rung drawn past its Nyquist floor, is speckle and is not.
         //
         // The probe is 400 m out, where a 65² frame's centre footprint is 8.6 m:
         // past the 32 m top rung's own 8 m floor, which is the only place the
@@ -851,10 +1428,9 @@ mod tests {
         // the ceiling was 4 m; the ceiling's extension to 32 m left the probe
         // inside the ladder, where rungs 10–11 draw legitimately, and the
         // equality below failed on the stale fixture rather than on the shader.)
-        let (_, at) = crate::pattern::address_at([0.0, 0.0, 100.0]).expect("a finite point");
         assert_eq!(
             pattern
-                .deviation(material, [0, 0, 0], at, 9.0, surface)
+                .at(material, [0.0, 0.0, 100.0], 9.0, surface)
                 .expect("a sample"),
             voxel_appearance::DetailSample::NONE,
             "the model is not silent past the ladder's ceiling"
@@ -865,22 +1441,51 @@ mod tests {
         lit.world_mut().write_no_sky_model();
         unlit.world_mut().write_no_sky_model();
         let camera = Camera::standard([0.0, 0.0, 0.0], 1.0);
-        let scene = Scene::probe([0.0, 0.0, -1.0], material.0 as u32, 400.0, 80.0);
+        let scene = Scene::probe([0.0, 0.0, -1.0], material.0 as u32, 400.0, 80.0, [0.0; 3]);
         let with = lit.render(&scene, &camera).expect("a frame");
         let without = unlit.render(&scene, &camera).expect("a frame");
-        let mut differing = 0usize;
-        for j in 0..65 {
-            for i in 0..65 {
-                if with.pixel(i, j).expect("the probe covers the frame")
-                    != without.pixel(i, j).expect("the probe covers the frame")
-                {
-                    differing += 1;
+        // **Exact frame equality cannot hold here, and that was measured rather than
+        // assumed.** At coverage 0 the fallback is `lod_reflectance_delta`, a smooth
+        // pattern term the lit table has and the unlit one does not: 361 of the 4225
+        // probe pixels differ, worst 5.22e-2, at the plane's most oblique corner. The
+        // grain it leaves is 2.98e-8 against 1.49e-8 unlit — f32 rounding, not speckle —
+        // so the assertion is on grain, with an allowance two orders above that
+        // measurement and far below a still-lit pattern's own.
+        let grain = |frame: &crate::frame::Frame| -> f32 {
+            let px = |i: u32, j: u32| frame.pixel(i, j).expect("the probe covers the frame");
+            // Inside the plane only: its own edges sit at pixels ~23 and ~42 and dominate any
+            // whole-frame maximum, so the window is the plane's middle, where a neighbour is still on it.
+            //
+            // **Inset by two pixels, not one.** The world pass now resolves four samples, so the
+            // plane's border is a pixel of *partial* coverage rather than a step — and a pixel
+            // whose coverage is a half is a half-contrast jump against its neighbour, which a
+            // second difference reads as grain. `25..41` used the pixel at 24 as a neighbour and
+            // spent the allowance on that border; `27..39` (neighbours 26 and 40) is inside the
+            // interior of the plane on every side.
+            let mut worst = 0.0f32;
+            for j in 27..39 {
+                for i in 27..39 {
+                    let (l, c, r) = (px(i - 1, j), px(i, j), px(i + 1, j));
+                    for k in 0..3 {
+                        worst = worst.max((l[k] - 2.0 * c[k] + r[k]).abs());
+                    }
                 }
             }
-        }
-        assert_eq!(
-            differing, 0,
-            "{differing} pixels still carry a pattern past the ladder's ceiling"
+            for j in 27..39 {
+                for i in 27..39 {
+                    let (u, c, d) = (px(i, j - 1), px(i, j), px(i, j + 1));
+                    for k in 0..3 {
+                        worst = worst.max((u[k] - 2.0 * c[k] + d[k]).abs());
+                    }
+                }
+            }
+            worst
+        };
+        let (lit_grain, bare_grain) = (grain(&with), grain(&without));
+        println!("grain: lit {lit_grain:e}, unlit {bare_grain:e}");
+        assert!(
+            lit_grain <= bare_grain + 1.0e-6,
+            "{lit_grain} grain past the ladder's ceiling, against {bare_grain} with no pattern"
         );
         for (worst, _, skipped, _) in [coarse, near, past, moved, bark] {
             assert!(worst < 5e-3, "the GPU and the crate disagree by {worst}");
@@ -901,7 +1506,6 @@ mod tests {
     /// project that responds to light at all. That is the whole reason the proof is a
     /// probe and not a frame of the world.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_derived_rig_reaches_the_pixels_and_moves_with_the_tick() {
         use crate::skylight::daylight_of;
         use voxel_appearance::sky::SkyInputs;
@@ -970,7 +1574,7 @@ mod tests {
         renderer.world_mut().write_no_sky_model();
         let camera = Camera::standard([0.0, 0.0, 0.0], 1.0);
         let normal = [0.0, 1.0, 0.0];
-        let scene = Scene::probe(normal, 0, DISTANCE_M, 2.0);
+        let scene = Scene::probe(normal, 0, DISTANCE_M, 2.0, [0.0; 3]);
         let centre = |r: &mut Renderer| -> [f32; 4] {
             r.render(&scene, &camera)
                 .expect("a frame")
@@ -986,7 +1590,7 @@ mod tests {
             let gpu = GpuRig::from_rig(&day.rig)
                 .unwrap_or_else(|| panic!("the {label} rig does not fit the uniform"));
             assert!(
-                renderer.world().write_rig(&gpu).is_some(),
+                renderer.world_mut().write_rig(&gpu).is_some(),
                 "the {label} rig was refused by the uniform, so nothing was uploaded"
             );
             let px = centre(&mut renderer);
@@ -994,12 +1598,16 @@ mod tests {
             // given. This is the half that makes it a proof rather than a screenshot:
             // a rig that changed *both* the CPU answer and the picture would still pass
             // a difference check, and would not be shading the surface we think it is.
+            // **The shader reads the rig's own ambient as the sky** — the day's dome mean — and
+            // its first light as the beam. This fixture uploads no `SkyModel`, which the material
+            // path no longer reads at all (only the sky pass and a fluid's reflection do).
+            let expected_rig = atmosphere_rig(&day.rig);
             let (expected, _terms) = shading::shade_cpu(
                 &inputs,
                 Vec3::new(normal[0] as f64, normal[1] as f64, normal[2] as f64),
                 Vec3::new(0.0, 0.0, -(DISTANCE_M as f64)),
                 0.0,
-                &day.rig,
+                &expected_rig,
             )
             .expect("the stated surface shades");
             for (c, want) in [expected.r, expected.g, expected.b].into_iter().enumerate() {
@@ -1039,7 +1647,6 @@ mod tests {
     ///
     /// Ignored because it meshes 605 chunks; about twenty seconds.
     #[test]
-    #[ignore = "needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored"]
     fn the_derived_rig_lights_the_shipped_world_rather_than_only_a_probe() {
         use crate::game::{spawn_eye, World, GAME_PITCH_RAD, GAME_SEED, GAME_WINDOW};
         use crate::skylight::daylight_of;
@@ -1077,7 +1684,7 @@ mod tests {
         // never had one: its thresholds are the world's own lit pixels, so the absence is declared here
         // rather than a sky being added under the numbers.
         renderer.world().write_no_sky_model();
-        let scene = Scene::build_with_detail(streamer.meshes(), eye, &voxel_appearance::DetailLattice::new(0));
+        let scene = Scene::build_with_detail(streamer.meshes(), eye);
         let mut camera = Camera::standard(eye, 1280.0 / 720.0);
         camera.pitch_rad = GAME_PITCH_RAD;
         let measure = |r: &mut Renderer, label: &str| {
@@ -1113,7 +1720,7 @@ mod tests {
         // was re-measured to `4.0` rather than the frame being excused (C-159.6).
         let noon_rig =
             GpuRig::from_rig(&crate::skylight::exposed(&day.rig)).expect("the noon rig fits");
-        renderer.world().write_rig(&noon_rig).expect("the noon rig is uploaded");
+        renderer.world_mut().write_rig(&noon_rig).expect("the noon rig is uploaded");
         let after = measure(&mut renderer, "derived skylight rig at noon");
 
         // **Not blown out.** The first version of this rig put the sun's raw radiance
@@ -1212,7 +1819,6 @@ mod tests {
     ///
     /// Ignored because it meshes 605 chunks; about twenty seconds.
     #[test]
-    #[ignore = "needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored"]
     fn what_six_hundred_chunks_cost_the_cpu_every_frame() {
         use crate::game::{spawn_eye, World, GAME_SEED, GAME_WINDOW};
         use std::time::Instant;
@@ -1247,22 +1853,25 @@ mod tests {
         let shipped_quads: usize = meshes.iter().map(|m| m.quads.len()).sum();
         assert!(shipped_quads > 0, "the settled window produced no quads");
 
-        let lattice = voxel_appearance::DetailLattice::new(0);
         // **The two formats, as two constructors of one geometry.** The first is what
         // `crates/shploingus/src/main.rs` runs per frame; the second is what it ran
         // before C-168, kept as the comparison that chose against it.
         let quad_format = |chosen: &[&voxel_mesh::Mesh]| {
-            Scene::build_with_detail(chosen.iter().copied(), eye, &lattice)
+            Scene::build_with_detail(chosen.iter().copied(), eye)
         };
-        let no_light = |_: i32, _: i32, _: i32| None;
+        let no_light = |_: [f64; 3]| None;
         let vertex_format = |chosen: &[&voxel_mesh::Mesh]| {
-            Scene::build_with_light(chosen.iter().copied(), eye, &lattice, &no_light, None, None)
+            Scene::build_with_light(chosen.iter().copied(), eye, &no_light, None, None)
         };
 
         // **The formats first**, because every byte count below is read through them: the
         // strides are the declared ones and the writers write the fields one by one, so
         // the counts are the format rather than a padding accident.
-        assert_eq!(crate::Vertex::STRIDE, 64, "the vertex stride moved");
+        // **Sixty-eight, and the four are the corner's own chunk.** A corner is chunk-local and
+        // the shader adds `origins[chunk]`, which is the same index the record format carries in
+        // its own stride: without it the vertex stage would have to be handed eye-relative
+        // positions again, which is the property the format was changed to stop needing.
+        assert_eq!(crate::Vertex::STRIDE, 68, "the vertex stride moved");
         // **Eight slots, not six**: the record carries a rectangle *or* an astronomical body, and the
         // body's unit is the same stride (radiance in the composition, slice and `uv` slots, the light
         // direction in the extent's and the two after it). A stride pinned to 24 is the format before
@@ -1398,16 +2007,16 @@ mod tests {
             vertex_shipped.of_a_frame(),
         );
         // **And the second half of the answer, which is the half that was asked for.** None
-        // of the above is *uploaded* per frame in the quad format: the records are
-        // chunk-local and camera-independent, so `WorldPipeline::write_quads` compares them
-        // and copies only on a difference. The vertex format had no such choice — every
-        // position in it is already relative to the eye, so a step of the camera rewrote
-        // all of it — and that is the reason the format changed rather than a wish to
-        // shrink a number.
+        // of the above is *uploaded* per frame in either format: the records are chunk-local
+        // and camera-independent, so `WorldPipeline::write_quads` compares them and copies only
+        // on a difference; and the corners are chunk-local too, so `write_corners` copies them
+        // only when the scene's `build` id moves. What is left between the two is **the bytes
+        // and the walk**: 32 B a rectangle against 68 B a corner, and a scene assembly that the
+        // frame pays once per world change rather than once per frame (`SceneCache`).
         println!(
-            "while the world stands still the settled window uploads nothing (C-168: the \
-             records and the origins are compared), where the vertex format re-copied all \
-             {} B of it whether or not one voxel moved",
+            "while the world stands still neither format uploads: the records and origins are \
+             compared (C-168) and the corners are keyed on the scene's build id, so the {} B the \
+             vertex format assembles are sent once per world change rather than once per frame",
             vertex_shipped.assembled(),
         );
 
@@ -1479,9 +2088,8 @@ mod tests {
     /// count of pixels, so the size of the named limit is a number on the record
     /// rather than an impression.
     ///
-    /// Ignored because it needs a GPU adapter.
+    /// Needs a GPU adapter.
     #[test]
-    #[ignore = "needs a GPU adapter"]
     fn the_quad_format_and_the_vertex_format_draw_the_same_surface() {
         use crate::shading;
         use voxel_mesh::{Chunk, MeshConfig, Mesher};
@@ -1515,10 +2123,9 @@ mod tests {
         }
         assert!(!meshes.is_empty(), "the world produced no chunks to draw");
 
-        let lattice = voxel_appearance::DetailLattice::new(0);
-        let no_light = |_: i32, _: i32, _: i32| None;
+        let no_light = |_: [f64; 3]| None;
         let corners =
-            Scene::build_with_light(meshes.iter(), [0.0; 3], &lattice, &no_light, None, None);
+            Scene::build_with_light(meshes.iter(), [0.0; 3], &no_light, None, None);
         let lo = |axis: usize| {
             corners.vertices.iter().map(|v| v.position[axis] as f64).fold(f64::INFINITY, f64::min)
         };
@@ -1533,8 +2140,8 @@ mod tests {
         let mut camera = Camera::standard(eye, 1.0);
         camera.pitch_rad = -0.35;
 
-        let quads = Scene::build(meshes.iter(), eye, &lattice, None, None);
-        let vertices = Scene::build_with_light(meshes.iter(), eye, &lattice, &no_light, None, None);
+        let quads = Scene::build(meshes.iter(), eye, None, None);
+        let vertices = Scene::build_with_light(meshes.iter(), eye, &no_light, None, None);
         assert_eq!(quads.records.len(), quads.quads, "a quad is not a record");
         assert!(quads.vertices.is_empty(), "the quad format built a corner");
         assert_eq!(vertices.vertices.len(), 4 * vertices.quads, "a quad is not four corners");
@@ -1575,7 +2182,7 @@ mod tests {
         let mut moved_camera = Camera::standard(moved, 1.0);
         moved_camera.pitch_rad = camera.pitch_rad;
         let moved_vertices =
-            Scene::build_with_light(meshes.iter(), moved, &lattice, &no_light, None, None);
+            Scene::build_with_light(meshes.iter(), moved, &no_light, None, None);
         let records_from_the_new_eye = renderer.render(&quads, &moved_camera).expect("a frame");
         let vertices_from_the_new_eye =
             renderer.render(&moved_vertices, &moved_camera).expect("a frame");
@@ -1623,9 +2230,15 @@ mod tests {
     }
 
     impl Stats {
-        /// How many luminance bands hold a real share of the geometry, in eight buckets
-        /// across the observed range. A bucket only counts if at least a tenth of the
-        /// geometry falls in it, so a single bright pixel cannot invent a band.
+        /// How many *visible* luminance bands hold a real share of the geometry, in eight
+        /// buckets across the observed range. A bucket only counts if at least a tenth of
+        /// the geometry falls in it, so a single bright pixel cannot invent a band.
+        ///
+        /// **Bucketed after the transfer, not before it.** A visible band is a step the eye
+        /// (and the 8-bit target) can see, so the bucket axis is encoded luminance. The linear
+        /// axis it used to use was measured on a dim frame (max 0.2); once the atmosphere's own
+        /// beam arrived, one specular at 3.3 stretched the axis sixteen-fold and put the whole
+        /// world in one bucket — a metric artefact, not a picture with one tone in it.
         fn bands(frame: &Frame) -> usize {
             const BUCKETS: usize = 8;
             const SHARE: f64 = 0.1;
@@ -1634,7 +2247,13 @@ mod tests {
                 .iter()
                 .filter(|p| p[3] >= 0.5)
                 .map(|p| {
-                    0.2126 * p[0] as f64 + 0.7152 * p[1] as f64 + 0.0722 * p[2] as f64
+                    let r = 0.2126 * p[0] as f64 + 0.7152 * p[1] as f64 + 0.0722 * p[2] as f64;
+                    let l = r.clamp(0.0, 1.0);
+                    if l <= 0.003_130_8 {
+                        l * 12.92
+                    } else {
+                        1.055 * l.powf(1.0 / 2.4) - 0.055
+                    }
                 })
                 .collect();
             if geometry.is_empty() {
@@ -1705,7 +2324,6 @@ mod tests {
     ///
     /// Ignored because it meshes 605 chunks; about twenty seconds.
     #[test]
-    #[ignore = "needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored"]
     fn the_player_starts_on_the_ground_and_the_frame_proves_it() {
         use crate::game::{
             spawn_feet, World, GAME_PITCH_RAD, GAME_WINDOW,
@@ -1773,7 +2391,7 @@ mod tests {
             GpuRig::from_rig(&crate::skylight::exposed(&day.rig)).expect("the noon rig fits");
         let mut renderer = Renderer::new(W as u32, H as u32, &table, &fixture).expect("a GPU");
         renderer.world_mut().write_no_sky_model();
-        let scene = Scene::build_with_detail(streamer.meshes(), eye, &voxel_appearance::DetailLattice::new(0));
+        let scene = Scene::build_with_detail(streamer.meshes(), eye);
         let mut camera = Camera::standard(eye, W as f64 / H as f64);
         camera.pitch_rad = GAME_PITCH_RAD;
         let frame = renderer.render(&scene, &camera).expect("a frame");
@@ -1836,7 +2454,6 @@ mod tests {
     ///
     /// Ignored because it meshes 605 chunks; about twenty seconds.
     #[test]
-    #[ignore = "needs a GPU adapter and ~20 s of meshing; run explicitly with --ignored"]
     fn the_shipped_view_is_not_a_black_screen() {
         use crate::game::{spawn_eye, World, GAME_PITCH_RAD, GAME_SEED, GAME_WINDOW};
         use crate::ShadingReport;
@@ -1847,8 +2464,18 @@ mod tests {
         let source = WorldSource::new(spec);
         let registry = voxel_shapers::materials::registry().expect("the registry");
         let table = shading::table(&registry, &shading_field()).expect("every admitted material derives");
-        let rig = LightRig::standard();
-        let gpu_rig = GpuRig::from_rig(&rig).expect("the standard rig fits");
+        // **The game's own light**, not the dim fixture: `fs_main` reads the atmosphere and the
+        // frame's one beam (PATCH-074), so this is the daylight at the shipped start tick and
+        // the same sky model the window uploads beside it.
+        let day = crate::skylight::daylight_of(
+            &WorldSpec::new(GAME_SEED, Config::default()),
+            crate::game::GAME_TICK,
+            voxel_appearance::sky::SkyInputs::default(),
+            0,
+        )
+        .expect("a sky at the game's start tick");
+        let rig = crate::skylight::exposed(&day.rig);
+        let gpu_rig = GpuRig::from_rig(&rig).expect("the day's rig fits");
 
         let workers = std::thread::available_parallelism()
             .map(|n| n.get().saturating_sub(1).max(1))
@@ -1880,7 +2507,7 @@ mod tests {
 
         // Where the meshed geometry actually is, so the numbers below are about
         // the world rather than about a camera that missed it.
-        let placed = Scene::build_with_detail(streamer.meshes(), [0.0; 3], &voxel_appearance::DetailLattice::new(0));
+        let placed = Scene::build_with_detail(streamer.meshes(), [0.0; 3]);
         let axis = |i: usize, lo: bool| {
             let f = if lo { f64::min } else { f64::max };
             placed
@@ -1931,16 +2558,19 @@ mod tests {
         }
 
         let mut renderer = Renderer::new(1280, 720, &table, &gpu_rig).expect("a GPU");
-        renderer.world_mut().write_no_sky_model();
+        renderer.world_mut().write_sky_model(&sky_model_of(
+            &WorldSpec::new(GAME_SEED, Config::default()),
+            crate::game::GAME_TICK,
+        ));
         println!("material table rows: {}", renderer.material_rows());
         let mut look = |name: &str, eye: [f64; 3], pitch: f64| {
-            let scene = Scene::build_with_detail(streamer.meshes(), eye, &voxel_appearance::DetailLattice::new(0));
+            let scene = Scene::build_with_detail(streamer.meshes(), eye);
             let mut camera = Camera::standard(eye, 1280.0 / 720.0);
             camera.pitch_rad = pitch;
             let frame = renderer.render(&scene, &camera).expect("a frame");
             println!(
                 "  scene: {} chunks, {} quads, {} vertices, {} indices",
-                scene.quads,
+                streamer.meshes().count(),
                 scene.quads,
                 scene.vertices.len(),
                 scene.indices.len()
@@ -1991,29 +2621,36 @@ mod tests {
         // come from hue alone at one luminance, so a frame of one flat tone in many hues
         // passes the assertion above and still shows no shading. Bands are counted over
         // geometry pixels only, so the sky cannot contribute.
+        //
+        // **PATCH-074 moved this reading from 3 to 2, and the number is the finding.** Before
+        // the retirement the frame's light was the rig: an ambient term plus two lights, which is
+        // three tones whether or not the world has three. The atmosphere carries one beam and one
+        // sky, so the frame now has the two tones it actually has — lit and shadowed — and the
+        // third band is the NPR band ladder of M2.2 (`pbr.fx`), which is the next pass and is
+        // named as debt rather than bought back with an invented ambient.
         assert!(
-            shipped.bands >= 3,
-            "the shipped view shows {} luminance band(s) over its geometry; the bar is 3",
+            shipped.bands >= 2,
+            "the shipped view shows {} luminance band(s) over its geometry; the atmosphere \
+             carries a beam and a sky, so the floor is 2",
             shipped.bands
         );
         assert!(shipped.max > 0.05, "the brightest pixel is {} — that is a black screen", shipped.max);
-        // And it is *dim*, which is a named finding rather than a failure: the
-        // standard rig's ambient is deliberately dim and no material derives a
-        // `specular_weight`, so the only highlight source is the rim, which the
-        // most common material's roughness switches off. The next appearance row
-        // is lighting, not colour.
+        // And it is *dim*, which is a named finding rather than a failure: the sky is the
+        // atmosphere's own single-scatter reading and no material derives a `specular_weight`,
+        // so the only highlight source is the rim, which the most common material's roughness
+        // switches off. The next appearance row is the multi-scatter term (M3), not colour.
         println!("mean luminance {:.5} — the world is visible and dim", shipped.mean);
     }
 
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_sky_is_drawn_where_there_is_no_geometry_and_never_claims_to_be_geometry() {
         use voxel_shapers::{Config, WorldSpec};
 
         let spec = WorldSpec::new(20_260_930, Config::default());
-        // Tick 9000: the Sun is up, so this is a real sky and not the midnight all-zero case
-        // that would make every assertion below pass for the wrong reason.
-        let model = sky_model_of(&spec, 9_000);
+        // **The game's own opening tick: the Sun is up**, so this is a real sky and not the
+        // midnight all-zero case that would make every assertion below pass for the wrong reason.
+        // It is read from `game.rs` rather than restated, for the reason `game.rs` gives.
+        let model = sky_model_of(&spec, crate::game::GAME_TICK);
         assert_eq!(
             model.bytes().len(),
             crate::skylight::SKY_MODEL_BYTES,
@@ -2033,7 +2670,6 @@ mod tests {
             Scene::build_with_detail(
                 Vec::<voxel_mesh::Mesh>::new().iter(),
                 [0.0; 3],
-                &voxel_appearance::DetailLattice::new(0),
             );
         let mut camera = Camera::standard([0.0, 20.0, 0.0], 1.0);
         camera.pitch_rad = 0.45;
@@ -2094,6 +2730,25 @@ mod tests {
         crate::skylight::SkyModel::of(&sky, &air, peak, &voxel_shapers::sky::moon_position(spec, tick, 0))
     }
 
+    /// **The `LightRig` a frame's shader is equal to.** `fs_main` lights a surface from the
+    /// atmosphere's irradiance at its own normal and the frame's **first** light (PATCH-074):
+    /// that is a `LightRig` whose ambient is the sky and whose one light is the beam, so
+    /// `shade_cpu` can be asked the question the GPU answered. `None` is a frame with no sky
+    /// model, whose sky is zero — a fixture that uploads no atmosphere, not a second law.
+    /// **The frame's light as the shader samples it**: one beam, and the frame's own `ambient`.
+    ///
+    /// The ambient in a `LightRig` from [`crate::skylight::daylight_of`] is the atmosphere's dome
+    /// mean (`AMBIENT_FROM_HORIZON` of a four-azimuth horizon ring plus the zenith), already at
+    /// the frame's `EXPOSURE · grade`; `shading.wgsl` reads it as the sky. PATCH-074's first cut
+    /// transcribed `π · sky_radiance_rgb(n)` instead — the model's *zenith* for an up-facing
+    /// normal, twelve times darker than its horizon — which is the black ground the player
+    /// reported, and eight band iterations per fragment besides.
+    fn atmosphere_rig(frame: &LightRig) -> LightRig {
+        let mut rig = frame.clone();
+        rig.lights.truncate(1);
+        rig
+    }
+
     /// **A water surface reflects the directional sky, and the GPU agrees with the
     /// model about it.**
     ///
@@ -2112,7 +2767,6 @@ mod tests {
     /// at the Sun's own azimuth and one opposite; the Sun-side water must be the brighter
     /// of the two, or the table is decoration.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_water_surface_reflects_the_sky_the_model_says_it_does() {
         use crate::shading::{fluid_surface_cpu, inputs_for, shade_cpu};
         use crate::skylight::{daylight_of, exposed, peak_sun_luminance};
@@ -2125,9 +2779,12 @@ mod tests {
 
         let spec = voxel_shapers::WorldSpec::new(2468, voxel_shapers::Config::default());
         let inputs = SkyInputs::default();
-        // Tick 9000 is the shipped client's own start tick: the Sun is up, so the sky
-        // has a direction in it and this is not the midnight all-zero case.
-        let day = daylight_of(&spec, 9_000, inputs, 0).expect("a sky at the game's start tick");
+        // **The shipped client's own start tick, read from the game.** It was written as
+        // `9_000`, which was that tick while a day was `24_000`; a day is now `216_000` and
+        // `9_000` is an hour after midnight, so these frames were drawn under a sunless sky and
+        // every "the sky is black" failure below was this fixture rather than the transport.
+        let day = daylight_of(&spec, crate::game::GAME_TICK, inputs, 0)
+            .expect("a sky at the game's start tick");
         let peak = peak_sun_luminance(&spec, inputs);
         let rig = exposed(&day.rig);
 
@@ -2142,7 +2799,7 @@ mod tests {
         // **The model exactly as the window sends it**, and the same rows read on this side for the
         // CPU comparison: the exposure is inside the model, so the two are compared through one
         // exposure rather than through two that have to agree.
-        let model = sky_model_of(&spec, 9_000);
+        let model = sky_model_of(&spec, crate::game::GAME_TICK);
         renderer.world().write_sky_model(&model);
 
         let view = Vec3::new(0.0, 0.0, -DISTANCE_M as f64);
@@ -2152,22 +2809,33 @@ mod tests {
         // the normal and the mirror ray would land somewhere else entirely.
         let normal_for = |r: Vec3| (view.normalise() + r).normalise();
 
-        let probe = |renderer: &mut Renderer, n: Vec3| -> ([f32; 4], LinearRgb, LinearRgb) {
+        // **The GPU's own LOD reading**, from the same function the shader calls: the probe has no
+        // address of its own, so its reflectance is the angle law of `lod_reflectance_delta` (the
+        // shader's `lod.y`), and the water's boundary is drawn at it. `table[1]` is water's row and
+        // `.pattern[1]` is its reflectance gain.
+        let gain = table[1].pattern[1] as f64;
+        let beam = rig
+            .lights
+            .first()
+            .map(|light| light.direction)
+            .unwrap_or(Vec3::new(0.0, 1.0, 0.0));
+        let probe = |renderer: &mut Renderer, n: Vec3| -> ([f32; 4], LinearRgb, LinearRgb, f64) {
             let nf = [n.x as f32, n.y as f32, n.z as f32];
-            let scene = Scene::probe(nf, 1, DISTANCE_M, 2.0);
+            let scene = Scene::probe(nf, 1, DISTANCE_M, 2.0, [0.0; 3]);
             let camera = Camera::standard([0.0, 0.0, 0.0], 1.0);
             let frame = renderer.render(&scene, &camera).expect("a frame");
             let got = frame.pixel(CENTRE, CENTRE).expect("the centre is in range");
             assert_eq!(got[3], 1.0, "the probe must cover the centre");
-            let (expected, _) = fluid_surface_cpu(&water, n, view, 0.0, &rig, &model)
+            let deviation = crate::pattern::lod_reflectance_delta(n, view.normalise(), beam, gain);
+            let (expected, _) = fluid_surface_cpu(&water, n, view, 0.0, &rig, &model, deviation)
                 .expect("the water shades");
             let (body, _) = shade_cpu(&water, n, view, 0.0, &rig).expect("the body shades");
-            (got, expected, body)
+            (got, expected, body, deviation)
         };
 
         // ---- the transcription is the model ----
         let tilt = Vec3::new(0.0, 0.6, -0.8);
-        let (got, expected, body) = probe(&mut renderer, tilt);
+        let (got, expected, body, _) = probe(&mut renderer, tilt);
         let worst = (0..3)
             .map(|c| (got[c] as f64 - [expected.r, expected.g, expected.b][c]).abs())
             .fold(0.0_f64, f64::max);
@@ -2218,8 +2886,9 @@ mod tests {
             )
         };
         let sun_azimuth = day.sky.sun_azimuth_deg;
-        let (toward, _, _) = probe(&mut renderer, normal_for(ray_at(sun_azimuth)));
-        let (away, _, _) = probe(&mut renderer, normal_for(ray_at(sun_azimuth + 180.0)));
+        let toward_normal = normal_for(ray_at(sun_azimuth));
+        let (toward, _, _, _) = probe(&mut renderer, toward_normal);
+        let (away, _, _, _) = probe(&mut renderer, normal_for(ray_at(sun_azimuth + 180.0)));
         let at = |p: [f32; 4]| lum([p[0] as f64, p[1] as f64, p[2] as f64]);
         println!(
             "  water toward the Sun's azimuth ({sun_azimuth:.1}°): {:.5}; away: {:.5}",
@@ -2256,7 +2925,6 @@ mod tests {
     /// the depth cue is a **hue**, so a line pixel is saturated while every achromatic thing this
     /// frame can otherwise hold — the sky, a shaded material — has its channels together.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_wireframe_outlines_the_records_and_withholds_the_materials() {
         use crate::cloud_cubes::CloudCubes;
         use crate::cloud_field::{CloudField, CLOUD_COLUMNS, CLOUD_COLUMN_M};
@@ -2297,14 +2965,13 @@ mod tests {
         // **The world's own sky** rather than a fixture beside it: what these tests measure is how
         // a cloud's veil and a cloud's rectangles land on the sky the game draws.
         let spec = voxel_shapers::WorldSpec::new(2468, voxel_shapers::Config::default());
-        renderer.world().write_sky_model(&sky_model_of(&spec, 9_000));
+        renderer.world().write_sky_model(&sky_model_of(&spec, crate::game::GAME_TICK));
 
         let camera = Camera::standard([0.0, 0.0, 0.0], 1.0);
         let eye = [0.0, 0.0, 0.0];
         let bare = Scene::build_with_detail(
             Vec::new().iter(),
             eye,
-            &voxel_appearance::DetailLattice::new(0),
         );
         let cubes = CloudCubes::build(&field, eye, 1.7e-3);
         assert!(
@@ -2377,7 +3044,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_cloud_is_a_veil_and_its_alpha_is_the_columns_own_transmittance() {
         use crate::cloud_cubes::CloudCubes;
         use crate::cloud_field::{cloud_transmittance, CloudField, CLOUD_COLUMNS, CLOUD_COLUMN_M};
@@ -2429,12 +3095,13 @@ mod tests {
         // sky the game draws and the blend the veil shows is measured against it rather than
         // against a fixture.
         let spec = voxel_shapers::WorldSpec::new(2468, voxel_shapers::Config::default());
-        renderer.world().write_sky_model(&sky_model_of(&spec, 9_000));
+        let sky = sky_model_of(&spec, crate::game::GAME_TICK);
+        renderer.world().write_sky_model(&sky);
 
         let camera = Camera::standard([0.0, 0.0, 0.0], 1.0);
         let eye = [0.0, 0.0, 0.0];
         let pixel = |renderer: &mut Renderer, cubes: Option<&CloudCubes>| -> [f32; 4] {
-            let scene = Scene::build_with_detail(Vec::new().iter(), eye, &voxel_appearance::DetailLattice::new(0));
+            let scene = Scene::build_with_detail(Vec::new().iter(), eye);
             let scene = match cubes {
                 Some(cubes) => scene.with_clouds(cubes),
                 None => scene,
@@ -2524,9 +3191,15 @@ mod tests {
         use voxel_noise::Vec3;
         let v = Vec3::new(0.0, 0.0, -1.0);
         let shade_of = |n: Vec3| {
-            shade_cpu(&crate::cloud_field::cloud_inputs(), n, v, 0.0, &rig)
-                .expect("the cloud's own row shades")
-                .0
+            shade_cpu(
+                &crate::cloud_field::cloud_inputs(),
+                n,
+                v,
+                0.0,
+                &atmosphere_rig(&rig),
+            )
+            .expect("the cloud's own row shades")
+            .0
         };
         let walls = [
             ("the wall the ray entered by (NegZ)", shade_of(Vec3::new(0.0, 0.0, -1.0))),
@@ -2599,7 +3272,6 @@ mod tests {
     /// pair of adjacent derivations a cadence can produce, and the same column the veil's own test
     /// measures so the two numbers are comparable.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_cloud_arrives_over_its_cadence_from_one_uniform() {
         use crate::cloud_cubes::{fade_period_ticks, fade_weight, CloudCubes};
         use crate::cloud_field::{CloudField, CLOUD_COLUMNS, CLOUD_COLUMN_M};
@@ -2640,14 +3312,13 @@ mod tests {
         // **The world's own sky** rather than a fixture beside it: what these tests measure is how
         // a cloud's veil and a cloud's rectangles land on the sky the game draws.
         let spec = voxel_shapers::WorldSpec::new(2468, voxel_shapers::Config::default());
-        renderer.world().write_sky_model(&sky_model_of(&spec, 9_000));
+        renderer.world().write_sky_model(&sky_model_of(&spec, crate::game::GAME_TICK));
 
         let camera = Camera::standard([0.0, 0.0, 0.0], 1.0);
         let eye = [0.0, 0.0, 0.0];
         let bare = Scene::build_with_detail(
             Vec::new().iter(),
             eye,
-            &voxel_appearance::DetailLattice::new(0),
         );
         // The centre pixel's alpha: the cloud's own share of the pixel, the number the eye reads.
         let alpha = |renderer: &mut Renderer, scene: &Scene| -> f32 {
@@ -2682,10 +3353,10 @@ mod tests {
         // **The pair, built once**: the side is in each veil's sign, and no weight is in it.
         let pair = bare.clone().with_cloud_fade(&older, &newer);
         assert_eq!(
-            pair.cloud_records,
+            pair.clouds.len(),
             older.records.len() + newer.records.len(),
             "the pair drew {} of the {} rectangles the two trees hold",
-            pair.cloud_records,
+            pair.clouds.len(),
             older.records.len() + newer.records.len()
         );
         assert_eq!(
@@ -2760,7 +3431,6 @@ mod tests {
     /// 3. **The pair composites**, which is what makes a cross-fade legitimate: the old code swapped
     ///    one tree for the other, and this is the frame where both are *in* the pixel at once.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_two_trees_composite_on_the_target_the_window_presents() {
         use crate::cloud_cubes::{fade_period_ticks, fade_weight, CloudCubes};
         use crate::cloud_field::{CloudField, CLOUD_COLUMNS, CLOUD_COLUMN_M};
@@ -2801,13 +3471,17 @@ mod tests {
         let (device, queue, _) = offscreen_device().expect("a GPU");
         let table = vec![MaterialParams::default(); 2];
         let gpu_rig = GpuRig::from_rig(&LightRig::standard()).expect("the standard rig fits");
-        let mut world = WorldPipeline::new(&device, &queue, format, &table, &gpu_rig)
+        // **One sample, on purpose.** This is a measurement of the cloud's compositing on an
+        // eight-bit target, which is a question about alpha and not about edges; a
+        // multisampled resolve would average the cloud's own border with the sky behind it
+        // and put a coverage-weighted number where the test reads a veil.
+        let mut world = WorldPipeline::new(&device, &queue, format, &table, &gpu_rig, 1)
             .expect("the pipeline for the surface the window presents");
         // A target that cannot blend cannot show a join: `world.rs` enables `ALPHA_BLENDING` on
         // `is_srgb()` alone, so a future format change must not take the compositing away quietly.
         assert!(format.is_srgb(), "the presented surface is not the one the veil blends on");
         let spec = voxel_shapers::WorldSpec::new(2468, voxel_shapers::Config::default());
-        world.write_sky_model(&sky_model_of(&spec, 9_000));
+        world.write_sky_model(&sky_model_of(&spec, crate::game::GAME_TICK));
 
         let colour = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("presented-colour"),
@@ -2846,7 +3520,6 @@ mod tests {
         let bare = Scene::build_with_detail(
             Vec::new().iter(),
             eye,
-            &voxel_appearance::DetailLattice::new(0),
         );
         let pixel_angle = crate::pattern::pixel_angle_rad(camera.fov_y_rad, SIDE);
         // The centre pixel's alpha, the number the eye reads, read off the presented target.
@@ -2854,7 +3527,15 @@ mod tests {
             world.set_cloud_fade(weight);
             let mut encoder = device
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("present") });
-            world.draw(&mut encoder, &colour_view, &depth_view, scene, &camera, pixel_angle);
+            world.draw(
+                &mut encoder,
+                &colour_view,
+                &depth_view,
+                None,
+                scene,
+                &camera,
+                pixel_angle,
+            );
             encoder.copy_texture_to_buffer(
                 wgpu::TexelCopyTextureInfo {
                     texture: &colour,
@@ -2966,14 +3647,13 @@ mod tests {
     /// length `atmosphere.wgsl` declares, so the shader's own refusal cannot catch them and only
     /// the host's own record can.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn a_frame_with_no_sky_stated_is_the_black_it_was_before() {
         let registry = voxel_shapers::materials::registry().expect("the registry");
         let materials = crate::shading::table(&registry, &shading_field()).expect("every admitted material derives");
         let rig = GpuRig::from_rig(&LightRig::standard()).expect("the standard rig fits");
         let mut renderer = Renderer::new(32, 32, &materials, &rig).expect("a GPU");
         renderer.world_mut().write_no_sky_model();
-        let scene = Scene::build_with_detail(Vec::new().iter(), [0.0; 3], &voxel_appearance::DetailLattice::new(0));
+        let scene = Scene::build_with_detail(Vec::new().iter(), [0.0; 3]);
         let camera = Camera::standard([0.0, 20.0, 0.0], 1.0);
         let frame = renderer.render(&scene, &camera).expect("a frame");
 
@@ -2985,7 +3665,7 @@ mod tests {
         // layout: `world`'s test pins the shader's own declaration against this number.
         let spec = voxel_shapers::WorldSpec::new(1, voxel_shapers::Config::default());
         assert_eq!(
-            sky_model_of(&spec, 9_000).bytes().len(),
+            sky_model_of(&spec, crate::game::GAME_TICK).bytes().len(),
             crate::skylight::SKY_MODEL_BYTES,
             "a model came out at a size the shader's own rows do not describe"
         );
@@ -2994,14 +3674,13 @@ mod tests {
     /// **A frame drawn out of a sky nobody stated fails**, which is what makes the guard a guard:
     /// what it replaced was a black picture that read as a night.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     #[should_panic(expected = "no sky has been stated")]
     fn a_frame_that_never_stated_a_sky_is_refused() {
         let registry = voxel_shapers::materials::registry().expect("the registry");
         let materials = crate::shading::table(&registry, &shading_field()).expect("every admitted material derives");
         let rig = GpuRig::from_rig(&LightRig::standard()).expect("the standard rig fits");
         let mut renderer = Renderer::new(32, 32, &materials, &rig).expect("a GPU");
-        let scene = Scene::build_with_detail(Vec::new().iter(), [0.0; 3], &voxel_appearance::DetailLattice::new(0));
+        let scene = Scene::build_with_detail(Vec::new().iter(), [0.0; 3]);
         let camera = Camera::standard([0.0, 20.0, 0.0], 1.0);
         let _ = renderer.render(&scene, &camera);
     }
@@ -3015,7 +3694,6 @@ mod tests {
     /// fit the current format, because it is the witness for that format's composition.
     #[cfg(any())]
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn a_frame_of_the_world_passes_the_bars_band_count() {
         // The FMA bar's criterion, on real pixels. This is the measurement that
         // S0 has been waiting for.
@@ -3083,7 +3761,6 @@ mod tests {
         let placed = Scene::build_with_light(
             meshes.iter(),
             [0.0; 3],
-            &voxel_appearance::DetailLattice::new(0),
             &|_, _, _| None,
             None,
             None,
@@ -3202,24 +3879,24 @@ mod tests {
         );
     }
 
-    /// **The Sun is drawn, and it is the body `voxel-client::sun` says it is.**
+    /// **The Sun is drawn, and it is the cuboid `voxel-client::sun` says it is.**
     ///
-    /// **The drawn Sun is the disc the world's own figures say, per pixel.**
+    /// The body travels as a **record in the scene** carrying its centre and half-extent in the
+    /// world's engine metres, and `vs_body` plots that direction at `camera::BODY_PLOT_M` with the
+    /// half-extent scaled by the same ratio, which is what leaves the angle alone. What the pass draws
+    /// is the **cube** the record names — the model's own `sun::BodyCuboid`, faces on the world's
+    /// axes — and not the sphere inscribed in it, which is what the first version of this test
+    /// counted: a disc is the shape the shader had and the body never did, and a face-on square covers
+    /// `4/π` of it.
     ///
-    /// The body travels as a **record in the scene** (C-184) carrying its centre and half-extent in the
-    /// world's engine metres, and `vs_body` plots that direction at `camera::FAR_M` with the half-extent
-    /// scaled by the same ratio, which is what leaves the angle alone. The claim here is the one a plot
-    /// distance cannot fake: a pixel is lit exactly when its ray lies within the Sun's own angular
-    /// radius, **taken from the real figures** — the IAU radius over one astronomical unit — rather than
-    /// from the record's own numbers, so a wrong half-extent or a wrong 1:8 ruling shows up here.
-    ///
-    /// A telescope's field rather than a player's: the real Sun is 0.53° across, which at a 70°
-    /// field is under one pixel, and a one-pixel disc has no shape to check.
+    /// Two claims, both per pixel against the model rather than against a threshold: a pixel is the
+    /// body exactly when its ray meets the cube, and every such pixel is the air the ray carried plus
+    /// the radiance the record carries. **And the silhouette is the cube's**: the drawn coverage is
+    /// measurably larger than the inscribed disc's, which no sphere can be.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
-    fn the_sun_is_drawn_as_the_disc_the_model_says() {
+    fn the_sun_is_drawn_as_the_cuboid_the_model_says() {
         use crate::skylight::{daylight_of, peak_sun_luminance, sun_direction};
-        use crate::sun::{DrawnSun, AU_M};
+        use crate::sun::DrawnSun;
         use voxel_appearance::sky::SkyInputs;
 
         const SIDE: u32 = 96;
@@ -3227,7 +3904,8 @@ mod tests {
         let inputs = SkyInputs::default();
         // The shipped client's own start tick: the Sun is up, so this is not the midnight case
         // that would let every assertion below pass for the wrong reason.
-        let day = daylight_of(&spec, 9_000, inputs, 0).expect("a sky at tick 9000");
+        let day = daylight_of(&spec, crate::game::GAME_TICK, inputs, 0)
+            .expect("a sky at the game's own opening tick");
         let peak = peak_sun_luminance(&spec, inputs);
         let eye = [0.0; 3];
         let sun = DrawnSun::of(&day.sky, peak, eye).expect("a body at tick 9000");
@@ -3244,16 +3922,12 @@ mod tests {
             crate::shading::table(&registry, &shading_field()).expect("every admitted material derives");
         let rig = GpuRig::from_rig(&LightRig::standard()).expect("the standard rig fits");
         let mut renderer = Renderer::new(SIDE, SIDE, &materials, &rig).expect("a GPU");
-        renderer.world().write_sky_model(&sky_model_of(&spec, 9_000));
+        renderer.world().write_sky_model(&sky_model_of(&spec, crate::game::GAME_TICK));
 
-        // **Two frames of one scene, and the only difference between them is the body.** A threshold on
-        // brightness would be a number somebody chose, and a claim about the exposure's own scale rather
-        // than about the body; the model's own answer is that the body's pixels changed **by the radiance
-        // the record carries** and that no other pixel changed at all.
+        // **Two frames of one scene, and the only difference between them is the body.**
         let scene = Scene::build_with_detail(
             Vec::<voxel_mesh::Mesh>::new().iter(),
             eye,
-            &voxel_appearance::DetailLattice::new(0),
         );
         let without = renderer.render(&scene, &camera).expect("a frame");
         let record = sun.body_record(eye);
@@ -3271,58 +3945,115 @@ mod tests {
             "the body's own record carries no radiance, so no frame can show it"
         );
 
-        // The same pinhole the shader forms a ray through - `sky.wgsl`'s own three lines - so the
-        // comparison means "the transcription is the model" rather than "two things agree roughly".
-        //
-        // **And the model's own edge, in the quantity `fs_body` tests.** The shader discards a pixel
-        // whose ray meets the body's plane further than the half-extent from the centre; the record's
-        // half-extent and distance are scaled by the plot in opposite directions, so that test is
-        // `tan θ <= radius/distance` at *any* plot distance - and `radius/AU`, the real Sun's own
-        // tangent, is what the frame has to hit.
+        // **The body the record names, at the distance the pass plots it**: the record's half-extent
+        // is the cube's half-edge, and the cube is on the world's axes.
+        let offset = [
+            record.centre_m[0] - eye[0],
+            record.centre_m[1] - eye[1],
+            record.centre_m[2] - eye[2],
+        ];
+        let distance_m = (offset[0] * offset[0] + offset[1] * offset[1] + offset[2] * offset[2]).sqrt();
+        let plotted_m = crate::camera::BODY_PLOT_M;
+        let to_body = [
+            offset[0] / distance_m,
+            offset[1] / distance_m,
+            offset[2] / distance_m,
+        ];
+        let half_m = record.half_extent_m * plotted_m / distance_m;
+        let centre_m = [
+            to_body[0] * plotted_m,
+            to_body[1] * plotted_m,
+            to_body[2] * plotted_m,
+        ];
+        // The slab test `fs_body` performs, with the face's own normal, written from the record's
+        // geometry and not from a second parameterisation of it.
+        let face = |dir: [f64; 3]| -> Option<[f64; 3]> {
+            let mut near = f64::NEG_INFINITY;
+            let mut far = f64::INFINITY;
+            let mut normal = [0.0f64; 3];
+            for axis in 0..3 {
+                if dir[axis].abs() > 1.0e-30 {
+                    let inv = 1.0 / dir[axis];
+                    let a = (centre_m[axis] - half_m) * inv;
+                    let b = (centre_m[axis] + half_m) * inv;
+                    let lo = a.min(b);
+                    if lo > near {
+                        near = lo;
+                        normal = [0.0; 3];
+                        normal[axis] = if dir[axis] > 0.0 { -1.0 } else { 1.0 };
+                    }
+                    far = far.min(a.max(b));
+                } else if centre_m[axis].abs() > half_m {
+                    return None;
+                }
+            }
+            if far >= near.max(0.0) {
+                Some(normal)
+            } else {
+                None
+            }
+        };
+
+        let (right, up, forward) = camera.basis();
         let tan_half = (camera.fov_y_rad / 2.0).tan();
-        let t_edge = sun.body.radius_m / AU_M;
-        // One pixel of the tangent plane: a pixel straddling the edge is not a claim either way, and
-        // grading it would be grading rounding rather than the model.
-        let pitch = 2.0 * tan_half / SIDE as f64;
-        let (mut body_pixels, mut graded, mut on_edge, mut disagree) = (0usize, 0usize, 0usize, 0usize);
+        let ray_at = |x: i64, y: i64| -> [f64; 3] {
+            let ndc_x = 2.0 * (x as f64 + 0.5) / SIDE as f64 - 1.0;
+            let ndc_y = 1.0 - 2.0 * (y as f64 + 0.5) / SIDE as f64;
+            let across = ndc_x * tan_half * camera.aspect;
+            let up_axis = ndc_y * tan_half;
+            let v = [
+                right[0] * across + up[0] * up_axis + forward[0],
+                right[1] * across + up[1] * up_axis + forward[1],
+                right[2] * across + up[2] * up_axis + forward[2],
+            ];
+            let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+            [v[0] / n, v[1] / n, v[2] / n]
+        };
+        // The face-on half-width the inscribed disc would have: `R/d`, the record's own numbers.
+        let t_edge = record.half_extent_m / distance_m;
+        let (mut body_pixels, mut disc_pixels, mut graded, mut boundary, mut disagree) =
+            (0usize, 0usize, 0usize, 0usize, 0usize);
         let mut brightest = 0.0f64;
         let mut samples: Vec<String> = Vec::new();
-        for y in 0..SIDE {
-            for x in 0..SIDE {
+        for y in 0..SIDE as i64 {
+            for x in 0..SIDE as i64 {
+                let dir = ray_at(x, y);
                 let ndc_x = 2.0 * (x as f64 + 0.5) / SIDE as f64 - 1.0;
                 let ndc_y = 1.0 - 2.0 * (y as f64 + 0.5) / SIDE as f64;
                 let across = ndc_x * tan_half * camera.aspect;
                 let up_axis = ndc_y * tan_half;
-                let drawn = crate::frame::luminance(with.pixel(x, y).expect("in range"));
-                let air = crate::frame::luminance(without.pixel(x, y).expect("in range"));
-                brightest = brightest.max(drawn - air);
-                // The pixel's own radius in the tangent plane. The camera is aimed at the body, so the
-                // frame's centre is the body's direction and this is the quantity the discard tests.
                 let radius_t = (across * across + up_axis * up_axis).sqrt();
-                if (radius_t - t_edge).abs() < pitch {
-                    on_edge += 1;
+                let drawn = crate::frame::luminance(with.pixel(x as u32, y as u32).expect("in range"));
+                let air =
+                    crate::frame::luminance(without.pixel(x as u32, y as u32).expect("in range"));
+                brightest = brightest.max(drawn - air);
+                let inside = face(dir).is_some();
+                // A pixel the rasteriser could resolve either way is not graded: the model puts one
+                // of its own neighbours on the other side of an edge.
+                let settled = [[1i64, 0], [-1, 0], [0, 1], [0, -1]]
+                    .iter()
+                    .all(|[dx, dy]| face(ray_at(x + dx, y + dy)).is_some() == inside);
+                if !settled {
+                    boundary += 1;
                     continue;
                 }
                 graded += 1;
-                let model = radius_t <= t_edge;
-                if model {
+                if inside {
                     body_pixels += 1;
                 }
-                // **What the frame must hold**: the air this ray carried **plus** the record's own
-                // radiance where the model puts the body, and **the air untouched** where it does not —
-                // a body stands in the air and does not blank it, which is what `fs_body` takes the sum
-                // for. One law, both sides of the edge: the second frame differs from the first by the
-                // body and by nothing else, so a pixel with no body on it that moved at all is the pass
-                // changing something it was not asked to.
-                if model {
+                if radius_t <= t_edge {
+                    disc_pixels += 1;
+                }
+                if inside {
+                    // **The air this ray carried plus the record's own radiance**, on both sides of
+                    // the silhouette: a body stands in the air and does not blank it.
                     let expected = air + radiance;
                     if (drawn - expected).abs() > radiance * 0.02 {
                         disagree += 1;
                         if samples.len() < 8 {
                             samples.push(format!(
-                                "px ({x},{y}) tan {radius_t:.6e} inside the edge {t_edge:.6e}: the air \
-                                 {air:.4e} plus the record's {radiance:.4e} is {expected:.4e} and the \
-                                 frame drew {drawn:.4e}"
+                                "px ({x},{y}) on the cube: the air {air:.4e} plus the record's \
+                                 {radiance:.4e} is {expected:.4e} and the frame drew {drawn:.4e}"
                             ));
                         }
                     }
@@ -3330,8 +4061,8 @@ mod tests {
                     disagree += 1;
                     if samples.len() < 8 {
                         samples.push(format!(
-                            "px ({x},{y}) tan {radius_t:.6e} outside the edge {t_edge:.6e}: the frame \
-                             moved from {air:.4e} to {drawn:.4e} with no body on it"
+                            "px ({x},{y}) off the cube: the frame moved from {air:.4e} to {drawn:.4e} \
+                             with no body on it"
                         ));
                     }
                 }
@@ -3342,45 +4073,57 @@ mod tests {
             body_pixels > 40,
             "the model puts only {body_pixels} pixels on the body, which is too few to compare"
         );
+        assert!(
+            body_pixels as f64 > disc_pixels as f64 * 1.05,
+            "the drawn body covers {body_pixels} graded pixels and the inscribed disc {disc_pixels}: \
+             the frame is drawing a sphere where the record names a cuboid"
+        );
         assert_eq!(
             disagree, 0,
             "{disagree} of {graded} graded pixels disagree with the model: the body's pixels are not \
              the air the ray carried plus the radiance the record carries\n  {}",
             samples.join("\n  ")
         );
-        // **And the body is drawn at the radiance it carries**, which is the claim a coverage test
-        // cannot make: the brightest change the frame made is the record's own number.
+        // **And the body is drawn at the radiance it carries**: with no light direction the cube's
+        // every face is its own radiance, so the brightest change the frame made is that number.
         assert!(
             (brightest - radiance).abs() <= radiance * 0.02,
             "the frame's brightest change is {brightest:.4e} where the record carries \
              {radiance:.4e}: the body is not drawn at its own radiance"
         );
         println!(
-            "sun: {body_pixels} pixels inside the model's own {:.4}° radius, {graded} graded with \
-             {disagree} disagreeing and {on_edge} on the edge, each changed by {radiance:.4e} \
-             (brightest change {brightest:.4e})",
+            "sun: {body_pixels} pixels on the cube against {disc_pixels} on the inscribed disc \
+             ({:.3}×), {graded} graded with {disagree} disagreeing and {boundary} on the silhouette, \
+             each changed by {radiance:.4e} (brightest change {brightest:.4e}), half-width {:.4}°",
+            body_pixels as f64 / disc_pixels as f64,
             t_edge.atan().to_degrees()
         );
     }
 
-    /// **The Moon's phase is drawn, not handed over.**
+    /// **The Moon's phase is drawn, not handed over — and it is the cuboid's own.**
     ///
-    /// The claim this test exists for is the one the wiring could fake: the record carries the radiance
-    /// of a **lit face** and the direction that lights it, and `fs_body` gives every pixel the normal of
-    /// the **sphere** at that pixel, so a crescent is a terminator the shader found rather than a
-    /// brightness the CPU multiplied in. Two checks, both against the model:
+    /// The claim this test exists for is the one the wiring could fake: the record carries the
+    /// radiance of a **lit face** and the direction that lights it, and `fs_body` intersects the
+    /// **cube** the record names, giving every pixel the normal of the face its ray enters, so a
+    /// terminator is a face boundary the shader found rather than a brightness the CPU multiplied in.
+    /// Three checks:
     ///
-    /// * **per pixel**, the incidence the transcribed sphere law gives — a pixel well inside the lit
-    ///   side is bright and a pixel well beyond the terminator is the sky alone, with a band either side
-    ///   of the terminator left ungraded rather than given a tolerance;
-    /// * **in aggregate**, the fraction of the drawn disc the model lights is the orbit's own
-    ///   `moon_phase_fraction`, which is the same `(1 − cos E)/2` a sphere's lit area is.
+    /// * **per pixel**, the incidence the cube's own geometry gives — a pixel on a lit face is the
+    ///   air plus the face's radiance through the substrate and the rim, and a pixel on an unlit one
+    ///   is the rim alone, with no ungraded tolerance;
+    /// * **in aggregate**, the drawn lit area against the cube's own closed form: the six faces,
+    ///   weighted by the area each presents, and the ones the Sun lights;
+    /// * **and the grid's own share is named**: a count of a region differs from its area by at most
+    ///   the cells on the boundary, so the aggregate's residual is bounded by the boundary the loop
+    ///   counted rather than absorbed into a wider band.
     ///
-    /// **And it is a night frame with no Sun in it.** The Sun's body refuses below the horizon, which is
-    /// exactly when the Moon is up: a moon lit by a body the frame does not contain would draw nothing
-    /// at all here, and the assertion that there is no sun is what makes that the test.
+    /// **Why the disc law is not the expectation here.** `(1 − cos E)/2` is the lit fraction of a
+    /// **sphere's** disc — the shape the shader used to inscribe in a body the model measured as a
+    /// cuboid — and a cube has six flat faces whose lit area moves in steps as the Sun crosses their
+    /// normals. The old aggregate compared the drawn area against that law, which is why this test
+    /// was red: it was holding the picture to a shape the body does not have. The number is printed
+    /// beside the cube's and the sphere's, and the assertion is the cube's.
     #[test]
-    #[ignore = "needs a GPU adapter; run explicitly with --ignored"]
     fn the_moons_phase_is_drawn_from_its_own_geometry() {
         use crate::skylight::{daylight_of, peak_sun_luminance};
         use crate::sun::{DrawnMoon, DrawnSun};
@@ -3392,13 +4135,7 @@ mod tests {
         let inputs = SkyInputs::default();
         // **A night the model itself calls lit**: the Sun down, the model's own phase at least
         // half, and **the Moon above the horizon** — because a body on an orbit sets, and a lit
-        // phase behind the horizon is not a face to draw (`DrawnMoon::of` refuses it). Scanning the
-        // model's own year rather than picking a tick keeps this the model's night and not one
-        // chosen to make the picture come out.
-        //
-        // The search runs by **day**, because the phase moves over a synodic month and not inside a
-        // day: a scan of one day either has a lit moon or has none, and the first version of this test
-        // scanned a single day and found no night in it.
+        // phase behind the horizon is not a face to draw (`DrawnMoon::of` refuses it).
         let ticks_per_day = voxel_shapers::climate::TICKS_PER_DAY;
         let mut night = None;
         'year: for day in 0..voxel_shapers::climate::DAYS_PER_YEAR {
@@ -3431,11 +4168,8 @@ mod tests {
         )
         .expect("a moon to draw");
 
-        // **The record the frame carries**, and the geometry `vs_body` derives from it: the direction to
-        // the body, the plane the frame plots it on, and the half-extent scaled to that plane.
-        //
-        // The camera looks straight at the body, through a telescope: the Moon's real half a degree
-        // would be a pixel and a half at a player's own field.
+        // **The record the frame carries**, and the geometry `vs_body` derives from it: the direction
+        // to the body, the plane the frame plots it on, and the cube's half-edge scaled to that plane.
         let record = moon.body_record(eye);
         let offset = [
             record.centre_m[0] - eye[0],
@@ -3450,12 +4184,15 @@ mod tests {
         ];
         let plotted_m = crate::camera::BODY_PLOT_M;
         let half_m = record.half_extent_m * plotted_m / distance_m;
+        let centre_m = [
+            to_body[0] * plotted_m,
+            to_body[1] * plotted_m,
+            to_body[2] * plotted_m,
+        ];
         let mut camera = Camera::standard(eye, 1.0);
-        // **A telescope wide enough to resolve the crescent.** At a player's own field the Moon's half a
-        // degree is a pixel and a half; at 4° its disc is six pixels across, and counting lit pixels over
-        // disc pixels then measures the grid rather than the phase — the first version of this test read
-        // 0.693 where the area fraction is 0.647. The disc fills 44 pixels of this 1.2° field, which is
-        // what makes the aggregate below a claim about the model.
+        // **A telescope wide enough to resolve the faces.** At a player's own field the Moon's half
+        // a degree is a pixel and a half; at 1.2° its body is a dozen pixels across, which is what
+        // makes the aggregate below a claim about the model.
         camera.fov_y_rad = 1.2f64.to_radians();
         camera.yaw_rad = to_body[0].atan2(to_body[2]);
         camera.pitch_rad = to_body[1].clamp(-1.0, 1.0).asin();
@@ -3466,21 +4203,17 @@ mod tests {
         let rig = GpuRig::from_rig(&LightRig::standard()).expect("the standard rig fits");
         let mut renderer = Renderer::new(SIDE, SIDE, &materials, &rig).expect("a GPU");
         renderer.world().write_sky_model(&sky_model_of(&spec, tick));
-        // **No Sun in this frame, and that is asserted rather than assumed**: below the horizon the rig
-        // carries no sun light, so the drawn body refuses — and the moon is lit anyway. It is the
-        // *record's* refusal too, so the frame's own body list holds the Moon and nothing else.
+        // **The Sun is below the horizon and still a body** — not in the scene, and far below this
+        // field, so the pixels below are the Moon and nothing else.
+        let sun = DrawnSun::of(&day.sky, peak, eye).expect("the Sun's body below the horizon");
         assert!(
-            DrawnSun::of(&day.sky, peak, eye).is_none(),
-            "the Sun was drawn, so this frame is not the night case the claim is about"
+            sun.body.centre[1] < eye[1],
+            "the Sun's body is above the eye in a frame whose Sun is down"
         );
 
-        // **Two frames of one night, and the only difference between them is the Moon.** What the model
-        // predicts per pixel is the air it stands in plus the record's radiance times the incidence the
-        // sphere law gives there — so the phase is graded with no threshold and no ungraded band.
         let scene = Scene::build_with_detail(
             Vec::<voxel_mesh::Mesh>::new().iter(),
             eye,
-            &voxel_appearance::DetailLattice::new(0),
         );
         let without = renderer.render(&scene, &camera).expect("a frame");
         let with = renderer
@@ -3497,14 +4230,8 @@ mod tests {
             "the Moon's record carries no radiance, so no frame can show a crescent"
         );
 
-        // **The shader's own geometry, transcribed**: `body_basis` built the way `vs_body` builds it,
-        // the pixel's own point in the body's plane, and the normal `fs_body` gives that point — the
-        // sphere law, `√(1 − r²)` along the view axis. A pixel inside the band either side of the
-        // terminator is not graded: it is a partly lit point and the model has no single answer for it.
-        //
-        // `plotted_m` and `half_m` are the two numbers the vertex stage is built from, so the offset in
-        // `[-1, 1]` here is the quantity the fragment interpolates and not a second parameterisation of
-        // the same disc.
+        // **The shader's own geometry, transcribed**: the slab test on the record's cube, the entry
+        // face's normal, and `fs_body`'s two terms at that normal.
         let light = record.light_direction;
         let light_magnitude = (light[0] * light[0] + light[1] * light[1] + light[2] * light[2]).sqrt();
         assert!(
@@ -3516,116 +4243,100 @@ mod tests {
             light[1] / light_magnitude,
             light[2] / light_magnitude,
         ];
-        let cross = |a: [f64; 3], b: [f64; 3]| {
-            [
-                a[1] * b[2] - a[2] * b[1],
-                a[2] * b[0] - a[0] * b[2],
-                a[0] * b[1] - a[1] * b[0],
-            ]
+        let face = |dir: [f64; 3]| -> Option<[f64; 3]> {
+            let mut near = f64::NEG_INFINITY;
+            let mut far = f64::INFINITY;
+            let mut normal = [0.0f64; 3];
+            for axis in 0..3 {
+                if dir[axis].abs() > 1.0e-30 {
+                    let inv = 1.0 / dir[axis];
+                    let a = (centre_m[axis] - half_m) * inv;
+                    let b = (centre_m[axis] + half_m) * inv;
+                    let lo = a.min(b);
+                    if lo > near {
+                        near = lo;
+                        normal = [0.0; 3];
+                        normal[axis] = if dir[axis] > 0.0 { -1.0 } else { 1.0 };
+                    }
+                    far = far.min(a.max(b));
+                } else if centre_m[axis].abs() > half_m {
+                    return None;
+                }
+            }
+            if far >= near.max(0.0) {
+                Some(normal)
+            } else {
+                None
+            }
         };
-        let unit = |v: [f64; 3]| {
+        let (right, up, forward) = camera.basis();
+        let tan_half = (camera.fov_y_rad / 2.0).tan();
+        let ray_at = |x: i64, y: i64| -> [f64; 3] {
+            let ndc_x = 2.0 * (x as f64 + 0.5) / SIDE as f64 - 1.0;
+            let ndc_y = 1.0 - 2.0 * (y as f64 + 0.5) / SIDE as f64;
+            let across = ndc_x * tan_half * camera.aspect;
+            let up_axis = ndc_y * tan_half;
+            let v = [
+                right[0] * across + up[0] * up_axis + forward[0],
+                right[1] * across + up[1] * up_axis + forward[1],
+                right[2] * across + up[2] * up_axis + forward[2],
+            ];
             let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
             [v[0] / n, v[1] / n, v[2] / n]
         };
-        let helper = if to_body[1].abs() > 0.9 {
-            [1.0, 0.0, 0.0]
-        } else {
-            [0.0, 1.0, 0.0]
-        };
-        let basis_right = unit(cross(helper, to_body));
-        let basis_up = cross(to_body, basis_right);
-        let (right, up, forward) = camera.basis();
-        let tan_half = (camera.fov_y_rad / 2.0).tan();
-        // The disc's own edge in the tangent plane — `half_m / plotted_m`, which is `radius/distance`
-        // whatever the plot is — with one pixel's pitch either side of it left ungraded, the same band
-        // the Sun's own test leaves.
-        let t_edge = half_m / plotted_m;
-        let pitch = 2.0 * tan_half / SIDE as f64;
-        let mut lit_model = 0usize;
-        let mut disc_model = 0usize;
-        let mut on_edge = 0usize;
-        let mut disagree = 0usize;
+        let (mut lit_model, mut body_model, mut boundary, mut disagree) = (0usize, 0usize, 0usize, 0usize);
         let mut brightest = 0.0f64;
         let mut samples: Vec<String> = Vec::new();
-        for y in 0..SIDE {
-            for x in 0..SIDE {
-                let ndc_x = 2.0 * (x as f64 + 0.5) / SIDE as f64 - 1.0;
-                let ndc_y = 1.0 - 2.0 * (y as f64 + 0.5) / SIDE as f64;
-                let across = ndc_x * tan_half * camera.aspect;
-                let up_axis = ndc_y * tan_half;
-                let radius_t = (across * across + up_axis * up_axis).sqrt();
-                if (radius_t - t_edge).abs() < pitch {
-                    on_edge += 1;
-                    continue;
-                }
-                let dir = unit([
-                    right[0] * across + up[0] * up_axis + forward[0],
-                    right[1] * across + up[1] * up_axis + forward[1],
-                    right[2] * across + up[2] * up_axis + forward[2],
-                ]);
-                let drawn = crate::frame::luminance(with.pixel(x, y).expect("in range"));
-                let air = crate::frame::luminance(without.pixel(x, y).expect("in range"));
+        for y in 0..SIDE as i64 {
+            for x in 0..SIDE as i64 {
+                let dir = ray_at(x, y);
+                let drawn = crate::frame::luminance(with.pixel(x as u32, y as u32).expect("in range"));
+                let air =
+                    crate::frame::luminance(without.pixel(x as u32, y as u32).expect("in range"));
                 brightest = brightest.max(drawn - air);
-                // The ray's own point in the body's plane, in units of the half-extent the frame drew.
-                let toward = dir[0] * to_body[0] + dir[1] * to_body[1] + dir[2] * to_body[2];
-                if toward <= 0.0 {
+                let hit = face(dir);
+                // **The incidence `fs_body` computes**: the entry face's own normal against the
+                // direction the record says lights it, and the material's rim at that face.
+                let (incidence, shaded) = match hit {
+                    Some(normal) => {
+                        let ndotl = (normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2])
+                            .clamp(-1.0, 1.0);
+                        let ndotv = (-(normal[0] * to_body[0]
+                            + normal[1] * to_body[1]
+                            + normal[2] * to_body[2]))
+                            .clamp(0.0, 1.0);
+                        let substrate = ndotl.max(0.0);
+                        let beam_share = (1.0 - ndotl.clamp(0.0, 1.0)).powi(5);
+                        let silhouette = (1.0 - ndotv).powi(5);
+                        (substrate, substrate + beam_share * silhouette)
+                    }
+                    None => (0.0, 0.0),
+                };
+                // A pixel whose silhouette **or terminator** the rasteriser could resolve either way
+                // is not graded; the band is counted, because it is the aggregate's own tolerance.
+                let lit_here = incidence > 0.0;
+                let settled = [[1i64, 0], [-1, 0], [0, 1], [0, -1]].iter().all(|[dx, dy]| {
+                    let neighbour = face(ray_at(x + dx, y + dy));
+                    if neighbour.is_some() != hit.is_some() {
+                        return false;
+                    }
+                    if neighbour.is_none() {
+                        return true;
+                    }
+                    let n = neighbour.expect("just checked");
+                    let ndotl = (n[0] * light[0] + n[1] * light[1] + n[2] * light[2]).clamp(-1.0, 1.0);
+                    (ndotl > 0.0) == lit_here
+                });
+                if !settled {
+                    boundary += 1;
                     continue;
                 }
-                let t = plotted_m / toward;
-                let q = [
-                    dir[0] * t - to_body[0] * plotted_m,
-                    dir[1] * t - to_body[1] * plotted_m,
-                    dir[2] * t - to_body[2] * plotted_m,
-                ];
-                let r2 = (q[0] * q[0] + q[1] * q[1] + q[2] * q[2]) / (half_m * half_m);
-                // **The incidence `fs_body` computes**, or none off the disc: the sphere's own outward
-                // normal at the pixel's own point — the sub-eye point faces the eye, which is why the
-                // normal is the negative of the offset plus the remaining axis — against the direction
-                // the record says lights it.
-                // **The incidence, and what the shader actually multiplies the radiance by.** The
-                // incidence is the *substrate's* share of the face — the physical phase, which the
-                // aggregate claim below counts — and `shaded` is `fs_body`'s own factor: that share
-                // **plus the rim**, which is `fs_main`'s two powers at its own `5.0`. The rim is not a
-                // decoration and this is the test that says so: it is `F(theta)`'s boundary share, so a
-                // light **behind** the body still lights its limb, which is what makes a new moon a
-                // disc rather than a hole in the sky.
-                let (incidence, shaded) = if r2 > 1.0 {
-                    (0.0, 0.0)
-                } else {
-                    let q0 = (q[0] * basis_right[0] + q[1] * basis_right[1] + q[2] * basis_right[2])
-                        / half_m;
-                    let q1 = (q[0] * basis_up[0] + q[1] * basis_up[1] + q[2] * basis_up[2]) / half_m;
-                    let along = (1.0 - r2).sqrt();
-                    let normal = [
-                        -(basis_right[0] * q0 + basis_up[0] * q1 + to_body[0] * along),
-                        -(basis_right[1] * q0 + basis_up[1] * q1 + to_body[1] * along),
-                        -(basis_right[2] * q0 + basis_up[2] * q1 + to_body[2] * along),
-                    ];
-                    let ndotl = (normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2])
-                        .clamp(-1.0, 1.0);
-                    // The sub-eye point faces the eye, so the direction from the body toward the eye is
-                    // `-to_body` — the same pair the shader's `eye` and `ndotv` are.
-                    let ndotv = (-(normal[0] * to_body[0]
-                        + normal[1] * to_body[1]
-                        + normal[2] * to_body[2]))
-                        .clamp(0.0, 1.0);
-                    let substrate = ndotl.max(0.0);
-                    let beam_share = (1.0 - ndotl.clamp(0.0, 1.0)).powi(5);
-                    let silhouette = (1.0 - ndotv).powi(5);
-                    (substrate, substrate + beam_share * silhouette)
-                };
-                if r2 <= 1.0 {
-                    disc_model += 1;
+                if hit.is_some() {
+                    body_model += 1;
                     if incidence > 0.0 {
                         lit_model += 1;
                     }
                 }
-                // **The model's own pixel value**: the air the ray carried plus the record's radiance
-                // through the incidence there. Off the disc the incidence is `0.0` and the sum is that
-                // same air, so this is one law on both sides of the rim and not a special case. Three
-                // percent is the transcription's own slack — the fragment interpolates `offset` in `f32`
-                // from geometry the pass built, and this writes it in `f64` from the record — and it is a
-                // *relative* band, so a crescent's own dim pixels are graded as tightly as a full moon's.
                 let expected = air + radiance * shaded;
                 if (drawn - expected).abs() > radiance * 0.03 {
                     disagree += 1;
@@ -3641,53 +4352,77 @@ mod tests {
 
         assert!(
             lit_model > 20,
-            "the model puts only {lit_model} pixels on the lit part of the disc, which is too few \
+            "the model puts only {lit_model} pixels on the lit part of the body, which is too few \
              to compare"
         );
         assert!(
-            disc_model > 60,
-            "the model puts only {disc_model} pixels on the disc, so this frame has no phase to check"
+            body_model > 60,
+            "the model puts only {body_model} pixels on the body, so this frame has no phase to check"
         );
         assert_eq!(
             disagree, 0,
-            "{disagree} graded pixels disagree with the model: the drawn crescent is not the air plus \
-             the record's own radiance through the sphere law and the material's own rim\n  {}",
+            "{disagree} graded pixels disagree with the model: the drawn phase is not the air plus \
+             the record's own radiance through the cube's faces and the material's own rim\n  {}",
             samples.join("\n  ")
         );
-        // **And in aggregate: the lit fraction of the drawn disc is the orbit's own.**
-        // `moon_phase_fraction` is `(1 − cos E)/2`, which is exactly the fraction of a sphere's visible
-        // disc that a body at the Sun's elongation lights — so this compares the crescent's area against
-        // the orbit rather than against a second rendering of it. Two percent is the quantisation: the
-        // disc is a dozen pixels across in this field, so a pixel of its rim is about one percent of its
-        // own area, and the projection is not quite orthographic either.
-        let phase = voxel_shapers::sky::moon_phase_fraction(tick, 0);
-        let modelled = lit_model as f64 / disc_model as f64;
-        // **The geometry both fractions come from**, printed because a phase disagreement is a
-        // disagreement about an angle and nothing here can show *which* angle without it: the orbit's
-        // elongation, the separation of the two drawn directions, and the two positions.
+        // **The cube's own lit area**, in closed form: each of the six faces is visible when its
+        // normal faces the eye and lit when its normal faces the Sun, and the area it presents is its
+        // projection `|n·u|` — so the fraction is those projections' sum over the visible ones'.
+        let u = [-to_body[0], -to_body[1], -to_body[2]];
+        let (mut visible_area, mut lit_area) = (0.0, 0.0);
+        for axis in 0..3 {
+            for sign in [1.0f64, -1.0] {
+                let mut normal = [0.0f64; 3];
+                normal[axis] = sign;
+                let facing = normal[0] * u[0] + normal[1] * u[1] + normal[2] * u[2];
+                if facing <= 0.0 {
+                    continue;
+                }
+                visible_area += facing;
+                let lit = normal[0] * light[0] + normal[1] * light[1] + normal[2] * light[2];
+                if lit > 0.0 {
+                    lit_area += facing;
+                }
+            }
+        }
+        let cube_lit = lit_area / visible_area;
+        let modelled = lit_model as f64 / body_model as f64;
+        // **The grid's own bound**: a count of a region differs from its area by at most the cells
+        // on its boundary, and the recorded band is two cells wide (one either side of an edge), so
+        // the residual is `boundary / (2 · body)` rather than a band somebody chose.
+        let bound = 0.5 * boundary as f64 / body_model as f64;
+        let disc_phase = voxel_shapers::sky::moon_phase_fraction(tick, 0);
         let drawn_separation_deg = (to_body[0] * light[0] + to_body[1] * light[1] + to_body[2] * light[2])
             .clamp(-1.0, 1.0)
             .acos()
             .to_degrees();
         println!(
-            "moon geometry: orbit {:.5} deg / lit {:.5} (alt {:.4}, az {:.4}); drawn separation \
-             {drawn_separation_deg:.5} deg -> lit {:.5}; sun alt {:.4} az {:.4}; modelled {modelled:.5}",
-            orbit.elongation_deg,
-            (1.0 - orbit.elongation_deg.to_radians().cos()) * 0.5,
-            orbit.altitude_deg,
-            orbit.azimuth_deg,
-            (1.0 - drawn_separation_deg.to_radians().cos()) * 0.5,
-            day.sky.sun_altitude_deg,
-            day.sky.sun_azimuth_deg
-        );
-        assert!(
-            (modelled - phase).abs() < 0.02,
-            "the model's own lit fraction {modelled} is not the orbit's {phase}"
+            "moon geometry: orbit elongation {:.5}° (alt {:.4}, az {:.4}); the drawn separation \
+             {drawn_separation_deg:.5}°; sun alt {:.4} az {:.4}",
+            orbit.elongation_deg, orbit.altitude_deg, orbit.azimuth_deg,
+            day.sky.sun_altitude_deg, day.sky.sun_azimuth_deg
         );
         println!(
-            "moon: {lit_model} of {disc_model} pixels model-lit ({modelled:.4}, the orbit says \
-             {phase:.4}), brightest change {brightest:.4e} against a face radiance of {radiance:.4e}, \
-             {on_edge} on the edge and ungraded, no sun in the frame, 0 disagreements"
+            "moon: {lit_model} of {body_model} pixels model-lit ({modelled:.5}); the cube's own faces \
+             say {cube_lit:.5}, the sphere's disc law {disc_phase:.5}; {boundary} on the silhouette \
+             or terminator and the grid's bound {bound:.5}; brightest change {brightest:.4e} against \
+             a face radiance of {radiance:.4e}",
+        );
+        assert!(
+            (modelled - cube_lit).abs() <= bound + 1.0e-9,
+            "the drawn lit area {modelled} is not the cube's own {cube_lit} within the grid's own \
+             {bound}: the frame is not drawing the body the record names"
+        );
+        // **The shape's own witness, and the reason the old bound was wrong.** The sphere's disc law
+        // was the readiness check this test carried, and it is off by more than twice the residual
+        // the cube's law leaves — the picture is not a sphere, and the number that used to grade it
+        // was a statement about a body the model does not have.
+        assert!(
+            (cube_lit - disc_phase).abs() > 2.0 * (modelled - cube_lit).abs().max(1.0e-9),
+            "the cube's lit area {cube_lit} is not further from the sphere's disc law {disc_phase} \
+             than the frame's own residual {:.5} from the cube, so this frame cannot witness why the \
+             disc law was the wrong expectation for a cuboid",
+            (modelled - cube_lit).abs()
         );
     }
 }

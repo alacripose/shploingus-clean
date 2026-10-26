@@ -340,6 +340,23 @@ pub struct Recipe {
 }
 
 impl Recipe {
+    /// **A recipe derived from no decisions** — the honest state before a selection exists.
+    ///
+    /// [`Compendium::derive`] already produces exactly this for an empty anchor list, and this
+    /// constructor exists so a caller that holds **no compendium at all** can still render a
+    /// document: the API window is built from a ticket the shell has just compiled, and the record
+    /// it would be derived from is not necessarily beside that ticket's workspace. The result is
+    /// not a claimed backing — [`Recipe::licenses_anything`] is false and the renderer prints
+    /// `derived from: none`, which is what the reader is owed rather than silence.
+    pub fn unbacked(subject: impl Into<String>) -> Self {
+        Recipe {
+            subject: subject.into(),
+            text: String::new(),
+            sources: Vec::new(),
+            allow_research: false,
+        }
+    }
+
     /// The vocabulary this recipe licenses, as [`crate::oracle::terms`] would
     /// read it.
     ///

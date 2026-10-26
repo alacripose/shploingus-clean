@@ -662,6 +662,7 @@ mod tests {
         // `len() * size_of` would get wrong.
         let empty = Mesh {
             chunk: ChunkPos::new(0, 0, 0),
+            origin: [0, 0, 0],
             quads: Vec::new(),
             loops: Vec::new(),
             stats: MeshStats::default(),

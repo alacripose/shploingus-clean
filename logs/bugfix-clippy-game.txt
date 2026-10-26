@@ -1,0 +1,13 @@
+   Compiling voxel-model v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-model)
+    Checking voxel-noise v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-noise)
+    Checking voxel-light v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-light)
+    Checking voxel-ui v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-ui)
+    Checking voxel-shapers v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-shapers)
+    Checking voxel-mesh v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-mesh)
+    Checking voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+    Checking voxel-work v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-work)
+    Checking voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+    Checking voxel-appearance v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-appearance)
+    Checking voxel-client v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-client)
+   Compiling shploingus v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\shploingus)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 2m 38s

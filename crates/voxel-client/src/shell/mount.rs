@@ -33,10 +33,12 @@
 //!
 //! # Drawn order, and what is deliberately not drawn
 //!
-//! Windows are drawn back to front ([`Mount::ordered`]); the focused window is last. The bar is
-//! drawn after them so a window dragged under it does not cover it, and an open menu after the
-//! bar. Minimized windows are not drawn at all — the state is visible in the tab's menu, and a
-//! zero-height window would be a window pretending to exist.
+//! Windows are drawn back to front in focus order, and **the pinned windows above the floating
+//! ones** — one rule, [`Mount::draw_order`], which the pointer reads too, so what is on top of
+//! the screen is what answers a click. The bar is drawn after every window so a window dragged
+//! under it does not cover it, and an open menu after the bar. Minimized windows are not drawn
+//! at all — the state is visible in the tab's menu, and a zero-height window would be a window
+//! pretending to exist.
 //!
 //! **Nothing here decides a colour.** Every surface asks the palette for a role, every text run
 //! is measured against the composited backdrop it will really sit on, and a role with no admitted
@@ -51,6 +53,7 @@ use voxel_ui::{
     Palette, Panel, Readout, Rect, Role, UiRefusal, UiResult,
 };
 
+use super::cells::{CellVersion, Placed};
 use super::console::{Command, Console, Key, KeyOutcome, Level, Record, Verb};
 use super::drop::{self, DropTarget};
 use super::notifications::ToastQueue;
@@ -142,6 +145,13 @@ pub struct ContentViews {
     /// `None` when the caller had no console to snapshot, and `panel_for` then says so rather
     /// than drawing an empty one that looks like a console with nothing in it.
     pub console: Option<Console>,
+    /// **The API window's document and matrix** — produced by `voxel_package::apidoc` and
+    /// `voxel-axis-matrix`, never spelled here.
+    ///
+    /// `None` until something back-compiles a subject and supplies its cells, and then the window
+    /// draws [`declared_content_panel`]'s declaration instead — the MD1 empty-view rule applied to a
+    /// view that genuinely has no document yet, and *not* an empty pane pretending to be one.
+    pub api: Option<super::api::ApiView>,
 }
 
 impl ContentViews {
@@ -175,6 +185,14 @@ impl ContentViews {
                 Some(console) => notifications_panel(console, pane),
                 None => declared_content_panel(spec),
             },
+            // **The API window draws what the two crates produced.** The document's outline and
+            // the matrix's rows are composed by [`super::api::api_panel`]; this arm only chooses
+            // between that view and the declaration, so a window with no view is named as such
+            // rather than drawn empty.
+            Content::ApiViewer => match &self.api {
+                Some(view) => super::api::api_panel(view, pane),
+                None => declared_content_panel(spec),
+            },
             _ => declared_content_panel(spec),
         }
     }
@@ -192,16 +210,30 @@ pub fn window_body(spec: &WindowSpec, rect: Rect) -> Rect {
     window::composite(spec, rect).content
 }
 
+/// **The rect a pane's content occupies** — the pane less its header, when the window draws
+/// headers at all ([`super::window::PortalWindow::draws_pane_headers`]).
+///
+/// One call for the drawing, the console's lanes and the wheel: a single-pane window has no
+/// header, so its body is its content container, and a control placed by `pane::body` there
+/// would sit 40 dp below where it is drawn.
+pub fn pane_content_rect(window: &super::window::PortalWindow, pane: Rect) -> Rect {
+    if window.draws_pane_headers() {
+        super::pane::body(pane)
+    } else {
+        pane
+    }
+}
+
 /// **The pane's body at a window's declared size** — the number a panel is bounded against
 /// before the window is placed.
 ///
-/// One arithmetic with the drawing: this is [`window_body`] applied to the declaration's rect,
-/// then the pane's own header removed ([`super::pane::body`]) — **the same two calls the content
-/// loop makes**, because `window_elements` lays out inside `window_body` and draws each pane's
-/// content below its header. The port draws a pane header even for a single pane (the
-/// reference's `WindowPane` always adds one, 2670–2675), so a bound that stopped at the content
-/// container would be 40 dp too generous and a window sized to it would refuse the moment it was
-/// drawn — §5.7's two-numbers rule failing in the direction that only shows on screen.
+/// One arithmetic with the drawing: this is [`window_body`] applied to the declaration's rect.
+///
+/// **A declared window draws no pane header** — it is one pane holding itself, and its title bar
+/// is its chrome ([`super::window::PortalWindow::draws_pane_headers`]) — so the whole content
+/// container is the body a panel is bounded against. A window the operator splits at runtime
+/// gives each pane less room than this; the content loop bounds the panel to the pane it is
+/// actually drawn in, which is the number that has to hold on screen.
 pub fn pane_of(spec: &WindowSpec) -> f64 {
     let declared = Rect::new(
         0.0,
@@ -209,19 +241,20 @@ pub fn pane_of(spec: &WindowSpec) -> f64 {
         spec.geometry[2] as f64,
         spec.geometry[3] as f64,
     );
-    super::pane::body(window_body(spec, declared)).height_dp
+    window_body(spec, declared).height_dp
 }
 
-/// **The chrome a declared window draws above the content its panes hold** — the border on both
-/// edges, the title bar's slot when the declaration permits one, and a pane's header.
+/// **The chrome a declared window draws above the content its pane holds** — the border on both
+/// edges and the title bar's slot when the declaration permits one.
 ///
-/// The number a fixture or a package needs when it sizes a window as *chrome + panel*: a
-/// declaration that wrote *title bar + panel* was correct for the derived shell and is a pane
-/// header short for the port. The three parts are the drawing's own ([`window::BORDER_DP`],
-/// [`window::title_height`], [`super::pane::header_height_dp`]), and
+/// The number a fixture or a package needs when it sizes a window as *chrome + panel*. A pane
+/// header is **not** part of it: a declared window is one pane holding itself, and that pane
+/// draws no header. (A window split at runtime adds a header per pane and gives its panes less
+/// room; the content loop bounds each panel to the pane it draws in.) The parts are the
+/// drawing's own ([`window::BORDER_DP`], [`window::title_height`]), and
 /// `the_sizing_rule_is_the_drawing_s_own_arithmetic` pins the sum against the composite.
 pub fn chrome_height_dp(spec: &WindowSpec) -> f64 {
-    2.0 * window::BORDER_DP + window::title_height(spec) + super::pane::header_height_dp()
+    2.0 * window::BORDER_DP + window::title_height(spec)
 }
 
 /// The console window's body: **the console's own records** (BLD-0018).
@@ -360,7 +393,7 @@ pub fn notifications_panel(console: &Console, available_dp: f64) -> Panel {
 ///
 /// `header` is the number of leading rows that are never dropped: a bounded reader that hid its
 /// own counts could not say how much it was not showing.
-fn bounded_panel(
+pub(crate) fn bounded_panel(
     what: &'static str,
     title: &str,
     header: usize,
@@ -912,11 +945,23 @@ pub enum WheelDelta {
 /// accumulated, because a trackpad delta is routinely smaller than a row.
 pub const WHEEL_ROWS_PER_LINE: f64 = 3.0;
 
+/// **The two layers of one window set** (H-9.8): the shell's floating windows, and the pinned
+/// windows that stay while the shell is hidden. [`Mount::draw_order`] is the one place a layer
+/// becomes an order.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Layer {
+    /// The shell layer: the floating windows, then the pinned ones over them.
+    Shell,
+    /// The pinned layer, drawn while the shell is hidden.
+    Pinned,
+}
+
 /// **The shell's window manager.** One value, and every window on screen is in it.
 pub struct Mount {
     windows: BTreeMap<String, Window>,
-    /// The z-order, back to front, of the windows that float. A docked window is not in it: its
-    /// rect is decided by its host's arrangement.
+    /// The z-order, back to front, of the open windows — floating and pinned both. A docked
+    /// window is not in it: its rect is decided by its host's arrangement, and its host draws
+    /// it. Which of these a layer draws, and in what order, is [`Mount::draw_order`]'s.
     ordered: Vec<String>,
     bar: Vec<BarEntry>,
     /// The package's `filed` rows, kept as pairs **in declaration order**: a map would sort
@@ -985,6 +1030,26 @@ pub struct Mount {
     /// that does not frame, or that [`Mount::reload`] turns away, would otherwise be re-read and
     /// re-refused on every tick, which turns one bad file into a console that says nothing else.
     packages_seen: Option<(std::path::PathBuf, voxel_model::identity::Digest)>,
+    /// **The API window's view**, built when a subject was back-compiled and never spelled by this
+    /// file: [`Mount::set_api_view`] is the only writer and [`Mount::set_workspace`] is the
+    /// invalidation point — a document computed against one root is not a document about the next.
+    api: Option<super::api::ApiView>,
+    /// **The drawing in force** — the last `cells` line a package declared where it was mounted.
+    ///
+    /// It starts at [`CellVersion::Holo`] because that is what this shell drew before a mount had
+    /// read a declaration, and [`Mount::load_package`] is the only writer: the folder is read in
+    /// the same act that adopts the package, so a package that arrives while the shell runs
+    /// selects its drawing rather than inheriting the one the boot package declared.
+    cells: CellVersion,
+    /// **The cell data frames the last mounted package declared and this shell graded.**
+    ///
+    /// A frame reaches this list only through [`Mount::load_package`], which reads
+    /// `frames/<id>.frame` and its record, checks that the recipe names it by a row and that the
+    /// window it addresses is one the package declares, and checks that it fits that window's
+    /// declared extent. **Nothing else draws cells**: the raster is handed
+    /// [`Mount::frame_space`], so content the compiler composed is only ever cells when a graded
+    /// frame claims it.
+    frames: Vec<voxel_package::cellframe::Declared>,
 }
 
 impl Mount {
@@ -996,6 +1061,16 @@ impl Mount {
     /// `theme-role` this tree has no role for — which is a refusal by name, not a default — and
     /// a geometry smaller than a window can be.
     pub fn new(loaded: &Loaded) -> UiResult<Mount> {
+        let frames = voxel_package::cellframe::read_artifacts(&loaded.artifacts, &loaded.recipe)
+            .map_err(|found| UiRefusal::FrameRefused {
+                detail: found
+                    .all()
+                    .iter()
+                    .map(|refusal| refusal.detail().to_string())
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            })?
+            .frames;
         let mut mount = Mount {
             windows: BTreeMap::new(),
             ordered: Vec::new(),
@@ -1017,6 +1092,9 @@ impl Mount {
             toasts: ToastQueue::default(),
             toast_tick: None,
             packages_seen: None,
+            api: None,
+            cells: CellVersion::Holo,
+            frames,
         };
         mount.adopt(&loaded.recipe)?;
         Ok(mount)
@@ -1116,6 +1194,11 @@ impl Mount {
     /// **The console survives either way.** It is [`Mount`]'s own field, not a window's, so its
     /// records and its half-typed draft are untouched by an adoption — which is what makes the
     /// refusal recoverable rather than fatal.
+    ///
+    /// **This adopts a value the caller already read; it does not read the folder.** A package
+    /// coming off disk arrives through [`Mount::load_package`], which reads `package.cells` in the
+    /// same act — so the declaration belongs to mounting, and this function is the half that
+    /// arranges the windows once that act has admitted the package.
     pub fn reload(&mut self, loaded: &Loaded) -> Result<(), String> {
         let declared: Vec<&str> =
             loaded.recipe.windows.iter().map(|window| window.id.as_str()).collect();
@@ -1197,6 +1280,16 @@ impl Mount {
         self.toasts.advance(tick);
     }
 
+    /// **The drawing in force**, for the frame's one raster act.
+    ///
+    /// The frame asks the mount rather than holding a copy, because the declaration is read by
+    /// [`Mount::load_package`]: a package that arrives while the game runs replaces this value in
+    /// the same call that replaces the arrangement, and a refused one leaves both alone. A copy in
+    /// the bin would be a second answer that keeps drawing yesterday's shell.
+    pub fn cell_version(&self) -> CellVersion {
+        self.cells
+    }
+
     /// **The toast surface, drawn last** — the shell's transient half (C-54.3, H-12.2).
     ///
     /// The layer that chose this frame appends these elements **after its own**, so the toast is
@@ -1275,8 +1368,25 @@ impl Mount {
     }
 
     /// Where a `file` from the console is filed. **Set once, by the caller that knows the root.**
+    ///
+    /// **The API view is dropped here, and that is the invalidation rule** (`PATCH-042`: *"a new root
+    /// drops the report"*). A document derived from one workspace's record is not a document about
+    /// the next one's, and a pane left showing it would be the window disagreeing with the tree it
+    /// is supposed to verify.
     pub fn set_workspace(&mut self, root: std::path::PathBuf) {
+        self.api = None;
         self.console.set_workspace(root);
+    }
+
+    /// **The one writer of the API view.** Called by whatever back-compiled a subject; the view is
+    /// kept so the next frame draws it without re-deriving a document per frame.
+    pub fn set_api_view(&mut self, view: super::api::ApiView) {
+        self.api = Some(view);
+    }
+
+    /// The view the window is drawing, for a caller that reads it rather than sets it.
+    pub fn api_view(&self) -> Option<&super::api::ApiView> {
+        self.api.as_ref()
     }
 
     /// **Read the build gate's decision-layer pass onto the console.**
@@ -1510,6 +1620,343 @@ impl Mount {
             ),
             tick,
         );
+
+        // ---- the API window: the subject's document, and the matrix's rows ----------
+        //
+        // **Backed by what was just compiled, not by a second report.** `Solution::for_ticket` is the
+        // same back-compilation the gate ran, and the document is `apidoc::render`'s own text — this
+        // file spells neither a heading nor a declaration.
+        //
+        // **The anchors are owed, and the document says so.** The recipe is the explicit *unbacked*
+        // one, which is the legal state the renderer prints as `derived from: none`, because which
+        // decisions a ticket cites is a selection this tree has not made yet. Deriving from the
+        // whole record would print every decision as one ticket's authority, which is a
+        // truer-looking lie than an honest `none` — and the console's workspace is the filing root,
+        // not necessarily the record's, so a compendium beside it is not something to assume.
+        //
+        // **The cells are the verifier's, not this file's.** `voxel_axis_verify::verify` reads the
+        // evidence the tree already holds — the census and its pins, the conformance files, the
+        // workspace's declared witnesses and the ladders — and answers with one cell per segment
+        // and one for the artifact format, or a decline naming the source that could not witness
+        // it. **No `Reading` is constructed
+        // here**, which is what keeps the window a projection of the gate rather than a second
+        // calibration typed at a call site.
+        //
+        // The tree is found from the filing root: a record can be filed into a scratch workspace
+        // inside the project, and the evidence is still the project's. In the shipped binary the
+        // two are the same directory, so this is usually the same path twice.
+        match voxel_package::compiler::Solution::for_ticket(ticket) {
+            Ok(solution) => {
+                let recipe = voxel_package::compendium::Recipe::unbacked(format!(
+                    "the arrangement declared by {id}"
+                ));
+                let document = super::api::document_for(&solution, &recipe);
+                let tree = voxel_package::features::workspace_root(&workspace)
+                    .unwrap_or_else(|| workspace.clone());
+                let report = voxel_axis_verify::verify(&tree, &id);
+                self.api = Some(super::api::ApiView::of(document, report.cells().to_vec()));
+
+                // **Every report row is on the console, not only the ones the pane can hold.** The
+                // api-viewer window is 640×440 and a segment is a 49 dp row, so a table of seven
+                // cells does not fit beside the document's outline; `ApiView` bounds the pane and
+                // says how many rows it is holding, and these lines are where a row it could not
+                // fit stays reachable. The console has scrollback, a filter and Copy.
+                for line in report.lines() {
+                    self.console.log(Level::Event, "verify", line, tick);
+                }
+                self.console.log(
+                    Level::Event,
+                    "api",
+                    format!(
+                        "the API window is backed by {id}'s solution and {} measured cell(s) over \
+                         {} source(s); {} segment(s) declined",
+                        report.cells().len(),
+                        report.sources().len(),
+                        report.declines().len()
+                    ),
+                    tick,
+                );
+
+                // ---- the package: the same cells, as the format's own document -----
+                //
+                // **Produced here, printed here, and refused here when a gate says so.**
+                // `voxel_axis_artifact` takes the cells the verifier just measured and writes the
+                // documented package — one statement per line, each cited at its witness and
+                // laddered with the cell's own reading, the pin over every byte above it, and the
+                // reproduction list of the files it names. This file spells none of those facts.
+                //
+                // **The pin is verified by the security layer, not assumed.** `voxel-axis-security`
+                // holds this machine's key outside the checkout — it refuses a key path inside the
+                // tree, because a key in the repository is in every clone — signs the bytes the pin
+                // covers, and is the `Verifier` the gate asks. No key means no signature, and no
+                // signature means the gate refuses: the console prints whichever of those is true.
+                match voxel_axis_artifact::Package::of(&tree, &id, report.cells()) {
+                    Ok(mut package) => {
+                        for line in package.lines() {
+                            self.console.log(Level::Event, "package", line.render(), tick);
+                        }
+                        self.console.log(
+                            Level::Event,
+                            "package",
+                            format!(
+                                "{id}: {} statement(s), pin {} over {} file(s), {}",
+                                package.lines().len(),
+                                package.pin().digest,
+                                package.files().len(),
+                                if package.pin().signature.is_some() {
+                                    "signed"
+                                } else {
+                                    "unsigned"
+                                }
+                            ),
+                            tick,
+                        );
+                        match package.reproduce(&tree) {
+                            Ok(reproduced) => self.console.log(
+                                Level::Event,
+                                "package",
+                                format!(
+                                    "re-derived {} file(s) byte for byte: {}",
+                                    reproduced.files(),
+                                    reproduced.digest()
+                                ),
+                                tick,
+                            ),
+                            Err(refusals) => {
+                                for refusal in refusals.all() {
+                                    self.console.log(
+                                        Level::Warn,
+                                        "package",
+                                        refusal.detail().to_string(),
+                                        tick,
+                                    );
+                                }
+                            }
+                        }
+                        match voxel_axis_security::Security::machine_local(&tree) {
+                            Ok(security) => {
+                                match package.sign(&security) {
+                                    Ok(()) => self.console.log(
+                                        Level::Event,
+                                        "package",
+                                        format!(
+                                            "signed by {} — the key at {}",
+                                            security.key_id().as_str(),
+                                            security.path().display()
+                                        ),
+                                        tick,
+                                    ),
+                                    Err(refusals) => {
+                                        for refusal in refusals.all() {
+                                            self.console.log(
+                                                Level::Warn,
+                                                "package",
+                                                refusal.detail().to_string(),
+                                                tick,
+                                            );
+                                        }
+                                    }
+                                }
+                                match package.gate(&tree, &security) {
+                                    Ok(()) => self.console.log(
+                                        Level::Event,
+                                        "package",
+                                        format!(
+                                            "pin verified over {} byte(s) — every gate passed",
+                                            package.body().len()
+                                        ),
+                                        tick,
+                                    ),
+                                    Err(refusals) => {
+                                        for refusal in refusals.all() {
+                                            self.console.log(
+                                                Level::Warn,
+                                                "package",
+                                                refusal.detail().to_string(),
+                                                tick,
+                                            );
+                                        }
+                                    }
+                                }
+
+                                // ---- the axis authority: a grant issued, and a grant refused ----
+                                //
+                                // **The layer an agent-facing surface speaks through.**
+                                // `voxel-axis-mcp` serves no protocol of its own: it takes the cells
+                                // and the document this mount just printed, and answers three
+                                // questions — what the verified matrix says, what the recipe for a
+                                // named ticket is, and whether a grant authorises an act. The grant
+                                // is signed by the same security layer that signed the pin.
+                                //
+                                // **The second attempt is the one worth printing.** A grant signed
+                                // for another ticket is a real credential that authorises nothing
+                                // here; the layer refuses it by naming both tickets, and this
+                                // console shows the refusal rather than a silence the player has to
+                                // interpret.
+                                let (segment, axis) = (
+                                    voxel_axis_matrix::Segment::Shell,
+                                    voxel_model::axis::AxisKind::EvidenceGrade,
+                                );
+                                let now = tick.unwrap_or(0);
+                                match voxel_axis_mcp::Registry::over(
+                                    &id,
+                                    security.clone(),
+                                    report.cells().to_vec(),
+                                    package,
+                                ) {
+                                    Ok(registry) => {
+                                        match registry.grant(&id, segment, axis, now + 600) {
+                                            Ok(grant) => {
+                                                self.console.log(
+                                                    Level::Event,
+                                                    "mcp",
+                                                    format!("grant issued: {}", grant.render()),
+                                                    tick,
+                                                );
+                                                match registry.apply(
+                                                    Some(&grant),
+                                                    &id,
+                                                    segment,
+                                                    axis,
+                                                    now,
+                                                ) {
+                                                    Ok(applied) => self.console.log(
+                                                        Level::Event,
+                                                        "mcp",
+                                                        applied.render(),
+                                                        tick,
+                                                    ),
+                                                    Err(refusals) => {
+                                                        for refusal in refusals.all() {
+                                                            self.console.log(
+                                                                Level::Warn,
+                                                                "mcp",
+                                                                refusal.detail().to_string(),
+                                                                tick,
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                                let other = format!("{id}-neighbour");
+                                                match registry.grant(
+                                                    &other,
+                                                    segment,
+                                                    axis,
+                                                    now + 600,
+                                                ) {
+                                                    Ok(grant) => match registry.apply(
+                                                        Some(&grant),
+                                                        &id,
+                                                        segment,
+                                                        axis,
+                                                        now,
+                                                    ) {
+                                                        Ok(_) => self.console.log(
+                                                            Level::Warn,
+                                                            "mcp",
+                                                            format!(
+                                                                "a grant for {other} was accepted on \
+                                                                 {id} — the authority is not refusing"
+                                                            ),
+                                                            tick,
+                                                        ),
+                                                        Err(refusals) => {
+                                                            for refusal in refusals.all() {
+                                                                self.console.log(
+                                                                    Level::Warn,
+                                                                    "mcp",
+                                                                    format!(
+                                                                        "refused: {}",
+                                                                        refusal.detail()
+                                                                    ),
+                                                                    tick,
+                                                                );
+                                                            }
+                                                        }
+                                                    },
+                                                    Err(refusals) => {
+                                                        for refusal in refusals.all() {
+                                                            self.console.log(
+                                                                Level::Warn,
+                                                                "mcp",
+                                                                refusal.detail().to_string(),
+                                                                tick,
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Err(refusals) => {
+                                                for refusal in refusals.all() {
+                                                    self.console.log(
+                                                        Level::Warn,
+                                                        "mcp",
+                                                        refusal.detail().to_string(),
+                                                        tick,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(refusals) => {
+                                        for refusal in refusals.all() {
+                                            self.console.log(
+                                                Level::Warn,
+                                                "mcp",
+                                                refusal.detail().to_string(),
+                                                tick,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Err(refusals) => {
+                                // No key on this machine is a refusal with a reason, and the pin
+                                // gate then says the package is unsigned rather than passing it.
+                                for refusal in refusals.all() {
+                                    self.console.log(
+                                        Level::Warn,
+                                        "package",
+                                        refusal.detail().to_string(),
+                                        tick,
+                                    );
+                                }
+                                if let Err(refusals) = package.gate(
+                                    &tree,
+                                    &voxel_package::signing::NoSigningBackend {
+                                        why: "this machine holds no signing key".to_string(),
+                                    },
+                                ) {
+                                    for refusal in refusals.all() {
+                                        self.console.log(
+                                            Level::Warn,
+                                            "package",
+                                            refusal.detail().to_string(),
+                                            tick,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(refusals) => {
+                        for refusal in refusals.all() {
+                            self.console.log(
+                                Level::Warn,
+                                "package",
+                                refusal.detail().to_string(),
+                                tick,
+                            );
+                        }
+                    }
+                }
+            }
+            Err(refusals) => {
+                for refusal in refusals.all() {
+                    self.refuse_cmd(Verb::File, refusal.detail().to_string(), tick);
+                }
+            }
+        }
 
         // ---- the agent's inbox: the recipe, on the notification stream -------
         //
@@ -1914,10 +2361,48 @@ impl Mount {
     /// **It cannot fall back to a default.** A loader that substituted the embedded package
     /// when a path was missing would make a missing package and the running one
     /// indistinguishable, and every refusal below is the alternative.
+    ///
+    /// # The declaration is read here, because here is where a package is mounted
+    ///
+    /// A display package is a folder, and its drawing is declared in `package.cells` beside the
+    /// recipe. So the folder is read in the same act as the package: `cells 0` or `cells 1`
+    /// becomes the drawing in force ([`Mount::cell_version`]), and a declaration this build does
+    /// not read **refuses the package before anything is adopted** — the arrangement and the
+    /// drawing already on screen keep drawing, and the sentence names the file and the line.
+    /// Reading it only where the shell booted would leave every package that arrives later
+    /// neither selecting its drawing nor refused, which is the hole this read closes.
+    ///
+    /// **A saved `.shspec` is compiled with the compiler's own function**, the same call the
+    /// build and the live-reload watch make, so a prototype this loader admits is one the build
+    /// admits. A `.shpkg` is already framed and is read as it is. A folder with no
+    /// `package.cells` is a declared absence: the package mounts and the version in force stays.
     pub fn load_package(&mut self, path: &std::path::Path) -> Result<voxel_package::recipe::Loaded, String> {
         let bytes = std::fs::read(path)
             .map_err(|found| format!("{} cannot be read ({found})", path.display()))?;
-        let loaded = voxel_package::recipe::load(&bytes).map_err(|refusals| {
+        let folder = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let framed = if path.extension().map(|ext| ext == "shspec").unwrap_or(false) {
+            let artifacts = voxel_package::recipe::artifacts_in(folder).map_err(|why| {
+                format!("{}: {why}", path.display())
+            })?;
+            voxel_package::recipe::compile_with_artifacts(&bytes, &artifacts).map_err(|refusals| {
+                format!(
+                    "{} was refused: {}",
+                    path.display(),
+                    refusals
+                        .all()
+                        .iter()
+                        .map(|refusal| refusal.detail().to_string())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                )
+            })?
+        } else {
+            bytes
+        };
+        let loaded = voxel_package::recipe::load(&framed).map_err(|refusals| {
             format!(
                 "{} does not frame a package: {}",
                 path.display(),
@@ -1929,7 +2414,33 @@ impl Mount {
                     .join("; ")
             )
         })?;
-        self.reload(&loaded)?;
+        // **Before the arrangement is adopted**, so a declaration this build does not read cannot
+        // take the screen: the refusal is the package's, and the shell is left exactly as it was.
+        let declaration = super::cells::declare(folder).map_err(|refusal| refusal.to_string())?;
+        // **The frames are graded before anything is adopted**, like the declaration: a frame the
+        // grammar refuses, the recipe cannot name, the window cannot host, or the record cannot
+        // explain is the package's refusal, and the shell keeps the frames and the arrangement it
+        // already had.
+        let graded =
+            voxel_package::cellframe::read_artifacts(&loaded.artifacts, &loaded.recipe).map_err(
+                |found| {
+            format!(
+                "{}: {}",
+                path.display(),
+                found
+                    .all()
+                    .iter()
+                    .map(|refusal| refusal.detail().to_string())
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            )
+        })?;
+        self.reload(&loaded)
+            .map_err(|why| format!("{} was refused: {why}", path.display()))?;
+        if let Some(declaration) = declaration {
+            self.cells = declaration.version;
+        }
+        self.frames = graded.frames;
         Ok(loaded)
     }
 
@@ -1957,15 +2468,22 @@ impl Mount {
     /// is named on the console once rather than once per tick. The arrangement in force is
     /// untouched in both cases: the refusal is the loader's own, and there is no second rule here.
     ///
+    /// **The arriving package is mounted by [`Mount::load_package`]**, so the folder's
+    /// `package.cells` is read by the same act that adopts it: a package that arrives declaring
+    /// `cells 0` brings the old drawing back mid-run, and one written under an old declaration
+    /// header is refused with its file and line before anything is adopted — the drawing already
+    /// on screen keeps drawing. A declaration read only at boot would leave both cases unanswered.
+    ///
     /// # The shell prototype is a `.shspec`, and saving it is the edit
     ///
     /// `packages/alpha-shell.shspec` is the shell package's own source — the file `build.rs`
     /// compiles into the package the game opens with — so a saved spec is compiled **with the
-    /// compiler's own `recipe::compile`** and adopted. That is the loop the user ruled the game is
-    /// supposed to have, and the one the dirty branch used to add a missing glyph to the window
-    /// chrome: edit the prototype, the running game shows it, read what it did. No second compiler
-    /// lives here — the bytes are framed by the same function, so a spec this watch accepts is a
-    /// spec the build accepts, and one it refuses is named rather than half-loaded.
+    /// compiler's own `recipe::compile`** inside [`Mount::load_package`] and adopted. That is the
+    /// loop the user ruled the game is supposed to have, and the one the dirty branch used to add a
+    /// missing glyph to the window chrome: edit the prototype, the running game shows it, read what
+    /// it did. No second compiler lives here — the bytes are framed by the same function, so a spec
+    /// this watch accepts is a spec the build accepts, and one it refuses is named rather than
+    /// half-loaded.
     pub fn watch_packages(
         &mut self,
         dir: &std::path::Path,
@@ -2014,75 +2532,27 @@ impl Mount {
             return None;
         }
         self.packages_seen = Some((path.clone(), digest));
-        // **A saved spec is compiled with the compiler's own function**, so the watch cannot
-        // accept an arrangement the build would refuse; a package is already framed.
-        let framed = if path.extension().map(|ext| ext == "shspec").unwrap_or(false) {
-            match voxel_package::recipe::compile(&bytes) {
-                Ok(frame) => frame,
-                Err(refusals) => {
-                    self.log(
-                        Level::Warn,
-                        "reload",
-                        format!(
-                            "{} was refused: {}",
-                            path.display(),
-                            refusals
-                                .all()
-                                .iter()
-                                .map(|refusal| refusal.detail().to_string())
-                                .collect::<Vec<_>>()
-                                .join("; ")
-                        ),
-                        tick,
-                    );
-                    return None;
-                }
-            }
-        } else {
-            bytes
-        };
-        let loaded = match voxel_package::recipe::load(&framed) {
-            Ok(loaded) => loaded,
-            Err(refusals) => {
-                self.log(
-                    Level::Warn,
-                    "reload",
-                    format!(
-                        "{} does not frame a package: {}",
-                        path.display(),
-                        refusals
-                            .all()
-                            .iter()
-                            .map(|refusal| refusal.detail().to_string())
-                            .collect::<Vec<_>>()
-                            .join("; ")
-                    ),
-                    tick,
-                );
-                return None;
-            }
-        };
-        match self.reload(&loaded) {
-            Ok(()) => {
+        // **The arriving package is mounted by the one loader**, which frames a saved spec with
+        // the compiler's own function, reads the folder's declaration and adopts — so this watch
+        // cannot accept an arrangement the build would refuse, and a package that arrives with a
+        // `package.cells` beside it selects its drawing here rather than only at boot.
+        match self.load_package(&path) {
+            Ok(loaded) => {
                 self.log(
                     Level::Event,
                     "reload",
                     format!(
-                        "adopted {} while running: {} window(s)",
+                        "adopted {} while running: {} window(s), drawing {}",
                         path.display(),
-                        loaded.recipe.windows.len()
+                        loaded.recipe.windows.len(),
+                        self.cells.number()
                     ),
                     tick,
                 );
                 Some(path)
             }
             Err(why) => {
-                self.log(
-                    Level::Warn,
-                    "reload",
-                    format!("{} was refused: {why}", path.display()),
-                    tick,
-                );
+                self.log(Level::Warn, "reload", why, tick);
                 None
             }
         }
@@ -2353,8 +2823,8 @@ impl Mount {
                 }
             }
         }
-        self.ordered
-            .iter()
+        self.draw_order(Layer::Shell)
+            .into_iter()
             .rev()
             .any(|id| self.rect_of(id).is_some_and(|rect| rect.contains(at)))
     }
@@ -2506,53 +2976,146 @@ impl Mount {
         })
     }
 
-    /// Everything drawn on the shell layer: the windows that float, the bar, and the menu.
+    /// **Where the cell format may draw: every open window's content container.**
+    ///
+    /// The raster is forbidden the shell's main drawables — the bar, title bars, borders, panel
+    /// chrome, the console's frame — and is addressable only in the space a window's content
+    /// occupies. That space is this list, computed from the same [`window_body`] arithmetic the
+    /// window's own drawing uses, so the mask and the thing it masks cannot disagree.
+    ///
+    /// A window that is closed or minimized contributes nothing; a maximized one contributes the
+    /// body of the rect it is actually drawn at ([`Mount::rect_of`] states that rect), and a docked
+    /// pane's space is its host's, because the host's content is what contains it.
+    pub fn content_space(&self) -> Vec<Rect> {
+        self.ordered
+            .iter()
+            .filter_map(|id| {
+                let window = self.windows.get(id.as_str())?;
+                if matches!(window.status, Status::Closed | Status::Minimized) {
+                    return None;
+                }
+                let rect = self.rect_of(id)?;
+                Some(window_body(&window.spec, rect))
+            })
+            .collect()
+    }
+
+    /// **Every graded frame the mount may draw, placed in its window's content space.**
+    ///
+    /// The placement is the content container of the frame's window — the same [`window_body`]
+    /// arithmetic [`Mount::content_space`] uses — so a frame's footprint is inside a space the
+    /// cell format is allowed to address, and never the bar, a title bar or a border. A window that
+    /// is closed, minimized or docked contributes no frame (it has no rect of its own), and a
+    /// window the player resized smaller than its frame's grid contributes none either: **a frame is
+    /// a declaration of a whole grid**, and drawing part of one would be a cut the package did not
+    /// state.
+    ///
+    /// The list is ordered by the frame's own `order`, so two frames over one another draw in the
+    /// order their package declared.
+    pub fn frame_space(&self) -> Vec<Placed<'_>> {
+        let mut placed = Vec::new();
+        for entry in &self.frames {
+            let Some(window) = self.windows.get(entry.frame.window.as_str()) else {
+                continue;
+            };
+            if matches!(window.status, Status::Closed | Status::Minimized) {
+                continue;
+            }
+            let Some(rect) = self.rect_of(&entry.frame.window) else {
+                continue;
+            };
+            let content = window_body(&window.spec, rect);
+            let width = f64::from(entry.frame.cols) * super::cells::CELL_W_DP;
+            let height = f64::from(entry.frame.rows) * super::cells::CELL_H_DP;
+            if width > content.width_dp || height > content.height_dp {
+                continue;
+            }
+            placed.push(Placed { frame: &entry.frame, rect: content });
+        }
+        placed.sort_by_key(|entry| entry.frame.order);
+        placed
+    }
+
+    /// The graded frame addressed to `window`, if the mounted package declared one — the question a
+    /// test and a panel ask, without reaching into the frame's cells.
+    pub fn frame_of(&self, window: &str) -> Option<&voxel_package::cellframe::Frame> {
+        self.frames
+            .iter()
+            .find(|entry| entry.frame.window == window)
+            .map(|entry| &entry.frame)
+    }
+
+    /// **The stack, in one place** — the order a layer draws its windows, back to front.
+    ///
+    /// Within a layer the last focused window is on top. **The pinned windows draw above the
+    /// floating ones**: pinning is the HUD layer (H-9.8), so a window that stays while the shell
+    /// is hidden cannot be buried by a window that hides with it. The drawing and the hit test
+    /// both read this list, which is what keeps the window that answers a click the window that
+    /// is visibly on top.
+    fn draw_order(&self, layer: Layer) -> Vec<&str> {
+        let pinned = |id: &String| {
+            self.windows.get(id.as_str()).is_some_and(|window| window.spec.pinnable)
+        };
+        match layer {
+            Layer::Pinned => {
+                self.ordered.iter().filter(|id| pinned(id)).map(String::as_str).collect()
+            }
+            Layer::Shell => {
+                let mut out: Vec<&str> = Vec::with_capacity(self.ordered.len());
+                out.extend(self.ordered.iter().filter(|id| !pinned(id)).map(String::as_str));
+                out.extend(self.ordered.iter().filter(|id| pinned(id)).map(String::as_str));
+                out
+            }
+        }
+    }
+
+    /// **A layer's paint pass** — every window in the layer's order, each laid out on its own.
     ///
     /// **A window that refuses is one window's refusal, not the shell's.** A dock that halves a
     /// pane, or a panel that outgrows the window the package declared for it, must not take the
-    /// other fifteen windows off the screen with it: the shell drew nothing at all, and the
-    /// refusal named one window. So each window is laid out on its own, the ones that lay out are
-    /// drawn, and the ones that do not leave their frame and a refusal in [`Mount::refusals`].
+    /// other fifteen windows off the screen: the ones that lay out are drawn, and the ones that do
+    /// not leave their frame and a refusal in [`Mount::refusals`].
+    fn layer_elements(
+        &mut self,
+        layer: Layer,
+        palette: &Palette,
+        views: &ContentViews,
+    ) -> Vec<Element> {
+        let mut out = Vec::new();
+        self.refusals.clear();
+        // Owned for the loop: each window's paint borrows `self` mutably.
+        let open: Vec<String> = self.draw_order(layer).into_iter().map(str::to_string).collect();
+        for id in &open {
+            if let Err(refusal) = self.window_elements(id, palette, views, &mut out) {
+                self.refusals.push(refusal.to_string());
+            }
+        }
+        out
+    }
+
+    /// Everything drawn on the shell layer: every window in [`Mount::draw_order`]'s shell
+    /// order, the bar, and the menu.
     pub fn shell_elements(
         &mut self,
         palette: &Palette,
         viewport: Rect,
         views: &ContentViews,
     ) -> UiResult<Vec<Element>> {
-        let mut out = Vec::new();
-        self.refusals.clear();
-        let open: Vec<String> = self.ordered.clone();
-        for id in &open {
-            if let Err(refusal) = self.window_elements(id, palette, views, &mut out) {
-                self.refusals.push(refusal.to_string());
-            }
-        }
+        let mut out = self.layer_elements(Layer::Shell, palette, views);
         self.bar_elements(palette, viewport, &mut out)?;
         out.extend(self.menu_elements(palette, viewport)?);
         Ok(out)
     }
 
     /// Everything drawn on the **pinned layer**: the windows that stay while the shell is
-    /// hidden. H-9.8 and `shell/hud.rs`; the same windows, the same painter — including the rule
-    /// that one window's refusal is one window's.
+    /// hidden. H-9.8 and `shell/hud.rs`; the same windows, the same painter.
     pub fn pinned_elements(
         &mut self,
         palette: &Palette,
         _viewport: Rect,
         views: &ContentViews,
     ) -> UiResult<Vec<Element>> {
-        let mut out = Vec::new();
-        self.refusals.clear();
-        let open: Vec<String> = self.ordered.clone();
-        for id in &open {
-            let pinned = self.windows.get(id).is_some_and(|w| w.spec.pinnable);
-            if pinned {
-                if let Err(refusal) = self.window_elements(id, palette, views, &mut out) {
-                    self.refusals.push(refusal.to_string());
-                }
-            }
-        }
-        Ok(out)
+        Ok(self.layer_elements(Layer::Pinned, palette, views))
     }
 
     /// The refusals from the last layout, one line per window that could not be drawn.
@@ -2862,14 +3425,16 @@ impl Mount {
     /// drawing pass places the content in, so a docked console's controls act where they are
     /// drawn (the case the derived routing named as absent).
     fn press_in_pane(&mut self, host: &str, pane: &WindowId, rect: Rect, at: (f64, f64)) {
-        let Some(pane_rect) = self
-            .windows
-            .get(host)
-            .and_then(|window| window.layout_at(rect).ok())
-            .and_then(|layout| layout.window_rect(pane))
-        else {
+        let Some(host_window) = self.windows.get(host) else {
             return;
         };
+        let Ok(layout) = host_window.layout_at(rect) else {
+            return;
+        };
+        let Some(pane_rect) = layout.window_rect(pane) else {
+            return;
+        };
+        let body = pane_content_rect(host_window, pane_rect);
         let Some(content) = self
             .windows
             .get(pane.as_str())
@@ -2880,7 +3445,6 @@ impl Mount {
         if content != Content::Console {
             return;
         }
-        let body = super::pane::body(pane_rect);
         for (lane, lane_rect) in console_lanes(body) {
             if !lane_rect.contains(at) {
                 continue;
@@ -2937,10 +3501,10 @@ impl Mount {
     /// `ordered`'s, which is back to front, so the last window holding the point is the one the
     /// click resolves to — and it is the only one (a click through a window is a mis-click).
     fn topmost_window(&self, at: (f64, f64)) -> Option<(String, Rect)> {
-        self.ordered.iter().rev().find_map(|id| {
+        self.draw_order(Layer::Shell).into_iter().rev().find_map(|id| {
             self.rect_of(id)
                 .filter(|rect| rect.contains(at))
-                .map(|rect| (id.clone(), rect))
+                .map(|rect| (id.to_string(), rect))
         })
     }
 
@@ -2982,15 +3546,15 @@ impl Mount {
     /// with**, which is the arithmetic the preview is drawn from.
     fn drop_target_for(&self, dragged: &str, at: (f64, f64)) -> Option<(String, DropTarget)> {
         let candidates: Vec<(String, Rect, f64, super::splitter::Layout)> = self
-            .ordered
-            .iter()
-            .filter(|id| id.as_str() != dragged)
+            .draw_order(Layer::Shell)
+            .into_iter()
+            .filter(|id| *id != dragged)
             .filter_map(|id| {
                 let window = self.windows.get(id)?;
                 let rect = self.rect_of(id)?;
                 let layout = window.layout_at(rect).ok()?;
                 let title_height = window::title_height(&window.spec);
-                Some((id.clone(), rect, title_height, layout))
+                Some((id.to_string(), rect, title_height, layout))
             })
             .collect();
         window::drop_target_at(
@@ -3380,7 +3944,12 @@ impl Mount {
             let Some(pane_rect) = layout.window_rect(pane) else {
                 return;
             };
-            (pane.as_str().to_string(), pane_rect)
+            // **The rect the content is drawn in**: the pane's own body, which for a window
+            // that draws no headers is the pane itself ([`super::pane_content_rect`]).
+            (
+                pane.as_str().to_string(),
+                pane_content_rect(window, pane_rect),
+            )
         };
         let Some(content) = self.windows.get(&pane).map(|window| window.spec.content) else {
             return;
@@ -3388,10 +3957,9 @@ impl Mount {
         if !matches!(content, Content::Console | Content::Log) {
             return;
         }
-        // **The rect the content is drawn in**: the pane's own body below its header — the
-        // 40 dp the derived wheel did not remove, which put its scroll surface above the
-        // drawn one.
-        let regions = console_regions(super::pane::body(pane_rect), content);
+        // **The rect the content is drawn in**, from the same call the drawing made: a second
+        // arithmetic here put the wheel's scroll surface above the drawn one.
+        let regions = console_regions(pane_rect, content);
         if !regions.output.contains(at) {
             // The toolbar and the command bar are rows of targets, not scroll surfaces.
             return;
@@ -3504,10 +4072,13 @@ impl Mount {
             // `panel_for`. A pane whose view this shell cannot build still falls through to the
             // declared-content panel below, which is the honest answer rather than a blank.
             //
-            // **The content sits below the pane's header**, the reference's own slot
+            // **The content sits below the pane's header** — the reference's own slot
             // (`WindowPane` 2666–2685): the header is one pointer row, and the body is what is
-            // left of the pane.
-            let pane_rect = super::pane::body(pane_rect);
+            // left of the pane. **A window whose one pane is itself has no header to sit
+            // below**, so its content begins at the pane's top: that is the row the package
+            // reserved for the body, and starting 40 dp lower is what ran the declared
+            // geometry off the bottom of the screen.
+            let pane_rect = pane_content_rect(window, pane_rect);
             if let Some(pane_window) = self.windows.get(&pane_id) {
                 let content = pane_window.spec.content;
                 if matches!(content, Content::Console | Content::Log) {
@@ -3933,9 +4504,91 @@ bar\tconsole\n\
 filed\ttools\tinventory\n\
 pin\tworld\n";
 
+    /// **One window, content `api-viewer`** — `packages/alpha-shell.shspec`'s api-viewer at its
+    /// declared size, so the pane in the test is the pane a player gets.
+    const API_RECIPE: &str = "shploingus.recipe/3\n\
+package\tapi-test\tv0\n\
+window\tapi-viewer\n\
+\ttitle\tAPI viewer\n\
+\tcontent\tapi-viewer\n\
+\tlane\tframe\n\
+\textent\tsquare-pixels\n\
+\tgeometry\t144 160 640 440\n\
+\tmin-size\t320 192\n\
+\topacity\t930\n\
+\televation\t1\n\
+\ttheme-role\tsurface\n\
+\tpinnable\tfalse\n\
+\tlayout\tminimize,maximize,close,title-position\n\
+\tbehavior\tdrag,resize,maximize,minimize,close\n\
+\trecord-id\twindow-api-viewer\n";
+
     fn loaded() -> Loaded {
         let package = recipe::compile(TEST_RECIPE.as_bytes()).expect("the test recipe compiles");
         recipe::load(&package).expect("the test package loads")
+    }
+
+    fn workspace() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("the crate sits two levels under the workspace")
+            .to_path_buf()
+    }
+
+    #[test]
+    fn a_shipped_cell_frame_grades_and_mounts_from_the_package_alone() {
+        let folder = workspace().join("display-packages/alpha-shell");
+        let source = std::fs::read(folder.join("package.shspec")).expect("the package source");
+        let artifacts = recipe::artifacts_in(&folder).expect("the folder's frames");
+        assert!(
+            artifacts.contains_key("frames/MAP-0001.frame"),
+            "the display package carries its frame"
+        );
+        let package = recipe::compile_with_artifacts(&source, &artifacts)
+            .expect("the package compiles with its frames");
+        let loaded = recipe::load(&package).expect("the packaged frame loads");
+        assert_eq!(loaded.artifacts, artifacts);
+
+        let mut mount = Mount::new(&loaded).expect("the shipped frame grades and mounts");
+        let frame = mount.frame_of("map-plan").expect("the map-plan frame is mounted");
+        assert_eq!(frame.id, "MAP-0001");
+        mount.open("map-plan").expect("the map window opens");
+        assert!(
+            mount
+                .frame_space()
+                .iter()
+                .any(|placed| placed.frame.id == "MAP-0001"),
+            "the shipped frame is placed in its window's content space"
+        );
+    }
+
+    #[test]
+    fn a_package_whose_frame_names_an_undeclared_window_is_refused_at_mount() {
+        let folder = workspace().join("display-packages/alpha-shell");
+        let source = std::fs::read(folder.join("package.shspec")).expect("the package source");
+        let mut artifacts = recipe::artifacts_in(&folder).expect("the folder's frames");
+        let frame = artifacts
+            .get("frames/MAP-0001.frame")
+            .expect("the frame")
+            .clone();
+        artifacts.insert(
+            "frames/MAP-0001.frame".to_string(),
+            String::from_utf8(frame)
+                .expect("the frame is text")
+                .replace("\twindow\tmap-plan", "\twindow\tno-such-window")
+                .into_bytes(),
+        );
+        let package = recipe::compile_with_artifacts(&source, &artifacts).expect("compiles");
+        let loaded = recipe::load(&package).expect("the frame is opaque to the recipe reader");
+        let refused = match Mount::new(&loaded) {
+            Err(refused) => refused,
+            Ok(_) => panic!("a frame outside a window has no content space"),
+        };
+        assert!(
+            refused.to_string().contains("does not declare"),
+            "{refused}"
+        );
     }
 
     fn views() -> ContentViews {
@@ -3953,6 +4606,7 @@ pin\tworld\n";
             determinism: panel("Determinism"),
             refusals: panel("Refusals"),
             console: None,
+            api: None,
         }
     }
 
@@ -3960,6 +4614,34 @@ pin\tworld\n";
         let mut mount = Mount::new(&loaded()).expect("the test package mounts");
         mount.set_viewport(Rect::new(0.0, 0.0, 1280.0, 720.0));
         mount
+    }
+
+    /// **The pinned windows are the HUD layer and draw over the floating ones** (H-9.8), so a
+    /// window that stays while the shell is hidden cannot be buried by a window that hides with
+    /// it. The pointer reads the same order, which is what makes the topmost window on screen the
+    /// one that answers a click.
+    #[test]
+    fn a_pinned_window_draws_above_a_floating_one() {
+        let mut mount = mount();
+        mount.open("inventory").expect("declared");
+        mount.open("tools").expect("declared");
+        let order = mount.draw_order(Layer::Shell);
+        let pinned = order.iter().position(|id| *id == "inventory").expect("open");
+        let floating = order.iter().position(|id| *id == "tools").expect("open");
+        assert!(
+            pinned > floating,
+            "tools was focused last and still draws under the pinned window: {order:?}"
+        );
+        assert!(
+            !mount.draw_order(Layer::Pinned).iter().any(|id| *id == "tools"),
+            "the pinned layer is the pinned windows and nothing else"
+        );
+        // The two overlap at (200, 220); the pinned window is the one on top, so it is the one
+        // the pointer resolves.
+        assert_eq!(
+            mount.topmost_window((200.0, 220.0)).map(|(id, _)| id).as_deref(),
+            Some("inventory")
+        );
     }
 
     /// A package for the console and its log — H-7.17's two windows, and nothing else.
@@ -4016,8 +4698,9 @@ window\tlog\n\
     /// inside** — [`window_body`], so a lane fixture cannot disagree with the drawn control.
     fn console_body_rect(mount: &Mount) -> Rect {
         let rect = mount.rect_of("console").expect("the console is open");
-        let spec = mount.window("console").expect("the console is held").spec.clone();
-        super::super::pane::body(window_body(&spec, rect))
+        let window = mount.window("console").expect("the console is held");
+        // **The drawing's own call**, so a lane fixture cannot disagree with the drawn control.
+        pane_content_rect(window, window_body(&window.spec, rect))
     }
 
     /// Every text the shell draws for this mount, through the same entry point the bin uses.
@@ -4945,6 +5628,7 @@ window\tlog\n\
             determinism: crate::hud::determinism_panel(&state),
             refusals: crate::hud::refusal_panel(&state),
             console: Some(mount.console().clone()),
+            api: mount.api_view().cloned(),
         };
         let mut short: Vec<String> = Vec::new();
         for id in mount.windows.keys() {
@@ -5035,6 +5719,7 @@ window\tlog\n\
             determinism: crate::hud::determinism_panel(&state),
             refusals: crate::hud::refusal_panel(&state),
             console: Some(mount.console().clone()),
+            api: mount.api_view().cloned(),
         };
         mount.open("inventory").expect("declared");
         mount.open("world").expect("declared");
@@ -5070,7 +5755,7 @@ window\tlog\n\
                 spec.geometry[2] as f64,
                 spec.geometry[3] as f64,
             );
-            let pane = super::super::pane::body(window_body(spec, declared)).height_dp;
+            let pane = window_body(spec, declared).height_dp;
             assert!(
                 (declared.height_dp - pane - chrome_height_dp(spec)).abs() < 0.5,
                 "{}: {} dp of chrome against the composite's {} dp",
@@ -6196,6 +6881,206 @@ window\tlog\n\
     const TICKET: &str =
         "mount window[api-viewer] and window[ledger] so the Mods window can show what the \\
          arrangement declares";
+
+    #[test]
+    fn the_api_window_draws_the_document_and_the_matrix_and_hands_out_its_refusals() {
+        // **The real mount path.** `file` back-compiles the ticket, builds the view, emits the
+        // package and reloads the shell onto it; the window then routes through
+        // `ContentViews::panel_for` like every other content kind. Nothing in this test calls
+        // `api_panel` directly, so a regression that unhooked the routing would fail here.
+        let workspace = filed_workspace("api-window");
+        let mut mount = console();
+        mount.set_workspace(workspace.clone());
+        // **The console is named too**, because `reload` refuses an arrangement that would take the
+        // command line off the screen — a refusal this test is not about, and one the shell is
+        // right to make. Naming both windows is what a player typing at the console would do.
+        type_line(
+            &mut mount,
+            "file window[console] and window[api-viewer] so the Mods window can show what the \
+             arrangement declares",
+        );
+
+        let view = mount
+            .api_view()
+            .cloned()
+            .expect("`file` back-compiled the subject and built the view from it");
+        assert!(
+            view.document.starts_with(voxel_package::apidoc::TITLE),
+            "the document is the renderer's, not this file's: {}",
+            view.document
+        );
+        assert!(
+            view.document.contains("## Declares"),
+            "the outline section the patch names: {}",
+            view.document
+        );
+
+        // **The package was produced, and the console is where it is read.** The statements are the
+        // verifier's own cells written into the format, then the pin over those bytes and the
+        // reproduction of every file they name. A mount that drew the matrix but produced no
+        // package would pass every assertion above, so this one is the artifact's own.
+        let console = mount.console.lines().join("\n");
+        assert!(
+            console.contains("statement(s), pin sha256:"),
+            "the package's pin is on the console: {console}"
+        );
+        assert!(
+            console.contains("re-derived") && console.contains("file(s) byte for byte"),
+            "the reproduction was checked rather than promised: {console}"
+        );
+        assert!(
+            console.contains("support_level"),
+            "a statement carries its ladder reading: {console}"
+        );
+        // **The pin was checked by the machine's own key**, and the console says which key — not a
+        // package that is merely pinned. The key lives outside the checkout; the security crate
+        // refuses a path inside it.
+        assert!(
+            console.contains("signed by sha256:"),
+            "the package names the key that signed it: {console}"
+        );
+        assert!(
+            console.contains("pin verified over"),
+            "the signature was actually verified against the document: {console}"
+        );
+        // **The authority an agent speaks through, exercised here rather than merely linked.** A
+        // grant is issued by the key that signed the pin, applied under the receipt that names its
+        // checks, and then a grant for another ticket is refused by name. A layer that only ever
+        // says yes is not an authority, so the refusal is the assertion that matters.
+        assert!(
+            console.contains("grant issued: grant sha256:"),
+            "the console names the grant's granter, ticket, cell and bound: {console}"
+        );
+        assert!(
+            console.contains("apply permitted on") && console.contains("checks: credential"),
+            "the grant was applied and the receipt names the checks that ran: {console}"
+        );
+        assert!(
+            console.contains("refused: the grant is for") && console.contains("-neighbour"),
+            "a grant for another ticket is refused by name: {console}"
+        );
+
+        // **The window the alpha sheet declares**, whose content kind really is `api-viewer`: a
+        // ticket that names `window[api-viewer]` compiles to the Mods window (content `mods`), so
+        // the pane this test is about is the one the shipped package declares. Same geometry as
+        // `packages/alpha-shell.shspec` — 640×440 — so the pane is the one a player would see.
+        let package = recipe::compile(API_RECIPE.as_bytes()).expect("the api recipe compiles");
+        let loaded = recipe::load(&package).expect("the api package loads");
+        let mut shell = Mount::new(&loaded).expect("the api package mounts");
+        shell.set_viewport(Rect::new(0.0, 0.0, 1280.0, 720.0));
+        shell.open("api-viewer").expect("declared");
+        shell.set_api_view(mount.api_view().cloned().expect("built by `file`"));
+
+        let spec = shell.window("api-viewer").expect("declared").spec.clone();
+        let mut base = views();
+        base.api = shell.api_view().cloned();
+        let panel = base.panel_for(&spec);
+        assert_eq!(
+            panel.title,
+            voxel_package::apidoc::TITLE,
+            "the window draws the document, not its own declaration (content {:?}, held {:?})",
+            spec.content.name(),
+            base.api.is_some()
+        );
+        assert!(
+            panel
+                .rows
+                .iter()
+                .any(|row| row.label == "section" && row.value == "Declares"),
+            "and the outline is on the pane: {:?}",
+            panel.rows
+        );
+        assert!(
+            panel
+                .rows
+                .iter()
+                .all(|row| row.label != "content" || row.value != "api-viewer"),
+            "the empty view's declaration is gone: {:?}",
+            panel.rows
+        );
+
+        // **The cells are the verifier's, and `file` did not construct a reading.** The view was
+        // built by asking `voxel_axis_verify` for the tree the scratch workspace sits in, so every
+        // segment the tree can witness has a cell, plus the artifact format's own cell, and the
+        // ticket on each is the one that was just filed rather than a literal here.
+        let cells = voxel_axis_matrix::Segment::ALL.len() + 1;
+        assert_eq!(
+            view.matrix.len(),
+            cells,
+            "one cell per segment plus the artifact format: {:?}",
+            view.refusals
+        );
+        let cell_lines: Vec<String> = view
+            .matrix
+            .report()
+            .into_iter()
+            .filter(|line| line.contains('★'))
+            .collect();
+        assert_eq!(cell_lines.len(), cells);
+        assert!(
+            cell_lines.iter().all(|line| line.contains("BLD-")),
+            "every cell is filed under the ticket: {cell_lines:?}"
+        );
+
+        let drawn = shell
+            .api_view()
+            .expect("the view just set is the one the window reads")
+            .rows();
+        let cell = drawn
+            .iter()
+            .find(|row| row.label.ends_with("/evidence_grade"))
+            .expect("the measured segment is a row");
+        assert!(
+            cell.value.contains("evidence_grade ")
+                && cell.value.contains("(witness: crates/"),
+            "the cell names its reading and its own witness: {}",
+            cell.value
+        );
+        assert!(
+            cell.value.contains("BLD-"),
+            "and the ticket it was filed under: {}",
+            cell.value
+        );
+
+        // **The pane is bounded, not blank**: at the window's own 640×440 the panel drops rows
+        // rather than refusing to lay out, and says how many it is holding.
+        let mut base = views();
+        base.api = shell.api_view().cloned();
+        let panel = base.panel_for(&spec);
+        assert!(
+            panel.height_dp() <= super::pane_of(&spec) + 0.5,
+            "a {} dp panel in a {} dp pane",
+            panel.height_dp(),
+            super::pane_of(&spec)
+        );
+        assert!(
+            panel
+                .rows
+                .iter()
+                .any(|row| row.label.contains('/') && row.value.contains("BLD-")),
+            "a measured cell survives the bound: {:?}",
+            panel.rows
+        );
+        let held = panel.note.clone().expect("the document and its cells overrun the pane");
+        assert!(held.contains("held"), "the note says what it is holding: {held}");
+
+        // **Every row the pane could not fit is on the console**, which is what makes the bound a
+        // bound rather than a deletion: the matrix's own report lines were logged as they were
+        // measured, and the console's scrollback, filter and Copy are where they stay reachable.
+        let said = mount.console().lines();
+        for line in view.matrix.report() {
+            assert!(
+                said.iter().any(|record| record.contains(&line)),
+                "a matrix line the pane may have held is not reachable: {line}"
+            );
+        }
+        assert!(
+            said.iter()
+                .any(|record| record.contains("sources   workspace(Cargo.toml)")),
+            "and the report names every source it consulted: {said:?}"
+        );
+        let _ = std::fs::remove_dir_all(&workspace);
+    }
 
     #[test]
     fn a_typed_ticket_lands_on_the_chain_and_compiles_to_a_solution() {

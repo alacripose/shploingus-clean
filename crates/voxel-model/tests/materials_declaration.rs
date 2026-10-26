@@ -37,16 +37,42 @@ fn the_shipped_declaration_gates_clean() {
         defects.is_empty(),
         "the shipped declaration is refused: {defects}"
     );
-    assert_eq!(table.tiers.len(), 2);
     // The count moves in deliberate steps as the content pass lands tranches:
-    // 21 at the seed declaration; 33 after the first tranche (the 12 TFC rocks);
-    // 42 once TFC's whole classified rock set is in — 21 rocks, corrected from
-    // the record's 20; 70 once TFC's ore roster lands as minerals (28 new rows:
-    // the three native metals are the metals themselves, and bituminous_coal is
-    // the `coal` row).
-    assert_eq!(table.substances.len(), 70);
-    assert_eq!(table.processes.len(), 11);
-    assert_eq!(table.vocabulary.len(), 1);
+    // 21 substances at the seed declaration; 33 after the first tranche (the 12
+    // TFC rocks); 42 once TFC's whole classified rock set is in — 21 rocks,
+    // corrected from the record's 20; 70 once TFC's ore roster lands as minerals
+    // (28 new rows: the three native metals are the metals themselves, and
+    // bituminous_coal is the `coal` row); **128 once the technology tree is
+    // declared** — the metals, alloys, ceramics, chemicals and workshop products
+    // the harvest measures, plus their processes, which is what takes the two
+    // seed rungs to the eight-rung ladder; **141 once the molten and solution
+    // states are declared** — the seven melts, the three liquors and the
+    // leach residue, plus pressed seed oil and its cake; **145 once husbandry,
+    // composting and dyeing are declared** — the animals, seed, feed, the
+    // compost heap's three grades and the four dye-liquor colours, plus the
+    // three processes that make them matter rather than names; **146 once solvent
+    // extraction is rowed** — the spent meal, and the one process that washes the
+    // press cake with the ethanol the tree already makes.
+    assert_eq!(table.tiers.len(), 8);
+    assert_eq!(table.substances.len(), 146);
+    assert_eq!(table.processes.len(), 79);
+    assert_eq!(table.vocabulary.len(), 32);
+
+    // The rows being sound is not the tree being whole. The walk is the proof:
+    // every rung reached from the first, every substance obtainable, every
+    // process firing — and an edit that orphans any of them fails here.
+    let tree = table.tree();
+    assert!(
+        tree.is_complete(),
+        "the shipped tree is not whole: {}",
+        tree.report()
+    );
+    let coverage = tree.coverage();
+    assert_eq!(coverage.tiers_reached, coverage.tiers, "{}", tree.report());
+    assert_eq!(coverage.substances_available, coverage.substances, "{}", tree.report());
+    assert_eq!(coverage.substances_made_produced, coverage.substances_made, "{}", tree.report());
+    assert_eq!(coverage.processes_fired, coverage.processes, "{}", tree.report());
+    assert_eq!((coverage.tiers, coverage.substances, coverage.processes), (8, 146, 79));
     // The consumer rule is live: every unconsumed row states its reason, and the
     // reasons are open work rather than defects.
     assert!(

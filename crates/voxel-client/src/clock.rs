@@ -33,7 +33,12 @@
 
 /// The base tick rate, hertz. H-7.2's answer, and the number
 /// [`voxel_shapers::stages::Cadence`] measures its rungs against.
-pub const TICK_HZ: u32 = 20;
+///
+/// **The world's own declaration, not this file's.** The day's length is derived from it
+/// ([`voxel_shapers::climate::TICKS_PER_DAY`]), so a rate typed twice would let the clock and the
+/// calendar disagree about how long a day is — the same defect the tick accumulator's own doc
+/// records one level down.
+pub const TICK_HZ: u32 = voxel_shapers::climate::TICKS_PER_SECOND as u32;
 
 /// Seconds per tick, derived from [`TICK_HZ`] rather than restated.
 ///
@@ -167,6 +172,78 @@ impl Clock {
     /// that says where between them it is.
     pub fn interpolation(&self) -> f64 {
         self.accumulator_ticks.clamp(0.0, 1.0)
+    }
+}
+
+/// **A commanded move of the world's time, without touching the tick rate.**
+///
+/// The console's `time` verb names an instant; this states how the frame gets there. It never
+/// changes [`Clock::advance`]: ticks keep arriving at [`TICK_HZ`], and what moves is the **epoch
+/// offset** the calendar reads, `world_tick = clock_tick + offset`. One tick of simulation stays
+/// one tick of simulation; the date slides across it.
+///
+/// **The distance defines the window.** A seek remembers where it started and where it is going in
+/// *ticks of world time*; the caller gives a `ratio` of **ticks of travel per tick of distance**, so
+/// a target ten days away at `ratio = 2.0` arrives after twenty days of simulated ticks however
+/// near or far that is from the frame rate. The **shape** is a cubic ease-in-out
+/// (`smoothstep`'s curve, in its polynomial form): it starts and ends at rest, which is what keeps
+/// the sky from snapping at either end of a seek.
+#[derive(Clone, PartialEq, Debug)]
+pub struct TimeSeek {
+    /// The epoch offset this seek began from, in ticks.
+    pub from_offset: f64,
+    /// The epoch offset it is heading for, in ticks.
+    pub to_offset: f64,
+    /// Ticks of the seek that have elapsed.
+    pub elapsed: u64,
+    /// Ticks the seek takes, derived from the distance and the ratio.
+    pub duration: u64,
+}
+
+impl TimeSeek {
+    /// **A seek from one world tick to another.** `ratio` is ticks of travel per tick of distance:
+    /// `1.0` takes exactly as long as the distance it has to cover (a pause at the destination),
+    /// `0.5` twice as long, `2.0` half as long. A ratio that is not a positive finite number, or a
+    /// target equal to the start, is **no seek** — `None`, not a zero-length one that divides by it.
+    pub fn between(from_tick: u64, target_tick: u64, ratio: f64) -> Option<Self> {
+        if !ratio.is_finite() || ratio <= 0.0 {
+            return None;
+        }
+        let distance = target_tick.abs_diff(from_tick) as f64;
+        if distance == 0.0 {
+            return None;
+        }
+        let duration = (distance * ratio).round().max(1.0) as u64;
+        Some(Self {
+            from_offset: 0.0,
+            to_offset: target_tick as f64 - from_tick as f64,
+            elapsed: 0,
+            duration,
+        })
+    }
+
+    /// The offset at a seek that began at `start_offset`, **cubic ease-in-out**.
+    ///
+    /// `s(t) = 4t³` for the first half and `1 − 4(1−t)³` for the second: the same curve as
+    /// `smoothstep`, written out so the two halves and their meeting point are visible. At `t = 1`
+    /// it is exactly the destination, so a seek that has run its duration does not leave a
+    /// fraction of a day standing.
+    pub fn offset_at(&self, start_offset: f64) -> f64 {
+        let t = (self.elapsed as f64 / self.duration as f64).clamp(0.0, 1.0);
+        let eased = if t < 0.5 { 4.0 * t * t * t } else { 1.0 - 4.0 * (1.0 - t) * (1.0 - t) * (1.0 - t) };
+        start_offset + (self.to_offset - start_offset) * eased
+    }
+
+    /// Whether the seek has reached its destination.
+    pub fn done(&self) -> bool {
+        self.elapsed >= self.duration
+    }
+
+    /// Advance the seek by `ticks` of simulation time, returning how many it took.
+    pub fn advance(&mut self, ticks: u64) -> u64 {
+        let before = self.elapsed;
+        self.elapsed = self.elapsed.saturating_add(ticks);
+        self.elapsed - before
     }
 }
 
@@ -410,5 +487,38 @@ mod tests {
             at_30.tick, at_60.tick
         );
         assert_eq!(at_30.tick, 70, "an exact partition of 3.5 s is seventy ticks");
+    }
+
+    #[test]
+    fn a_time_seek_takes_the_distance_times_the_ratio_and_lands_exactly() {
+        // Ten days away at `ratio = 2.0` is twenty days of ticks, and the *tick rate* is not a
+        // term in it: the seek is in world ticks, so the clock's 20 Hz is untouched.
+        let day = voxel_shapers::climate::TICKS_PER_DAY;
+        let mut seek = TimeSeek::between(0, 10 * day, 2.0).expect("a seek");
+        assert_eq!(seek.duration, 20 * day, "the window is not the distance times the ratio");
+        assert!(!seek.done());
+        // Cubic ease-in-out: it leaves at rest, is halfway at half the window, and arrives at rest.
+        assert_eq!(seek.offset_at(0.0), 0.0, "a seek that has not started moved the date");
+        seek.advance(10 * day);
+        assert!((seek.offset_at(0.0) - 5.0 * day as f64).abs() < 1e-6, "not halfway at half time");
+        seek.advance(10 * day);
+        assert!(seek.done());
+        assert_eq!(
+            seek.offset_at(0.0),
+            10.0 * day as f64,
+            "a finished seek did not land on the instant exactly"
+        );
+        // And the curve is slow at the start: a tenth of the window moves less than a tenth.
+        let mut early = TimeSeek::between(0, 10 * day, 2.0).expect("a seek");
+        early.advance(2 * day);
+        assert!(early.offset_at(0.0) < 2.0 * day as f64, "the ease-in did not ease in");
+        // A ratio the arithmetic cannot use is no seek rather than a division by it.
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(TimeSeek::between(0, day, bad).is_none(), "ratio {bad} was accepted");
+        }
+        assert!(TimeSeek::between(5, 5, 1.0).is_none(), "a zero-distance seek was accepted");
+        // A backwards seek is the same law in the other direction.
+        let back = TimeSeek::between(10 * day, 0, 1.0).expect("a backward seek");
+        assert_eq!(back.to_offset, -(10.0 * day as f64));
     }
 }

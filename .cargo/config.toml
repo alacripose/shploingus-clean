@@ -1,5 +1,18 @@
-# There is deliberately **no `target-dir` override here**: this repository builds into its
-# own `target/`, the cargo default, on `C:`.
+# **The build tree is on `F:`**, at `F:/shploingus-target`, declared by `[build]` below.
+#
+# That is the third move and it was asked for rather than argued: on 2026-10-23 the build was
+# moved off `C:` and the `C:` tree was deleted, so a build here does not leave a second copy on
+# the system volume. `C:` held 22 GB free that day and `F:` 18 GB, both short of what a
+# twenty-gigabyte tree plus its link step wants, so the tree is kept in one place and cleared
+# there (`cargo space`, then `cargo clean`) rather than growing on both.
+#
+# What this costs is measured and stays written down: `F:` is the machine's only mechanical disk
+# and kache's store is on `C:`, so a cache hit is restored by **copy** across volumes instead of
+# as a hardlink. The build is therefore slower here than the prose below can make it sound, and
+# the prose is kept because it is the measurement, not the wish. What it is *not* is a reason to
+# grow a second tree on `C:`, which is what the paragraph below used to conclude.
+#
+# The older history, kept for its numbers:
 #
 # That is a reversal, and the measurements are why. The tree used to be at `F:/shploingus-target`
 # and then briefly at `C:/shploingus-target`, moved out of the repository for reasons that were
@@ -39,6 +52,43 @@
 # only safe *"if your build never deletes or rewrites an object output"*, and `voxel_package::space`
 # is a guard that deletes object outputs by design. So the store costs its own bytes, the tree
 # costs its own, and the size guard is what keeps the second one from filling the volume.
+
+# **Decision, 2026-10-21: the build tree stays on `C:`, and the kache store pays for it.**
+#
+# The question was whether to put this repository's `target/` back on `F:`. It is answered no,
+# for the reasons above and one more that is measured rather than argued:
+#
+# * `C:` is the SSD and `F:` is the machine's only mechanical disk (the paragraph above, kept
+#   for that measurement).
+# * kache restores a hit as a hardlink only when the store and the target are on one volume. A
+#   target on `F:` with the store on `C:` copies every restored artifact onto the HDD, which is
+#   the slowest possible arrangement of the two files that dominate a build.
+#
+# **What actually filled `C:` was not this tree.** Measured on 2026-10-21, at 1.8 GB free of
+# 465 GB: `<repo>/target` was **4.8 GB**, and the kache store at `C:/kache` was **21 GB** — more
+# than four times the tree it caches. On this NTFS volume the store is a *copy* of that tree and
+# not a set of block references to it (the `[cache] windows_hardlink` note above is why), so the
+# store is the first thing to go when the volume runs short. Removing `C:/kache` returned `C:` to
+# **23 GB free**; the target tree was kept, so the next build is still incremental.
+#
+# The standing rule, then, in the order it is applied:
+#
+# 1. **Twelve GiB free before a build.** Below that, do not start one here: a link step needs
+#    transient space, and a build that runs out mid-write leaves truncated `.rmeta` files that
+#    cargo then reports as "invalid metadata", which costs more time than the space was worth.
+# 2. **Clear the cache store first** (`C:/kache`). It is a cache: a miss costs a rebuild of that
+#    object, never a byte of source, and it rebuilds itself on the next build without being asked.
+# 3. **Then the tree** (`cargo clean`), which is the expensive one and is only for a volume that
+#    is short even with no store on it.
+#
+# `cargo space --floor 12GiB` below is the same number, asked of the gate rather than of a person.
+#
+# **The rule above still applies, to this volume.** `F:` carries the tree and the link step's
+# transient writes, so the floor is asked of it before a build rather than of `C:`.
+[build]
+# One tree, on `F:`. Absolute, because a relative path would be resolved against whatever
+# directory cargo happens to be invoked from.
+target-dir = "F:/shploingus-target"
 
 [alias]
 # The build-tree size guard, asked on its own: the same pass the gate runs, on the crate whose

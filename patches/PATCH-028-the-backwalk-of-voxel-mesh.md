@@ -66,3 +66,18 @@ No bytes change. The digest pins the reading; a changed record makes it stale ra
 - **The octree's residency policy is elsewhere.** `voxel-work` owns the budget and `voxel-stream` owns
   what is resident; this crate holds the structure, and which of the two decides a level is a question
   no record has yet answered in one place.
+
+## Recipes
+
+```recipe
+segment: world
+axis: evidence_grade
+ticket: T-0954
+site: crates/voxel-mesh/src/source.rs:25
+what: keep `VoxelSource` the only input a `Mesh` is produced from, so the mesher holds no GPU type, no window and no clock
+because: the crate answers what is drawn from the world's own voxels, and that is what lets its 75 tests run without a device
+check: cargo test -p voxel-mesh --lib -> failures 0
+witness: crates/voxel-mesh/src/source.rs
+expects: 0
+requires: cargo check --workspace
+```

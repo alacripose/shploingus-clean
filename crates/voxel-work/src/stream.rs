@@ -22,7 +22,7 @@
 //! # Build-up is the normal state, not a loading screen
 //!
 //! [`Streamer::pump`] is called every frame. It asks for what the window wants,
-//! takes whatever has finished, evicts what has gone out of residency, and
+//! takes whatever has finished, evicts what has gone out of the window, and
 //! returns a [`Frame`] report — so the world visibly fills outward from the
 //! viewer, the shapers are always running somewhere, and a HUD can say exactly
 //! how far along it is. [`Streamer::settle`] is the same loop run to completion,
@@ -35,7 +35,7 @@ use voxel_mesh::raycast::{Crossings, Ray};
 use voxel_mesh::{Mesh, MeshConfig, SparseVoxelOctree};
 use voxel_model::{ChunkPos, Digest, Face, MaterialId, Refusal, RefusalKind, Refused, VoxelPos};
 use voxel_shapers::earthworks::Modification;
-use voxel_stream::{Horizon, Horizons, WorldSource};
+use voxel_stream::{Horizons, WorldSource};
 
 use crate::budget::Budget;
 use crate::pool::{Built, Collected, Pool, Request, Submitted};
@@ -242,14 +242,18 @@ pub struct Streamer {
     ///    here introduces a cached byte count: the charge is [`Mesh::bytes`],
     ///    which re-walks, and the ledger's "nothing is cached, every count
     ///    re-walks the structure" (LEDGER.md) is what that re-walk is for.
-    /// 2. **It is bounded by residency.** A stale mesh is dropped the moment its
-    ///    chunk leaves the window, so this map can never outlive the residency
-    ///    horizon or grow into a second cache.
+    /// 2. **It is bounded by the window.** A stale mesh is dropped the moment its
+    ///    chunk leaves the window, so this map can never outlive the streamer's
+    ///    declared holding set or grow into a second cache.
     /// 3. **It is not world truth.** [`Streamer::len`] and [`Streamer::digest`]
     ///    count **fresh** meshes only, because a stale mesh is a piece of a
     ///    world that no longer exists and a digest spanning both would be a
     ///    statement about two worlds at once.
     stale: BTreeMap<ChunkPos, Mesh>,
+    /// **The version of each drawn chunk's mesh** — the residency counter's value when the mesh it
+    /// holds was admitted. A caller that keeps a scene across frames diffs this instead of the
+    /// meshes' bytes: a chunk whose version moved was remeshed, and one that is gone left.
+    versions: BTreeMap<ChunkPos, u64>,
     /// **The octrees behind the fresh meshes**, kept so the world's own light can be measured
     /// where it stands.
     ///
@@ -268,7 +272,12 @@ pub struct Streamer {
     /// **Charged to the same ceiling the meshes are** (`SparseVoxelOctree::bytes`, about 89 kB a
     /// chunk against a mesh's 90,481 B), so `Frame::bytes` remains the whole of what this crate
     /// holds and not a mesh-only reading of it.
-    trees: BTreeMap<ChunkPos, SparseVoxelOctree>,
+    ///
+    /// **Shared rather than borrowed**, because the measurement runs off the frame thread: a
+    /// measurer that needs a chunk's tree gets the same allocation through
+    /// [`Streamer::tree_shared`] and the two never copy 89 kB at each other. The charge above is
+    /// still the streamer's own — a second holder of one tree is one tree.
+    trees: BTreeMap<ChunkPos, std::sync::Arc<SparseVoxelOctree>>,
     /// Chunks the generator refused. Remembered so a broken chunk is asked for
     /// once and not every frame — a hot retry loop on a chunk that cannot exist
     /// would spend the whole machine producing the same refusal.
@@ -278,6 +287,12 @@ pub struct Streamer {
     discarded: u64,
     refused_for_budget: u64,
     failed_count: u64,
+    /// **The drawn world's own generation** — bumped whenever a mesh enters, leaves or is
+    /// replaced. [`Streamer::world_generation`] is the *record's* generation and does not move
+    /// when a chunk merely arrives, so a caller caching something built from the resident
+    /// meshes (a scene, a digest of one) has to key on this too: residency without this number
+    /// is a cache that keeps drawing a world the streamer has moved past.
+    residency: u64,
 }
 
 impl Streamer {
@@ -298,12 +313,14 @@ impl Streamer {
             meshes: BTreeMap::new(),
             trees: BTreeMap::new(),
             stale: BTreeMap::new(),
+            versions: BTreeMap::new(),
             failed: BTreeSet::new(),
             last_refusal: None,
             evicted: 0,
             discarded: 0,
             refused_for_budget: 0,
             failed_count: 0,
+            residency: 0,
         })
     }
 
@@ -361,6 +378,18 @@ impl Streamer {
         self.meshes.values().chain(self.stale.values())
     }
 
+    /// **What is drawn, with each chunk's mesh version**: `(position, version, mesh)`.
+    ///
+    /// The pair a scene that outlives a frame diffs: a position that is new landed, one that is
+    /// absent left, and one whose version moved was remeshed. The version is the streamer's own
+    /// residency counter, so it is monotone and never repeats for two different meshes.
+    pub fn drawn_meshes(&self) -> impl Iterator<Item = (ChunkPos, u64, &Mesh)> {
+        let versions = &self.versions;
+        self.meshes.iter().chain(self.stale.iter()).map(move |(pos, mesh)| {
+            (*pos, versions.get(pos).copied().unwrap_or(0), mesh)
+        })
+    }
+
     /// What is drawn for a chunk: the current mesh, or the last good one while
     /// a replacement is built.
     pub fn drawn(&self, pos: ChunkPos) -> Option<&Mesh> {
@@ -395,7 +424,35 @@ impl Streamer {
     /// tree in hand that describes the chunk as it now is — and a caller that gets it falls back
     /// to the rig rather than to a guess.
     pub fn tree(&self, pos: ChunkPos) -> Option<&SparseVoxelOctree> {
-        self.trees.get(&pos)
+        self.trees.get(&pos).map(|tree| tree.as_ref())
+    }
+
+    /// **The version of the tree a chunk holds**, or `None` where it holds none.
+    ///
+    /// The streamer's own residency counter, the same one [`Self::drawn_meshes`] reports: it is
+    /// bumped whenever a chunk's mesh or tree enters, leaves or is replaced, so a caller that
+    /// keeps a tree's *contents* somewhere else can tell a tree it has already read from one an
+    /// edit has rebuilt. `voxel_client::horizon` is the caller there — a lit volume stamped from
+    /// the tree of a record that has since been dug is the shadow of a block that is gone.
+    pub fn tree_version(&self, pos: ChunkPos) -> Option<u64> {
+        self.versions.get(&pos).copied()
+    }
+
+    /// **The same tree as a handle**, for a caller measuring on another thread.
+    ///
+    /// A refcount rather than a copy: `voxel_client::field`'s measurer keeps the trees its
+    /// marches cross, and duplicating a chunk's 89 kB for it would put the world's light on the
+    /// memory ledger a second time.
+    pub fn tree_shared(&self, pos: ChunkPos) -> Option<std::sync::Arc<SparseVoxelOctree>> {
+        self.trees.get(&pos).cloned()
+    }
+
+    /// **Which chunks have a tree in hand.** A measurer is handed this set with each ask so that
+    /// a chunk outside the window is known in one hash lookup rather than a round trip to this
+    /// thread: the sky above the world is most of a beam's march, and a request per hop for a
+    /// chunk that cannot be there costs a frame each.
+    pub fn tree_chunks(&self) -> impl Iterator<Item = ChunkPos> + '_ {
+        self.trees.keys().copied()
     }
 
     /// Bytes held by the resident octrees, **beside** the meshes [`Streamer::digest`] and
@@ -444,6 +501,7 @@ impl Streamer {
             // re-demoting it would be a no-op that still cost a lookup.
             if let Some(mesh) = self.meshes.remove(&pos) {
                 self.stale.entry(pos).or_insert(mesh);
+                self.residency = self.residency.wrapping_add(1);
             }
             // **And its tree goes now rather than with the mesh**, because a field measured
             // through it would be a measurement of the world the edit just removed: a dug hole
@@ -466,6 +524,16 @@ impl Streamer {
     /// that says whether there is anything new to read.
     pub fn world_generation(&self) -> u64 {
         self.pool.generation()
+    }
+
+    /// **The drawn world's generation** — bumped whenever a chunk's mesh enters, leaves or is
+    /// replaced, unlike [`Streamer::world_generation`] which is the *record's* and moves only on
+    /// an edit.
+    ///
+    /// A caller that keeps something built from the resident meshes between frames keys on both:
+    /// the record says the world's substance changed, this says which pieces of it are in hand.
+    pub fn residency_generation(&self) -> u64 {
+        self.residency
     }
 
     /// The world's modification record, as a snapshot. See [`Pool::modifications`].
@@ -583,23 +651,22 @@ impl Streamer {
     /// One frame of streaming: cancel, evict, ask, take.
     pub fn pump(&mut self) -> Refused<Frame> {
         let centre = self.centre;
-        let residency = *self.horizons.rule(Horizon::Residency);
+        let window = self.window;
 
         // 1. Queued work that the viewer has moved off is dropped now.
-        self.pool.cancel_where(&|p| residency.contains(centre, p));
+        self.pool.cancel_where(&|p| window.contains(centre, p));
 
-        // 2. Meshes outside residency go, and their charge comes back.
-        //
-        // **Both** sets are swept, which is what bounds the stale map: a stale
-        // mesh cannot outlive the window that asked for it, so there is no
-        // second cache growing in the corner. A stale mesh is counted as evicted
-        // like any other, because that is what the viewer stopped seeing.
+        // 2. Meshes outside **the window** go, and their charge comes back. The window is what
+        // this streamer asks for, admits and draws; the residency horizon is a concept reach
+        // (radius 24 is 117 649 chunks), and keying eviction on it held every chunk a step had
+        // left behind — 660 for a window of 605 at rest. Both sets are swept, so a stale mesh
+        // cannot outlive the window that asked for it.
         let mut outside: Vec<ChunkPos> = self
             .meshes
             .keys()
             .copied()
             .chain(self.stale.keys().copied())
-            .filter(|p| !residency.contains(centre, *p))
+            .filter(|p| !self.window.contains(centre, *p))
             .collect();
         // Dedup: a position cannot be in both sets, but collecting both key
         // spaces into one vector makes that a property of the loop rather than
@@ -610,9 +677,13 @@ impl Streamer {
         for pos in outside {
             if let Some(mesh) = self.meshes.remove(&pos) {
                 self.budget.release(mesh.bytes());
+                self.residency = self.residency.wrapping_add(1);
+                self.versions.remove(&pos);
                 evicted += 1;
             } else if let Some(mesh) = self.stale.remove(&pos) {
                 self.budget.release(mesh.bytes());
+                self.residency = self.residency.wrapping_add(1);
+                self.versions.remove(&pos);
                 evicted += 1;
             }
             // The tree goes with the mesh it belongs to, so a chunk outside the window costs
@@ -621,13 +692,13 @@ impl Streamer {
                 self.budget.release(tree.bytes());
             }
         }
-        // A chunk that failed and has left residency is forgotten: it may be
+        // A chunk that failed and has left the window is forgotten: it may be
         // inside again later, and a permanent blacklist would leave a hole in the
         // world forever.
-        self.failed.retain(|p| residency.contains(centre, *p));
+        self.failed.retain(|p| self.window.contains(centre, *p));
         // And **room was freed**, so what did not fit is worth asking again.
         // Without this a mesh the budget once refused would stay refused for as
-        // long as the viewer kept it in residency, even after the eviction of
+        // long as the viewer kept it in the window, even after the eviction of
         // something else made room for it.
         if evicted > 0 {
             self.failed.clear();
@@ -707,7 +778,9 @@ impl Streamer {
                 self.budget.release(previous.bytes());
             }
             self.meshes.insert(pos, mesh);
-            self.trees.insert(pos, tree);
+            self.trees.insert(pos, std::sync::Arc::new(tree));
+            self.residency = self.residency.wrapping_add(1);
+            self.versions.insert(pos, self.residency);
             apply.completed += 1;
         }
         for (pos, refusal) in failures {
@@ -796,6 +869,7 @@ impl Streamer {
     /// which is a change to the record and not to this engine.
     pub fn note_world_changed(&mut self) {
         self.meshes.clear();
+        self.residency = self.residency.wrapping_add(1);
         // The stale set goes too. Clearing `meshes` alone would drop the fresh
         // meshes while leaving the stale ones held **and still charged** — and
         // the charge is released wholesale on the line below, so the budget would
@@ -820,6 +894,7 @@ mod tests {
     use super::*;
     use voxel_shapers::materials;
     use voxel_shapers::{Config, WorldSpec};
+    use voxel_stream::Horizon;
 
     /// Small enough to settle in a test, wide enough to have a surface in it.
     fn window() -> ChunkWindow {
@@ -848,6 +923,43 @@ mod tests {
         let spec = WorldSpec::new(2468, Config::default());
         let e = voxel_shapers::terrain::elevation_m(&spec, 16.5, 16.5);
         ChunkPos::new(0, e.floor() as i32 / 32, 0)
+    }
+
+    #[test]
+    fn the_drawn_generation_moves_when_the_drawn_world_does() {
+        // The distinction this exists for: `world_generation` is the *record's* and does not move
+        // when a chunk merely arrives, so a scene cache keyed on it alone would keep drawing a
+        // window the streamer had already filled.
+        let mut s = streamer(4, 64 * 1024 * 1024);
+        let record = s.world_generation();
+        let before = s.residency_generation();
+        s.settle().unwrap();
+        assert!(s.residency_generation() > before, "no chunk's arrival was recorded");
+        assert_eq!(s.world_generation(), record, "nothing was edited");
+        // A settled world pumps and changes nothing drawn, so the number holds: that is what lets
+        // a frame keep the scene it built.
+        let settled = s.residency_generation();
+        s.pump().unwrap();
+        assert_eq!(s.residency_generation(), settled, "a settled pump moved the drawn world");
+        // An edit demotes its chunk to stale, which is a change to what is drawn. The cell is a
+        // solid one in the centre chunk, so the edit reaches a mesh the window holds.
+        let c = s.centre();
+        let (x, z) = (c.x * 32 + 16, c.z * 32 + 16);
+        let y = (c.y * 32..c.y * 32 + 32)
+            .rev()
+            .find(|y| !s.material_at(x, *y, z).unwrap().is_empty())
+            .expect("the centre chunk's middle column is empty");
+        s.edit(crate::pool::Edit {
+            x,
+            y,
+            z,
+            to: materials::AIR,
+            reason: "the test dug here".into(),
+            actor: voxel_model::world::ActorId::player(),
+            verb: voxel_model::world::PhysicalVerb::Dig,
+        })
+        .unwrap();
+        assert!(s.residency_generation() > settled, "an edit left the drawn world unmoved");
     }
 
     #[test]
@@ -921,6 +1033,45 @@ mod tests {
     }
 
     #[test]
+    fn the_held_set_is_the_window_and_not_the_wider_residency_horizon() {
+        // The held set is the window on every pump of a walk, not only after a jump.
+        let mut s = streamer(4, 64 * 1024 * 1024);
+        s.settle().unwrap();
+        let want = window().count() as usize;
+        assert_eq!(s.len(), want, "the settled window is not the window");
+        let start = s.centre();
+        for step in 1..=4 {
+            // One chunk east, and a chunk down every other step: a walk a player can
+            // produce, each move far inside the residency horizon.
+            s.set_centre(ChunkPos::new(start.x + step, start.y - step / 2, start.z));
+            for _ in 0..8 {
+                let frame = s.pump().unwrap();
+                assert!(
+                    s.len() <= want,
+                    "step {step}: {} chunks held for a window of {want}",
+                    s.len()
+                );
+                assert!(frame.bytes <= frame.ceiling);
+            }
+            s.settle().unwrap();
+            assert_eq!(
+                s.len(),
+                want,
+                "step {step}: the window did not refill to its own size"
+            );
+        }
+        // And what is held is exactly the window's own positions, not a superset of them.
+        let centre = s.centre();
+        for pos in s.meshes().map(|m| m.chunk) {
+            assert!(
+                window().contains(centre, pos),
+                "{pos:?} is held but is outside the window"
+            );
+        }
+        s.shutdown();
+    }
+
+    #[test]
     fn a_long_run_of_moving_centres_never_crosses_the_ceiling() {
         // The claim this test exists for: bounded is a property of the run, not
         // of one frame. Twenty moves over a small ceiling, checking every pump.
@@ -943,13 +1094,30 @@ mod tests {
     }
 
     #[test]
-    fn the_engine_reports_the_scratch_it_costs_as_well_as_the_meshes() {
-        // A caller budgeting 32 MB for the world needs to know that four workers
-        // are already ~19 MB of it before a single chunk is held.
+    fn the_engine_reports_the_scratch_it_actually_holds() {
+        // **The number a HUD reads is what the pool holds, not what it could.** A caller
+        // budgeting 32 MB for the world still has to set aside four workers' ~19 MB while
+        // it streams (`scratch_ceiling`), and the frame reports what is held *now*: a
+        // settled window is building nothing, so it holds nothing.
         let mut s = streamer(4, 64 * 1024 * 1024);
-        let frame = s.pump().unwrap();
-        assert_eq!(frame.scratch_bytes, 4 * voxel_mesh::Mesher::new().scratch_bytes());
-        assert!(frame.scratch_bytes > frame.ceiling / 8, "scratch is not the small part");
+        let bound = 4 * voxel_mesh::Mesher::new().scratch_bytes();
+        let mut frame = s.pump().unwrap();
+        assert!(frame.scratch_bytes <= bound, "a frame over-reported its scratch");
+        s.settle().unwrap();
+        for _ in 0..500 {
+            frame = s.pump().unwrap();
+            if frame.scratch_bytes == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(frame.scratch_bytes <= bound);
+        assert_eq!(
+            frame.scratch_bytes, 0,
+            "a settled engine kept {} B of scratch",
+            frame.scratch_bytes
+        );
+        assert!(bound > frame.ceiling / 8, "scratch is not the small part");
         s.shutdown();
     }
 

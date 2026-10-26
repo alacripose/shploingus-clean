@@ -68,6 +68,9 @@
 //! *visible*, which is the difference between a gate and a gate that only looks
 //! at half the repository.
 
+pub mod folders;
+
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use voxel_model::identity::{Digest, Identity};
@@ -80,7 +83,7 @@ use crate::record::read_document;
 
 /// How many crates the workspace holds. **A literal**, for the reason
 /// [`crate::features::FEATURE_COUNT`] is one.
-pub const CRATE_COUNT: usize = 16;
+pub const CRATE_COUNT: usize = 29;
 
 /// Every crate in the workspace, in dependency order.
 ///
@@ -101,6 +104,19 @@ pub const CRATE_COUNT: usize = 16;
 /// cannot be added without being tracked.
 pub const CRATES: [Crate; CRATE_COUNT] = [
     Crate::Model,
+    Crate::Ladder,
+    Crate::Coverage,
+    Crate::Unit,
+    Crate::Claim,
+    Crate::View,
+    Crate::Civilians,
+    Crate::Being,
+    Crate::Matrix,
+    Crate::Verify,
+    Crate::Artifact,
+    Crate::Security,
+    Crate::AxisMcp,
+    Crate::Balance,
     Crate::Noise,
     Crate::Light,
     Crate::Mesh,
@@ -125,6 +141,41 @@ pub const CRATES_ARE_TOTAL: [(); CRATE_COUNT] = [(); CRATES.len()];
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Crate {
     Model,
+    /// `crates/axis/ladder` — the axis vocabulary the four prose layers share (PATCH-042).
+    Ladder,
+    /// `crates/axis/coverage` — the coverage table and the exact-partition audit (PATCH-042).
+    Coverage,
+    /// `crates/axis/unit` — the addressable paragraph, with a deterministic id (PATCH-042).
+    Unit,
+    /// `crates/axis/claim` — the quote, its kind and its computed support (PATCH-042).
+    Claim,
+    /// `crates/axis/view` — the three-section document with no untraceable line (PATCH-042).
+    View,
+    /// `crates/axis/civilians` — the civilian gates over the model's ported systems (PATCH-042).
+    Civilians,
+    /// `crates/axis/being` — the being substrate (PATCH-043).
+    Being,
+    /// `crates/axis/matrix` — the calibration matrix: segments, cells, stars, tiers and recipes
+    /// (PATCH-042 §The calibration matrix).
+    Matrix,
+    /// `crates/axis/verify` — the walk and the report: the one place a matrix reading is produced
+    /// from the census, the conformance files, the workspace's witnesses and the ladders
+    /// (PATCH-042 §The scrubber).
+    Verify,
+    /// `crates/axis/artifact` — the package as a value: cited and laddered statements, the pin over
+    /// its bytes, the signing seam, and the reproduction claim (PATCH-042, the five requirements).
+    Artifact,
+    /// `crates/axis/security` — the trust boundary's key: a signing key held outside the checkout,
+    /// the signature over a payload or a build digest, and the refusals that name what is missing.
+    Security,
+    /// `crates/axis/mcp` — the authority an agent-facing surface speaks through: the verified matrix
+    /// and its package, the recipe for a named ticket, and an apply that decides only under a
+    /// ticket-scoped grant signed by the security layer (PATCH-044).
+    AxisMcp,
+    /// `crates/axis/balance` — the CPU/GPU balance census: each crate's Rust and WGSL measured from
+    /// the tree, and the declared visual inventory with the renderer every item reaches or the
+    /// count that reaches none (PATCH-045).
+    Balance,
     Noise,
     Light,
     Mesh,
@@ -150,6 +201,19 @@ impl Crate {
     pub const fn name(self) -> &'static str {
         match self {
             Crate::Model => "voxel-model",
+            Crate::Ladder => "voxel-axis-ladder",
+            Crate::Coverage => "voxel-axis-coverage",
+            Crate::Unit => "voxel-axis-unit",
+            Crate::Claim => "voxel-axis-claim",
+            Crate::View => "voxel-axis-view",
+            Crate::Civilians => "voxel-axis-civilians",
+            Crate::Being => "voxel-axis-being",
+            Crate::Matrix => "voxel-axis-matrix",
+            Crate::Verify => "voxel-axis-verify",
+            Crate::Artifact => "voxel-axis-artifact",
+            Crate::Security => "voxel-axis-security",
+            Crate::AxisMcp => "voxel-axis-mcp",
+            Crate::Balance => "voxel-axis-balance",
             Crate::Noise => "voxel-noise",
             Crate::Light => "voxel-light",
             Crate::Mesh => "voxel-mesh",
@@ -172,6 +236,19 @@ impl Crate {
     pub const fn path(self) -> &'static str {
         match self {
             Crate::Model => "crates/voxel-model",
+            Crate::Ladder => "crates/axis/ladder",
+            Crate::Coverage => "crates/axis/coverage",
+            Crate::Unit => "crates/axis/unit",
+            Crate::Claim => "crates/axis/claim",
+            Crate::View => "crates/axis/view",
+            Crate::Civilians => "crates/axis/civilians",
+            Crate::Being => "crates/axis/being",
+            Crate::Matrix => "crates/axis/matrix",
+            Crate::Verify => "crates/axis/verify",
+            Crate::Artifact => "crates/axis/artifact",
+            Crate::Security => "crates/axis/security",
+            Crate::AxisMcp => "crates/axis/mcp",
+            Crate::Balance => "crates/axis/balance",
             Crate::Noise => "crates/voxel-noise",
             Crate::Light => "crates/voxel-light",
             Crate::Mesh => "crates/voxel-mesh",
@@ -198,6 +275,19 @@ impl Crate {
     pub const fn witness_of(self) -> &'static str {
         match self {
             Crate::Model => "crates/voxel-model/src/lib.rs",
+            Crate::Ladder => "crates/axis/ladder/src/lib.rs",
+            Crate::Coverage => "crates/axis/coverage/src/lib.rs",
+            Crate::Unit => "crates/axis/unit/src/lib.rs",
+            Crate::Claim => "crates/axis/claim/src/lib.rs",
+            Crate::View => "crates/axis/view/src/lib.rs",
+            Crate::Civilians => "crates/axis/civilians/src/lib.rs",
+            Crate::Being => "crates/axis/being/src/lib.rs",
+            Crate::Matrix => "crates/axis/matrix/src/lib.rs",
+            Crate::Verify => "crates/axis/verify/src/lib.rs",
+            Crate::Artifact => "crates/axis/artifact/src/lib.rs",
+            Crate::Security => "crates/axis/security/src/lib.rs",
+            Crate::AxisMcp => "crates/axis/mcp/src/lib.rs",
+            Crate::Balance => "crates/axis/balance/src/lib.rs",
             Crate::Noise => "crates/voxel-noise/src/lib.rs",
             Crate::Light => "crates/voxel-light/src/lib.rs",
             Crate::Mesh => "crates/voxel-mesh/src/lib.rs",
@@ -252,6 +342,19 @@ pub struct CrateRow {
 /// fiction — but the `means` here are documentation, not a licence, and a test says so.
 pub const ROWS: [CrateRow; CRATE_COUNT] = [
     CrateRow { crate_: Crate::Model, means: "the world model: coordinates, identity, materials, and the refusal vocabulary everything else speaks", required: true },
+    CrateRow { crate_: Crate::Ladder, means: "the axis vocabulary the layers above share: nine ladders, their tokens, the bare-token rule and the coverage pin", required: true },
+    CrateRow { crate_: Crate::Coverage, means: "the coverage gate and the partition audit: every ladder has a row, and a text's spans claim every character exactly once", required: true },
+    CrateRow { crate_: Crate::Unit, means: "the addressable paragraph: a deterministic unit id, its exact range and the source slice it quotes", required: true },
+    CrateRow { crate_: Crate::Claim, means: "one claim per unit: the exact quote, a prose kind with its basis, and a support only derive can compute", required: true },
+    CrateRow { crate_: Crate::View, means: "the three-section document: every line resolves to a claim and every carried claim has its line, and an empty section prints none rather than disappearing", required: true },
+    CrateRow { crate_: Crate::Civilians, means: "the civilian gates over the model's ported systems: a selection's need, budget and estimate, a task's planned material and checked completion, a witnessed ladder and an arrangement that round-trips", required: true },
+    CrateRow { crate_: Crate::Being, means: "one being record, seven faces: a civilian, a mob, a plant and a ghost are the same substrate before they are anything else", required: true },
+    CrateRow { crate_: Crate::Matrix, means: "the calibration matrix: every segment read on every axis it has, a star lit only by a predicate that ran, a tier computed from the cell's own requirements, and a recipe line a person can apply", required: true },
+    CrateRow { crate_: Crate::Verify, means: "the walk and the report: one reading per segment produced from the census and its pins, the conformance files, the workspace's declared witnesses and the ladders — with the source named, and a refusal rather than a pass where a source cannot witness", required: true },
+    CrateRow { crate_: Crate::Artifact, means: "the package as a value: plain-text statements each at a file:line and on a ladder, the pin over its bytes, the signing seam it does not implement, and the reproduction claim that refuses rather than promises", required: true },
+    CrateRow { crate_: Crate::Security, means: "the trust boundary's key: a signing key held outside the checkout and refused inside it, the HMAC-SHA256 signature over a package's bytes or a build digest, and the four refusals that keep an unknown key, an unknown algorithm and a moved byte apart", required: true },
+    CrateRow { crate_: Crate::AxisMcp, means: "the authority an agent-facing surface speaks through: the verified matrix and its package, a recipe for a named ticket, and an apply that decides only under a ticket-scoped grant the security layer signed — refusing no credential, another ticket, another cell, an expired grant and an unwitnessed cell", required: true },
+    CrateRow { crate_: Crate::Balance, means: "the CPU/GPU balance census: every crate's Rust and WGSL measured from the tree, and a declared visual inventory held to the source it names — with the items no renderer reaches counted and printed rather than omitted", required: true },
     CrateRow { crate_: Crate::Noise, means: "deterministic noise, so the same seed yields the same world", required: true },
     CrateRow { crate_: Crate::Light, means: "the band table and the real sun: full-spectrum radiometry over declared bands", required: true },
     CrateRow { crate_: Crate::Mesh, means: "chunks become meshes, and a mesh can be refined or raycast", required: true },
@@ -478,9 +581,9 @@ pub fn claim_report(claims: &[Claim]) -> String {
     out
 }
 
-/// The five things a crate is measured on.
+/// The seven things a crate is measured on.
 ///
-/// **Five, deliberately.** Each is checkable from this tree without judgement.
+/// **Seven, deliberately.** Each is checkable from this tree without judgement.
 /// An axis that could not be checked would be an opinion wearing a measurement's
 /// clothes, and this repository has refused those before.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -525,10 +628,15 @@ pub enum Axis {
     /// A crate keeping an invented record beside the chain ([`bloat::INVENTED_RECORD_EXTENSIONS`]) is
     /// refused whatever its documentation count reads.
     Documented,
+    /// **Whether a call site exists outside this crate's own sources and tests.** The question the
+    /// six above could not ask: a crate can be named, moduled, tested, refusing, claimed and
+    /// documented and still be reached by nothing. `voxel-audio` and `voxel-instrument` are the
+    /// live subjects; a re-export is not a call, and an inline `#[cfg(test)]` module is not a caller.
+    Exercised,
 }
 
 /// How many axes. A literal, as everywhere else.
-pub const AXIS_COUNT: usize = 6;
+pub const AXIS_COUNT: usize = 7;
 
 /// Every axis, in the order the report prints them.
 pub const AXES: [Axis; AXIS_COUNT] = [
@@ -538,6 +646,7 @@ pub const AXES: [Axis; AXIS_COUNT] = [
     Axis::Refusing,
     Axis::Claimed,
     Axis::Documented,
+    Axis::Exercised,
 ];
 
 /// The declared share of a crate's source that may be comment before the census calls it
@@ -673,6 +782,12 @@ pub struct CrateObservation {
     /// `None` when the crate has no readable source, so the prose share was never measured.
     /// **Not the same as "no prose"**, which is a measured fact.
     pub prose: Option<ProseObservation>,
+    /// **Every call site outside this crate's own sources and tests**, as `path:line`.
+    ///
+    /// `None` when the crate has no readable source; `Some(vec![])` is the measured fact that
+    /// nothing outside it calls it. A re-export is not a call, and a line inside an inline
+    /// `#[cfg(test)]` module is not a caller — those are excluded by [`exercised_callers`].
+    pub exercised: Option<Vec<String>>,
 }
 
 /// **The compiler's documentation count for one crate, and the pin that dates it.**
@@ -770,6 +885,9 @@ pub fn observe(root: &Path) -> Result<Vec<CrateObservation>, RefusalSet> {
     // and the invented-record check are properties of the tree, and twelve walks would be twelve
     // answers to one question.
     let covered = provenance::covered_files(root);
+    // **One walk for the caller question**, beside the one walk for the sources: a crate that is
+    // reached from another crate is a fact about the workspace, not about the crate's own files.
+    let callers = exercised_callers(root, &covered);
     let docs = read_docs(root);
     let invented = bloat::invented_stores(root);
 
@@ -848,6 +966,12 @@ pub fn observe(root: &Path) -> Result<Vec<CrateObservation>, RefusalSet> {
                 line: claim.line,
                 why_unclaimed: claim.why_unclaimed(),
             }),
+            exercised: sources.as_ref().map(|_| {
+                callers
+                    .get(crate_.name())
+                    .cloned()
+                    .unwrap_or_default()
+            }),
             }
         })
         .collect();
@@ -918,6 +1042,7 @@ impl Axis {
             Axis::Refusing => "refusing",
             Axis::Claimed => "claimed",
             Axis::Documented => "documented",
+            Axis::Exercised => "exercised",
         }
     }
 }
@@ -990,6 +1115,149 @@ pub struct CrateSources {
 /// tree rather than a failure to look.
 /// **`covered` is passed in, not walked here.** The walk is one property of the tree, so twelve
 /// crates must not cause twelve of it; a per-crate walk is the same answer computed twelve times.
+/// **Every caller of every crate, found once.** A crate's own name is its directory name; Rust
+/// spells it with underscores, so both spellings are accepted. The scan skips this crate's own
+/// files, any inline `#[cfg(test)]` module, comment lines, and `pub use` re-exports — a re-export
+/// is a name, not a call. A macro-generated call site is still invisible to a line reader; that is
+/// the limit stated in the axis's own doc, not a claim that it was measured.
+pub(crate) fn exercised_callers(
+    root: &Path,
+    covered: &[std::path::PathBuf],
+) -> BTreeMap<&'static str, Vec<String>> {
+    let mut callers: BTreeMap<&'static str, Vec<String>> =
+        Crate::ALL.iter().map(|crate_| (crate_.name(), Vec::new())).collect();
+    for path in covered {
+        if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
+            continue;
+        }
+        let relative = path.strip_prefix(root).unwrap_or(path);
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        let Some(owner) = Crate::ALL.into_iter().find(|crate_| {
+            relative == crate_.path() || relative.starts_with(&format!("{}/", crate_.path()))
+        }) else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let production = production_lines(&text);
+        for crate_ in Crate::ALL {
+            if crate_ == owner {
+                continue;
+            }
+            let module = crate_.name().replace('-', "_");
+            if let Some((line, _)) = production
+                .iter()
+                .find(|(_, line)| calls_crate(line, &module))
+            {
+                let sites = callers.entry(crate_.name()).or_default();
+                if sites.len() < 5 {
+                    sites.push(format!("{relative}:{line}"));
+                }
+            }
+        }
+    }
+    callers
+}
+
+/// Lines outside an inline test module: the caller question is about production code, not about a
+/// test that names a crate in order to test the thing that names it.
+fn production_lines(text: &str) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut skipping = false;
+    let mut depth = 0i32;
+    for (index, line) in text.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if !skipping && trimmed.contains("#[cfg(test)]") {
+            skipping = true;
+            depth = brace_delta(line);
+            // The attribute may sit on its own line; the opening brace is read on the next one. A
+            // complete one-line module is not skipped, because there is nothing after its `}`.
+            if line.contains('{') && line.contains('}') {
+                skipping = false;
+            }
+            continue;
+        }
+        if skipping {
+            let delta = brace_delta(line);
+            depth += delta;
+            if delta != 0 && depth <= 0 {
+                skipping = false;
+            }
+            continue;
+        }
+        if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with('*') {
+            continue;
+        }
+        out.push((index + 1, line.to_string()));
+    }
+    out
+}
+
+/// Braces that belong to code, not to a string, a character literal or a comment. The test module
+/// is skipped by matching its braces, so a `}` inside a fixture string must not end the skip early.
+fn brace_delta(line: &str) -> i32 {
+    let chars: Vec<char> = line.chars().collect();
+    let mut depth = 0;
+    let mut index = 0;
+    let mut string = false;
+    let mut character = false;
+    let mut block_comment = false;
+    let mut escaped = false;
+    while index < chars.len() {
+        let current = chars[index];
+        let next = chars.get(index + 1).copied();
+        if block_comment {
+            if current == '*' && next == Some('/') {
+                block_comment = false;
+                index += 1;
+            }
+        } else if string || character {
+            if escaped {
+                escaped = false;
+            } else if current == '\\' {
+                escaped = true;
+            } else if (string && current == '"') || (character && current == '\'') {
+                string = false;
+                character = false;
+            }
+        } else if current == '/' && next == Some('/') {
+            break;
+        } else if current == '/' && next == Some('*') {
+            block_comment = true;
+            index += 1;
+        } else if current == '"' {
+            string = true;
+        } else if current == '\'' {
+            character = true;
+        } else if current == '{' {
+            depth += 1;
+        } else if current == '}' {
+            depth -= 1;
+        }
+        index += 1;
+    }
+    depth
+}
+
+/// A crate module named as a path segment, not as a word in prose and not as a re-export.
+fn calls_crate(line: &str, module: &str) -> bool {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("pub use ") || trimmed.starts_with("//") {
+        return false;
+    }
+    let needle = format!("{module}::");
+    if let Some(at) = line.find(&needle) {
+        let before = line[..at].chars().next_back();
+        if !before.is_some_and(|character| character.is_alphanumeric() || character == '_') {
+            return true;
+        }
+    }
+    trimmed.starts_with(&format!("use {module} "))
+        || trimmed.starts_with(&format!("use {module};"))
+        || trimmed.starts_with(&format!("extern crate {module};"))
+}
+
 pub(crate) fn read_sources(
     covered: &[std::path::PathBuf],
     crate_: Crate,
@@ -1237,7 +1505,7 @@ pub fn check_against_manifest(root: &Path) -> Result<(), RefusalSet> {
             return Err(refusals);
         }
     };
-    let declared = workspace_members(&text);
+    let declared = workspace_member_packages(root, &text);
     if declared.is_empty() {
         refusals.refuse(
             RefusalKind::NoReading,
@@ -1363,6 +1631,61 @@ pub fn workspace_members(manifest: &str) -> Vec<String> {
         .filter_map(|path| path.rsplit('/').next())
         .map(str::to_string)
         .collect()
+}
+
+/// **The package names of the workspace members**, read from each member's own manifest.
+///
+/// **Why the directory name is not the witness.** A crate's directory and its package need not
+/// agree, and `PATCH-042`'s axis folder makes them disagree on purpose: `crates/axis/being` holds
+/// the package `voxel-axis-being`, because the folder groups the layers and the package names the
+/// layer. Comparing the census table against directory names would refuse every crate in that
+/// folder — ten of them in `PATCH-042` — for a spelling rather than for a missing row.
+///
+/// So the member's `[package] name = "…"` line is the reading, and the directory name is the
+/// **fallback only when the manifest cannot be read**. A fallback is not a silent default: a member
+/// whose manifest is unreadable is named as a workspace member the table cannot match, which is the
+/// same refusal the caller already reports.
+pub fn workspace_member_packages(root: &Path, manifest: &str) -> Vec<String> {
+    workspace_member_paths(manifest)
+        .iter()
+        .map(|path| {
+            let manifest = root.join(path).join("Cargo.toml");
+            std::fs::read_to_string(manifest)
+                .ok()
+                .and_then(|text| package_name(&text))
+                .unwrap_or_else(|| {
+                    path.rsplit('/').next().unwrap_or(path).to_string()
+                })
+        })
+        .collect()
+}
+
+/// The `name = "…"` line of a `[package]` section, and `None` if the section has none.
+fn package_name(manifest: &str) -> Option<String> {
+    let mut in_package = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_package = trimmed == "[package]";
+            continue;
+        }
+        if !in_package {
+            continue;
+        }
+        let Some(rest) = trimmed.strip_prefix("name") else {
+            continue;
+        };
+        let Some(rest) = rest.trim_start().strip_prefix('=') else {
+            continue;
+        };
+        let Some(rest) = rest.trim().strip_prefix('"') else {
+            continue;
+        };
+        if let Some(end) = rest.find('"') {
+            return Some(rest[..end].to_string());
+        }
+    }
+    None
 }
 
 /// Where a crate's prose budget is declared: one `crate<TAB>percent` line per crate.
@@ -1753,7 +2076,11 @@ pub fn orphan_libraries(root: &Path) -> Result<Vec<String>, RefusalSet> {
         }
     };
     let paths = workspace_member_paths(&text);
-    let names = workspace_members(&text);
+    // **Package names, not directory names.** A dependency line names a package
+    // (`voxel-axis-being`), so the witness that decides whether it was read must be the package's
+    // own name too — otherwise a crate in a grouped folder looks orphaned while everything that
+    // depends on it was counted against nothing.
+    let names = workspace_member_packages(root, &text);
     if names.is_empty() {
         refusals.refuse(
             RefusalKind::NoReading,
@@ -1761,6 +2088,22 @@ pub fn orphan_libraries(root: &Path) -> Result<Vec<String>, RefusalSet> {
         );
         return Err(refusals);
     }
+
+    // **A dependency line names a directory, and a directory is not a package.**
+    //
+    // `dependent_members` reads the last segment of every `path = "…"`, which is the *folder*: a
+    // crate in a grouped folder is depended on as `path = "../axis/matrix"` and the segment is
+    // `matrix`, while its package is `voxel-axis-matrix`. Comparing those two strings reported a
+    // wired-up crate as an orphan, which is the exact defect the comment on `names` above says the
+    // package names were introduced to prevent — fixed on the names side and left standing on the
+    // dependency side. The map is the join, and it is built from the manifest's own pairs.
+    let directory_to_package: Vec<(&str, &String)> = paths
+        .iter()
+        .zip(names.iter())
+        .filter_map(|(path, name)| {
+            path.rsplit('/').next().map(|directory| (directory, name))
+        })
+        .collect();
 
     let mut depended: Vec<String> = Vec::new();
     let mut unreadable: Vec<String> = Vec::new();
@@ -1770,6 +2113,12 @@ pub fn orphan_libraries(root: &Path) -> Result<Vec<String>, RefusalSet> {
             Ok(own) => depended.extend(
                 dependent_members(&own)
                     .into_iter()
+                    .filter_map(|directory| {
+                        directory_to_package
+                            .iter()
+                            .find(|(folder, _)| *folder == directory)
+                            .map(|(_, name)| (*name).clone())
+                    })
                     .filter(|name| names.contains(name)),
             ),
             // **A member whose manifest cannot be read is not an orphan**, it is unmeasured, and
@@ -1920,14 +2269,34 @@ mod tests {
     fn the_dependency_disciplines_second_rule_is_measured_and_finds_the_crates_nothing_reads() {
         // **Rule 2 as a measurement.** Every manifest in this workspace answers *"is it actually
         // USED? (a resolve is not a use)"* in a comment, and nothing checked the answer — not the
-        // six axes, which measure what a crate is and never who reads it. The two this finds are
-        // the finding, so they are named here: pinning them means wiring one up, or deleting it, or
-        // ruling it deliberate are all visible as changes to this line.
+        // six axes, which measure what a crate is and never who reads it. The orphans this finds
+        // are the finding, so they are named here: pinning one means wiring it up, deleting it, or
+        // ruling it deliberate, and each is visible as a change to this line. **`voxel-axis-mcp`
+        // is deliberately absent**: `voxel-client` depends on it and calls it from the mount path,
+        // so the authority an agent speaks through is read by the surface that serves the player.
+        // **`voxel-axis-civilians` is absent for the same reason since the contract pass**:
+        // `voxel-package::decision` now consumes its `LadderReading`, so the ladder reading has
+        // its caller even though the `Arrangement` half still waits for the `Mount` adapter.
         let orphans = orphan_libraries(&real_root()).expect("the manifests are readable");
         println!("\norphan libraries: {orphans:?}\n");
         assert_eq!(
             orphans,
-            vec!["voxel-audio".to_string(), "voxel-instrument".to_string()],
+            // Sorted as `orphan_libraries` sorts them.
+            vec![
+                // The two long-standing orphans: a synth and a meter with no caller.
+                "voxel-audio".to_string(),
+                // **The balance census, and it is read by a person and by the shell's console.**
+                // `PATCH-045` makes it a report crate: its answer is a reading, not a service, so
+                // no crate imports it and its absence from every manifest is the design rather
+                // than an unwired edge. It leaves this list the day a surface consumes its lines.
+                "voxel-axis-balance".to_string(),
+                // **The being substrate, and its absence has a reason and a date.** `PATCH-043`
+                // creates it first and Gaia second, so between those two commits nothing reads it
+                // — a library no code reads *yet* rather than one nothing will. It leaves this
+                // list the commit `voxel-gaia` depends on it, which is the next slice.
+                "voxel-axis-being".to_string(),
+                "voxel-instrument".to_string(),
+            ],
             "the set of libraries nothing in the workspace depends on changed. If a crate was \
              wired up or removed, update this list with the reason; if one appeared, it is a \
              library no code reads"
@@ -2572,11 +2941,47 @@ mod tests {
     }
 
     #[test]
-    fn the_axes_are_six_and_each_names_itself() {
+    fn the_axes_are_seven_and_each_names_itself() {
         assert_eq!(AXES.len(), AXIS_COUNT);
-        assert_eq!(AXIS_COUNT, 6, "the axis count is a ruling, not an accident");
+        assert_eq!(AXIS_COUNT, 7, "the axis count is a ruling, not an accident");
         for axis in AXES {
             assert!(!axis.name().is_empty());
         }
+    }
+
+    #[test]
+    fn a_reexport_and_an_inline_test_are_not_callers() {
+        // The two limits the axis states, pinned where they can fail: a re-export names a crate
+        // without calling it, and a test that names a crate is testing the caller, not being one.
+        assert!(!calls_crate("pub use voxel_audio::Scene;", "voxel_audio"));
+        let production = production_lines(
+            "use voxel_audio::Scene;\n\
+             #[cfg(test)]\n\
+             mod tests {\n\
+                 use voxel_audio::Scene;\n\
+             }\n",
+        );
+        assert_eq!(production.len(), 1, "only the production import survives: {production:?}");
+        assert!(calls_crate(&production[0].1, "voxel_audio"));
+    }
+
+    #[test]
+    fn the_exercised_axis_measures_a_real_crate_and_names_the_crates_nothing_calls() {
+        let root = real_root();
+        let covered = provenance::covered_files(&root);
+        let callers = exercised_callers(&root, &covered);
+        assert!(
+            !callers.get(Crate::Model.name()).expect("a key for every crate").is_empty(),
+            "voxel-model is reached by other crates; a zero here would mean the scan stopped"
+        );
+        assert!(
+            callers.get(Crate::Audio.name()).expect("a key for every crate").is_empty(),
+            "voxel-audio has no call site outside its own sources and tests: {:?}",
+            callers.get(Crate::Audio.name())
+        );
+        let census = census(&root).expect("the real tree is measurable");
+        let audio = census.reading_of(Crate::Audio).expect("a reading");
+        assert_eq!(audio.cell(Axis::Exercised), Establishment::Inactive);
+        assert!(audio.why_at(Axis::Exercised).is_some());
     }
 }

@@ -1,0 +1,14 @@
+[package]
+name = "voxel-axis-view"
+description = "The document: three sections whose every line resolves to a claim, rendered deterministically, with none printed rather than hidden when a section carries no claims."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-axis-claim = { path = "../claim" }
+voxel-axis-ladder = { path = "../ladder" }
+
+[dev-dependencies]
+voxel-axis-unit = { path = "../unit" }

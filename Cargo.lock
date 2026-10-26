@@ -3129,6 +3129,124 @@ dependencies = [
 ]
 
 [[package]]
+name = "voxel-axis-artifact"
+version = "0.1.0"
+dependencies = [
+ "voxel-axis-matrix",
+ "voxel-axis-security",
+ "voxel-axis-verify",
+ "voxel-model",
+ "voxel-package",
+]
+
+[[package]]
+name = "voxel-axis-balance"
+version = "0.1.0"
+dependencies = [
+ "voxel-model",
+ "voxel-package",
+]
+
+[[package]]
+name = "voxel-axis-being"
+version = "0.1.0"
+dependencies = [
+ "voxel-model",
+]
+
+[[package]]
+name = "voxel-axis-civilians"
+version = "0.1.0"
+dependencies = [
+ "voxel-axis-ladder",
+ "voxel-model",
+]
+
+[[package]]
+name = "voxel-axis-claim"
+version = "0.1.0"
+dependencies = [
+ "voxel-axis-ladder",
+ "voxel-axis-unit",
+ "voxel-model",
+]
+
+[[package]]
+name = "voxel-axis-coverage"
+version = "0.1.0"
+dependencies = [
+ "voxel-axis-ladder",
+ "voxel-model",
+]
+
+[[package]]
+name = "voxel-axis-ladder"
+version = "0.1.0"
+dependencies = [
+ "voxel-model",
+]
+
+[[package]]
+name = "voxel-axis-matrix"
+version = "0.1.0"
+dependencies = [
+ "voxel-model",
+]
+
+[[package]]
+name = "voxel-axis-mcp"
+version = "0.1.0"
+dependencies = [
+ "voxel-axis-artifact",
+ "voxel-axis-matrix",
+ "voxel-axis-security",
+ "voxel-axis-verify",
+ "voxel-model",
+ "voxel-package",
+]
+
+[[package]]
+name = "voxel-axis-security"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.2.17",
+ "sha2",
+ "voxel-model",
+ "voxel-package",
+]
+
+[[package]]
+name = "voxel-axis-unit"
+version = "0.1.0"
+dependencies = [
+ "voxel-axis-coverage",
+ "voxel-model",
+]
+
+[[package]]
+name = "voxel-axis-verify"
+version = "0.1.0"
+dependencies = [
+ "voxel-axis-claim",
+ "voxel-axis-coverage",
+ "voxel-axis-ladder",
+ "voxel-axis-matrix",
+ "voxel-axis-unit",
+ "voxel-axis-view",
+ "voxel-model",
+ "voxel-package",
+]
+
+[[package]]
+name = "voxel-axis-view"
+version = "0.1.0"
+dependencies = [
+ "voxel-axis-claim",
+ "voxel-axis-ladder",
+ "voxel-axis-unit",
+]
+
+[[package]]
 name = "voxel-client"
 version = "0.1.0"
 dependencies = [
@@ -3136,6 +3254,11 @@ dependencies = [
  "png",
  "pollster",
  "voxel-appearance",
+ "voxel-axis-artifact",
+ "voxel-axis-matrix",
+ "voxel-axis-mcp",
+ "voxel-axis-security",
+ "voxel-axis-verify",
  "voxel-light",
  "voxel-mesh",
  "voxel-model",
@@ -3165,6 +3288,9 @@ name = "voxel-mcp"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "voxel-axis-matrix",
+ "voxel-axis-mcp",
+ "voxel-axis-security",
  "voxel-model",
  "voxel-package",
  "voxel-von",
@@ -3193,6 +3319,7 @@ version = "0.1.0"
 name = "voxel-package"
 version = "0.1.0"
 dependencies = [
+ "voxel-axis-civilians",
  "voxel-model",
  "voxel-shapers",
 ]

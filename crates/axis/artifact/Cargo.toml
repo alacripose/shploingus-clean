@@ -1,0 +1,21 @@
+[package]
+name = "voxel-axis-artifact"
+description = "The package as a value: one statement per line, each at a file:line and on a ladder, with the pin over its bytes, the signing seam, and a reproduction claim that refuses rather than promises."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-model = { path = "../../voxel-model" }
+voxel-axis-matrix = { path = "../matrix" }
+voxel-package = { path = "../../voxel-package" }
+
+# The tests build the package the shell builds: from the cells the verifier measured. Named as a
+# dev-dependency so the production graph stays `model → matrix → artifact` and the format does not
+# depend on the walk that fills it.
+[dev-dependencies]
+voxel-axis-verify = { path = "../verify" }
+# The pin gate's success path, exercised against the real signing backend rather than a stand-in.
+# A dev-dependency, so the format stays independent of the key that signs it.
+voxel-axis-security = { path = "../security" }

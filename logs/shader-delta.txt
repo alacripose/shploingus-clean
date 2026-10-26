@@ -1,0 +1,696 @@
+--- /dev/fd/63	2026-10-25 16:07:01.000000000 -0600
++++ /dev/fd/62	2026-10-25 16:07:01.000000000 -0600
+@@ -155,15 +155,6 @@
+ };
+ @group(0) @binding(9) var<uniform> beam_shadow: SunShadow;
+ 
+-// **The cascade handover's width, in texels of the coarser map** — see `sun_visibility`. The
+-// materials' ladder fades a rung out at a quarter of its cell (`octave_weight`); a cascade is not
+-// a rung on that ladder but a *level* of one shadow, and the level it hands over to is nine
+-// texels coarser, so the band is measured in the coarse map's own texels.
+-const SHADOW_BLEND_TEXELS: f32 = 2.0;
+-// How far inside a map's border its weight ramps to zero, in that map's own texels: enough that a
+-// cascade's box edge is a ramp like the split, not a line where one level stops answering.
+-const SHADOW_EDGE_TEXELS: f32 = 2.0;
+-
+ /// **One cascade's answer, and whether it has one**: `x` is the 3 × 3 comparison's mean over the
+ /// cascade's own texel, `y` the weight the map can claim there — `0` outside the cascade's box,
+ /// ramped to `0` across the box's own border, `1` where the map has full say.
+@@ -298,12 +289,6 @@
+     // ladder reads every rung the eye asked for — so builders write zeros and
+     // the slots stay only so the vertex format does not move.
+     @location(3) detail_roughness: f32,
+-    /// **The face this corner was cut from** (`Scene::Vertex::plane_axis`): 0, 1, 2, or
+-    /// `-1` where the geometry has no face. It sits in the second of the two `f32` the
+-    /// retired corner sample reserved, so the vertex format and its stride did not move. A
+-    /// rectangle states its plane from the record in `vs_quad`; a refined corner has no
+-    /// record, so the face travels with the vertex — the shaper's stretch needs only the
+-    /// axis, never the cell (C-163.2).
+     @location(4) plane_axis: i32,
+     // The world's light at this corner's cell, in band order (B3, B4, B5):
+     // direct beam, then diffuse (sky + one-bounce), W/m². Read only where
+@@ -362,11 +347,6 @@
+     // gets depends on where it stands. Flat for the reason `material` is: a plane does not
+     // vary across the face it is the plane of.
+     @location(11) @interpolate(flat) plane: vec2<i32>,
+-    /// **The face's own axis, stated by whichever stage built the geometry.** A rectangle
+-    /// computes it from the record; a corner carries it in the vertex format, because a
+-    /// refined triangle has no record to state its plane and `-1` would leave the shaper's
+-    /// stretch on the material's **world** axis — square cells on the face that looks along
+-    /// that axis, stretched ones on every other side (C-163.2).
+     @location(12) @interpolate(flat) plane_axis: i32,
+ };
+ 
+@@ -401,9 +381,6 @@
+     // where the ladder is silent a fragment falls back to the Sun-angle reading exactly as
+     // the quad format does. Answering 1 here would read the zeros as a measured flat albedo.
+     out.sample_present = 0u;
+-    // **A corner states no plane.** A refined rectangle's corners are off the plane its
+-    // normal names, so the fragment keeps the interpolated address for this format (see
+-    // `plane`); only `vs_quad` knows a plane to state.
+     out.plane = vec2<i32>(-1, 0);
+     // The face the refinement cut this corner from. A corner states no *plane* (its surface
+     // is off the plane its normal names), but it does state the face's **axis**, which is
+@@ -1191,7 +1168,6 @@
+     return value + delta * value;
+ }
+ 
+-
+ /// **Schlick's approximation at one angle**: `F0 + (1 − F0)·(1 − cos θ)⁵` — the reflectance
+ /// of a boundary, which is also the weight the fluid reflection mixes with.
+ ///
+@@ -1362,7 +1338,7 @@
+     // had been measured and one that had not. The shader no longer branches on `light_present`,
+     // and both branches of the retired law are gone. The vertex format still carries the bands (a
+     // mesh is a format's, not this pass's to shrink); nothing in this file reads them.
+-    let sky = rig.ambient.rgb;
++    var sky = rig.ambient.rgb;
+     var beams = vec3<f32>(0.0);
+     // **The beam's direction is the frame's one Sun/Moon direction**, read from the rig uniform;
+     // it is the direction *of the beam*, not a second light. A per-corner direction is the next
+@@ -1376,9 +1352,69 @@
+     }
+     // **The map says how much of the beam arrives; it does not replace the beam.** It is drawn
+     // from the scene's corners every frame and covers the shipped window, so the beam follows an
+-    // edit on the frame the new mesh is drawn, past any cell a build last asked about.
++    // edit on the frame the new mesh is drawn, past any cell a build last asked about. It is the
++    // **far** field's answer, though: a 0.56 m texel with a 2 cm normal bias, which at a grazing
++    // beam cuts a straight line across a face the geometry says is lit. The subvoxel march below
++    // is finer than that, so it refuses this map wherever it has a measurement of its own.
++    var beam_visibility = 1.0;
+     if (beam_shadow.direction.w > 0.5) {
+-        beams *= sun_visibility(in.eye_rel, n);
++        beam_visibility = sun_visibility(in.eye_rel, n);
++    }
++    // **The streamed horizon, at the fragment's own cell.** The shadow map can say whether the
++    // beam is behind the world from one direction; it cannot say how much of the **dome** a cell
++    // can see, and it knows nothing about the air the far field crossed. This is the second
++    // measurement: the same resident octrees the world is meshed from, stamped a metre at a time
++    // as the chunks stream in, marched here toward the beam and along the stencil's three sky
++    // rays. The beam keeps the shadow map's finer texels and takes the march as well — a cell
++    // behind a wall the map's box does not cover is still dark — and the ambient is the march's
++    // own share of the atmosphere's radiance.
++    //
++    // **The Moon is in the two colours, not in a third ray.** At night `beams` is the solver's
++    // `moonlight` — the Sun's bands reflected off the Moon's own declared reflectance — and by day
++    // the Moon's scattered term is already inside `sky_radiance_rgb`, which is where `rig.ambient`
++    // came from. The march decides how much of either reaches this cell, so a cave under a cliff
++    // loses the moonlight it cannot see rather than receiving a uniform night.
++    //
++    // **Half a cell along the normal** leaves the fragment's own cell, which is the geometry it
++    // is drawn on; without it every surface would shadow itself on the first tap.
++    let horizon_point = in.eye_rel + n * (HORIZON_CELL_M * 0.5);
++    if (beam_known) {
++        // **The water the beam crossed, on the beam's own ray.** The air's reddening is already in
++        // `lights[0]` (`Sky::sun` is the transmitted band); the droplets above *this* fragment are
++        // not, and they are what a beam under a cloud bank loses. Applied before the visibility
++        // terms and touching neither of them.
++        beams *= beam_cloud_filter(in.eye_rel, beam_dir);
++        let marched = horizon_transmittance(horizon_point, beam_dir, HORIZON_REACH_M);
++        // **Only the band that is finer than the map may overrule it, in either direction.** The
++        // fine band reads the world's own subvoxels as far as its box reaches; inside that range
++        // the map's half-metre texel and its 2 cm normal bias are not a second opinion — they are
++        // a coarse one, which is what drew a straight edge across a face the geometry says is lit.
++        // So a fine hit is a refusal the map cannot argue with, and a fine clear is the beam.
++        //
++        // **The coarse band is refused here and answers the dome only.** Past the fine box it is
++        // an 8 m summary: an occluder it finds is real, but so is the lit ground beside it, and
++        // the shadow map still covers that range at 0.28 m. Letting eight metres subtract from
++        // the beam is how the far field grew blocks of shadow the geometry does not cast — the
++        // regression this rule removes. Unmeasured entirely, the map answers, which is the light
++        // the far field had before the volume existed.
++        if (marched.x > 0.5) {
++            beam_visibility = 0.0;
++        } else if (marched.y > 0.5) {
++            beam_visibility = 1.0;
++        }
++    }
++    beams *= beam_visibility;
++    // **The dome, and the enclosure's own one bounce.** A cell that can see none of the sky is not
++    // unlit: the walls it can see are lit by the same dome and reflect their own share of it, so
++    // the ambient it receives is `view + (1 − view)·albedo` — the fragment's own measured
++    // reflectance, not a constant. That is what carries light down a corridor instead of letting the
++    // ambient die at the first metre of cover, and it is why a tunnel mouth's light fades with depth
++    // rather than stopping where the rig's floor used to.
++    let dome = horizon_dome(horizon_point);
++    if (dome.y > 0.5) {
++        let reflecting = select(vec3<f32>(1.0), base, base_present > 0.5);
++        let enclosure = clamp(dot(reflecting, vec3<f32>(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
++        sky *= dome.x + (1.0 - dome.x) * enclosure;
+     }
+     let opaque = (1.0 - metalness) * (1.0 - transmission);
+     // **`npr::shade`'s ambient gain, which this transcription dropped** — PATCH-074. A
+@@ -1487,552 +1523,3 @@
+     let alpha = select(1.0, 1.0 - cloud_veil, is_cloud);
+     return vec4<f32>(dithered(presentable, in.clip.xy, camera.screen.y), alpha);
+ }
+-vs_main0           fs_mainworld-quadsvs_quad                    world-cloudsworld-wirevs_wirefs_wireviewmaterialsworld-bodiesvs_bodyfs_bodyrigsky-modelsky//! The sky pass — **the scattering is not in this file, on purpose**.
+-//!
+-//! # What this shader is allowed to know
+-//!
+-//! **The transport is `atmosphere.wgsl`'s, and no body is drawn here.**
+-//!
+-//! A pixel becomes a **world ray** (the camera's yaw and pitch travel in `view`) and the ray is
+-//! handed to `sky_radiance_rgb`, the one transcription of `voxel_light::solver`'s transport that
+-//! this pass and `shading.wgsl` are both compiled with. There is **no dome table, no grid and no
+-//! interpolation** between the model and the pixel any more: the sky a pixel carries is the
+-//! integral the light rig was built from, evaluated at that pixel's own direction. What was here
+-//! before was a 64×64 tabulation of a *different* model (`voxel_appearance::sky`'s fit), which is
+-//! two skies — one the frame drew and one the world was lit by — and a grid that sampled a sunset's
+-//! aureole as a staircase.
+-//!
+-//! **The Sun and the Moon are not drawn here** (C-184). They are **astronomical bodies in the
+-//! record stream** now — a body is one 32-byte record and one origin, placed by the world pass's own
+-//! `vs_body`/`fs_body`, so the frame's geometry carries them and this pass carries only the air.
+-//! `docs/lighting-sky-and-moon.md` §7 has why, and what it fixed.
+-//!
+-//! # Why the pixels are alpha 0
+-//!
+-//! Alpha keeps the meaning `world.rs` gives it — **"geometry is drawn here"** — so the frame
+-//! can still tell a surface from the sky behind it. A sky pass that wrote alpha 1 would be
+-//! indistinguishable from terrain to every measurement that reads the alpha, and
+-//! `Frame::response` would then be counting sky as if it were shaded stone.
+-//!
+-//! The invariant this establishes: **every pixel is either sky or geometry, and none is left
+-//! undrawn.** That is the whole repair — the old pass cleared to transparent, so every pixel
+-//! with no voxel on it was nothing at all.
+-//!
+-//! **What a body's radiance is** is unchanged and still not this file's business: the CPU derives it
+-//! from the band table — the Sun's own bands over its solid angle for the disc, and the Sun's bands
+-//! times the Moon's declared reflectance over π for the Moon's lit face — and the drawn body carries
+-//! that number through the record.
+-
+-// The camera's geometry. `pitch_rad`, `yaw_rad` and `tan_half_fov` are the only numbers
+-// needed to turn a pixel into a world direction; **everything physical** — the air, the
+-// sun's own path, the bands and their response weights — arrives in `sky_model`, which is
+-// `atmosphere.wgsl`'s binding rather than a field of this struct.
+-struct SkyView {
+-    pitch_rad: f32,
+-    tan_half_fov: f32,
+-    yaw_rad: f32,
+-    aspect: f32,
+-    // Written for the world pass's fluid reflection; declared here so the two
+-    // structs stay the same size and layout. The sky itself does not read it.
+-    fluid_f0: f32,
+-    // **How much dither the target's quantisation calls for** (C-166): `0` for a
+-    // float target, `1` for the 8-bit `sRGB` surface the window presents. This is
+-    // `shading.wgsl`'s `View::screen.y`, arriving as its own uniform because the
+-    // sky has its own bind group.
+-    //
+-    // **It is the sky that needs it most.** The world is made of flat quads whose
+-    // shades are mostly several steps apart, while the sky is one long smooth
+-    // gradient and therefore the only surface on the screen that spends many pixels
+-    // inside a single step — which is exactly the condition that draws a band.
+-    dither: f32,
+-    // **Whether this target is a display** (C-167): `shading.wgsl`'s `View::screen.z`.
+-    //
+-    // The sky needs this one more than anything else does. It is the brightest thing
+-    // on the screen — the sun's own radiance is not a number an 8-bit target can
+-    // hold — so it is the pass that spends the most of its range above white, and the
+-    // one where a clip is largest.
+-    tonemap: f32,
+-    // **Declared, unread, and load-bearing**: they make this struct's first block twelve
+-    // `f32` — three whole `vec4`s — with **no implicit padding**, so the bodies below begin
+-    // on a `vec4` boundary and `WorldPipeline::write_camera` writes exactly the thirty-two
+-    // `f32` this struct declares. A struct whose padding a reader has to work out is a
+-    // struct whose size can drift from the buffer it is bound to, which is the defect that
+-    // made the sky black in the first place.
+-    //
+-    // **The first two of the five used to be the dome's grid** — its azimuth and elevation
+-    // counts, which `write_camera` sent so the pass could index a table. The table is gone
+-    // and the model carries its own band count, so they are reserves rather than fields a
+-    // reader would have to trace to a shader that no longer exists.
+-    reserved0: f32,
+-    reserved1: f32,
+-    reserved2: f32,
+-    reserved3: f32,
+-    reserved4: f32,
+-    // The bodies' five `vec4`s used to close this struct: the Sun's and the Moon's centres, halves,
+-    // radiances and the Sun's direction as they were handed to this pass (C-176). They are records in
+-    // the world's own stream now (C-184), so this struct is the twelve `f32` of the camera and the
+-    // air, and `WorldPipeline::write_camera` uploads exactly those.
+-};
+-
+-@group(0) @binding(0) var<uniform> view: SkyView;
+-// `sky_model` — the air, the sun's own column and the bands — is declared by
+-// `atmosphere.wgsl`, at binding 5, and **the world pass binds the same buffer**: the sky a
+-// fluid reflects is the sky this pass draws, which is one buffer and one evaluation.
+-
+-struct VsOut {
+-    @builtin(position) position: vec4<f32>,
+-    @location(0) ndc_x: f32,
+-    @location(1) ndc_y: f32,
+-};
+-
+-/// A fullscreen triangle — one primitive, no vertex buffer, three vertices' worth of
+-/// clip-space positions generated from `vertex_index`.
+-@vertex
+-fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VsOut {
+-    var corners = array<vec2<f32>, 3>(
+-        vec2<f32>(-1.0, -1.0),
+-        vec2<f32>( 3.0, -1.0),
+-        vec2<f32>(-1.0,  3.0),
+-    );
+-    let xy = corners[vertex_index];
+-    var out: VsOut;
+-    out.position = vec4<f32>(xy, 0.0, 1.0);
+-    out.ndc_x = xy.x;
+-    out.ndc_y = xy.y;
+-    return out;
+-}
+-
+-// `DEGREES_PER_RADIAN` is `atmosphere.wgsl`'s: one constant, one file, both passes.
+-
+-
+-@fragment
+-fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
+-    // A uniform with no model behind it draws black — docs/lighting-sky-and-moon.md
+-    let sy = sin(view.yaw_rad);
+-    let cy = cos(view.yaw_rad);
+-    let sp = sin(view.pitch_rad);
+-    let cp = cos(view.pitch_rad);
+-    let forward = vec3<f32>(sy * cp, sp, cy * cp);
+-    let right = vec3<f32>(cy, 0.0, -sy);
+-    let up = vec3<f32>(-sp * sy, cp, -sp * cy);
+-
+-    // The ray for this pixel, in camera space: `ndc · tan(half fov)`, forward `1`.
+-    let x = in.ndc_x * view.tan_half_fov * view.aspect;
+-    let y = in.ndc_y * view.tan_half_fov;
+-    let dir = normalize(right * x + up * y + forward);
+-
+-    // What this ray carries — docs/lighting-sky-and-moon.md
+-    let radiance = sky_radiance_rgb(dir);
+-
+-    // Transform first, then dither — docs/lighting-sky-and-moon.md
+-    var lit = radiance;
+-
+-    // Alpha 0: sky, not geometry. See the module doc — a body is drawn by the world pass and is still
+-    // not a surface, so alpha stays the one channel that says "a mesh is on this pixel".
+-    var presentable = lit;
+-    if (view.tonemap > 0.0) {
+-        presentable = tone_map(lit);
+-    }
+-    return vec4<f32>(dithered(presentable, in.position.xy, view.dither), 0.0);
+-}
+-                                                                                                           �      �   sky-view                                                                                                                                9a world pass is drawn at one sample or at four, never at �                 j  	       �   �                 5         �                   �         �                   �         �                   �  5       �                   �  0       �                   �         �                   �         �                            �                            �                     &       �                            �                             �   crates\voxel-client\src\pattern.rs         "       B  "                  "       B  2                  "       B  B                  "       G            a pyramid has a base        &       �  %       �           &       �  #       �           &       �  #       �           &       �         �           &       �         �           &       �         �           &       �  '       �           &       �  4       �           &       �         �           &       �  *       �           &       �         �           &       �         �           &       �         �           &       �         �           &       �  )       �           &       �  #       �           &       �  "       �           &       �  *       �           &       �  K       �           &         !       �           &         )       �           &         ,       �           &         +       �           &         *       �           &         $       �           &         :       �           &         "       �           &       
+-  &       �           &       
+-         �           &                �           &                �           &         %       �           &         ,       �           &         @       �           &         G       �   corner-indicescorner-vertices/rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library\alloc\src\raw_vec\mod.rs         P       �         �   /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library\core\src\num\mod.rs         K       *         �   /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library\core\src\ops\index_range.rs         S       ?   %       �   /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library\core\src\array\iter\iter_inner.rs         Y       �           �   crates\voxel-client\src\work.rs                �   	       �                  �          �   /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library\alloc\src\collections\btree\navigate.rs         _       �   7       �           &       �         �           &       �         �           &       �         �           &       �         �           &       �         �           &       �         �           &         #       �           &                �           &                �           &                �           &         "       �           &         *       �           &                �            &       C         �           &       �         �           &                �           &                �           &                �           &                �   ��N// ---- the display stage ------------------------------------------------------
+-//
+-// **This is the one copy**, and it is a file rather than three blocks because of what
+-// the three blocks used to say about themselves. `srgb_encode`, `srgb_decode`, `bayer8`,
+-// `dithered` and `tone_map` existed three times over — in `shading.wgsl`, in `sky.wgsl`
+-// and in `clouds.wgsl` (since removed: the clouds are geometry drawn through
+-// `shading.wgsl`, not a pass of their own) — and each of the three admitted it in a
+-// comment: *WGSL has no `include`, and a shader cannot call another shader.*
+-//
+-// That is true of WGSL. It was never true of the build: the host has `include_str!`, so
+-// [`world::pass_source`] concatenates this file in front of every pass that presents a
+-// frame and the pass is compiled with it already in scope. **A copy is a transcription
+-// nobody checks**, and the failure is not a compile error: it is a curve changed in one
+-// pass and not in the others, which is a frame whose sky and whose clouds disagree about
+-// what white is — visible only as a seam where they meet, and only to somebody already
+-// looking for it. One file cannot disagree with itself.
+-//
+-// Every pass that presents takes it; the merge compute pass and the wireframe do not,
+-// because neither writes a colour into the target.
+-
+-// ---- dithering the target's own quantisation (C-166) ------------------------
+-//
+-// The window presents an **8-bit `sRGB` surface**, so a shaded value with more than 256
+-// levels is rounded on the way out, and a smooth gradient — the sky is the one everybody
+-// sees, and a lit cloud edge is the second — arrives as **bands**. The repair is to add
+-// **less than one step of the target's own encoding**, placed by an ordered threshold,
+-// so neighbouring pixels round different ways and the band edge dissolves into a fine
+-// texture instead of drawing a contour.
+-//
+-// **Ordered (Bayer), not hashed, and the reason is the whole of it.** A hashed offset is
+-// white noise per pixel, and per pixel means per *frame* as the camera moves: it would
+-// trade static banding for crawling shimmer, which is the artifact this exists to
+-// remove. Bayer is a fixed function of the framebuffer coordinate, so it is stable in
+-// place while the camera obeys it.
+-//
+-// The offset is applied **in the target's encoded space** and then decoded back, because
+-// that is where the rounding happens: one step of `sRGB` *is* one step of the 8-bit
+-// channel. The same offset applied in linear space would be roughly four times too large
+-// in the darks, where the encoding's slope is steepest, and about half a step too small
+-// at the top — noise in the shadows and banding left at the bright end, which is the
+-// worst of both.
+-//
+-// The amount is a flag, not a constant: `0.0` returns the colour untouched, and every
+-// caller passes its own — `camera.screen.y` in the world pass, `view.dither` in the sky,
+-// `view.screen.x` in the clouds. It is `0` for a target that quantises nothing (the
+-// offscreen `Rgba32Float` verification target), so a measurement frame is the number the
+-// model computed rather than that number with an offset spent on it.
+-
+-/// One step of an 8-bit channel, in the channel's own encoded units.
+-const DITHER_STEP: f32 = 1.0 / 255.0;
+-
+-/// `sRGB`'s transfer function, so the offset can be placed where the rounding is.
+-fn srgb_encode(c: vec3<f32>) -> vec3<f32> {
+-    let l = clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
+-    let linear = l * 12.92;
+-    let curve = 1.055 * pow(l, vec3<f32>(1.0 / 2.4)) - 0.055;
+-    return select(curve, linear, l <= vec3<f32>(0.0031308));
+-}
+-
+-fn srgb_decode(e: vec3<f32>) -> vec3<f32> {
+-    let e_clamped = clamp(e, vec3<f32>(0.0), vec3<f32>(1.0));
+-    let curve = pow((e_clamped + 0.055) / 1.055, vec3<f32>(2.4));
+-    let linear = e_clamped / 12.92;
+-    return select(curve, linear, e_clamped <= vec3<f32>(0.04045));
+-}
+-
+-/// An **8×8 ordered (Bayer) threshold**, in `[-0.5, 0.5)`.
+-///
+-/// The matrix is the standard recursive construction written out; it is a function of
+-/// the framebuffer coordinate alone, which is what makes the dither stable under camera
+-/// motion.
+-fn bayer8(p: vec2<f32>) -> f32 {
+-    var matrix = array<u32, 64>(
+-         0u, 32u,  8u, 40u,  2u, 34u, 10u, 42u,
+-        48u, 16u, 56u, 24u, 50u, 18u, 58u, 26u,
+-        12u, 44u,  4u, 36u, 14u, 46u,  6u, 38u,
+-        60u, 28u, 52u, 20u, 62u, 30u, 54u, 22u,
+-         3u, 35u, 11u, 43u,  1u, 33u,  9u, 41u,
+-        51u, 19u, 59u, 27u, 49u, 17u, 57u, 25u,
+-        15u, 47u,  7u, 39u, 13u, 45u,  5u, 37u,
+-        63u, 31u, 55u, 23u, 61u, 29u, 53u, 21u,
+-    );
+-    let x = u32(p.x) & 7u;
+-    let y = u32(p.y) & 7u;
+-    return (f32(matrix[y * 8u + x]) + 0.5) / 64.0 - 0.5;
+-}
+-
+-/// The colour with the target's rounding spread across the pixel.
+-///
+-/// `amount` is the presenting pass's own flag, as above: **`0.0` returns the colour
+-/// untouched**, which is what keeps a float target an exact measurement.
+-fn dithered(colour: vec3<f32>, p: vec2<f32>, amount: f32) -> vec3<f32> {
+-    if (amount <= 0.0) {
+-        return colour;
+-    }
+-    let encoded = srgb_encode(colour);
+-    let moved = encoded + vec3<f32>(bayer8(p) * DITHER_STEP * amount);
+-    return srgb_decode(moved);
+-}
+-
+-// ---- the display transform (C-167) -----------------------------------------
+-//
+-// A transcription of `voxel_appearance::tonemap`, held to it by
+-// `renderer::tests::the_gpu_presents_a_radiance_the_crate_says_it_does`.
+-//
+-// Everything a pass produces before this point is **scene-referred**: the sky, the
+-// world's surfaces and a cloud all produce physical radiance, and it is allowed to exceed
+-// 1. A sunlit sky and a shadowed rock differ by orders of magnitude, and a renderer that
+-// writes that straight at an 8-bit target is not rendering HDR — it is clipping, at
+-// whatever the arithmetic happened to produce. The measured state of this project is
+-// exactly that: the world's brightest pixel reads **1.886** where the frame's contract
+-// says `[0, 1]`. A cloud makes it worse rather than better, because a cloud's whole
+-// brightness is scattering *toward* the eye and a lit edge is brighter than the sky it
+-// stands in front of.
+-//
+-// Reinhard's `L -> L / (1 + L)` (Reinhard et al. 2002), on the colour's own luminance.
+-// **It has no free parameter**, and that is why it is here rather than a film curve: a
+-// shoulder, a toe and a linear section would each be a number nobody chose, spent on
+-// every pixel, in a project that counts its unsourced constants in a test. It adds no
+-// entry to `tonemap::CONSTANTS`, which is the criterion it was selected on rather than a
+-// happy accident.
+-//
+-// **The gain is `1 / (1 + L)`, not `(L / (1 + L)) / L`.** They are the same expression,
+-// and the first cannot divide by a luminance so small that the two disagree — the Rust
+-// uses the first form too, so the pair computes one expression rather than two a reader
+-// has to prove equal.
+-//
+-// **One stated divergence from the Rust:** a `NaN` luminance presents as black here and
+-// stays `NaN` there. The model refuses a bad value rather than replacing it with one
+-// somebody could believe; the shader has to write *something* to a surface, and black is
+-// the only thing it can write that cannot be read as a measurement.
+-
+-// The luminance weights of Rec. 709 (ITU-R BT.709), the same cited triple
+-// `voxel_appearance::openpbr::LinearRgb::luminance` uses. Using a different one would
+-// tone-map a different quantity than the bar counts bands of.
+-const LUMINANCE_WEIGHTS: vec3<f32> = vec3<f32>(0.2126, 0.7152, 0.0722);
+-
+-/// **The display transform**: an unbounded scene-referred colour, made displayable.
+-///
+-/// Luminance is compressed and every channel is scaled by that same factor, so the
+-/// picture's **chromaticity is untouched** — a grey stays grey, a warm wall stays warm, a
+-/// blue sky stays blue while ceasing to be 1.886.
+-/// **And it is not a bound**, which is the defect this function had: Rec. 709's weights are
+-/// dominated by green, so a **red-dominant** colour takes a gain computed mostly from a channel it
+-/// barely has and leaves the domain — the horizon at sunset is `(2.36, 0.78, 0.01)` after
+-/// `EXPOSURE`, luminance `1.06`, gain `0.485`, red **`1.145`**. The 8-bit target clips it, and the
+-/// redness is what is lost: `(1.0, 0.378)` presents a washed yellow where the sky computed orange.
+-///
+-/// The repair is one scalar gain, the smaller of the curve's own and the brightest channel's own
+-/// bound, so chromaticity is still untouched and no channel can leave `[0, 1]`. The Rust form is
+-/// `voxel_appearance::tonemap::tone_map` and the two are held together by
+-/// `renderer::tests::the_gpu_presents_a_radiance_the_crate_says_it_does`.
+-fn tone_map(colour: vec3<f32>) -> vec3<f32> {
+-    let l = dot(colour, LUMINANCE_WEIGHTS);
+-    // `!(l > 0.0)` rather than `l <= 0.0`: it is the same test for every finite value and
+-    // it also catches a `NaN`, which `l <= 0.0` answers `false` for and would let through
+-    // to multiply the whole colour by a `NaN`.
+-    if (!(l > 0.0)) {
+-        return vec3<f32>(0.0);
+-    }
+-    let brightest = max(colour.r, max(colour.g, colour.b));
+-    return colour * min(1.0 / (1.0 + l), 1.0 / brightest);
+-}
+-
+-// The air's transport, once, for every pass that draws light through it — docs/lighting-sky-and-moon.md
+-
+-/// The rows `sky_model` carries: six header rows and three per band.
+-const SKY_MODEL_ROWS: u32 = 42u;
+-
+-/// The bands `voxel_light::spectra` declares. A row's band count is checked against it.
+-const BAND_COUNT: u32 = 12u;
+-
+-/// The response's weights and the transport's own numbers, as the CPU wrote them.
+-///
+-/// **Binding 5 in both passes that hold it**, and the same buffer: the world pass reflects the sky
+-/// it is standing in, so a second buffer would be a second sky.
+-@group(0) @binding(5) var<storage, read> sky_model: array<vec4<f32>>;
+-
+-/// Radians per degree, and the two phase functions' constants.
+-const DEGREES_PER_RADIAN: f32 = 57.29577951308232;
+-const RAYLEIGH_PHASE_SCALE: f32 = 3.0 / (16.0 * 3.141592653589793);
+-const INV_FOUR_PI: f32 = 1.0 / (4.0 * 3.141592653589793);
+-
+-/// **The zenith angle's air mass**, Kasten & Young (1989) — the same formula
+-/// `voxel_light::solver::air_mass` and `voxel_shapers::sky::air_mass` carry.
+-///
+-/// Below the horizon the formula leaves its own domain and this returns the horizon's own value: a
+-/// depressed sun's light does not cross a longer path, it crosses the same horizon path in a sky
+-/// whose lit air is shrinking, which is the twilight share's job and not an extrapolation's.
+-fn air_mass(altitude_deg: f32, grazing: f32) -> f32 {
+-    let z = (90.0 - max(altitude_deg, 0.0)) / DEGREES_PER_RADIAN;
+-    let denominator = cos(z) + 0.50572 * cos(z + 0.00473 * z * z * z);
+-    return clamp(1.0 / max(denominator, 1.0 / grazing), 1.0, grazing);
+-}
+-
+-/// How small `sin e` may be before the crossing is taken as grazing, on this side of the horizon.
+-const SIN_FLOOR: f32 = 1.0e-6;
+-
+-/// **How far a ray at this elevation is inside a horizontal slab of this depth above the eye.**
+-///
+-/// Looking up, the ray leaves the slab at its top, so the crossing is `depth / sin e` however long
+-/// the ray is; looking level or down, the ray is inside it for its whole length. This is why fog is
+-/// a white-out at the horizon and a thin veil overhead.
+-///
+-/// **One expression, and the floor is the reason.** The `min` already answers the level case as
+-/// `sin e -> 0` — `depth / sin e` diverges and `distance_m` is smaller — so a second branch can only
+-/// *disagree* with the limit it is standing in for, which is what it did: with an empty droplet
+-/// layer (`depth = 0`) the branch returned the whole 323 km air path where the expression returns
+-/// zero, and the frame went black in the one tick the Sun crossed the horizon. `voxel_light::solver`
+-/// carries the same function and the same floor; the two are held to each other by test.
+-fn path_in_layer(distance_m: f32, elevation_deg: f32, layer_depth_m: f32) -> f32 {
+-    let sin_e = max(sin(elevation_deg / DEGREES_PER_RADIAN), SIN_FLOOR);
+-    return min(distance_m, layer_depth_m / sin_e);
+-}
+-
+-/// Rayleigh's `3/(16π)·(1 + cos²θ)`.
+-fn rayleigh_phase(cos_theta: f32) -> f32 {
+-    return RAYLEIGH_PHASE_SCALE * (1.0 + cos_theta * cos_theta);
+-}
+-
+-/// Henyey–Greenstein at the given asymmetry: `(1 − g²)/(4π(1 + g² − 2g·cosθ)^1.5)`.
+-///
+-/// A denominator that has gone to zero or below returns nothing rather than a `NaN`: a phase is a
+-/// share of the light and a share of nothing is zero.
+-fn henyey_greenstein(cos_theta: f32, g: f32) -> f32 {
+-    let denominator = 1.0 + g * g - 2.0 * g * cos_theta;
+-    if (denominator <= 0.0) {
+-        return 0.0;
+-    }
+-    return (1.0 - g * g) * INV_FOUR_PI / pow(denominator, 1.5);
+-}
+-
+-/// **The phase function of the air and the droplets together**, weighted by what each scatters.
+-///
+-/// `voxel_light::solver::mixed_phase` exactly, with its two ratios reduced: that function divides a
+-/// phase *by* the air's optical depth and then multiplies by it again
+-/// (`air_scatter · (r·R + a·H)/(r + a)`), which is `r·R + a·H`. The reduction is written here
+-/// because it is the same number with one fewer division, and the test that holds this file to the
+-/// Rust holds the reduced form.
+-fn mixed_phase(
+-    rayleigh_od: f32,
+-    aerosol_od: f32,
+-    droplet_scatter_per_m: f32,
+-    cos_theta: f32,
+-    mie_asymmetry: f32,
+-    droplet_asymmetry: f32,
+-) -> f32 {
+-    let total = rayleigh_od + aerosol_od + droplet_scatter_per_m;
+-    if (total <= 0.0) {
+-        return 0.0;
+-    }
+-    let air = rayleigh_od * rayleigh_phase(cos_theta)
+-        + aerosol_od * henyey_greenstein(cos_theta, mie_asymmetry);
+-    let droplets = droplet_scatter_per_m * henyey_greenstein(cos_theta, droplet_asymmetry);
+-    return (air + droplets) / total;
+-}
+-
+-/// **The sky**, exposed, for one ray: **both** sources' bands carried through this air — the Sun's
+-/// and the Moon's, the second being the first reflected off the Moon's disc — as the colour the
+-/// frame draws.
+-///
+-/// `direction` is a unit world vector — `x` east, `y` up, `z` south, the frame `sun_direction`
+-/// builds the row-2 sun in. A ray below the horizon is answered with the horizon's own sky for the
+-/// reason the dome clamped: the pass draws every pixel, the ground is not this pass's to know, and
+-/// a reflected ray that got here is above the horizon by its caller's own guard.
+-///
+-/// **The magnitude and the shape are split the way the rest of the client splits them**
+-/// (`voxel_light::visible_rgb`'s own doctrine, which `sun::DrawnMoon` already follows for the Moon's
+-/// body): the bands carry the magnitude, the response carries the shape, and a chromaticity is a
+-/// ratio of two sums of the same bands. So this returns `shape · total · exposure`, which is what
+-/// `skylight::sky_exposed_at` computes on the CPU and what the tests compare pixel for pixel.
+-fn sky_radiance_rgb(direction: vec3<f32>) -> vec3<f32> {
+-    // **A refusal, not a padded read.** A model smaller than this file's own layout is not a sky
+-    // with some rows missing; no admitted input means no picture.
+-    if (arrayLength(&sky_model) < SKY_MODEL_ROWS) {
+-        return vec3<f32>(0.0);
+-    }
+-    let head = sky_model[0];
+-    let sun_row = sky_model[1];
+-    let optics = sky_model[3];
+-    // The Moon's own rows — docs/lighting-sky-and-moon.md
+-    let moon_row = sky_model[4];
+-    let moon_dir_row = sky_model[5];
+-    let moon_air_path = moon_row.x;
+-    let moon_drop_path = moon_row.y;
+-    let moon_lit = moon_row.z;
+-    let sun_visible = moon_row.w;
+-    let scale_height_m = head.x;
+-    let droplets = head.y;
+-    let droplet_layer_depth_m = head.z;
+-    let droplet_albedo = head.w;
+-    let exposure = sky_model[2].w;
+-    let mie_asymmetry = optics.x;
+-    let droplet_asymmetry = optics.y;
+-    let grazing = optics.z;
+-    let bands = min(u32(optics.w), BAND_COUNT);
+-
+-    // The view's own column: the air is a scale height deep, the droplets their own layer tens of
+-    // metres deep — two media, two geometries. One shared column would extinguish the beam before
+-    // it arrived and a fog would never load a sky.
+-    let elevation_deg = clamp(asin(clamp(direction.y, -1.0, 1.0)) * DEGREES_PER_RADIAN, 0.0, 90.0);
+-    // **The clamped ray is the ray the model is asked about.** Below the horizon the pass answers
+-    // with the horizon's own sky, and the horizon in this ray's azimuth is a *direction*, not only
+-    // an elevation: the phase needs the same ray the column used, or a downward ray is lit at a
+-    // sun angle no horizon pixel has. `skylight::sky_exposed_at` rebuilds it with `sun_direction`;
+-    // this is that line, so the two readings of one model cannot disagree about which ray they
+-    // were asked for.
+-    let azimuth = atan2(direction.x, -direction.z);
+-    let elevation = elevation_deg / DEGREES_PER_RADIAN;
+-    let ray = vec3<f32>(
+-        sin(azimuth) * cos(elevation),
+-        sin(elevation),
+-        -cos(azimuth) * cos(elevation),
+-    );
+-    let sin_e = abs(sin(elevation_deg / DEGREES_PER_RADIAN));
+-    let view_air_mass = clamp(1.0 / max(sin_e, 1.0e-9), 1.0, grazing);
+-    let air_path_view = scale_height_m * view_air_mass;
+-    let drop_path_view = path_in_layer(air_path_view, elevation_deg, droplet_layer_depth_m);
+-
+-    // The droplets move light into the line of sight rather than taking it away: a visible droplet
+-    // is very nearly a conservative scatterer, which is why a fog *loads* a sky as it hides the
+-    // ground behind it.
+-    let droplet_scatter = droplets * droplet_albedo;
+-    let cos_theta = dot(ray, sky_model[2].xyz);
+-
+-    var acc = vec3<f32>(0.0);
+-    var total = 0.0;
+-    for (var index = 0u; index < bands; index = index + 1u) {
+-        let a = sky_model[6u + index * 3u];
+-        let b = sky_model[7u + index * 3u];
+-        let c = sky_model[8u + index * 3u];
+-        let extinction = a.x;
+-        let beta_e = extinction + droplets;
+-        let beta_s = a.y + droplet_scatter;
+-        // The sun's own column, and the twilight's share of it: as the sun sinks the air path grows
+-        // without bound, so the beam is extinguished long before the *scattered* light is.
+-        let tau_sun = extinction * sun_row.x + droplets * sun_row.y;
+-        let sun_transmittance = exp(-tau_sun) * sun_row.z;
+-        let t_view = exp(-(extinction * air_path_view + droplets * drop_path_view));
+-        // The single-scatter integral in closed form; both media enter through the ratio.
+-        var single_scatter = 0.0;
+-        if (beta_e > 0.0) {
+-            let phase = mixed_phase(
+-                a.w,
+-                b.x,
+-                droplet_scatter,
+-                cos_theta,
+-                mie_asymmetry,
+-                droplet_asymmetry,
+-            );
+-            single_scatter = (beta_s / beta_e) * (1.0 - t_view) * phase;
+-        }
+-        // The Moon's own light, and it is the Sun's light reflected — docs/lighting-sky-and-moon.md
+-        var lunar = 0.0;
+-        if (beta_e > 0.0) {
+-            let tau_moon = extinction * moon_air_path + droplets * moon_drop_path;
+-            let moon_phase = mixed_phase(
+-                a.w,
+-                b.x,
+-                droplet_scatter,
+-                dot(ray, moon_dir_row.xyz),
+-                mie_asymmetry,
+-                droplet_asymmetry,
+-            );
+-            let moon_power = a.z * c.y * moon_lit;
+-            lunar = moon_power * (beta_s / beta_e) * (1.0 - t_view) * moon_phase * exp(-tau_moon);
+-        }
+-        // The floor is a **radiance**: added, never scaled by the band's own power.
+-        let radiance =
+-            a.z * sun_visible * single_scatter * sun_transmittance + lunar + sun_row.w * b.y;
+-        acc = acc + radiance * vec3<f32>(b.z, b.w, c.x);
+-        total = total + radiance;
+-    }
+-
+-    // The shape is the response's own sum of the same bands, so the two are one evaluation and not
+-    // a colour and a brightness measured separately.
+-    let shape = acc.r + acc.g + acc.b;
+-    if (shape <= 0.0 || total <= 0.0) {
+-        return vec3<f32>(0.0);
+-    }
+-    return acc * (exposure * total / shape);
+-}
+-
+-�                 �  
+-       �                   �         �                   �         �                   �  !       �                   |         �                   |  %       �                   ~         �   subvoxel cell �	 at axis � does not fit i32         "       �             pattern position axis � is � unsafe precondition(s) violated: usize::unchecked_add cannot overflow
+-
+-This indicates a bug in the program. This Undefined Behavior check is optional, and cannot be relied on for safety.unsafe precondition(s) violated: ptr::copy_nonoverlapping requires that both pointer arguments are aligned and non-null and the specified memory ranges do not overlap
+-
+-This indicates a bug in the program. This Undefined Behavior check is optional, and cannot be relied on for safety.unsafe precondition(s) violated: hint::assert_unchecked must never be called when the condition is false
+-
+-This indicates a bug in the program. This Undefined Behavior check is optional, and cannot be relied on for safety.unsafe precondition(s) violated: hint::unreachable_unchecked must never be reached
+-
+-This indicates a bug in the program. This Undefined Behavior check is optional, and cannot be relied on for safety.unsafe precondition(s) violated: slice::get_unchecked requires that the index is within the slice
+-
+-This indicates a bug in the program. This Undefined Behavior check is optional, and cannot be relied on for safety.min > max. min = �, max = � no entry found for key               Mutex                                  �   data                                 �   /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library\core\src\iter\range.rs         N       $         ,   � would need �   p  MB, past this device's �   p  MB maximum buffer size /rustc/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/library\core\src\iter\adapters\enumerate.rs         [       R   	       5                 �               �               �               �               �               �               �               �               �               �                                                   �   �   j     /kache/target\debug\deps\voxel_client-d2e6cd7dd8caa6da.voxel_client.cf85e0caaaff2cc1-cgu.03.rcgu.o  R <   �  c     �Y      clang LLVM (rustc version 1.99.0 (b940084d7 2026-09-28))  �   �7      Z  P     ^  (   C	  d  �   �	  g  �   O  j  �   �  t    )   w  @  �   |  h  B   �  �   k  �  �   !  �  �    �  �  O  �  @  �  �  h  d   �  �   )  �  �   �  �    �  �  �  i  �  �  O  �  �  O  �  �  O  �  0  �  �  X  0  �  �   �  �  �   �	  �  �   O  �  �   �  �  �     �  �  �   �  �    �  �  �  �  �  )  �  �  |   �  �  <     �   �    �   �    0  �    �  �    �       �   �    �   7    �   �    �  0    �    T     n   �  H  O   �  p  �   �  �   ~  �  (   4  �  �  �  �  �  �  �  �    �  �  �  �  �  h    �  q      0    8  �    �      �        �    8  �    8  g       G      0  4  `  �  6  `  K  :  �  `  A  �  )  T  p  A  Y  �  �  _  �  7  b  �  k  f  �  �  j  �  �  o  �  1   r  �  �   w  �  �  {  �  �    �  N  �  (  �  �     �   �  P  D   �  �  |  �  �  �  �  �  k  �  �  \  �  �  o  �  (  �  �     �   �  P  D   �  �  (
+-  �  �  �  �  �  �  �  �  �  �  �  �  �  �  1   �  �  �   �  �  �  �  �  �  �  �  N  �  (  �  �     �   �  �  |  �  �  �    �  O    �  O    �  O    �  O  
+-  �   0    �   �    �   �    �   �    �  O    �   0  g  �   O  j  �   �    �   �  �%  �  O  �%  �  O  �%  �  O  �%  �  O  �%  �  O  �%  �  O  �%  �  O  �%  �  O  �%  �  O  �%  �  O  �%  �  O  �%  �  O  �%  �  O  �%  �  �  �%  �  O  �%  �  �  �%  �  (  �%  �  �  �%  �  7  �%  �  �   �%  �  O  �%  �  �  �%      &  @  c  &  �  >  &  �  O  &  �  O  &  �  O  &  �  �  !&  �  O  "&  �  �  1&      9&  @  c  :&  �  >  >&  �  O  A&  �  O  E&  �  O  F&  �  �  J&  �  O  K&  �  �  Z&      ^&  @  c  _&  �  >  c&  �  O  g&  �  O  h&  �  �  l&  �  O  &  �  O  �&  �  O  �&      �&  @  c  �&  �  >  �&  �  O  '  �  O   '  �  O  $'  �  O  ('  �  O  )'  �   0  +'  �   O  .'  �   �    �   �    �   �  2'  �  O  3'  �  �  5'  �  '   9'  �  O  ='  �  O  >'  �  �  B'  �  O  E'  �  O  L'  �  O  M'  �  �  N'      R'  @  c  S'  �  >  W'  �  O  r'  �  O  s'  �   0  v'  �   O  y'  �   �    �   �  }'  �  O  �'  �  O  �'  �  O  �'  �  �  �'  �  O  �'  �  O  �'  �  O  �'  �  O  �'  �  �  �'  �  O  �'  �  O  (  �  O  (  �  O  "(  �  O  #(  �   0  %(  �   O  ((  �   �    �   �  ,(  �  O  0(  �  O  4(  �  O  5(  �   0  7(  �   O  :(  �   �    �   �  i(  �  O  m(  �  O  q(  �  O  r(  �   0  t(  �   O  w(  �   �    �   �  �  �   O  �  �   �  �(  �  O  �(  �  O  �(  �  O  �(  �   0  �(  �   O  �(  �   �    �   �   '  �  O  $'  �  O  ('  �  O  )'  �   0  +'  �   O  .'  �   �    �   �  �(  �  O  �(  �  O  �(  �  O  �(  �  O  �(  �  �  A&  �  O  E&  �  O  �(  �  O  �(  �  O  )  �  O  )  �  O  )  �   0  )  �   O  )  �   �    �   �  :)  �  O  >)  �  O  B)  �  O  C)  �   0  E)  �   O  H)  �   �    �   �  w)  �  O  {)  �  O  )  �  O  �)  �   0  �)  �   O  �)  �   �    �   �  �)  �  O  �)  �  O  �)  �  �  �)  �  O  �)  �  O  7  �  O  7  �  O  7  �  O  7  �  O  7  �   0  7  �   O  7  �   �    �   �  7  �  O  7  �   0   7  �   O  #7  �   �    �   �  Z7  �  O  [7  �   0  ]7  �   O  `7  �   �    �   �  d7  �  O  h7  �  O  i7  �  O  m7  �  O  q7  �  O  r7  �  �  v7  �  O  z7  �  O  {7  �   0    �   �    �   �  7  �  O  �7  �  2   �7  �  �   �7  h  H   �7  �  O  �7  �  O  �7  �  O  �7  �   0  �7  �   O  �7  �   �    �   �  �7  �  O  �7  �  O  �7  �  O  �7  �   0  �7  �   O  �7  �   �    �   �  �7  �  O    �   �  �7  �  R  �7  �    �7    ]  �7        �7     �   �7  �  v  �7  �  _  �7    r  �7    B  8  �  `  8  8  �  8    I  8  (   �  8  �  v       �  8  8    8  8  J   8    &  8  �  =  8  �  i   8  �  j  "8  �  t  #8  8  1   $8    
+-  &8     �   -8  �  �  K8  `  �  L8  `  K  P8  �  `  T8  `  �   X8  �  �  ^8  �  K
+-  a8  �  �	  c8    f  i8      k8    \  n8     �   p8      r8  �  '  u8  �  ]  {8  �  b  �8    �  �8       �8    �  �8  �  �   �8  �  �  �8  �  �  �8  P  D   �8    �  �8  �  �  �8  `  �  �8  `  K  �8  �  `  �8  �  �  �8  X  B  �8  X  ]  �7    ]
+\ No newline at end of file

@@ -964,52 +964,81 @@ mod tests {
         // layer is deeper than a ridge's, the loading is zero at the layer's own base and top,
         // deepest in the middle, and **nothing above the top** — §3's treetops standing clear.
         let s = spec();
+        // **The address and the tick are found, not assumed.** This sampled tick `0` alone, which
+        // after the day became the world's own scale is a mid-winter midnight: the most sheltered
+        // address in the world had a layer with no droplets in it, so the structure below was
+        // being asserted over a layer that did not exist. A fog is a *state* the world is
+        // sometimes in, so the sweep asks the world for a time and a place that have one.
         let mut at = (0.0f64, 0.0f64);
+        let mut at_tick = 0u64;
         let mut best = 0.0;
-        for x in (-1200..1200).step_by(61) {
-            for z in (-1200..1200).step_by(67) {
-                let (xf, zf) = (f64::from(x), f64::from(z));
-                let p = shelter(&s, xf, zf);
-                if p > best {
-                    best = p;
-                    at = (xf, zf);
+        for day in (0..climate::DAYS_PER_YEAR).step_by(3) {
+            for hour in [0, 5, 23] {
+                let tick = day * climate::TICKS_PER_DAY
+                    + climate::TICKS_PER_DAY * hour / 24;
+                for x in (-1200..1200).step_by(211) {
+                    for z in (-1200..1200).step_by(223) {
+                        let (xf, zf) = (f64::from(x), f64::from(z));
+                        let ground = terrain::elevation_m(&s, xf, zf);
+                        let p = fog_at(&s, xf, ground + scale::voxels(2.0), zf, tick).lwc_g_m3;
+                        if p > best {
+                            best = p;
+                            at = (xf, zf);
+                            at_tick = tick;
+                        }
+                    }
                 }
             }
         }
-        assert!(best > 0.0, "the sweep found no sheltered address at all");
+        assert!(best > 0.0, "no fog formed anywhere in a world year");
         let ground = terrain::elevation_m(&s, at.0, at.1);
+        // **The layer is sampled across its own depth, not in metres.** A ground fog is
+        // `0.5` engine metres deep at this pool — four real metres — so a one-metre stride stepped
+        // over it entirely: base and top were the only samples, and both are zero by construction.
+        // The claim is about the *shape* of the loading inside the layer, so the stride is a
+        // fraction of the layer and not a unit of the world.
+        let base_sample = fog_at(&s, at.0, ground, at.1, at_tick);
+        assert!(base_sample.in_layer, "the pool at ({}, {}) had no layer", at.0, at.1);
+        let (layer_base, layer_top) = (base_sample.layer_base_m, base_sample.layer_top_m);
+        let depth = layer_top - layer_base;
+        assert!(depth > 0.0, "the layer at ({}, {}) has no depth", at.0, at.1);
         let mut mid = 0.0f64;
-        let mut samples = 0;
-        let mut top = ground;
+        let mut first = 0.0f64;
+        let mut last = 0.0f64;
         for step in 0..=20 {
-            let y = ground + step as f64;
-            let sample = fog_at(&s, at.0, y, at.1, 0);
-            top = sample.layer_top_m;
-            if sample.in_layer {
-                samples += 1;
-                mid = mid.max(sample.lwc_g_m3);
-                assert!(
-                    (0.0..=MAX_LWC_G_M3).contains(&sample.lwc_g_m3),
-                    "{sample:?}"
-                );
-                assert!(sample.through >= 0.0 && sample.through < 1.0);
-                assert_eq!(
-                    sample.extinction_per_m,
-                    extinction_per_m(sample.lwc_g_m3, DROPLET_RADIUS_M)
-                );
+            // **Strictly inside**: the base and the top are the layer's own boundaries, and the
+            // predicate that says a point is in it is an inequality, so a sample placed exactly on
+            // one is a floating-point coin toss rather than a reading.
+            let y = layer_base + depth * (step as f64 + 0.5) / 21.0;
+            let sample = fog_at(&s, at.0, y, at.1, at_tick);
+            let lwc = sample.lwc_g_m3;
+            assert!(sample.in_layer, "a sample inside the layer was outside it: {sample:?}");
+            assert!((0.0..=MAX_LWC_G_M3).contains(&lwc), "{sample:?}");
+            assert!(sample.through >= 0.0 && sample.through < 1.0);
+            assert_eq!(
+                sample.extinction_per_m,
+                extinction_per_m(lwc, DROPLET_RADIUS_M)
+            );
+            if step == 0 {
+                first = lwc;
             }
+            if step == 20 {
+                last = lwc;
+            }
+            mid = mid.max(lwc);
         }
-        assert!(samples > 0, "the pool at ({}, {}) had no layer", at.0, at.1);
         assert!(mid > 0.0, "the layer held no droplets anywhere in it");
+        assert!(
+            mid > first && mid > last,
+            "the loading was not deepest in the middle: base {first}, middle {mid}, top {last}"
+        );
         // Above the top, the answer is no droplets at all.
-        let above = fog_at(&s, at.0, top + 1.0, at.1, 0);
+        let above = fog_at(&s, at.0, layer_top + 1.0, at.1, at_tick);
         assert!(!above.in_layer && above.lwc_g_m3 == 0.0, "{above:?}");
         assert_eq!(above.visibility_m, CLEAR_VISIBILITY_M);
         assert_eq!(above.mechanism, FogMechanism::None);
         // And the base of the layer is the ground it stands on.
-        let base = fog_at(&s, at.0, ground, at.1, 0);
-        assert!(base.layer_base_m <= ground + 1e-9);
-        assert!(base.layer_top_m > base.layer_base_m);
+        assert!(base_sample.layer_base_m <= ground + 1e-9);
     }
 
     #[test]
@@ -1051,7 +1080,13 @@ mod tests {
     fn the_world_read_is_in_range_and_names_a_mechanism_for_what_it_finds() {
         let s = spec();
         let mut seen = std::collections::BTreeSet::new();
-        for tick in [0u64, climate::TICKS_PER_DAY / 2, climate::YEAR_TICKS / 4] {
+        let mut ticks = Vec::new();
+        for day in (0..climate::DAYS_PER_YEAR).step_by(8) {
+            for hour in [0u64, 5, 12, 23] {
+                ticks.push(day * climate::TICKS_PER_DAY + climate::TICKS_PER_DAY * hour / 24);
+            }
+        }
+        for tick in ticks {
             for x in (-2000..2000).step_by(211) {
                 for z in (-2000..2000).step_by(223) {
                     let ground = terrain::elevation_m(&s, f64::from(x), f64::from(z));

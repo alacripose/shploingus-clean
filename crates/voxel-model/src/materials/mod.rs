@@ -14,8 +14,18 @@
 //!   declaration, compiled rather than parsed.
 //! * [`spectra`] — the sampled appearance (C-140/C-141): whole USGS splib07a
 //!   spectra, exact, and the visible channels derived from them.
+//! * [`tree`] — the tree's owner: reachability and coverage over the whole set,
+//!   so a tier nothing reaches or a substance nothing makes is a build failure
+//!   rather than a table that merely looks complete.
+//! * [`stock`] — the inventory, the offers it opens and the craft act: what a
+//!   player holds, every row they could choose, and exactly what is short.
 
 pub mod declaration;
 pub mod generated;
 pub mod schema;
 pub mod spectra;
+pub mod stock;
+pub mod tree;
+
+pub use stock::{Missing, Offer, Stock};
+pub use tree::{Coverage, Tree};

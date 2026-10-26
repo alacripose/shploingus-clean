@@ -1,0 +1,11 @@
+[package]
+name = "voxel-axis-civilians"
+description = "The civilian gates on the axis layer: a selection names its need, budget and estimate; a task has planned material and a checked completion; a ladder reading has a witness; an arrangement round-trips without a restart."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-axis-ladder = { path = "../ladder" }
+voxel-model = { path = "../../voxel-model" }

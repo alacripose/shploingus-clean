@@ -284,3 +284,7 @@ pin	determinism
 pin	refusals
 
 
+# The map window's content is a cell data frame, not composed panels. The row's id is the
+# frame's id: `voxel_package::cellframe::read` refuses a declared frame this file names by
+# no row, and `voxel-layers` prints both together so a reader can check the join.
+row	MAP-0001	the map window's cells: a lattice and its contours, declared as a frame the mount grades before the shell draws one cell

@@ -61,12 +61,34 @@ pub struct BodyCuboid {
 ///
 /// The body's own solid angle, not a disc's: `4·SUN_DILUTION` against the real solar disc's
 /// `π·SUN_DILUTION`, 27 % larger, which is the corner a square has and a circle has not.
+///
+/// **This is the face-on case.** A cube seen along one of its axes covers the square, and that is
+/// the number the body's radiance is defined against; seen along any other direction it covers up to
+/// `√3` of it, which is [`cuboid_solid_angle_sr`]'s job. A law that takes only a distance can only
+/// state the face-on case, and reviews of that law found the drawn body measuring `π/4` of it.
 pub fn solid_angle_sr(distance_m: f64) -> f64 {
     if distance_m <= 0.0 {
         return 0.0;
     }
     let ratio = sun_radius_m() / distance_m;
     4.0 * ratio * ratio
+}
+
+/// **The solid angle a cuboid body covers from a direction**, sr: the three visible faces' own
+/// projected areas over the square of the distance.
+///
+/// A cube of half-edge `R` seen along the unit direction `u` (from the eye toward the body) has
+/// projected area `4R²·(|u_x| + |u_y| + |u_z|)` — each face on an axis contributes `4R²|u_i|`, and at
+/// most three of them face the eye. Divided by `d²` that is the solid angle the **drawn** body
+/// actually covers, and the one the Sun's irradiance has to be divided by if the face radiance is to
+/// deliver the same flux whatever way the cube's corners happen to face.
+///
+/// Face-on it is [`solid_angle_sr`] exactly; corner-on it is `√3` of it. Using the face-on number at
+/// every orientation would make a cubed Sun brighten by up to 73 % as it crossed the sky, which is a
+/// defect of the law and not of the shape.
+pub fn cuboid_solid_angle_sr(distance_m: f64, unit_toward: [f64; 3]) -> f64 {
+    solid_angle_sr(distance_m)
+        * (unit_toward[0].abs() + unit_toward[1].abs() + unit_toward[2].abs())
 }
 
 /// Why a sun could not be built, each named so a reader knows what was rejected.
@@ -110,9 +132,8 @@ impl BodyCuboid {
     ///
     /// No horizon rule here - *where the body is* and *whether a shadow can be cast from it*
     /// are two questions, and [`BodyCuboid::at_tick`] is the one that answers the second.
-    /// [`DrawnSun::of`] wants the first, because a drawn body exists exactly when the rig has
-    /// a light in it, and `SkyPhase::sun_is_up` reaches 0.833° below the horizon for
-    /// refraction.
+    /// [`DrawnSun::of`] wants the first, because a drawn body exists while the Sun emits — which is
+    /// every hour — and its radiance, not its membership, is what the twilight fades.
     pub fn at(
         world_anchor: [f64; 3],
         altitude_deg: f64,
@@ -291,7 +312,7 @@ impl BodyCuboid {
 pub struct DrawnSun {
     /// The body itself - the same object a shadow's penumbra is measured against.
     pub body: BodyCuboid,
-    /// The radiance of its faces, **already through the sky pass's exposure**, so the disc and
+    /// The radiance of its faces, **already through the sky pass's exposure**, so the body and
     /// the sky it sits in share one scale.
     pub radiance: LinearRgb,
 }
@@ -300,15 +321,14 @@ impl DrawnSun {
     /// The Sun this frame draws, **from the same `Sky` the light rig was built from**, or
     /// `None` when the Sun is not up.
     ///
-    /// **`None` is the Sun's own state, named, and it used to be the *luminance's* zero.** The test
-    /// here read `sky.sun.luminance() > 0.0`, which was true exactly while the Sun was up *because
-    /// `Sky::sun_light` returned `BLACK` below the horizon* - so the drawn body, the light the Moon
-    /// is lit by and the rig's key light were all one switch, and the Sun's features went out in the
-    /// same update it crossed. Every one of those is now separate: the Sun's own output keeps the
-    /// horizon's air column at every hour below the horizon ([`voxel_appearance::sky::Sky::sun_light`]),
-    /// the rig takes the twilight share of it ([`crate::skylight::daylight_of`]), and **the body is
-    /// drawn while the Sun is up** - [`voxel_shapers::sky::SkyPhase::sun_is_up`], the same rule the
-    /// rig's own membership uses, so the picture and the light cannot drift apart again.
+    /// **`None` is the model refusing, not the Sun setting.** It used to be `sun_is_up`, and before
+    /// that the *luminance's* zero: the drawn body, the light the Moon is lit by and the rig's key
+    /// light were one switch, so the Sun's features went out in the same update it crossed. Only the
+    /// second half of that repair had been made — the body was still cut at `0°` — and the night was
+    /// left with no sun record for the Moon's face or a shadow's source to name. Now the body is drawn
+    /// at every hour the Sun emits, and it is the **twilight share** ([`voxel_light::twilight_fraction`])
+    /// that fades, the same share the rig's beam takes, so the body dims through twilight rather than
+    /// stepping out at the horizon.
     ///
     /// [`BodyCuboid::at_tick`] is *not* called here, and that is the other half of the separation:
     /// its `BelowHorizon` refusal is the **shadow-casting** rule, and where a body is stands apart
@@ -324,19 +344,45 @@ impl DrawnSun {
     /// astronomical unit of parallax - 4e-8 radians from a six-kilometre world - and not the
     /// direction it is seen from.
     pub fn of(sky: &Sky, peak: f64, anchor_m: [f64; 3]) -> Option<Self> {
-        // The Sun's own state, and not a reading of what it emits — see this function's doc.
-        if !voxel_shapers::sky::SkyPhase::sun_is_up(sky.sun_altitude_deg) {
-            return None;
-        }
+        // **The body is drawn while the Sun emits, and the Sun emits at every hour.**
+        // `Sky::sun_light` keeps the horizon's own air column below the horizon
+        // (`voxel_appearance::sky`'s own rule), so `None` here means the model refused — no
+        // emission, no normaliser — and not that the Sun has set.
+        //
+        // **This used to be `SkyPhase::sun_is_up`, and that is the picture the user reported.** The
+        // body is the light the Moon's face reflects and the source a night's shadow sampling names;
+        // switching it off at `0°` left the twilight with a sky full of scattered light and no source
+        // body in it, and left the night with no sun record at all. **The switch off is what is gone;
+        // what fades is the radiance**, by the same `twilight_fraction` the rig's beam takes, so the
+        // body dims through civil, nautical and astronomical twilight instead of being cut at the
+        // horizon — and at a deep night it is `e^-0.85·h` of the horizon's column, a record that is
+        // drawn and is not a second light.
+        let visibility = voxel_light::twilight_fraction(sky.sun_altitude_deg);
         // Refused by name, not by how a comparison happens to treat a NaN — docs/lighting-sky-and-moon.md
-        let irradiance = sky.sun.luminance();
-        if !irradiance.is_finite() || !peak.is_finite() || peak <= 0.0 {
+        let irradiance = sky.sun.luminance() * visibility;
+        if !irradiance.is_finite() || irradiance <= 0.0 || !peak.is_finite() || peak <= 0.0 {
             return None;
         }
         let body = BodyCuboid::at(anchor_m, sky.sun_altitude_deg, sky.sun_azimuth_deg).ok()?;
+        // **The body's own solid angle, in the direction it is drawn**: the drawn body is the cube
+        // the record carries, so what it covers is `4R²(|uₓ| + |u_y| + |u_z|)/d²` and not the
+        // face-on `4R²/d²` a direction-less law can state. Divide by the drawn one and the cube
+        // delivers exactly the irradiance the sky's own sun states at every hour; divide by the
+        // face-on one and it brightens as its corners turn toward the eye.
+        let mut toward = [0.0f64; 3];
+        for (axis, slot) in toward.iter_mut().enumerate() {
+            *slot = body.centre[axis] - anchor_m[axis];
+        }
+        let length = (toward[0].powi(2) + toward[1].powi(2) + toward[2].powi(2)).sqrt();
+        if !(length > 0.0) {
+            return None;
+        }
+        let unit = [toward[0] / length, toward[1] / length, toward[2] / length];
         Some(DrawnSun {
             body,
-            radiance: sky_exposed(sky.sun / (peak * solid_angle_sr(AU_M))),
+            radiance: sky_exposed(
+                sky.sun * (visibility / (peak * cuboid_solid_angle_sr(AU_M, unit))),
+            ),
         })
     }
 
@@ -411,18 +457,21 @@ pub fn air_at(spec: &WorldSpec, x: f64, z: f64, tick: u64) -> voxel_light::Air {
 /// a full one are one equation rather than three pictures. The illuminated fraction that reaches the
 /// light rig is the same geometry, integrated over the body.
 ///
-/// # A cuboid where the light is measured, a sphere where it is drawn
+/// # One shape, measured and drawn
 ///
 /// [`BodyCuboid`] is the shape the **photometry** is measured against — the solid angle the Sun's
-/// irradiance is divided by, and the body a shadow's penumbra marches toward — and it is the Sun's own
-/// type, so the two bodies differ only in the numbers.
+/// irradiance is divided by, and the body a shadow's penumbra marches toward — and it is the shape
+/// `shading.wgsl`'s `fs_body` **draws**: the record's half-extent is the cube's half-edge, the pass
+/// intersects that cube on the world's axes, and the phase is which of its six faces the Sun lights.
+/// A body used to be measured as a cuboid and drawn as the sphere inscribed in it, which delivered
+/// `π/4` of the irradiance the law stated and put a curved terminator on a box; there is no second
+/// shape and no `4/π` in the brightness any more.
 ///
-/// What the eye sees is `shading.wgsl`'s `fs_body`, which draws a **sphere** from the record: a phase
-/// is a per-pixel normal, and a cuboid has one normal per visible face, so a cube draws a full moon at
-/// every elongation. The one place the two shapes part company in flux is that a face-on square covers
-/// `4/π` times the disc inscribed in it, so the drawn disc delivers that much less of the body's own
-/// irradiance — named in `docs/lighting-sky-and-moon.md` §7 rather than corrected by a second
-/// brightness scale here.
+/// **The radiance below is a face's**, per steradian, and the pass needs no solid angle to carry it:
+/// the drawn cube's own projected area does that. [`voxel_light::MOON_SOLID_ANGLE_SR`] is a different
+/// measurement — the **disc** through which the light rig states the Moon's irradiance on the ground —
+/// and it is named here rather than quietly multiplied by `4/π`: changing the rig's night is a
+/// separate decision from drawing the body the model has.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct DrawnMoon {
     /// **The body itself.** Its half-extent is `voxel_light::MOON_RADIUS_KM`'s own figure, so the
@@ -571,15 +620,27 @@ mod tests {
     fn the_drawn_moon_is_the_suns_own_light_reflected_off_a_lit_face() {
         let spec = WorldSpec::new(2468, Config::default());
         let inputs = SkyInputs::default();
-        // A tick the model itself calls a lit moon — docs/lighting-sky-and-moon.md
+        // **A tick the model itself calls a lit moon, with the Sun up.** The ratio below is the
+        // Moon's face against the drawn Sun's own radiance, and that is a statement about two bodies
+        // lit by the same sunlight; a night tick compares a face lit by the full solar constant with
+        // a Sun drawn through the horizon's own air column, which is a different ratio and not a
+        // reflectance law at all. The scan used to accept the first lit moon regardless of the
+        // Sun's altitude, and the first one happened to be 14° down — see the night number printed
+        // below, kept and attributed rather than absorbed by a wider band.
         let month_ticks = voxel_shapers::sky::SYNODIC_MONTH_DAYS * TICKS_PER_DAY as f64;
+        let lit_moon = |t: &u64| {
+            let moon = voxel_shapers::sky::moon_position(&spec, *t, 0);
+            moon
+        };
         let tick = (0..month_ticks as u64)
             .step_by(97)
             .find(|t| {
-                let moon = voxel_shapers::sky::moon_position(&spec, *t, 0);
-                moon.altitude_deg > 10.0 && moon.phase_fraction > 0.33
+                let moon = lit_moon(t);
+                moon.altitude_deg > 10.0
+                    && moon.phase_fraction > 0.33
+                    && voxel_shapers::sky::solar_position(&spec, *t).altitude_deg > 5.0
             })
-            .expect("the model's own month has a lit moon above the horizon in it");
+            .expect("the model's own month has a lit moon above the horizon in daylight");
         let day = daylight_of(&spec, tick, inputs, 0).expect("a daylight at the moon's own tick");
         let peak = peak_sun_luminance(&spec, inputs);
         let air = moon_air();
@@ -610,16 +671,25 @@ mod tests {
             moon.radiance.luminance());
         assert!(
             (0.45..0.60).contains(&angular_diameter_deg),
-            "the drawn disc subtends {angular_diameter_deg}°, which is not the Moon's own half a 
+            "the drawn body subtends {angular_diameter_deg}°, which is not the Moon's own half a 
              degree"
         );
 
-        // **The Sun's own units**, which is the check on the whole exposure: the same normaliser the
-        // Sun's body is drawn with divides this one too, so the ratio is the physics and not a second
-        // scale someone chose.
-        let sun_radiance = sky_exposed(day.sky.sun / (peak * solid_angle_sr(AU_M))).luminance();
+        // **The Sun's own units**, which is the check on the whole exposure: the ratio is against the
+        // **drawn** Sun — the same cube, the same normaliser, and the same solid angle in the
+        // direction it stands — so it is the physics and not a second scale someone chose.
+        let drawn_sun = DrawnSun::of(&day.sky, peak, eye).expect("a Sun to compare with");
+        let sun_radiance = drawn_sun.radiance.luminance();
         let ratio = moon.radiance.luminance() / sun_radiance;
-        println!("the moon's face is {ratio:.3e} of the sun's own radiance");
+        println!(
+            "tick {tick}: sun alt {:.2}°, the sky's own sun {:.4e}, peak {peak:.4e}, Ω_sun \
+             {:.4e}, the moon's face {:.4e}; the moon's face is {ratio:.3e} of the sun's own \
+             radiance",
+            day.sky.sun_altitude_deg,
+            day.sky.sun.luminance(),
+            solid_angle_sr(AU_M),
+            moon.radiance.luminance()
+        );
         assert!(
             (1.0e-6..1.0e-4).contains(&ratio),
             "the drawn moon is {ratio} of the drawn sun, which is not a reflectance over π times a 
@@ -647,6 +717,44 @@ mod tests {
             crescent.radiance.luminance(),
             moon.radiance.luminance()
         );
+
+        // **The night number, attributed.** The first lit moon of the month stands with the Sun
+        // 14° down; there the same two bodies differ by the Sun's own transmittance through the
+        // horizon's air column, which is a factor of ~10² in the sky's own sun. That is why the scan
+        // above requires daylight: the band is a reflectance law, and a night ratio is a statement
+        // about the air. It is asserted here as the air's own share rather than left unexplained.
+        if let Some(night_tick) = (0..month_ticks as u64).step_by(97).find(|t| {
+            let moon = lit_moon(t);
+            moon.altitude_deg > 10.0
+                && moon.phase_fraction > 0.33
+                && voxel_shapers::sky::solar_position(&spec, *t).altitude_deg < -12.0
+        }) {
+            let night_day = daylight_of(&spec, night_tick, inputs, 0).expect("a night sky");
+            let night_orbit = voxel_shapers::sky::moon_position(&spec, night_tick, 0);
+            let night_moon = DrawnMoon::of(
+                &night_orbit,
+                &air,
+                peak,
+                eye,
+                night_day.sky.sun_altitude_deg,
+                night_day.sky.sun_azimuth_deg,
+            )
+            .expect("a lit moon at night");
+            let night_sun = DrawnSun::of(&night_day.sky, peak, eye)
+                .expect("a Sun below the horizon is still a body");
+            let night_ratio = night_moon.radiance.luminance() / night_sun.radiance.luminance();
+            println!(
+                "the same law at the month's first night (tick {night_tick}, Sun {:.2}°): {night_ratio:.3e} \
+                 against the daylight tick's {ratio:.3e} — the factor is the horizon column's, not a \
+                 different reflectance",
+                night_day.sky.sun_altitude_deg
+            );
+            assert!(
+                night_ratio > ratio * 10.0,
+                "a night ratio of {night_ratio:.3e} against the day's {ratio:.3e} is not the air's own \
+                 share, so neither number is attributed"
+            );
+        }
 
         // A new moon has no lit face, so it is refused rather than drawn black — and a Moon that
         // has set is refused by the same rule, because the solver gives a body below the horizon
@@ -815,12 +923,17 @@ mod tests {
         );
     }
 
-    /// **One angle, two consumers, and this is the test that says so.** The rig's first light
-    /// and the drawn body must be the same direction, and the comparison is against
-    /// `daylight_of`'s own `LightRig` - the thing that lights the world - rather than against a
-    /// third computation of the same azimuth. Before this file delegated to
+    /// **One angle, two consumers, and this is the test that says so.** While the Sun is up the
+    /// rig's first light and the drawn body must be the same direction, and the comparison is
+    /// against `daylight_of`'s own `LightRig` - the thing that lights the world - rather than
+    /// against a third computation of the same azimuth. Before this file delegated to
     /// [`crate::skylight::sun_direction`] the two differed by a quarter turn, which nothing
     /// noticed while nothing drew the body.
+    ///
+    /// **Below the horizon the two part company, and that is the rule rather than a failure**: the
+    /// body is still the Sun's, at the Sun's own place, while the rig's first light has become the
+    /// Moon's. So the comparison below the horizon is against the Sun's own direction, and the lit
+    /// samples are the ones that hold the rig against the body.
     #[test]
     fn the_drawn_body_points_where_the_rig_s_light_points() {
         let world = WorldSpec::new(2468, Config::default());
@@ -830,17 +943,33 @@ mod tests {
         for sample in 0..96u64 {
             let tick = sample * (TICKS_PER_DAY / 96);
             let day = daylight_of(&world, tick, inputs, 0).expect("a sky");
-            // Both halves are taken from the **same** `Daylight`: a sample with a light and
-            // no body, or a body and no light, is the failure this file's other test names.
-            let (Some(light), Some(drawn)) =
-                (day.rig.lights.first(), DrawnSun::of(&day.sky, peak, [0.0; 3]))
-            else {
-                continue;
-            };
+            // Both halves are taken from the **same** `Daylight`, and the body is required at every
+            // sample — a body that went missing at the horizon is the defect this file's other test
+            // now holds.
+            let drawn = DrawnSun::of(&day.sky, peak, [0.0; 3])
+                .unwrap_or_else(|| panic!("tick {tick}: no body drawn"));
             let c = drawn.body.centre;
             let length = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
             let seen = [c[0] / length, c[1] / length, c[2] / length];
-            let want = [light.direction.x, light.direction.y, light.direction.z];
+            let up = day.sky.sun_altitude_deg > 0.0;
+            let want = if up {
+                let light = day.rig.lights.first().expect("a sun light while the Sun is up");
+                compared += 1;
+                if day.sky.sun_azimuth_deg < 180.0 {
+                    morning = true;
+                } else {
+                    afternoon = true;
+                }
+                [light.direction.x, light.direction.y, light.direction.z]
+            } else {
+                let s = super::direction_to(&voxel_shapers::sky::SolarPosition {
+                    altitude_deg: day.sky.sun_altitude_deg,
+                    azimuth_deg: day.sky.sun_azimuth_deg,
+                    declination_deg: 0.0,
+                    hour_angle_deg: 0.0,
+                });
+                s
+            };
             for axis in 0..3 {
                 assert!(
                     (seen[axis] - want[axis]).abs() < 1.0e-12,
@@ -848,12 +977,6 @@ mod tests {
                     seen[axis],
                     want[axis]
                 );
-            }
-            compared += 1;
-            if day.sky.sun_azimuth_deg < 180.0 {
-                morning = true;
-            } else {
-                afternoon = true;
             }
         }
         // The guard is only against a day with no sun in it (which would make every assertion
@@ -867,40 +990,61 @@ mod tests {
         println!("the drawn body and the rig's light agree at all {compared} lit samples");
     }
 
-    /// **A body is drawn exactly when the rig carries a sun light**, sampled across a whole
-    /// day. This is the join between `voxel_appearance`'s `Sky::sun` and the picture: a body
-    /// drawn for a sun the rig does not have is a picture of a light that is not falling, and
-    /// a sun light with no body drawn is a sun nobody can see.
+    /// **A body is drawn at every hour and its radiance is what fades**, sampled across a whole day.
+    ///
+    /// This used to hold the opposite rule — a body exactly when the rig carried a sun light — and
+    /// that rule is what cut the body out at the horizon and left the night with no sun record. The
+    /// claim now is the one the picture needs: **membership is independent of the horizon** (the Sun
+    /// emits at every hour), and the body's own brightness follows the same twilight share the rig's
+    /// beam takes, so a body below the horizon is dimmer than the day's and is never a second light.
     #[test]
-    fn the_body_is_drawn_exactly_when_the_rig_carries_a_sun() {
+    fn the_body_is_drawn_at_every_hour_and_its_radiance_is_what_fades() {
         let world = WorldSpec::new(2468, Config::default());
         let inputs = SkyInputs::default();
         let peak = peak_sun_luminance(&world, inputs);
-        let (mut day_bodies, mut night, mut sun_lights) = (0, 0, 0);
+        let (mut below, mut above, mut brightest_below) = (0, 0, 0.0f64);
         for sample in 0..96u64 {
             let tick = sample * (TICKS_PER_DAY / 96);
             let day = daylight_of(&world, tick, inputs, 0).expect("a sky");
-            let has_light = day.sun_intensity > 0.0;
-            let has_body = DrawnSun::of(&day.sky, peak, [0.0; 3]).is_some();
-            assert_eq!(
-                has_light, has_body,
-                "tick {tick} at altitude {:.3}°: rig light {has_light}, drawn body {has_body}",
-                day.sky.sun_altitude_deg
-            );
-            if has_light {
-                sun_lights += 1;
-                // And the body is on the *lit* side: a direction below the horizon with a
-                // drawn body would be the sun lighting the world from underneath.
-                assert!(day.sky.sun_altitude_deg > -1.0, "a body was drawn at {}°", day.sky.sun_altitude_deg);
+            let drawn = DrawnSun::of(&day.sky, peak, [0.0; 3]).unwrap_or_else(|| {
+                panic!("tick {tick} at {:.3}°: the Sun emits and no body was drawn", day.sky.sun_altitude_deg)
+            });
+            let radiance = drawn.radiance.luminance();
+            assert!(radiance.is_finite() && radiance > 0.0, "a drawn body with no radiance at tick {tick}");
+            if day.sky.sun_altitude_deg > 0.0 {
+                above += 1;
+                // **While the Sun is up the share is exactly `1.0`**, so the body is the sky's own
+                // sun over the cube's own solid angle in the direction it is drawn and nothing else.
+                let c = drawn.body.centre;
+                let length = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
+                let unit = [c[0] / length, c[1] / length, c[2] / length];
+                let expected = sky_exposed(
+                    day.sky.sun / (peak * cuboid_solid_angle_sr(AU_M, unit)),
+                )
+                .luminance();
+                assert!(
+                    (radiance - expected).abs() <= 1.0e-9 * expected.max(1.0),
+                    "tick {tick}: a lit body is {radiance:e} where the sky's own sun is {expected:e}"
+                );
             } else {
-                night += 1;
-            }
-            if has_body {
-                day_bodies += 1;
+                below += 1;
+                // **Below the horizon it is still a body, and it is dimmer than the day's** — the
+                // twilight share, which is what stops it being a second light under the world.
+                brightest_below = brightest_below.max(radiance);
+                let horizon = sky_exposed(day.sky.sun / (peak * solid_angle_sr(AU_M))).luminance();
+                assert!(
+                    radiance < horizon,
+                    "tick {tick} at {:.3}°: a body below the horizon is as bright as the day's",
+                    day.sky.sun_altitude_deg
+                );
             }
         }
-        assert!(day_bodies > 0 && night > 0, "the day has to have both a sun and a night: {sun_lights} lit, {night} dark");
-        println!("the body is drawn for {day_bodies} of 96 samples");
+        assert!(above > 0 && below > 0, "the day has to have both: {above} above, {below} below");
+        assert!(
+            brightest_below > 0.0,
+            "no body was drawn below the horizon, which is the switch this rule removed"
+        );
+        println!("the body is drawn for {above} of 96 samples above the horizon and {below} below it");
     }
 
     /// **The face is a square and not a disc.** With a face presented to the eye the body's
@@ -1012,10 +1156,23 @@ mod tests {
         let world = WorldSpec::new(2468, Config::default());
         let inputs = SkyInputs::default();
         let peak = peak_sun_luminance(&world, inputs);
-        let day = daylight_of(&world, 9_000, inputs, 0).expect("a sky at the game's start tick");
-        let drawn = DrawnSun::of(&day.sky, peak, [0.0; 3]).expect("the sun is up at tick 9000");
+        // **The shipped opening tick, read from the game.** `9_000` was that tick when a day was
+        // 24,000 ticks long; at the world's own scale it is 01:00, so the "sun" this measured was
+        // the twilight's last `4.5e-21` rather than a disc.
+        let day = daylight_of(&world, crate::game::GAME_TICK, inputs, 0)
+            .expect("a sky at the game's start tick");
+        let drawn = DrawnSun::of(&day.sky, peak, [0.0; 3])
+            .expect("the sun is up at the game's opening tick");
 
-        let solid_angle = solid_angle_sr(AU_M);
+        // **The cube's own solid angle in the direction it is drawn** — the face-on case only when
+        // the Sun stands on an axis — which is what `DrawnSun::of` divides by.
+        let mut toward = [0.0f64; 3];
+        for (axis, slot) in toward.iter_mut().enumerate() {
+            *slot = drawn.body.centre[axis];
+        }
+        let length = (toward[0].powi(2) + toward[1].powi(2) + toward[2].powi(2)).sqrt();
+        let unit = [toward[0] / length, toward[1] / length, toward[2] / length];
+        let solid_angle = cuboid_solid_angle_sr(AU_M, unit);
         // The same quantity as `DrawnSun::of` builds, by an arithmetic path that divides and
         // multiplies in the other order.
         let want = sky_exposed(day.sky.sun) / (peak * solid_angle);
@@ -1040,18 +1197,24 @@ mod tests {
             );
         }
         assert!(
-            solid_angle < 1.0e-4,
-            "the body's solid angle is {solid_angle} sr, so the conversion is a rounding and this \
-             test is not measuring anything"
+            solid_angle_sr(AU_M) < 1.0e-4,
+            "the body's face-on solid angle is {} sr, so the conversion is a rounding and this test \
+             is not measuring anything",
+            solid_angle_sr(AU_M)
         );
-        let against_disc = solid_angle / (std::f64::consts::PI * SUN_DILUTION);
+        // **The face-on case is still the cuboid's `4/π`**, which is the statement about the body's
+        // shape rather than about this hour's orientation.
+        let against_disc = solid_angle_sr(AU_M) / (std::f64::consts::PI * SUN_DILUTION);
         assert!(
             (against_disc - 4.0 / std::f64::consts::PI).abs() < 1.0e-12,
-            "the body's solid angle is {against_disc} times a disc's, not 4/pi"
+            "the body's face-on solid angle is {against_disc} times a disc's, not 4/pi"
         );
         println!(
-            "drawn radiance {} W/m2/sr per channel at tick 9000, {} times the disc's solid angle",
-            got.r, against_disc
+            "drawn radiance {} W/m2/sr per channel at tick 9000, {} times the disc's solid angle \
+             face-on and {} in the drawn direction",
+            got.r,
+            against_disc,
+            solid_angle / (std::f64::consts::PI * SUN_DILUTION)
         );
     }
 

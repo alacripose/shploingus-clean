@@ -1,0 +1,12 @@
+shploingus.layer/1
+layer	LOD-0001
+	pipeline	terrain-lod
+	shader	src/LOD-0001.wgsl
+	entry	fs_horizon
+	bind-group	1
+	uniform	view_proj	mat4<f32>	64
+	uniform	rung	u32	4
+	uniform	rung_colour	vec4<f32>	16
+	lod	0
+	order	10
+	requires	none

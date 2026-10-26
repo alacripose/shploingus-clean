@@ -376,8 +376,12 @@ mod tests {
             "the sedimental stage ran a tick early"
         );
         assert!(Cadence::Sediment.is_due_at(20));
-        assert!(!Cadence::Daily.is_due_at(23_999), "the daily stage ran before the day ended");
-        assert!(Cadence::Daily.is_due_at(24_000));
+        // **The day is read, not retyped.** A literal here asserted the hand-rolled 24,000 and
+        // would have kept passing after the day became the world's own scale
+        // (`climate::TICKS_PER_DAY`); what the cadence is due on is a day, whatever a day is.
+        let day = crate::climate::TICKS_PER_DAY;
+        assert!(!Cadence::Daily.is_due_at(day - 1), "the daily stage ran before the day ended");
+        assert!(Cadence::Daily.is_due_at(day));
     }
 
     #[test]

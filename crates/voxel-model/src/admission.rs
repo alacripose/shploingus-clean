@@ -132,6 +132,7 @@ fn origin_letter_rank(token: &str) -> Result<u8, Refusal> {
         "A" => Ok(3),
         "B" => Ok(2),
         "C" => Ok(1),
+        "D" => Ok(0),
         other => Err(Refusal::owned(
             RefusalKind::UndeclaredName,
             format!("unknown evidence origin token {other:?}"),

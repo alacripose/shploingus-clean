@@ -1,2 +1,33 @@
 kind	name	note
-structure	kiln	a fire under clay: it fires brick, it chars timber, and it is where a person warms their hands (one kind with three jobs — an open hearth and an insulated kiln differ by how much heat they keep, which is a number this table does not model yet)
+structure	kiln	a fire under clay: it fires brick, it chars timber, and it is where a person warms their hands (one kind with three jobs â€” an open hearth and an insulated kiln differ by how much heat they keep, which is a number this table does not model yet)
+structure	furnace	a fire held above the metal's melting point: the smelt, the bloom and the blast furnace
+structure	forge	a hearth a billet is brought to welding heat in
+structure	anvil	the struck face: where a shape is forged rather than cast
+structure	boiler	a closed vessel that turns water into steam
+structure	mill	a frame that turns a wheel's work into crushing, grinding or rolling
+structure	press	a screw or a lever that holds a die against a billet
+structure	vat	a vessel for liquor: the tannery, the fermenter, the wash
+structure	loom	a frame that crosses two sets of threads
+tool	hammer	the struck tool, for crushing, drawing and forging
+tool	chisel	a cutting edge held against stone or wood
+tool	knife	a small edge: skinning, riving, cutting green matter
+tool	sieve	a mesh that sorts one size from another
+tool	quern	two stones turned against each other
+tool	die	a hole a metal is drawn or struck through
+tool	pipe	a tube a gather of glass is blown through
+skill	firekeeping	the judgement of a fire's temperature by its colour and its draft
+skill	smelting	reading a charge: what a furnace's contents need to give their metal
+skill	alloying	mixing two melts to a stated proportion
+skill	smithing	striking a hot billet to a shape, in an order
+skill	machining	holding a tolerance: the saw, the die, the press
+skill	chemistry	the judgement of a liquor, a roast and a distillation
+skill	weaving	crossing a thread under and over another
+skill	knapping	striking a core so the fracture runs where the edge is wanted
+skill	farming	reading a season, a soil and a seed rate
+structure	mould	a shaped cavity the melt takes its form from
+structure	centrifuge	a bowl that throws the heavy from the light
+structure	electrolyser	a cell that drives current through a liquor
+skill	casting	reading a pour: the mould's heat, the metal's, and the shrink
+structure	byre	a shed that holds stock through a winter
+structure	compost heap	a turned heap that heats itself
+skill	husbandry	reading an animal: feed, water, health and the season to slaughter

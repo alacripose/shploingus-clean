@@ -1,0 +1,11 @@
+[package]
+name = "voxel-axis-balance"
+description = "The CPU/GPU balance census: every workspace crate's Rust and WGSL measured from the tree, and the declared inventory of public visual items with the renderer each reaches — or the count that reaches none."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-model = { path = "../../voxel-model" }
+voxel-package = { path = "../../voxel-package" }

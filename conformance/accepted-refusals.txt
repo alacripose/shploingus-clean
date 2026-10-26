@@ -45,4 +45,28 @@
 # Declared 2026-10-09 with the door's wiring (PATCH-022's *the build door is still not fatal*);
 # emptied 2026-10-10, when the retrofit it was holding open landed.
 
-# ---- no accepted refusal ----
+# ---- the one accepted runtime refusal, declared rather than keyed ----
+#
+# `cell-declaration/old-version` — a display package whose `package.cells` header is
+# `shploingus.cells/0` is refused by `voxel_client::shell::cells::declare` with the file and the line
+# (`…/old-cell-declaration/package.cells:1`), the burden `shploingus.recipe/3` already carries for an
+# old recipe header. The refusal is **accepted by name**: it is the declared mechanism by which the
+# old cell drawing stays versioned (`cells 0`, `CellVersion::Elements`) instead of being deleted, and
+# the shell keeps drawing the version in force.
+#
+# **The declaration is read where the package is mounted** (`Mount::load_package`), not once at boot:
+# the same refusal therefore holds for a display package that arrives while the shell runs, and it is
+# read before the arrangement is adopted — so a refused arrival changes neither the version in force
+# nor the windows, the composed frame or the raster runs already on screen.
+#
+# **It is not a key on this list, and that is deliberate.** A key here is a `crate/axis` conformance
+# cell. This refusal is a runtime declaration and no conformance cell answers it, so a key would fail
+# the gate as `conformance-stale-acceptance` — a standing permission for a refusal that cannot happen,
+# which this file's own header calls a hole. The acceptance is therefore declared in the file the
+# gate reads and names, and the refusal is held by
+# `crates/voxel-client/tests/cell_version_refusal.rs` on the real mount and frame path — the boot
+# package's declared drawing, and a package copied in after boot that is refused while the screen
+# stays. **The gate's `conformance-accepted` count remains 0**, and this file says so plainly: the
+# commentary is not a key, and a key it cannot answer would be a standing permission for a refusal
+# no cell measures. That is the whole of what this record can carry, and it is stated rather than
+# implied.

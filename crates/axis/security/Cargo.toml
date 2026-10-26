@@ -1,0 +1,18 @@
+[package]
+name = "voxel-axis-security"
+description = "The trust boundary's key: a signing key held outside the checkout, the HMAC-SHA256 signature over a payload or a package digest, the build attestation, and the refusals that name a missing key, a foreign key and a signature over other bytes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-model = { path = "../../voxel-model" }
+voxel-package = { path = "../../voxel-package" }
+
+# The one hash this project accepts for content identity, and the OS entropy source a **new** key
+# is drawn from. `getrandom` is named here and nowhere else in the headless set: a signing key
+# generated from a hash of the clock is not a key, and the crate that generates one is the crate
+# that should say so.
+sha2 = { workspace = true }
+getrandom = { workspace = true }

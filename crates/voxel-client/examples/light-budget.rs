@@ -1,23 +1,24 @@
-//! How many distinct light cells one frame asks for, at subvoxel grain versus
-//! voxel grain — the number the frame's 1 024-cell measurement budget is spent
-//! against.
+//! **How many distinct cells one scene asks for** — the number the measurer's
+//! ask size is spent against.
 //!
 //! ```text
 //! cargo run --offline -p voxel-client --example light-budget
 //! ```
 //!
-//! Builds a real world, meshes real chunks, and builds a vertex-format scene
-//! with a recording light closure (answering `None`, so every query is
-//! recorded and nothing is measured). Prints total corner queries, unique keys
-//! at the granularity `Scene` feeds the field (subvoxel cells), and unique
-//! keys at the granularity the field's key was designed for (voxels).
+//! Builds a real world, meshes real chunks, and builds a vertex-format scene with a
+//! recording light closure (answering `None`, so every query is recorded and nothing
+//! is measured). Prints total corner queries, the distinct cells behind them, and how
+//! many asks of [`voxel_client::CELLS_PER_ASK`] it takes to cover a window this size.
+//!
+//! **There is one grain.** This example used to print two — the subvoxel addresses the
+//! scene asked for and the voxel cells the field keyed on — and the distance between
+//! them was the defect: four times the address, a chunk four times out, no world under
+//! it. The scene asks with `VoxelPos::of_point` now, so the two numbers are one number.
 
 use std::cell::RefCell;
 
-use voxel_appearance::DetailLattice;
 use voxel_client::Scene;
 use voxel_mesh::{Chunk, MeshConfig, Mesher};
-use voxel_model::SUBVOXEL_SIDE;
 use voxel_stream::WorldSource;
 use voxel_shapers::{Config, WorldSpec};
 
@@ -45,9 +46,8 @@ fn main() {
     assert!(!meshes.is_empty(), "the world produced no chunks to mesh");
 
     // Eye above the terrain's top, looking across it: place from a quick build.
-    let lattice = DetailLattice::new(0);
-    let no_light = |_: i32, _: i32, _: i32| None;
-    let placed = Scene::build_with_light(meshes.iter(), [0.0; 3], &lattice, &no_light, None, None);
+    let no_light = |_: [f64; 3]| None;
+    let placed = Scene::build_with_light(meshes.iter(), [0.0; 3], &no_light, None, None);
     let hi = placed
         .vertices
         .iter()
@@ -55,29 +55,21 @@ fn main() {
         .fold(f64::NEG_INFINITY, f64::max);
     let eye = [16.0, hi + 2.0, -24.0];
 
-    let seen = RefCell::new(Vec::<[i32; 3]>::new());
-    let record = |x: i32, y: i32, z: i32| {
-        seen.borrow_mut().push([x, y, z]);
+    let seen = RefCell::new(Vec::<([i32; 3], u8)>::new());
+    let record = |point: [f64; 3]| {
+        if let Some(cell) = voxel_client::field::SubvoxelPos::of_point(point) {
+            seen.borrow_mut().push((
+                [cell.voxel.x, cell.voxel.y, cell.voxel.z],
+                cell.at.flat() as u8,
+            ));
+        }
         None
     };
-    let scene = Scene::build_with_light(meshes.iter(), eye, &lattice, &record, None, None);
+    let scene = Scene::build_with_light(meshes.iter(), eye, &record, None, None);
     let seen = seen.borrow();
-    let mut subvoxel_keys = seen.clone();
-    subvoxel_keys.sort_unstable();
-    subvoxel_keys.dedup();
-    let side = SUBVOXEL_SIDE as i32;
-    let mut voxel_keys: Vec<[i32; 3]> = seen
-        .iter()
-        .map(|c| {
-            [
-                c[0].div_euclid(side),
-                c[1].div_euclid(side),
-                c[2].div_euclid(side),
-            ]
-        })
-        .collect();
-    voxel_keys.sort_unstable();
-    voxel_keys.dedup();
+    let mut cells = seen.clone();
+    cells.sort_unstable();
+    cells.dedup();
     println!(
         "light-budget: {} quads, {} vertices, {} corner queries",
         scene.quads,
@@ -85,14 +77,29 @@ fn main() {
         seen.len()
     );
     println!(
-        "unique subvoxel keys: {} | unique voxel keys: {} | budget: {}",
-        subvoxel_keys.len(),
-        voxel_keys.len(),
-        voxel_client::field::CELLS_PER_FRAME
+        "distinct cells asked for: {} | ask size: {} | asks to cover this window: {:.1}",
+        cells.len(),
+        voxel_client::CELLS_PER_ASK,
+        cells.len() as f64 / voxel_client::CELLS_PER_ASK as f64
     );
-    println!(
-        "frames to cover at budget: {:.1} (subvoxel) vs {:.1} (voxel)",
-        subvoxel_keys.len() as f64 / voxel_client::field::CELLS_PER_FRAME as f64,
-        voxel_keys.len() as f64 / voxel_client::field::CELLS_PER_FRAME as f64
-    );
+    // **Every address is a cell of its own corner** — the law, checked against the geometry rather
+    // than against itself: the scene's own vertex list is what the addresses were asked for, and a
+    // grain that disagreed (four times the address, as the draft did) would leave corners whose own
+    // voxel was never asked about.
+    let mut missing = 0usize;
+    for v in &scene.vertices {
+        let origin = &scene.origins[v.chunk as usize];
+        let world = [
+            v.position[0] as f64 + origin[0] as f64,
+            v.position[1] as f64 + origin[1] as f64,
+            v.position[2] as f64 + origin[2] as f64,
+        ];
+        let at = voxel_client::field::SubvoxelPos::of_point(world).expect("a finite corner");
+        let asked = ([at.voxel.x, at.voxel.y, at.voxel.z], at.at.flat() as u8);
+        if cells.binary_search(&asked).is_err() {
+            missing += 1;
+        }
+    }
+    println!("corner(s) whose own cell was never asked for: {missing}");
+    assert_eq!(missing, 0, "the scene and the field are on two different grains");
 }

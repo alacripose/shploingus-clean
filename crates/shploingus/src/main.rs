@@ -97,7 +97,7 @@
 //!
 //! **The audit, 2026-10-10.** 2 990 lines of window, input and frame orchestration behind **one**
 //! test, in the crate that decides what the player sees. Its build script is the gate: it measures the
-//! sixteen crates, the record, the disk and the prose ratchet on every build and refuses the build when
+//! eighteen crates, the record, the disk and the prose ratchet on every build and refuses the build when
 //! any of them is wrong. **Nothing measures this file's frame loop**, which is also the missing half of
 //! the "random hitches" report. **Owed:** a frame-timing measurement — an instrument, not a guess —
 //! because the one thing a player notices immediately is the one thing the gate cannot see.
@@ -107,11 +107,14 @@
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
+
+mod capture;
 use std::time::{Duration, Instant};
 
-use voxel_appearance::{sky::SkyInputs, DetailLattice};
+use voxel_appearance::sky::SkyInputs;
 use voxel_client::shell::notifications::{write_the_gate_queue, NotificationStream};
 use voxel_client::shell::{
+    cells as shell_cells,
     changes as shell_changes,
     console::{Key as ShellKey, Level as ConsoleLevel},
     debug as shell_debug,
@@ -120,8 +123,9 @@ use voxel_client::shell::{
     Mount as ShellMount,
     WheelDelta as ShellWheel,
 };
+use voxel_client::scene::Scene;
 use voxel_client::{
-    Camera, CameraOverhaul, Clock, GpuRig, HudRenderer, HudState, Scene, ShadingReport,
+    Camera, CameraOverhaul, Clock, GpuRig, HudRenderer, HudState, ShadingReport,
     WorldPipeline, DEPTH_FORMAT,
 };
 use voxel_model::coord::CHUNK_SIDE;
@@ -139,8 +143,94 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
-/// How fast the camera flies, in metres a second.
-const FLY_M_PER_S: f64 = 18.0;
+/// **The demo observation's cruise**, in metres a second.
+///
+/// Flown along the observer's own forward, and slow enough that the window the eye sees is the
+/// window the streamer can keep — this is the streaming surface being exercised, not a flight
+/// model. The god's own speed is not stated here: a real pilot states its own wish.
+const WALK_CRUISE_M_PER_S: f64 = 6.0;
+
+/// **How fast the demo rises while standing still**, in metres a second —
+/// `SHPLOINGUS_LIFT_MM_S`, read once, or `0` for the walk the demo has always done.
+///
+/// The material report is about the **vertical** axis: a slight change of eye height moved
+/// the ground's pattern, and a run that also walks forward changes the scene under the
+/// camera at the same time, so no pixel can be attributed to the eye. This holds the ghost
+/// still and moves it straight up, which leaves the scene, the tick and the light alone and
+/// changes exactly one input.
+fn walk_lift_m_s() -> f64 {
+    static LIFT: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *LIFT.get_or_init(|| {
+        std::env::var("SHPLOINGUS_LIFT_MM_S")
+            .ok()
+            .and_then(|text| text.parse::<f64>().ok())
+            .map(|mm| mm / 1000.0)
+            .unwrap_or(0.0)
+    })
+}
+
+/// **What a god asks its observer to do this frame**, in metres a second along the observer's own
+/// axes — forward, right, up.
+///
+/// It is the body's `Wish` without a body: no collider answers it, no integrator smooths it, and
+/// nothing in the world can refuse it. That is what the god's vantage is, and it is why the demo
+/// observation could be written without touching the player at all.
+#[derive(Clone, Copy, Debug, Default)]
+struct LayaWish {
+    forward_m_s: f64,
+    strafe_m_s: f64,
+    up_m_s: f64,
+}
+
+/// **A Laya ghost** — the observer the demo pilots, and the stand-in the doctrine left open.
+///
+/// A ghost is one of `CIVILIANS.md`'s seven faces and the one it never settled: a being with no
+/// body, so it owns no mesh, stands in no collider, and nothing in the world can stop it. That is
+/// exactly the thing a god looks through, and it is why the demo does **not** move the player: the
+/// player's body is a collider in the world and dragging it along a script would be a body being
+/// flown, not a ghost.
+///
+/// **It is fake in one named sense.** Laya's own runtime does not exist yet — the decider this
+/// tree builds is the build-time one — so the wish comes from the demo rather than from Laya. What
+/// is *not* faked is the relationship: the ghost is the position, and the frame's camera is read
+/// from it, so the thing the audit could not drive is a being standing somewhere rather than a
+/// float moving on its own.
+struct LayaGhost {
+    /// The record's name, so a report can say who was looking.
+    name: &'static str,
+    /// Where the ghost stands, in the world's metres. This is the record; the camera is a reading
+    /// of it.
+    position_m: [f64; 3],
+}
+
+impl LayaGhost {
+    /// **The ghost that stands where the player's eye does at boot**, so a run with no demo is the
+    /// run it always was and a run with one begins from the player's own vantage.
+    fn at(eye_m: [f64; 3]) -> Self {
+        Self { name: "laya-ghost", position_m: eye_m }
+    }
+}
+
+/// **How long the demo flies**, in seconds — `SHPLOINGUS_WALK_SECONDS`, refused by name rather
+/// than defaulted.
+///
+/// The demo used to be judged by someone watching a window: the counters printed once a second and
+/// a reader compared them. A run that states its own length ends with a verdict instead, which is
+/// the difference between an observation and a measurement — and the reason this is an input the
+/// run takes rather than a number compiled into it.
+fn walk_seconds() -> Option<f64> {
+    let text = std::env::var("SHPLOINGUS_WALK_SECONDS").ok()?;
+    match text.trim().parse::<f64>() {
+        Ok(seconds) if seconds.is_finite() && seconds > 0.0 => Some(seconds),
+        _ => {
+            eprintln!(
+                "shploingus: SHPLOINGUS_WALK_SECONDS must be a positive number of seconds, not \
+                 {text:?}"
+            );
+            std::process::exit(2);
+        }
+    }
+}
 
 /// Radians of camera turn per **unit of pointer motion**, as the device reports it.
 ///
@@ -298,6 +388,22 @@ fn main() {
                      verb will refuse and there is no project for the judge to open; the rest \
                      of the shell is unaffected"
                 ),
+            }
+            // ---- the display package, and the drawing it declares -----------------
+            //
+            // **The declaration is not resolved here.** The folder is the source `build.rs`
+            // proves the embedded bytes equal, and **mounting the package is what reads
+            // `package.cells`** — the same loader call a package arriving mid-run makes. A
+            // declaration this build does not read refuses the package before it is adopted, so
+            // the embedded arrangement and the drawing in force keep drawing and one sentence
+            // says where the declaration was written. The version follows the package, not this
+            // file: the frame asks the mount for it.
+            if let Some(root) = &found_root {
+                if let Err(refusal) =
+                    mount.load_package(&root.join("display-packages/alpha-shell/package.shspec"))
+                {
+                    eprintln!("shploingus: {refusal}");
+                }
             }
             // **The gate's pass, onto the console — the client's own second reader**
             // (UI-SPEC §9, C-53.3, `BLD-0019`, `BLD-0026`). The line above already printed it
@@ -460,6 +566,14 @@ struct Graphics {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    /// **The multisampled attachment the world pass draws into**, or `None` when the
+    /// surface format or the adapter cannot carry four samples. The swapchain's own view is
+    /// then the pass's target and there is nothing to resolve — which is the frame this app
+    /// drew before the count existed.
+    colour_msaa: Option<wgpu::Texture>,
+    /// How many samples that attachment (and the depth buffer beside it) has. Held so a
+    /// resize rebuilds both at the count the pipeline was built with.
+    samples: u32,
     depth: wgpu::Texture,
     depth_view: wgpu::TextureView,
     world: WorldPipeline,
@@ -471,6 +585,104 @@ struct Graphics {
     scale: f32,
     /// What the adapter calls itself, for the title bar and the world panel.
     adapter: String,
+    /// **The frame-level recorder**, off unless `SHPLOINGUS_CAPTURE_DIR` names a folder.
+    ///
+    /// It reads the **swapchain texture the frame was presented from**, after the world and
+    /// the shell were drawn into it, so a recorded frame is the frame the player saw and two
+    /// recordings with no skip between them are consecutive presented frames — not samples of
+    /// a screen being repainted under an external grabber. Each image is named for its index
+    /// and every index is written once, with the wall clock and the eye that drew it, to
+    /// `frames.tsv` beside the images (`capture::FrameRecorder`).
+    capture: Option<capture::FrameRecorder>,
+    /// **The piece of ground the corner trace watches** — a world point, fixed by the first
+    /// captured frame and then never moved.
+    ///
+    /// It has to be the world's rather than the eye's: a digest taken around a moving eye counts
+    /// different corners every frame simply because the eye moved, which is indistinguishable in a
+    /// trace from the geometry stating something different. Fixed here, a line that changes while the
+    /// player stands still is the geometry speaking.
+    capture_probe: Option<[f64; 3]>,
+}
+
+/// **The piece of ground the corner trace watches**, from the frame's own rectangles: the highest
+/// upward face below the eye, in the chunk the eye stands in.
+///
+/// The ghost flies, so a fixed "1.6 m below the eye" is mid-air and a digest taken there counts
+/// nothing; and the terrain is drawn from **records**, not corners, so the nearest corner is a
+/// refined leaf or a body rather than the ground. A `PosY` record's plane is its chunk origin plus
+/// its slice in subvoxels — `SUBVOXEL_CELL_M` each, the same number `Vertex::position` is in — so
+/// the highest such plane below the eye is the surface it is standing over.
+///
+/// `None` while the frame holds no ground under the eye at all: a capture that opens before the
+/// world is resident must not fix the trace on a point in mid-air for the rest of the run.
+fn ground_probe(scene: &Scene, eye: [f64; 3]) -> Option<[f64; 3]> {
+    if std::env::var_os("SHPLOINGUS_PROBE_DEBUG").is_some() {
+        let mut faces = [0usize; 6];
+        let mut near = 0usize;
+        for record in &scene.records {
+            faces[(record.face as usize).min(5)] += 1;
+            if let Some(origin) = scene.origins.get(record.chunk as usize) {
+                if (origin[0] - (eye[0] / 32.0).floor() * 32.0).abs() < 0.5
+                    && (origin[2] - (eye[2] / 32.0).floor() * 32.0).abs() < 0.5
+                {
+                    near += 1;
+                }
+            }
+        }
+        eprintln!(
+            "probe: eye {eye:?} records {} vertices {} origins {} faces {faces:?} near {near}",
+            scene.records.len(),
+            scene.vertices.len(),
+            scene.origins.len()
+        );
+    }
+    let chunk_x = (eye[0] / f64::from(CHUNK_SIDE)).floor() * f64::from(CHUNK_SIDE);
+    let chunk_z = (eye[2] / f64::from(CHUNK_SIDE)).floor() * f64::from(CHUNK_SIDE);
+    let mut ground: Option<f64> = None;
+    for record in &scene.records {
+        // `PosY` is the fourth face in `Face::ALL`'s order (`shading.wgsl`'s own comment on the
+        // quad record), so `3` is the only value an upward face can carry here.
+        if record.face != 3 {
+            continue;
+        }
+        let Some(origin) = scene.origins.get(record.chunk as usize) else {
+            continue;
+        };
+        if (origin[0] - chunk_x).abs() > 0.5 || (origin[2] - chunk_z).abs() > 0.5 {
+            continue;
+        }
+        let plane = origin[1] + f64::from(record.slice) * voxel_client::pattern::SUBVOXEL_CELL_M;
+        if plane <= eye[1] && ground.is_none_or(|highest| plane > highest) {
+            ground = Some(plane);
+        }
+    }
+    if let Some(plane) = ground {
+        return Some([eye[0], plane, eye[2]]);
+    }
+    // **No rectangle under the eye**, which is the case for a frame whose terrain is refined: every
+    // face is corner geometry and the record array is empty. The nearest corner *below* the eye is
+    // then the surface the frame draws under it — below, so a leaf hanging above the eye does not
+    // win a tie against the ground the frame is looking down at.
+    let mut best: Option<([f64; 3], f64)> = None;
+    for vertex in &scene.vertices {
+        let Some(origin) = scene.origins.get(vertex.chunk as usize) else {
+            continue;
+        };
+        let world = [
+            origin[0] + f64::from(vertex.position[0]),
+            origin[1] + f64::from(vertex.position[1]),
+            origin[2] + f64::from(vertex.position[2]),
+        ];
+        if world[1] > eye[1] {
+            continue;
+        }
+        let d = [world[0] - eye[0], world[1] - eye[1], world[2] - eye[2]];
+        let squared = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+        if best.is_none_or(|(_, b)| squared < b) {
+            best = Some((world, squared));
+        }
+    }
+    best.map(|(world, _)| world)
 }
 
 impl Graphics {
@@ -497,8 +709,21 @@ impl Graphics {
         let info = adapter.get_info();
         let adapter_name = format!("{} ({:?})", info.name, info.backend);
 
+        // **The adapter's own format capabilities, when it has them.** `Rgba32Float` is the
+        // offscreen measurement target and its *guaranteed* WebGPU flags carry no multisample
+        // bit, so four samples there — and the resolve that makes them a picture — come from
+        // this feature. The window's `sRGB` surface needs it for nothing, so an adapter that
+        // lacks it (a browser's WebGPU, say) loses only the offscreen antialiasing.
+        let mut required = wgpu::Features::empty();
+        if adapter
+            .features()
+            .contains(wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES)
+        {
+            required |= wgpu::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES;
+        }
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("shploingus"),
+            required_features: required,
             ..Default::default()
         }))
         .map_err(|e| format!("no device: {e}"))?;
@@ -532,7 +757,9 @@ impl Graphics {
             .find(|m| *m == wgpu::CompositeAlphaMode::Opaque)
             .unwrap_or(caps.alpha_modes[0]);
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            // `COPY_SRC` is what the frame recorder reads the presented image through; a
+            // surface without it can be drawn and presented but not copied.
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
             format,
             color_space: wgpu::SurfaceColorSpace::Auto,
             width,
@@ -544,7 +771,12 @@ impl Graphics {
         };
         surface.configure(&device, &config);
 
-        let (depth, depth_view) = depth_target(&device, width, height);
+        // **How many samples this surface is drawn at**, decided once by the same rule the
+        // offscreen renderer uses: four where the colour format takes four samples and a
+        // resolve, and one otherwise.
+        let samples = voxel_client::world_samples(&adapter, required, format);
+        let colour_msaa = colour_msaa_target(&device, width, height, format, samples);
+        let (depth, depth_view) = depth_target(&device, width, height, samples);
 
         // The material table and the light rig are `voxel-client`'s, so the
         // window shades exactly what the offscreen test shades. A registry that
@@ -554,8 +786,17 @@ impl Graphics {
             .map_err(|e| format!("the world's shading field: {e}"))?;
         let table = voxel_client::table(&registry, &field)
             .map_err(|e| format!("a material the appearance layer cannot derive: {e}"))?;
-        let world = WorldPipeline::new(&device, &queue, format, &table, boot)
+        let mut world = WorldPipeline::new(&device, &queue, format, &table, boot, samples)
             .map_err(|e| format!("the world pipeline: {e}"))?;
+        // **The shipped frame draws the beam's shadow**, from the Sun or Moon the rig names.
+        // Off in a measurement frame; on in the picture, which is this one. The range is the
+        // window's own horizon, so raising `GAME_WINDOW` raises the shadow with it instead of
+        // leaving the far chunks on a measurement the light has moved past.
+        world.set_shadows(true);
+        world.set_shadow_range(
+            (voxel_client::game::GAME_WINDOW.radius_chunks + 1) as f32
+                * voxel_model::CHUNK_SIDE as f32,
+        );
         let shading = ShadingReport::of(&table);
         if !shading.shades() {
             // Not an error: a state. The world is drawn, and drawn black,
@@ -570,6 +811,8 @@ impl Graphics {
         // coverage and the target agree about sRGB.
         let hud = HudRenderer::new(&device, &queue, format);
         let scale = window.scale_factor() as f32;
+        // Built before the struct takes ownership of the device and the config.
+        let capture = capture::FrameRecorder::from_env(&device, width, height, format);
 
         Ok(Graphics {
             window,
@@ -577,6 +820,8 @@ impl Graphics {
             device,
             queue,
             config,
+            colour_msaa,
+            samples,
             depth,
             depth_view,
             world,
@@ -584,6 +829,8 @@ impl Graphics {
             scale,
             shading,
             adapter: adapter_name,
+            capture,
+            capture_probe: None,
         })
     }
 
@@ -594,22 +841,51 @@ impl Graphics {
         self.config.width = width;
         self.config.height = height;
         self.surface.configure(&self.device, &self.config);
-        let (depth, view) = depth_target(&self.device, width, height);
+        // **Both attachments, at the count the pipeline was built with.** A resize that rebuilt
+        // one and not the other would be a pass whose colour and depth disagree about samples,
+        // which wgpu refuses on the first frame after the resize.
+        self.colour_msaa =
+            colour_msaa_target(&self.device, width, height, self.config.format, self.samples);
+        let (depth, view) = depth_target(&self.device, width, height, self.samples);
         self.depth = depth;
         self.depth_view = view;
     }
+}
+
+/// The multisampled colour attachment the world pass draws into, or `None` at one sample —
+/// where the swapchain's own view *is* the pass's target and there is nothing to resolve into.
+fn colour_msaa_target(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+    samples: u32,
+) -> Option<wgpu::Texture> {
+    (samples > 1).then(|| {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("colour-msaa"),
+            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: samples,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        })
+    })
 }
 
 fn depth_target(
     device: &wgpu::Device,
     width: u32,
     height: u32,
+    samples: u32,
 ) -> (wgpu::Texture, wgpu::TextureView) {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth"),
         size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
         mip_level_count: 1,
-        sample_count: 1,
+        sample_count: samples,
         dimension: wgpu::TextureDimension::D2,
         format: DEPTH_FORMAT,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -639,7 +915,10 @@ struct App {
     /// pinned subset of the same set (H-9.8) — so an app without one is an app with nothing
     /// to draw over the world.
     shell: ShellMount,
-    camera: Camera,
+    camera: Camera,    /// **The god's ghost**, a being with no body — the demo's observer and, one day, Laya's
+    /// vantage. It is a separate record from the player rather than a mode of it: a ghost stands
+    /// somewhere and is read, a body stands somewhere and is pushed.
+    laya: LayaGhost,
     /// The camera effects ported from CameraOverhaul: the smoothing, the sway and the
     /// velocity tilts. **They shape the frame and never the movement** — their offsets
     /// go onto [`App::render_camera`], a copy, while the look the body reads is
@@ -701,6 +980,12 @@ struct App {
     /// like the lanes: it is a diagnostic view of how the meshes are made, not part of the
     /// frame the game draws.
     wireframe: bool,
+    /// **Which of the material's layers the world pass draws** — `0` is the shaded picture and
+    /// `1..=4` are `shading.wgsl`'s own views (`WorldPipeline::set_debug_layer`): the stretch axis a
+    /// face's pattern is shifted along, what each corner states of its own, the ladder's rung and
+    /// share, and the footprint it is measured at. **Off until asked for**, like the two views
+    /// above: it is a diagnostic picture of the material and not part of the frame the game draws.
+    layer: u32,
     /// **The live change regions the vector view draws, read from the world's record.**
     ///
     /// Not remembered at the edit sites: feature `change_view` is *a view over the chain, not a
@@ -711,6 +996,9 @@ struct App {
     changes: Vec<shell_changes::ChangeRegion>,
     change_generation: u64,
     changes_seen: usize,
+    /// **The corner refusals the report has already logged.** The pipeline counts *distinct*
+    /// refusals, and this is how each one reaches stderr once rather than once a second.
+    corner_refusals_seen: u64,
     /// The world's clock, **advanced by the frame loop** rather than held at a constant.
     ///
     /// It was [`TICK`] — a `const 0` — for as long as nothing simulated. The reason
@@ -770,10 +1058,86 @@ struct App {
     /// borrow is taken and dropped inside that one cell's lookup, so no `&mut` is held across the
     /// scene build.
     light_field: Option<std::cell::RefCell<voxel_client::CellField>>,
-    /// The field's own counters, summed since the last report: cells marched, corners answered from
-    /// the frame's own measurements, corners a step behind the light, corners rigged, and hops past
-    /// a chunk the streamer does not hold. Reset when they are printed.
+    /// **The measurement's own thread** ([`voxel_client::Measurer`]).
+    ///
+    /// The marches are what the field's numbers are made of, and they do not happen here: the
+    /// worker marches the cells this frame asked for, the frame adopts what has landed, answers
+    /// the worker's tree questions by handle, and asks for the next batch when it is idle. The
+    /// draft this replaced spent those marches **on the frame** — up to 1 024 of them on a rewrite
+    /// frame, about ten milliseconds, ten frames a second while the field filled — which is the
+    /// one cost a frame held to 8.1 ms cannot carry.
+    measurer: Option<voxel_client::Measurer>,
+    /// **The beam the ask is composed under**: the spec, the cadence's tick and the sky's inputs,
+    /// as the atmosphere last stated them. The cells change every frame; the beam does not.
+    light_ask: Option<voxel_client::Ask>,
+
+    /// **The light's own cadence, as the geometry sees it.**
+    ///
+    /// A rebuild is 228 000 corner asks, nine megabytes of vertices to encode and a buffer to send:
+    /// measured at **30 ms a build** in this build of the tree, against a frame held to 8.1 ms. So
+    /// the picture's light moves on the **beam's** own step — [`voxel_client::BEAM_STEP_DEG`],
+    /// about 1.7 s of this world's clock — and not on the atmosphere's cadence (five times a second,
+    /// which measured 12.1 ms a frame). The field behind it is refreshed continuously on its own
+    /// thread; this is only how often the world is re-written with it, and it is the field's
+    /// declared resolution rather than a compromise with the clock.
+    light_epoch: u64,
+    /// The beam direction the geometry was last written under, so a cadence that moved the sun by a
+    /// sixteenth of a step does not rewrite nine megabytes for it.
+    light_built_under: Option<[f64; 3]>,
+    /// The field's own counters, summed since the last report: cells measured, corners answered
+    /// from the world's own light, corners a step behind it, corners rigged, and hops past a chunk
+    /// the streamer does not hold. Reset when they are printed.
     light_totals: [u64; 5],
+    /// **The frame's terrain geometry, and the key it was built under.**
+    ///
+    /// A corner is chunk-local and the eye travels in the origins array, so the world's
+    /// rectangles and corners are the same bytes while the world and its light are. The cache
+    /// states exactly that: it builds when the key moves and keeps the scene otherwise, and
+    /// because a kept scene carries the build id the GPU last uploaded, neither the scene walk
+    /// nor the buffer upload happens on a frame that walks through a world that has not changed.
+    resident: voxel_client::ResidentScene,
+    /// **The frame's own work, and the one place that decides how much of it happens**: a slice of
+    /// quads, a slice of upload bytes and a slice of cells every frame, each independent of the
+    /// others. A chunk arriving used to mean a full rebuild and a 20 MB upload on one frame — 70 ms
+    /// and 143 ms under eight busy cores — because both were all-or-nothing.
+    work: voxel_client::FrameWork,
+    /// **What the last residency sync did**, for the report: what landed, what left, what was
+    /// refreshed and what is still waiting for a frame's budget.
+    residency: voxel_client::Residency,
+    /// **The demo walk**: the camera is driven forward and the frame records whether the chunk it
+    /// stands in was drawn in the frame it became resident. Off unless `SHPLOINGUS_WALK` is set.
+    walk: bool,
+    /// **Set when the walk first moves** — `walk` and a settled window — so the boot's empty world
+    /// is not counted as frames in which the eye's chunk was missing from the scene.
+    walk_started: bool,
+    walk_frames: u64,
+    /// Whether the demo has made its one **hop** — the step that puts the eye in ground the
+    /// streamer has not meshed yet, which is the only way a settled window can produce the frame
+    /// this change is measured on: a camera standing in a chunk on the frame it becomes resident.
+    walk_hopped: bool,
+    /// Frames where the eye's chunk was in the streamer and **not** in the scene that was drawn.
+    walk_missed: u64,
+    /// **Frames where the eye's chunk arrived and was drawn in the same frame**: it was in the
+    /// streamer, absent from the scene when the frame began, and held by the scene that frame
+    /// drew. This is the claim in its own units — not "nothing was missed", but "every arrival
+    /// under the eye arrived drawn".
+    walk_landed: u64,
+    /// Frames where the eye's chunk was in the drawn scene's reach at all — a chunk still being
+    /// meshed is the streamer's latency and not the scene's, and the two are counted apart.
+    walk_absent: u64,
+    /// The four counts above **since the ghost first flew**, so a bounded run's verdict is the
+    /// whole run rather than its last second: `[frames, landed, missed, absent]`.
+    walk_totals: [u64; 4],
+    /// When the ghost first flew, so a demo run can time itself.
+    walk_since: Option<Instant>,
+    /// **How long the demo flies**, in seconds — `SHPLOINGUS_WALK_SECONDS`, or `None` for as long
+    /// as the window is open. A bounded run is one command and one verdict, which is what makes
+    /// the claim checkable instead of watchable.
+    walk_for: Option<f64>,
+    /// **What the geometry path did since the last report**, as the numbers this change is
+    /// argued with: scenes built, corner uploads made (and bytes), and frames that sent nothing
+    /// with the bytes they spared. Reset when they are printed.
+    geometry: GeometryTally,
     /// **The astronomical bodies the frame draws** (C-184), as records in the world's own units.
     ///
     /// They are held here rather than written into a uniform because a body is **geometry**: the same
@@ -791,6 +1155,15 @@ struct App {
     /// player reported. The frame now asks and adopts; the cadence, the inputs and the values are
     /// unchanged.
     cloud_worker: CloudWorker,
+    /// **The atmosphere's own derivation, one cadence ahead** ([`voxel_client::AtmosphereAhead`]).
+    ///
+    /// The sky, the rig, the field's solver, the dome and the two bodies are one pure function of
+    /// `(spec, tick, inputs, eye)` and cost **19 ms** — `sky-light 14.4 | sky-dome 4.3` on the
+    /// shipped binary's cadence frames, against a frame that otherwise draws in 10–11 ms. The next
+    /// cadence is known four ticks early, so it is derived on a thread while four frames draw and
+    /// the frame that is due **adopts** it. A cadence whose eye or inputs moved since the ask is not
+    /// adopted — it is derived here, exactly as before, and counted.
+    atmosphere_ahead: voxel_client::AtmosphereAhead,
     /// **The cloud tree in hand, and the key it answers.**
     ///
     /// A tree is a function of the field's tick, of the eye **snapped to the cloud domain's own
@@ -949,6 +1322,76 @@ impl FrameCost {
             Self::ms(self.shell),
             Self::ms(self.draw),
         )
+    }
+}
+
+/// **What the geometry path did in one reporting second.**
+///
+/// Two numbers the frame already knows and one the pipeline keeps: a scene is *built* only when
+/// the world or its light moved, and its corners are *sent* only when the build is new. A second
+/// of walking through a settled world is `builds == 0, uploads == 0` and every frame in
+/// `spared`, with `spared_bytes` the upload the old per-frame path would have made.
+#[derive(Default)]
+struct GeometryTally {
+    builds: u64,
+    frames: u64,
+    spared_frames: u64,
+    spared_bytes: u64,
+    uploads: u64,
+    upload_bytes: u64,
+    /// The last build id seen, so a kept scene is told from a rebuilt one.
+    last_build: u64,
+    /// What the residency syncs did: chunks appended, dropped and light-refreshed.
+    landed: u64,
+    left: u64,
+    refreshed: u64,
+}
+
+impl GeometryTally {
+    /// Fold one taken scene into the tally: a new build id is a build.
+    fn scene_taken(&mut self, build: u64) {
+        if build != self.last_build {
+            self.builds += 1;
+            self.last_build = build;
+        }
+        self.frames += 1;
+    }
+
+    /// Fold one residency sync into the tally.
+    fn residency(&mut self, residency: voxel_client::Residency) {
+        self.landed += residency.landed as u64;
+        self.left += residency.left as u64;
+        self.refreshed += residency.refreshed as u64;
+    }
+
+    /// Take the pipeline's own ledger, once a second, and hand it back as a line.
+    fn report(&mut self, traffic: voxel_client::CornerTraffic) -> String {
+        let uploads = traffic.uploads - self.uploads;
+        let bytes = traffic.bytes - self.upload_bytes;
+        let spared = traffic.spared_frames - self.spared_frames;
+        let spared_bytes = traffic.spared_bytes - self.spared_bytes;
+        let line = format!(
+            "{} frame(s) | {} scene change(s), {} landed / {} left / {} light-refreshed | {} \
+             corner upload(s), {:.2} MB | {spared} frame(s) sent nothing, {:.2} MB not sent",
+            self.frames,
+            self.builds,
+            self.landed,
+            self.left,
+            self.refreshed,
+            uploads,
+            bytes as f64 / (1024.0 * 1024.0),
+            spared_bytes as f64 / (1024.0 * 1024.0),
+        );
+        self.uploads = traffic.uploads;
+        self.upload_bytes = traffic.bytes;
+        self.spared_frames = traffic.spared_frames;
+        self.spared_bytes = traffic.spared_bytes;
+        self.builds = 0;
+        self.frames = 0;
+        self.landed = 0;
+        self.left = 0;
+        self.refreshed = 0;
+        line
     }
 }
 
@@ -1271,6 +1714,23 @@ impl CloudWorker {
 ///
 /// It is a floor rather than a rounding: a tick's cloud is the cloud of the cadence it is *inside* of,
 /// so two frames within one cadence name one tree and the fade below spans exactly one period.
+/// **One batch, one march per address**: the queue may name a cell twice, and the worker has no
+/// memory of an earlier ask. Deliberately not a set that outlives the batch — a refusal is silent,
+/// so a cell asked and not answered must stay askable.
+fn dedupe_batch<T: std::hash::Hash + Eq + Copy>(cells: &mut Vec<T>) {
+    let mut seen = std::collections::HashSet::with_capacity(cells.len());
+    cells.retain(|cell| seen.insert(*cell));
+}
+
+/// **Squared distance between two points in metres**, as the light queue's own ordering.
+///
+/// Squared because the order is all it is used for: a square root per cell would be a square root
+/// per ask, for nothing.
+fn squared_distance(a: [f64; 3], b: [f64; 3]) -> f64 {
+    let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    d[0] * d[0] + d[1] * d[1] + d[2] * d[2]
+}
+
 fn cloud_tick_of(tick: u64) -> u64 {
     let period = voxel_client::cloud_cubes::cadence_ticks();
     tick - tick % period
@@ -1283,43 +1743,6 @@ fn snap_to_sample_lattice(eye_m: [f64; 3]) -> [i64; 3] {
         (eye_m[1] / cell).floor() as i64,
         (eye_m[2] / cell).floor() as i64,
     ]
-}
-
-fn sky_at(
-    spec: &WorldSpec,
-    daylight: &voxel_client::skylight::Daylight,
-    inputs: SkyInputs,
-    tick: u64,
-    eye_m: [f64; 3],
-) -> Option<(voxel_client::skylight::SkyModel, f64)> {
-    let peak = voxel_client::skylight::peak_sun_luminance(spec, inputs);
-    // **Absence is a refusal, not a dark sky.** The non-finite case is refused explicitly, because
-    // `peak <= 0.0` is false for a NaN and one would otherwise reach the model as a radiance.
-    if !peak.is_finite() || peak <= 0.0 {
-        return None;
-    }
-    // **The sky's own transport**, over the air at this column: the bands, the droplets the world's
-    // own weather carries, and one exposure — the same normaliser the Sun's body and the Moon's are
-    // divided by. The shader integrates it per pixel, so there is no table between the model and
-    // the frame; the elevation summary's pair remains the rig's ambient reading and nothing else.
-    let air = voxel_client::sun::air_at(spec, eye_m[0], eye_m[2], tick);
-    Some((
-        // **The same Moon the sky pass and the drawn body are placed from** — `(spec, tick, 0)`,
-        // the epoch every other reading of this world's orbit uses. The sky's lunar term, the
-        // drawn disc and the Moon's own beam therefore come from one `moon_position` call site
-        // rather than from three that could disagree about which Moon is up.
-        voxel_client::skylight::SkyModel::of_graded(
-            &daylight.sky,
-            &air,
-            peak,
-            &voxel_shapers::sky::moon_position(spec, tick, 0),
-            // **The frame's own exposure grade**, carried by the `Daylight` this sky came from: one
-            // evaluation of one atmosphere decides the light, the sky and the grade, so a night's sky
-            // cannot be exposed for a noon the rig beside it does not have.
-            daylight.grade,
-        ),
-        peak,
-    ))
 }
 
 impl App {
@@ -1338,6 +1761,19 @@ impl App {
         // frame asks for it rather than after.
         let timing = FrameTiming::from_env();
         let cloud_worker = CloudWorker::new(*world.spec(), timing.on);
+        // **The atmosphere's look-ahead starts with the program**, so the first cadence after boot is
+        // already being derived while the window opens rather than after it has drawn.
+        let atmosphere_ahead = match voxel_client::AtmosphereAhead::new(
+            *world.spec(),
+            voxel_client::game::GAME_NEW_MOON_TICK,
+        ) {
+            Ok(ahead) => ahead,
+            // **A machine that cannot spawn one thread is refused by name, not served the stall.**
+            Err(refusal) => {
+                eprintln!("shploingus: the atmosphere worker cannot start: {refusal}");
+                std::process::exit(2);
+            }
+        };
         let mut camera = Camera::standard(spawn_eye(&world), 16.0 / 9.0);
         camera.pitch_rad = GAME_PITCH_RAD;
         App {
@@ -1345,6 +1781,7 @@ impl App {
             streamer: None,
             shell,
             camera,
+            laya: LayaGhost::at(camera.position_m),
             overhaul: CameraOverhaul::new(),
             render_camera: camera,
             player: Player::new(spawn_feet(&world)),
@@ -1369,9 +1806,18 @@ impl App {
             shell_refusal: None,
             lanes: false,
             wireframe: false,
+            // **`SHPLOINGUS_LAYER` opens a run on a layer view**, so a capture can be taken of one
+            // without a person at the keyboard — the same reason the walk and the recorder take
+            // their inputs from the environment. An unparsable value is the shaded picture.
+            layer: std::env::var("SHPLOINGUS_LAYER")
+                .ok()
+                .and_then(|text| text.trim().parse::<u32>().ok())
+                .filter(|layer| *layer <= 4)
+                .unwrap_or(0),
             changes: Vec::new(),
             change_generation: 0,
             changes_seen: 0,
+            corner_refusals_seen: 0,
         clock: Clock::at(TICK),
         tick_driver: voxel_work::TickDriver::full()
             .expect("the default pipeline and its horizons validate"),
@@ -1389,13 +1835,40 @@ impl App {
         drawing: None,            rig_at_tick: None,
             light_grade: 1.0,
         light_field: None,
+        measurer: Some(voxel_client::Measurer::new()),
+        light_ask: None,
+        light_epoch: 0,
+        light_built_under: None,
         light_totals: [0; 5],
+        resident: {
+            // **The shadow's own resolution, asked for by the frame that draws it.** One sample
+            // per stored subvoxel is the finest the world's light field can answer; the builder
+            // clamps anything else to a divisor of `SUBVOXEL_SIDE`. A scene built before this
+            // (or by a test that asks for nothing) keeps the once-per-corner path.
+            let mut resident = voxel_client::ResidentScene::new();
+            resident.set_shadow_lattice(voxel_client::SHADOW_LATTICE);
+            resident
+        },
+        residency: voxel_client::Residency::default(),
+        walk: std::env::var_os("SHPLOINGUS_WALK").is_some(),
+        walk_started: false,
+        walk_hopped: false,
+        walk_frames: 0,
+        walk_missed: 0,
+        walk_landed: 0,
+        walk_absent: 0,
+        walk_totals: [0; 4],
+        walk_since: None,
+        walk_for: walk_seconds(),
+        work: voxel_client::FrameWork::stated(),
+        geometry: GeometryTally::default(),
         bodies: Vec::new(),
             cloud_tree: None,
             cloud_tree_previous: None,
             cloud_tree_at_tick: None,
             cloud_tree_key: None,
             cloud_worker,
+            atmosphere_ahead,
             turbidity_at: None,
             turbidity: voxel_appearance::sky::SkyInputs::default().turbidity,
             ozone_at: None,
@@ -1579,7 +2052,7 @@ impl ApplicationHandler for App {
             self.spec(),
             self.clock.tick,
             boot_inputs,
-            0,
+            voxel_client::game::GAME_NEW_MOON_TICK,
         ) {
             Some(d) => d,
             None => {
@@ -1608,7 +2081,7 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        let mut graphics = match Graphics::new(window, &boot_rig) {
+        let graphics = match Graphics::new(window, &boot_rig) {
             Ok(g) => g,
             Err(e) => {
                 eprintln!("shploingus: {e}");
@@ -1623,12 +2096,13 @@ impl ApplicationHandler for App {
         // **Both the background and the Sun's body come from this one evaluation**, exactly
         // as the frame loop's own tick does, so the first frame cannot be lit by one sky and
         // backed by another — nor draw a body normalised against a peak the table was not.
-        if let Some((model, peak)) = sky_at(
+        if let Some((model, peak)) = voxel_client::atmosphere::sky_model_at(
             self.spec(),
             &boot_daylight,
             boot_inputs,
             self.clock.tick,
             self.render_camera.position_m,
+            voxel_client::game::GAME_NEW_MOON_TICK,
         ) {
             graphics.world.write_sky_model(&model);
             // **The Sun and the Moon as records** (C-184), from this one evaluation: the band table's
@@ -1643,7 +2117,11 @@ impl ApplicationHandler for App {
                 bodies.push(sun.body_record_graded(eye, boot_daylight.grade));
             }
             if let Some(moon) = voxel_client::sun::DrawnMoon::of(
-                &voxel_shapers::sky::moon_position(&spec, self.clock.tick, 0),
+                &voxel_shapers::sky::moon_position(
+                    &spec,
+                    self.clock.tick,
+                    voxel_client::game::GAME_NEW_MOON_TICK,
+                ),
                 &voxel_client::sun::air_at(&spec, eye[0], eye[2], self.clock.tick),
                 peak,
                 eye,
@@ -1654,7 +2132,7 @@ impl ApplicationHandler for App {
             }
             self.bodies = bodies;
         } else {
-            // **Stated, not omitted**: `sky_at` refuses when there is no peak to normalise the
+            // **Stated, not omitted**: `sky_model_at` refuses when there is no peak to normalise the
             // transport against, so this frame has no sky rather than no word for one — which is
             // the difference the pipeline refuses a frame over.
             graphics.world.write_no_sky_model();
@@ -1858,6 +2336,26 @@ impl ApplicationHandler for App {
                     );
                     return;
                 }
+                // **F5 steps through the material's layers** — the shaded picture, then the
+                // stretch axis, the corner's own sample, the ladder and the footprint. Each is the
+                // same fragments the frame draws, so a face whose pattern is flatter or coarser than
+                // its neighbours is visible in the layer that owns the difference rather than
+                // inferred from colour.
+                if event.state == ElementState::Pressed && code == KeyCode::F5 {
+                    self.layer = (self.layer + 1) % 5;
+                    println!(
+                        "shploingus: material layer {}{}",
+                        self.layer,
+                        match self.layer {
+                            0 => " (shaded)",
+                            1 => " (stretch axis)",
+                            2 => " (corner sample)",
+                            3 => " (ladder)",
+                            _ => " (footprint)",
+                        }
+                    );
+                    return;
+                }
                 if event.state == ElementState::Pressed {
                     if let Some(choice) = selection_of(code) {
                         self.selected = choice;
@@ -2047,6 +2545,73 @@ impl App {
         }
     }
 
+    /// **The light's own frame**: adopt what the worker has measured, answer the trees it needs,
+    /// and hand it the next batch when it has room for one.
+    ///
+    /// Bounded in every direction, because this runs on the frame: one adoption batch, a fixed
+    /// number of tree handles, and one ask. Nothing here waits — a worker still marching is a
+    /// frame that asks again next frame, and a worker with nothing to do costs one hash lookup
+    /// and one empty receive.
+    fn pump_light(&mut self) {
+        /// Tree handles answered in one frame: a refcount each, and the worker blocks on them.
+        const TREES: usize = 16;
+
+        let Some(measurer) = self.measurer.as_mut() else {
+            return;
+        };
+        if let Some(field) = self.light_field.as_ref() {
+            field.borrow_mut().begin_frame();
+        }
+        // (a) What landed. A measurement is a cell's bands **and the beam they were marched
+        // under**, so an answer that arrives after the sun has moved is still an answer about its
+        // own beam rather than a claim about this frame's.
+        let landed = measurer.adopt(self.work.measure());
+        if let Some(field) = self.light_field.as_ref() {
+            let mut field = field.borrow_mut();
+            for measured in &landed {
+                let cell = measured.cell;
+                field.adopt(cell, measured.bands, measured.toward);
+            }
+        }
+        // (b) The worker's own questions. The streamer is the world the beams cross, and what
+        // crosses to the worker is a refcount on the same tree rather than a copy of it.
+        let streamer = self.streamer.as_ref();
+        measurer.service(TREES, |pos| streamer.and_then(|streamer| streamer.tree_shared(pos)));
+        // (c) The next batch, when the worker has room for one.
+        if measurer.busy() {
+            return;
+        }
+        let (Some(template), Some(field)) = (self.light_ask, self.light_field.as_ref()) else {
+            return;
+        };
+        let mut cells = field.borrow_mut().wants(voxel_client::CELLS_PER_ASK);
+        // **Nearest first**, so the part of the world the eye is in is measured before the part it
+        // is not: the queue is the build's own order, which is mesh order and not the eye's.
+        let eye = self.camera.position_m;
+        cells.sort_unstable_by(|a, b| {
+            squared_distance(a.centre_m(), eye).total_cmp(&squared_distance(b.centre_m(), eye))
+        });
+        // **One ask, one march per cell — and no memory past this batch.** The worker sends no
+        // refusal: a cell whose own chunk is absent when the beam leaves ends the ask with nothing
+        // in `Batch.measured`. A set that outlived the ask therefore kept that address out of every
+        // later batch, and its corners stayed on the rig for the rest of the run — lit by the
+        // unshadowed sun however far the light had since moved.
+        dedupe_batch(&mut cells);
+        if cells.is_empty() {
+            return;
+        }
+        // **The residency the worker is handed with the ask**: which chunks have a tree in hand.
+        // Without it a march discovers the empty sky one frame at a time.
+        let (generation, resident) = match self.streamer.as_ref() {
+            Some(streamer) => (
+                streamer.world_generation(),
+                streamer.tree_chunks().collect::<Vec<_>>(),
+            ),
+            None => (template.generation, Vec::new()),
+        };
+        measurer.ask_for(voxel_client::Ask { generation, ..template }, cells, resident);
+    }
+
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
         if self.graphics.is_none() || self.streamer.is_none() {
             return;
@@ -2102,6 +2667,7 @@ impl App {
                 .due_at(tick)
                 .contains(&voxel_shapers::stages::Stage::Atmosphere);
         if due {
+            let cadence_started = Instant::now();
             self.rig_at_tick = Some(tick);
             // **`None` keeps the previous rig**, which is `WorldPipeline::write_rig`'s own
             // refusal semantics too, so a refused atmosphere costs a held frame rather
@@ -2112,24 +2678,50 @@ impl App {
             // the borrow checker's problem rather than the renderer's.
             let spec = *self.spec();
             let eye = self.render_camera.position_m;
-            // **The world's own light, rebuilt on the cadence the rig is** — and **kept between
-            // cadences**, which is the half that matters: the cells the previous field measured are
-            // carried over when the beam has not swung past the solver's own step, and thrown away
-            // when it has (see `voxel_client::field`'s module doc for why the step is the stencil's
-            // own resolution rather than a tuning constant).
+            // **The world's own light, on the cadence the rig is** — adopted from the look-ahead
+            // when it is this cadence's, derived here when it is not — and **kept between
+            // cadences**: the cells the previous field measured are carried over when the beam has
+            // not swung past the solver's own step, and thrown away when it has (see
+            // `voxel_client::field`'s module doc for why the step is the stencil's own resolution
+            // rather than a tuning constant).
             //
-            // `None` when the atmosphere is refused, which is **the rig's own refusal**: the same
-            // `daylight_of` call, the same conditions, one derivation. A field that measured an
+            // `None` when the atmosphere is refused, which is **the rig's own refusal**: one
+            // `daylight_of`, one solver, the same conditions for both. A field that measured an
             // atmosphere the rig could not describe would be a second opinion about the sky, and
             // this game has exactly one.
-            self.light_field = voxel_client::CellField::of(
+            //
+            // **Derived four ticks ago when the look-ahead could, here when it could not.** `cadence`
+            // takes the worker's answer only when it is the same derivation in every argument — the
+            // tick, the inputs and the eye — and derives the cadence on this thread otherwise, which
+            // is exactly what this loop did always and is counted rather than hidden.
+            let synced = self.atmosphere_ahead.derived_here();
+            let mut atmosphere = self.atmosphere_ahead.cadence(
                 &spec,
                 tick,
                 inputs,
-                0,
-                self.light_field.take().map(std::cell::RefCell::into_inner),
-            )
-            .map(std::cell::RefCell::new);
+                eye,
+                voxel_client::game::GAME_NEW_MOON_TICK,
+            );
+            let adopted = self.atmosphere_ahead.derived_here() == synced;
+            let previous = self.light_field.take().map(std::cell::RefCell::into_inner);
+            self.light_field = atmosphere.light.take().map(|light| {
+                std::cell::RefCell::new(voxel_client::field::CellField::of_light(light, previous))
+            });
+            // **The beam the worker marches under, stated once per cadence.** The worker derives
+            // its own solver from exactly these four arguments — one pure function, so its beams
+            // are this field's beams and not a second opinion about the sky — and every cell it
+            // measured for the last cadence is due a re-march, because a cell's bands carry the
+            // beam they were marched under.
+            // **The material's light is the GPU's now** — PATCH-074. `fs_main` evaluates the
+            // atmosphere from `sky_model` at the fragment's own normal and gates the frame's one
+            // Sun/Moon triple by the per-frame shadow map; both stream with the frame the
+            // geometry lands. The CPU field's demand queue measured cells a chunk at a time and
+            // arrived long after the mesh, which is why only the measured chunk was lit and why
+            // lighting took seconds where shadows took a frame. Nothing asks it for a cell now:
+            // the queue stays empty, `pump_light` is one hash lookup and one empty receive, and
+            // the scene's light key stops moving with the beam because there are no per-corner
+            // bands left in the picture.
+            self.light_ask = None;
             // **The cloud field and its tree are asked for in the geometry section below**, not
             // here: the ask needs the pixel angle, and the derivation itself now runs on
             // [`CloudWorker`]'s own thread — 4 225 model calls and an octree fill are not this
@@ -2138,7 +2730,9 @@ impl App {
             // are written from the same `Daylight`, so the light, the sky it is seen against and
             // the body in it cannot describe different atmospheres. Before the sky pass there was
             // only the rig here and nothing to keep in step with it.
-            if let Some(daylight) = voxel_client::skylight::daylight_of(&spec, tick, inputs, 0) {
+            let sky = atmosphere.sky.take();
+            let bodies = std::mem::take(&mut atmosphere.bodies);
+            if let Some(daylight) = atmosphere.daylight.as_ref() {
                 // **The field's own exposure, taken from the one `Daylight` the rig is exposed
                 // with** — so a measured corner and a rig-lit one are lit at one grade, and a
                 // twilight's measurements are not read at a noon's exposure.
@@ -2152,48 +2746,68 @@ impl App {
                     }
                     cost.sky_light = mark.elapsed();
                     mark = Instant::now();
-                    if let Some((model, peak)) = sky_at(&spec, &daylight, inputs, tick, eye) {
-                        graphics.world.write_sky_model(&model);
-                        // **The Sun's body** (C-176), from the same `Sky` and the same
-                        // normaliser the background was drawn against. `None` when there is no
-                        // sun to draw, which is the rig's own condition rather than a second
-                        // one: `Sky::sun_light` is black exactly when the Sun is not up.
-                        //
-                        // **The Moon's body**, from the light solver's own bands: the Sun's spectrum
-                        // times the band table's declared reflectance, over π, transmitted back down
-                        // the air column the Sun crossed. The phase is drawn by the shader from the
-                        // body's own geometry, so this is the only thing that decides how bright it
-                        // is and nothing here decides which part of it is lit.
-                        //
-                        // Both are **records in the scene's own array** (C-184): what carries them
-                        // into the frame is the scene build below, not a uniform written here.
-                        self.bodies.clear();
-                        if let Some(sun) =
-                            voxel_client::sun::DrawnSun::of(&daylight.sky, peak, eye)
-                        {
-                            self.bodies.push(sun.body_record_graded(eye, daylight.grade));
+                    match sky {
+                        Some((model, _peak)) => {
+                            graphics.world.write_sky_model(&model);
+                            // **Both bodies, from the same `Sky` and the same normaliser the
+                            // background was drawn against** — derived where the rig was, so the
+                            // light, the sky and the body in it cannot describe different skies.
+                            // One record each (C-184), carried into the frame by the scene build
+                            // below rather than by a uniform written here.
+                            self.bodies = bodies;
                         }
-                        if let Some(moon) = voxel_client::sun::DrawnMoon::of(
-                            &voxel_shapers::sky::moon_position(&spec, tick, 0),
-                            &voxel_client::sun::air_at(&spec, eye[0], eye[2], tick),
-                            peak,
-                            eye,
-                            daylight.sky.sun_altitude_deg,
-                            voxel_shapers::sky::solar_position(&spec, tick).azimuth_deg,
-                        ) {
-                            self.bodies.push(moon.body_record_graded(eye, daylight.grade));
+                        None => {
+                            // The boot frame's own refusal, on this tick: no sky, stated — and
+                            // **no bodies**, because a body is drawn against this sky and leaving
+                            // the last tick's in place would put a sun in a frame that just said it
+                            // has none.
+                            graphics.world.write_no_sky_model();
+                            self.bodies.clear();
                         }
-                    } else {
-                        // The boot frame's own refusal, on this tick: no sky, stated — and **no
-                        // bodies**, because a body is drawn against this sky and leaving the last
-                        // tick's in place would put a sun in a frame that just said it has none.
-                        graphics.world.write_no_sky_model();
-                        self.bodies.clear();
                     }
                 }
             }
             cost.sky_dome = mark.elapsed();
+            if std::env::var_os("ATMOSPHERE_LEDGER").is_some() {
+                println!(
+                    "atmosphere\tt{tick}\t{}\t{:.2} ms\tsync {}\tsky-write {:.2} ms",
+                    if adopted { "adopted" } else { "derived" },
+                    cadence_started.elapsed().as_secs_f64() * 1e3,
+                    self.atmosphere_ahead.derived_here(),
+                    (cost.sky_light + cost.sky_dome).as_secs_f64() * 1e3,
+                );
+            }
             mark = Instant::now();
+        }
+        // **The cadence after this one, asked for now — every frame, and idempotent.** The
+        // derivation is a pure function of a tick that has not happened yet, so it can be *had*
+        // before it is needed; asking every frame rather than only after an adoption is what makes
+        // it survive a stalled frame, where `Clock::advance` can carry the tick past a cadence the
+        // look-ahead had already been asked about.
+        //
+        // **The inputs it will be derived in, as far as they can be known now.** The turbidity is a
+        // pure function of the column and the tick, so it is sampled *for* a tick that has not
+        // happened; the ozone is the **held** daily value, which is what the frame still holds unless
+        // a climate sample lands in between — and then the answer is not adopted and the frame
+        // derives the cadence itself, counted.
+        let period = voxel_shapers::stages::Stage::Atmosphere
+            .cadence()
+            .period_ticks();
+        let next = (tick / period + 1) * period;
+        if !self.atmosphere_ahead.asked(next) {
+            let column = self.camera.position_m;
+            let eye = self.render_camera.position_m;
+            let spec = *self.spec();
+            let next_sampled = voxel_client::skylight::sky_inputs_at(&spec, column[0], column[2], next);
+            let held_ozone = self.ozone_atm_cm;
+            self.atmosphere_ahead.ask(
+                next,
+                SkyInputs {
+                    turbidity: next_sampled.turbidity,
+                    ozone_atm_cm: held_ozone,
+                },
+                eye,
+            );
         }
         let _ = moved;
 
@@ -2272,6 +2886,62 @@ impl App {
 
         // ---- move -------------------------------------------------------
         self.walk_player(dt);
+        // **The demo walk begins once the window has settled**, so the run is a world that stays
+        // full while it moves rather than a boot that never catches up.
+        let settled = self
+            .streamer
+            .as_ref()
+            .is_some_and(|s| s.len() + s.stale_len() == s.window().count() as usize);
+        // **The demo flies once the window has settled, and then keeps flying.** `settled` is a
+        // predicate on a world that is filling: a ghost that has moved is a window caught
+        // mid-refill, so asking it again every frame stops the camera after its first step —
+        // which is exactly what the first bounded run did, 5 s in and 3 m short of a chunk
+        // boundary. The gate arms the demo; it does not fly it.
+        if self.walk && (self.walk_started || settled) {
+            if !self.walk_started {
+                // **The demo looks level**, because a walk is along the ground and this is the
+                // ghost's first step: the boot's own −0.08 rad pitch would sink it 29 m over the
+                // minute a bounded run flies, and a camera under the terrain is a run that cannot
+                // show what the ground under it does.
+                self.camera.pitch_rad = 0.0;
+                self.walk_since.get_or_insert_with(Instant::now);
+            }
+            self.walk_started = true;
+            // **One hop, part-way in.** A ghost that only ever walks a settled window never stands
+            // in a chunk as its mesh lands — the window is already resident around it — so the
+            // frame this change exists to fix would never be asked of the run. Six chunks puts the
+            // eye just outside the five-chunk window, and the arrival that follows is the frame
+            // the counter below is about.
+            let hop_at = self.walk_for.map(|limit| limit * 0.4).unwrap_or(20.0);
+            if !self.walk_hopped
+                && self.walk_since.is_some_and(|since| since.elapsed().as_secs_f64() >= hop_at)
+            {
+                self.walk_hopped = true;
+                self.laya_hop(6.0 * CHUNK_SIDE as f64);
+                println!(
+                    "walk-hop\t{} moved to a vantage the window does not hold: x={:.0} z={:.0} m",
+                    self.laya.name, self.laya.position_m[0], self.laya.position_m[2],
+                );
+            }
+            // **The demo flies the ghost**, not the player's body: `laya_observation` moves the
+            // being and derives the eye from it, the body is left standing, and the world streams
+            // around the ghost exactly as it does around a player. Teleporting the body instead
+            // would have made the demo a collider being dragged through the world, which is not the
+            // camera the audit could not drive.
+            // **A measurement, not a way to fly**: `SHPLOINGUS_LIFT_MM_S` holds the ghost
+            // still and raises it at that rate, so consecutive recorded frames differ in
+            // nothing but the eye's height. The walk had no vertical component at all, which
+            // is why every earlier capture of this defect was of a constant-height eye.
+            let lift = walk_lift_m_s();
+            self.laya_observation(
+                dt,
+                LayaWish {
+                    forward_m_s: if lift == 0.0 { WALK_CRUISE_M_PER_S } else { 0.0 },
+                    up_m_s: lift,
+                    ..LayaWish::default()
+                },
+            );
+        }
         cost.walk = mark.elapsed();
         mark = Instant::now();
 
@@ -2295,9 +2965,13 @@ impl App {
         mark = Instant::now();
 
         // ---- geometry ---------------------------------------------------
-        // Rebuilt each frame because the residency changes each frame. The
-        // vertex buffers are re-uploaded per frame inside the pipeline — a named
-        // cost, see `voxel_client::world`.
+        // **Built when the world or its light moved, and kept otherwise.** A corner is
+        // chunk-local and the eye travels in the origins array, so the terrain is a function of
+        // the resident world and the light's own revision — not of the frame. [`SceneCache`]
+        // states exactly that pair as its key, and the pipeline keys its own upload on the
+        // scene's build id, so a frame that walks through an unchanged world neither walks the
+        // meshes nor sends a byte to the GPU.
+        //
         // **And the cloud's own cells, appended after the world's** (C-179). They are the
         // world's own rectangles, so they travel in the same buffers and are drawn by the same
         // fragment shader; what the draw splits on is `Scene::cloud_records`. The rung the cells
@@ -2319,52 +2993,175 @@ impl App {
         // states why the two are constructors rather than a flag, and
         // `renderer::tests::the_quad_format_and_the_vertex_format_draw_the_same_surface` is what
         // holds them to one picture.
+        // **The light's own frame, before the scene that draws it**: adopt what the worker has
+        // finished, answer its tree questions by handle, and hand it the next batch. This is the
+        // whole of the field's cost on this thread — three channel operations and a bounded
+        // handshake — and it is timed into the scene stage because it is the scene's light.
+        self.pump_light();
         let field = self.light_field.take();
-        if let Some(field) = field.as_ref() {
-            // The frame's budget and its own counters; the measured cells are kept.
-            field.borrow_mut().begin_frame();
-        }
-        let scene = match field.as_ref() {
-            Some(field) => {
-                // **The streamer is the world the beam marches through.** The cast is the one
-                // place the frame says which provider its trees come from, and every other line
-                // here speaks to the trait rather than to the streamer.
-                let trees: &dyn voxel_client::field::ChunkTrees =
-                    self.streamer.as_ref().expect("checked above");
-                // **The measurement, at the frame's own exposure.** `WorldLight` leaves its bands
-                // physical and peak-relative; the shader is handed the rig at `EXPOSURE · grade`,
-                // so the bands take the same scale here — the one place the field's measurement
-                // becomes the frame's light. Without it a measured corner was lit by a beam
-                // `EXPOSURE` times dimmer than the rig's own beam for the same geometry.
-                let grade = self.light_grade;
-                let measured = voxel_client::field::light_at(field, trees);
-                let light = move |x: i32, y: i32, z: i32| {
-                    measured(x, y, z)
-                        .map(|bands| voxel_client::skylight::exposed_bands(bands, grade))
-                };
-                Scene::build_with_light(
-                    self.streamer.as_ref().expect("checked above").meshes(),
-                    self.camera.position_m,
-                    &DetailLattice::new(0),
-                    &light,
-                    Some(&self.displacement),
-                    Some(&self.refine),
-                )
+        // **The light's revision is the field's, not the cadence's.** A corner carries light only
+        // when the field measured the cell it stands in; a field holding nothing leaves every corner
+        // on the rig, which the shader reads from a uniform written whether the geometry was rebuilt
+        // or not. So the atmosphere's tick moves this key only when the field has something to say
+        // about a corner — without it, every cadence frame walked the resident meshes to rebuild the
+        // bytes it already had.
+        let held = field.as_ref().map(|f| f.borrow().held()).unwrap_or(0);
+        // **The light's key is the cadence, once there are cells to draw with.** The rebuild is
+        // also the ask — every corner is asked, and a stale one is queued for a re-march — so the
+        // cadence is the rate at which the drawn cells are kept current, and a field holding
+        // nothing still moves nothing.
+        // ---- the light horizon, streamed from the octrees ----------------
+        // **The frame's own occlusion field, moved with the eye and fed by the chunks the
+        // streamer holds.** The cube is recentred on the eye's chunk; a crossing shifts it, and
+        // the loop below stamps the chunks that are resident and not yet represented, a bounded
+        // number per frame. That is what "streamed" means here: the light the fragment marches
+        // arrives with the world rather than in one build behind it, and a chunk that has not
+        // landed yet reads as unmeasured for the frames it is absent (its direct shadow is still
+        // the shadow map's, which is drawn from the geometry that is present).
+        // Nine a frame: a crossing only owes the chunks that entered (docs/lighting-sky-and-moon.md,
+        // "The horizon's streaming rules").
+        const HORIZON_CHUNKS_PER_FRAME: usize = 9;
+        // **The chunks this frame may not draw, because their light has not arrived.** A chunk
+        // inside the horizon cube whose cells are not stamped has no sampled horizon at any of its
+        // fragments, so it would fall through to the rig's flat ambient — a stand-in, not a light.
+        // It is filtered out of `drawn_meshes()` below, exactly as an unmeshed chunk is absent
+        // (docs/lighting-sky-and-moon.md, "A chunk is drawn only with sampled light").
+        let mut unlit: std::collections::BTreeSet<(i32, i32, i32)> = std::collections::BTreeSet::new();
+        // **The eye's own chunk is never refused.** It is the one chunk the player is standing on:
+        // refusing it removes the ground under the camera and leaves the coarse far surface to fill
+        // the frame, which is a worse lie than the rig it was meant to avoid. It is stamped first,
+        // outside the frame's budget, so it is measured in the same frame it is needed.
+        let eye_chunk_stamp = self.chunk_of_eye();
+        if let Some(graphics) = self.graphics.as_mut() {
+            let eye = self.camera.position_m;
+            graphics.world.horizon_recenter(eye);
+            if let Some(streamer) = self.streamer.as_ref() {
+                // A chunk the window dropped leaves its trees behind; the volume must drop its cells.
+                let resident: std::collections::BTreeSet<(i32, i32, i32)> =
+                    streamer.tree_chunks().map(|pos| (pos.x, pos.y, pos.z)).collect();
+                graphics.world.horizon_retain(&resident);
+                // Before the budget: the chunk under the eye.
+                if let (Some(version), Some(tree)) =
+                    (streamer.tree_version(eye_chunk_stamp), streamer.tree_shared(eye_chunk_stamp))
+                {
+                    if graphics.world.horizon_wants(eye_chunk_stamp, version) {
+                        graphics.world.horizon_stamp(eye_chunk_stamp, &tree, version);
+                    }
+                }
+                let mut budget = HORIZON_CHUNKS_PER_FRAME;
+                for pos in streamer.tree_chunks() {
+                    // An edit bumps the chunk's version, so its stamp follows the new tree.
+                    let Some(version) = streamer.tree_version(pos) else {
+                        if pos != eye_chunk_stamp {
+                            unlit.insert((pos.x, pos.y, pos.z));
+                        }
+                        continue;
+                    };
+                    if !graphics.world.horizon_wants(pos, version) {
+                        continue;
+                    }
+                    if budget > 0 {
+                        if let Some(tree) = streamer.tree_shared(pos) {
+                            graphics.world.horizon_stamp(pos, &tree, version);
+                            budget -= 1;
+                            continue;
+                        }
+                    }
+                    // Still wanting a stamp, so still without its light: refused this frame and
+                    // retried on the next one. Never the eye's own chunk: see above.
+                    if pos != eye_chunk_stamp {
+                        unlit.insert((pos.x, pos.y, pos.z));
+                    }
+                }
             }
-            None => Scene::build(
-                self.streamer.as_ref().expect("checked above").meshes(),
-                self.camera.position_m,
-                &DetailLattice::new(0),
+        }
+
+        // ---- the frame's residency change --------------------------------
+        // **The scene the player is standing in, changed where the world changed.** A chunk that
+        // landed appends its own slice and is drawn this frame; one that left is dropped in the
+        // same place. The frame no longer draws the previous scene while a walk rebuilds it, and
+        // the walk itself is gone: the eye's chunk never waits for a window's worth of quads.
+        //
+        // **The material's light is not a scene input any more** (PATCH-074): `fs_main` reads the
+        // atmosphere and the frame's shadow map, so the light key does not move with a measured
+        // cell and `held` is zero on every frame. It stays in the key so a later pass that gives
+        // the material bit a sample again reuses the same rebuild path.
+        let light_revision = voxel_client::SceneKey::light_of(held, self.light_epoch);
+        // **The demo walk's own check, before the sync it judges**: was the eye's chunk resident
+        // in the streamer this frame? If it was, the sync below must draw it in this same frame.
+        let eye_chunk = self.chunk_of_eye();
+        let eye_was_resident = self
+            .streamer
+            .as_ref()
+            .is_some_and(|streamer| streamer.drawn(eye_chunk).is_some());
+        // **Whether the frame *began* with the eye's chunk in the scene it was drawing**: a chunk
+        // that was already held is not an arrival, and one that is held after the sync below
+        // without being held before it is exactly the arrival this change is about.
+        let eye_held_before = self.resident.holds(eye_chunk);
+        self.residency = {
+            // Each corner asks the field's own measurement of its cell: the march from the sun
+            // through this chunk's octree, adopted from the worker.
+            //
+            // **And a field that has measured nothing is not handed over at all.** The scene
+            // chooses the corner format — the whole world as triangles, four corners and six
+            // indices a face — whenever it is given a sampler, because a corner is where a
+            // measurement attaches and the beam's shadow is cast from corners. A sampler that
+            // answers nothing therefore buys no light **and** costs the record format, the shadow
+            // casters' own format, for every face of the world: that is the state the shipped
+            // world was in, with `records` empty on every frame while `vertices` ran to the tens of
+            // thousands. Until the field has an answer, the frame has no measurement to carry and
+            // the record is what it draws; the first answered cell moves the frame back to corners
+            // on the light revision's own rebuild.
+            let measured = field
+                .as_ref()
+                .is_some_and(|field| field.borrow().answered() > 0 || field.borrow().adopted() > 0);
+            let light_fn = field
+                .as_ref()
+                .filter(|_| measured)
+                .map(voxel_client::field::light_at);
+            let light: Option<&voxel_client::LightAt> =
+                light_fn.as_ref().map(|f| f as &voxel_client::LightAt);
+            self.resident.sync(
+                self.streamer
+                    .as_ref()
+                    .expect("checked above")
+                    .drawn_meshes()
+                    .filter(|(pos, _, _)| !unlit.contains(&(pos.x, pos.y, pos.z))),
+                eye_chunk,
+                light,
                 Some(&self.displacement),
                 Some(&self.refine),
-            ),
+                self.work.geometry(),
+                light_revision,
+            )
         };
+        if self.walk_started {
+            self.walk_frames += 1;
+            self.walk_totals[0] += 1;
+            if !self.resident.holds(eye_chunk) {
+                self.walk_absent += 1;
+                self.walk_totals[3] += 1;
+                if eye_was_resident {
+                    self.walk_missed += 1;
+                    self.walk_totals[2] += 1;
+                }
+            } else if eye_was_resident && !eye_held_before {
+                // **The arrival, drawn on the frame it arrived on**: the streamer had the chunk
+                // this frame, the scene did not when the frame began, and the scene that frame
+                // drew has it.
+                self.walk_landed += 1;
+                self.walk_totals[1] += 1;
+            }
+        }
+        let scene = self.resident.take();
+        self.geometry.scene_taken(scene.build);
+        self.geometry.residency(self.residency);
         // The frame's own tally, folded into the report's running sum and then put back: the
         // field is `App`'s state and the borrow above was the scene build's.
         if let Some(field) = field.as_ref() {
             let field = field.borrow();
-            self.light_totals[0] += field.measured();
-            self.light_totals[1] += field.reused();
+            self.light_totals[0] += field.adopted();
+            self.light_totals[1] += field.answered();
             self.light_totals[2] += field.stale();
             self.light_totals[3] += field.unmeasured();
             self.light_totals[4] += field.unresolved();
@@ -2561,7 +3358,11 @@ impl App {
                 digest: self.streamer.as_ref().expect("checked above").digest(),
                 refusal: self.streamer.as_ref().expect("checked above").last_refusal(),
             };
-            let views = shell_hud::views(&state, self.shell.console());
+            let views = shell_hud::views(
+                &state,
+                self.shell.console(),
+                self.shell.api_view().cloned(),
+            );
             match shell_hud::frame(
                 &mut self.shell,
                 &voxel_ui::Palette::declared(),
@@ -2586,6 +3387,38 @@ impl App {
                     // hosts, and ink a later surface covers — and the reading goes onto the console,
                     // which is the api's record surface. So a UI change is a number that has to
                     // move, and the agent editing the shell can read it without seeing the window.
+                    // **The shell's one raster act.** Every element — chrome, title bars, panes,
+                    // readouts, the console's rows and the API window's lines — is snapped to the
+                    // 8 × 16 cell grid here and re-tinted to the Android 4 schema, so the two
+                    // decisions a paint can make are made once for the whole interface. The
+                    // pointers below still resolve against the declared rectangles: a paint does
+                    // not move a window, and the HUD's bands keep each window's cells under the
+                    // window drawn after it.
+                    // **The cell version is the mounted package's declaration**, read where the
+                    // package was mounted: `package.cells` selects version 1 (this raster) or
+                    // version 0 (the elements as composed — the old drawing). The mount is asked
+                    // per frame rather than copied here, so a package that arrived mid-run has
+                    // already replaced the version; one that was refused did not, and the drawing
+                    // on screen keeps drawing.
+                    // **The content space is the only place the raster may draw.** The bar, the
+                    // title bars, the borders and the panels' chrome are passed through as
+                    // composed; only a window's content container is addressable in cells.
+                    // **Only the frames the mount graded may become cells.** The mask is the
+                    // frame's own footprint inside a declared window's content container, so
+                    // content the compiler composed is cells when — and only when — a package's
+                    // graded frame claims that rect.
+                    let frames = self.shell.frame_space();
+                    let elements = match shell_cells::raster(
+                        &elements,
+                        &frames,
+                        self.shell.cell_version().number(),
+                    ) {
+                        Ok(elements) => elements,
+                        Err(refusal) => {
+                            eprintln!("shploingus: the cell raster refused: {refusal}");
+                            elements
+                        }
+                    };
                     let reading = shell_debug::drawing(&elements).describe();
                     if self.drawing.as_deref() != Some(reading.as_str()) {
                         self.shell.log(
@@ -2636,9 +3469,23 @@ impl App {
         cost.shell = mark.elapsed();
         mark = Instant::now();
         let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        // **The world pass draws into the multisampled attachment and resolves into the
+        // swapchain's own view**, which the HUD's pass then loads and draws over. At one sample
+        // there is no attachment to resolve from and the swapchain view is the target itself.
+        let msaa_view = graphics
+            .colour_msaa
+            .as_ref()
+            .map(|texture| texture.create_view(&wgpu::TextureViewDescriptor::default()));
+        let (world_view, resolve) = match &msaa_view {
+            Some(msaa) => (msaa, Some(&view)),
+            None => (&view, None),
+        };
         let mut encoder = graphics
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
+        // **The material layer this frame draws** (F5), set with the other per-frame numbers: it
+        // is the frame's view, not the world's, so the scene and its material table are untouched.
+        graphics.world.set_debug_layer(self.layer);
         // One pixel's angular size for the swapchain's own height — the pattern
         // ladder's footprint scale, which the shader cannot derive for itself
         // (C-163).
@@ -2649,11 +3496,15 @@ impl App {
         // are the same bytes for every frame of the dissolve, and the shader interpolates between
         // them per pixel from `View::screen.w`.
         graphics.world.set_cloud_fade(cloud_fade as f32);
+        // **How many corner bytes this frame may send**, from the same owner that sized the build:
+        // a 20 MB scene is drafted a slice a frame into the back pair while the front pair draws.
+        graphics.world.set_upload_budget(self.work.upload());
         if self.wireframe {
             graphics.world.draw_wireframe(
                 &mut encoder,
-                &view,
+                world_view,
                 &graphics.depth_view,
+                resolve,
                 &scene,
                 &render_camera,
                 pixel_angle,
@@ -2661,14 +3512,18 @@ impl App {
         } else {
             graphics.world.draw(
                 &mut encoder,
-                &view,
+                world_view,
                 &graphics.depth_view,
+                resolve,
                 &scene,
                 &render_camera,
                 pixel_angle,
             );
         }
-        if elements.is_some() || !strokes.is_empty() {
+        // **The recorder takes the world alone.** A panel opening over the ground is a change
+        // of overlay, not of surface, and a measurement of the surface must not have to tell
+        // the two apart — so the shell's pass is skipped while `SHPLOINGUS_CAPTURE_DIR` is set.
+        if graphics.capture.is_none() && (elements.is_some() || !strokes.is_empty()) {
             // A second pass, loading what the world drew: no depth, no clear.
             graphics.hud.draw(&mut encoder, &view);
         }
@@ -2676,8 +3531,46 @@ impl App {
         // `wgpu 30` presents through the queue, not the texture: the texture is
         // dropped unless it is handed here, and `SurfaceTexture::drop` discards
         // it — which is the safe default rather than a silent no-op.
+        // ---- the frame recorder ------------------------------------------------
+        // Before the present: what is copied is the texture this frame was drawn into, with
+        // the world and the shell both in it. Off unless `SHPLOINGUS_CAPTURE_DIR` is set.
+        // **The ground the corner trace watches, chosen on the first frame that has any.** The
+        // capture opens before the world is resident, so the first frames of a run hold no geometry
+        // at all; choosing then would fix the trace on a point in mid-air for the whole run. Once
+        // chosen it is held in the world, so the trace keeps describing that patch of ground as the
+        // camera moves over it.
+        let capture_probe = if graphics.capture.is_some() {
+            if graphics.capture_probe.is_none() {
+                graphics.capture_probe = ground_probe(&scene, render_camera.position_m);
+            }
+            graphics.capture_probe
+        } else {
+            None
+        };
+        if let Some(recorder) = graphics.capture.as_mut() {
+            recorder.record(
+                &graphics.device,
+                &graphics.queue,
+                &surface_texture.texture,
+                render_camera.position_m,
+                render_camera.yaw_rad,
+                render_camera.pitch_rad,
+                self.clock.tick,
+            );
+            if let Some(probe) = capture_probe {
+                recorder.record_corners(&scene, probe, 6.0);
+            }
+            recorder.record_scene(&scene);
+            recorder.next();
+        }
         graphics.queue.present(surface_texture);
         graphics.hud.trim();
+        // **The two counts the report prints, read before the scene goes back to its owner.**
+        let drawn = (scene.quads, scene.clouds.len());
+        // **The terrain back to its owner**, with this frame's cloud and bodies stripped on the
+        // next `take`: the resident scene keeps the world's part, which is the part that outlives
+        // the frame, and the frame's own additions are what the next frame appends again.
+        self.resident.put(scene);
         cost.draw = mark.elapsed();
         self.frames += 1;
 
@@ -2709,10 +3602,12 @@ impl App {
             // claim this game now makes — that the world is lit by measurement rather than by a
             // rig — is a claim about *how many corners were measured*, and a claim of that shape
             // has to be readable while the game runs rather than inferred from the picture. So the
-            // five counts are printed beside the frame rate: cells marched this second, corners
-            // answered from the frame's own measurements, corners answered from a measurement **whose
-            // own beam has since moved past the field's step** (`CellField::stale`), corners that fell
-            // back to the rig, and hops made past a chunk the streamer does not hold.
+            // five counts are printed beside the frame rate: cells measured this second (adopted
+            // from the worker), corners answered from a measurement **whose own beam has since
+            // moved past the field's step** (`CellField::stale`), corners that fell back to the
+            // rig, and hops made past a chunk the streamer does not hold — with the field's whole
+            // holding and its queue behind the five, which is how much of the world is measured at
+            // all.
             //
             // The stale count is the one that says whether the field is still *covering* the view:
             // it is high while a turning eye's map catches up and zero once it stands still, and it
@@ -2722,30 +3617,128 @@ impl App {
             // **"Rigged" is the honest half and it is why the line carries a second number.** A
             // budget that ran out and a chunk that was not resident both land there, and a frame
             // lit entirely by the rig would report `0 measured` rather than a black screen.
-            let [measured, reused, stale, rigged, unresolved] = self.light_totals;
-            if self.light_field.is_some() {
+            let [measured, answered, stale, rigged, unresolved] = self.light_totals;
+            if let Some(field) = self.light_field.as_ref() {
+                let field = field.borrow();
                 println!(
-                    "light-field\t{measured} cell(s) marched | {reused} corner(s) answered from the \
-                     frame's own measurements | {stale} corner(s) answered a step behind the light | \
-                     {rigged} corner(s) rigged | {unresolved} hop(s) past a chunk not resident"
+                    "light-field\t{measured} cell(s) measured | {answered} corner(s) answered from the \
+                     world's own light | {stale} corner(s) a step behind the light | {rigged} corner(s) \
+                     rigged | {unresolved} hop(s) past a chunk not resident | {} cell(s) held | {} queued \
+                     | {} in flight",
+                    field.held(),
+                    field.queued(),
+                    self.measurer.as_ref().map(|m| m.in_flight()).unwrap_or(0),
                 );
             }
             self.light_totals = [0; 5];
+            // **The geometry path's own report**, beside the light field's: how many scenes were
+            // actually built and what the corner buffers were sent, which is the argument this
+            // change makes rather than the claim it makes.
+            let traffic = graphics.world.corner_traffic();
+            println!("geometry\t{}", self.geometry.report(traffic));
+            if self.walk_started {
+                println!(
+                    "walk\t{} (ghost) {} frame(s) at x={:.0} z={:.0} m | {} chunk arrival(s) \
+                     under the eye drawn in the frame they landed | {} frame(s) with the eye's \
+                     chunk resident and not drawn | {} frame(s) with the eye's chunk not in the \
+                     scene | {} chunk(s) waiting for a frame's budget",
+                    self.laya.name,
+                    self.walk_frames,
+                    self.camera.position_m[0],
+                    self.camera.position_m[2],
+                    self.walk_landed,
+                    self.walk_missed,
+                    self.walk_absent,
+                    self.residency.pending,
+                );
+                self.walk_frames = 0;
+                self.walk_landed = 0;
+                self.walk_missed = 0;
+                self.walk_absent = 0;
+                // **A bounded demo ends with the claim, not with a keypress.** The verdict is the
+                // whole run's counts, and it is a pass only when the ghost actually crossed a
+                // chunk and every crossing under it was drawn on its own frame — `landed > 0` is
+                // what stops a stalled camera from passing by never asking the question.
+                if let (Some(limit), Some(since)) = (self.walk_for, self.walk_since) {
+                    let flown = since.elapsed().as_secs_f64();
+                    if flown >= limit {
+                        let [frames, landed, missed, absent] = self.walk_totals;
+                        println!(
+                            "walk-verdict\t{} | {} (ghost) flew {flown:.1} s, {frames} frame(s), \
+                             {landed} chunk arrival(s) under the eye drawn on their own frame, \
+                             {missed} missed, {absent} frame(s) waiting on the streamer, {} at x={:.0} \
+                             z={:.0} m",
+                            if missed == 0 && landed > 0 { "PASS" } else { "FAIL" },
+                            self.laya.name,
+                            self.residency.pending,
+                            self.camera.position_m[0],
+                            self.camera.position_m[2],
+                        );
+                        event_loop.exit();
+                    }
+                }
+            }
+            println!(
+                "frame-work\tceiling {} ms | geometry {} quad(s) a frame | upload {} B a frame, \
+                 {} B owed | measure {} cell(s) a frame",
+                self.work.ceiling().as_millis(),
+                self.work.geometry(),
+                self.work.upload(),
+                graphics.world.upload_pending(),
+                self.work.measure(),
+            );
+            let (records_ms, corners_ms) = graphics.world.upload_split();
+            // **And what the two corner pairs cost for never allocating on a frame.** The capacity
+            // is stated once at construction and retained for the process, so it belongs on the
+            // same line as the uploads that use it: a reader sees 72.0 MB of GPU memory that the
+            // mesh residency and the scratch do not count, and a count that says no frame has been
+            // the one that grew it.
+            let (quad_uploads, quad_bytes, quad_grows) = graphics.world.quad_traffic();
+            let (patched, encoded) = graphics.world.quad_path();
+            let (encode_ms, transfer_ms) = graphics.world.quad_split();
+            // **A corner buffer the device will not hold is named, once.** The pipeline refuses the
+            // ask before `create_buffer` and keeps drawing the pair it has; this is where that
+            // refusal reaches a person, with both numbers in it, instead of a frame that silently
+            // stops drawing over an invalid buffer.
+            let refusals = graphics.world.corner_refusals();
+            if refusals > self.corner_refusals_seen {
+                if let Some(refusal) = graphics.world.corner_refusal() {
+                    eprintln!(
+                        "shploingus: refused a corner buffer — {refusal}; the frame keeps the \
+                         scene it was drawing"
+                    );
+                }
+                self.corner_refusals_seen = refusals;
+            }
+            println!(
+                "upload-split\trecords {records_ms:.2} ms ({:.1} MB in {quad_uploads} upload(s), \
+                 {quad_grows} growth(s), {encoded} re-encoded, {patched} record(s) patched) | encode \
+                 {encode_ms:.2} ms + transfer {transfer_ms:.2} ms | corners {corners_ms:.2} ms of the \
+                 last frame | corner pairs {:.1} MB retained, {} allocation(s) since start, \
+                 {} compaction(s), {refusals} refused",
+                quad_bytes as f64 / (1024.0 * 1024.0),
+                graphics.world.corner_retained_bytes() as f64 / (1024.0 * 1024.0),
+                graphics.world.corner_allocations(),
+                self.resident.compactions(),
+            );
             graphics.window.set_title(&format!("shploingus — {}", graphics.adapter));
             println!(
-                "{:.0} fps | {}/{} chunks | {} stale-but-drawn | {} quads | {:.1}/{:.1} MB mesh | scratch {:.1} MB | refusals-for-budget {} | evicted {} | in flight {} | {} cloud rect(s) | digest {}",
+                "{:.0} fps | {}/{} chunks | {} stale-but-drawn | {} quads | {} corner(s) ({} live), {} index(es) | {:.1}/{:.1} MB mesh | scratch {:.1} MB | refusals-for-budget {} | evicted {} | in flight {} | {} cloud rect(s) | digest {}",
                 fps,
                 frame.resident,
                 frame.wanted,
                 frame.stale_drawn,
-                scene.quads,
+                drawn.0,
+                self.resident.corners(),
+                self.resident.live_corners(),
+                self.resident.indices(),
                 frame.bytes as f64 / (1024.0 * 1024.0),
                 frame.ceiling as f64 / (1024.0 * 1024.0),
                 frame.scratch_bytes as f64 / (1024.0 * 1024.0),
                 frame.refused_for_budget,
                 frame.evicted,
                 frame.in_flight,
-                scene.cloud_records,
+                drawn.1,
                 &self.streamer.as_ref().expect("checked above").digest().to_hex()[..16],
             );
         }
@@ -3035,6 +4028,11 @@ impl App {
         let wish = {
             let key = |k: KeyCode| if self.held.contains(&k) { 1.0 } else { 0.0 };
             voxel_client::motion::Wish {
+                // **The demo does not drive the body.** `SHPLOINGUS_WALK` flies the ghost
+                // ([`App::laya_observation`]), and the player is left standing: a body pushed
+                // forward by the demo would be a collider being dragged through the world while
+                // the camera it is supposed to be the eye of went somewhere else. These four keys
+                // are the player's own, and nothing else moves them.
                 forward: key(KeyCode::KeyW) - key(KeyCode::KeyS),
                 strafe: key(KeyCode::KeyD) - key(KeyCode::KeyA),
                 // Ctrl is the sneak key — the reference's sneak, at 2.2 m/s, and
@@ -3058,13 +4056,17 @@ impl App {
     /// the one camera a god-agent wants, a thing that can be anywhere and touch
     /// nothing — and it is not bound to the player's keys, which are the body's now.
     ///
-    /// **Nothing calls this, and that is deliberate rather than forgotten.** Laya's
-    /// runtime is its own piece of work: the model decider H-14.2 records is built
-    /// (`build.rs` measures `oracle-is-laya` from the pass's own decider), and Laya in
-    /// this tree is the *build-time* decision layer, not an inhabitant of the world, so
-    /// there is nothing yet to fly this camera on behalf of.
-    #[allow(dead_code)]
-    fn laya_observation(&mut self, dt: f64) {
+    /// **It is piloted by a wish, not by the keyboard and not by the body's position.** A body
+    /// answers a `Wish` through the collider; a ghost answers this through nothing at all, and
+    /// that difference is the whole of the god's vantage. `SHPLOINGUS_WALK` is the first thing to
+    /// fly it: the audit could not drive the camera, so the demo drives *the ghost* — the being a
+    /// god looks through — and the player's body is left where it stood.
+    ///
+    /// **The ghost is the position and the camera is its reading.** The move lands on
+    /// [`LayaGhost::position_m`] first and only then on the eye, so nothing can move the vantage
+    /// without moving the being it belongs to — which is the same rule the player's body already
+    /// states for the player's camera, kept for the row the doctrine left open.
+    fn laya_observation(&mut self, dt: f64, wish: LayaWish) {
         let forward = self.camera.forward();
         let (right, up, _) = self.camera.basis();
         let mut delta = [0.0f64; 3];
@@ -3073,28 +4075,31 @@ impl App {
                 delta[i] += axis[i] * scale;
             }
         };
-        let speed = if self.held.contains(&KeyCode::ShiftLeft) { FLY_M_PER_S * 4.0 } else { FLY_M_PER_S };
-        if self.held.contains(&KeyCode::KeyW) {
-            add(forward, speed * dt);
-        }
-        if self.held.contains(&KeyCode::KeyS) {
-            add(forward, -speed * dt);
-        }
-        if self.held.contains(&KeyCode::KeyD) {
-            add(right, speed * dt);
-        }
-        if self.held.contains(&KeyCode::KeyA) {
-            add(right, -speed * dt);
-        }
-        if self.held.contains(&KeyCode::Space) {
-            add(up, speed * dt);
-        }
-        if self.held.contains(&KeyCode::ControlLeft) {
-            add(up, -speed * dt);
-        }
-        for (position, d) in self.camera.position_m.iter_mut().zip(delta) {
+        add(forward, wish.forward_m_s * dt);
+        add(right, wish.strafe_m_s * dt);
+        add(up, wish.up_m_s * dt);
+        for (position, d) in self.laya.position_m.iter_mut().zip(delta) {
             *position += d;
         }
+        self.camera.position_m = self.laya.position_m;
+    }
+
+    /// **Move the ghost to a farther vantage in one step**, on its own heading and level with the
+    /// ground it left.
+    ///
+    /// This is not a body being teleported: a ghost owns no collider and no mesh, and being
+    /// anywhere is the whole of the vantage it stands for. It is how the demo asks the one question
+    /// a walk along a settled window cannot — *is the chunk I am standing in drawn on the frame its
+    /// mesh arrives?* — instead of waiting for a walk to stumble into the answer.
+    fn laya_hop(&mut self, metres: f64) {
+        let forward = self.camera.forward();
+        let length = (forward[0] * forward[0] + forward[2] * forward[2]).sqrt();
+        if length > 1e-9 {
+            for axis in [0usize, 2] {
+                self.laya.position_m[axis] += forward[axis] / length * metres;
+            }
+        }
+        self.camera.position_m = self.laya.position_m;
     }
 
     fn chunk_of_eye(&self) -> ChunkPos {
@@ -3111,6 +4116,7 @@ impl App {
 mod tests {
     use super::*;
     use std::time::Duration;
+    use voxel_model::VoxelPos;
 
     /// **The pair rule is the platform's two numbers and nothing else.** Each bound is checked
     /// at it and past it, because a `<=` written as a `<` is invisible in a running window and
@@ -3175,5 +4181,25 @@ mod tests {
             now,
             None
         ));
+    }
+
+    /// **A refused cell is not blacklisted.** The worker sends no refusal, so the only memory of
+    /// what was asked is the batch in hand; a cell it could not measure is offered again by the
+    /// field at the next build, and this is the rule that lets it through.
+    #[test]
+    fn a_batch_is_deduped_and_a_refused_cell_is_asked_again() {
+        let once = VoxelPos::new(4, 0, 400);
+        let mut batch = vec![once, VoxelPos::new(4, 0, 401), once];
+        dedupe_batch(&mut batch);
+        assert_eq!(batch.len(), 2, "a duplicated address was marched twice: {batch:?}");
+
+        // The next batch holds the cell the worker refused, and nothing filters it.
+        let mut later = vec![once];
+        dedupe_batch(&mut later);
+        assert_eq!(
+            later,
+            vec![once],
+            "a cell refused by an earlier ask was never asked again"
+        );
     }
 }

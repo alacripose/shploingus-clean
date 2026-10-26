@@ -73,6 +73,7 @@ pub mod materials;
 pub mod matter;
 pub mod plan;
 pub mod profile;
+pub mod profile32;
 pub mod refusal;
 pub mod shaper;
 pub mod subvoxel;
@@ -91,7 +92,7 @@ pub mod civilian;
 
 pub use coord::{
     ChunkPos, LocalPos, VoxelPos, BAND_MAX_Z, BAND_MIN_Z, CHUNK_SIDE, CHUNK_VOLUME, DETAIL_SIDE,
-    FILL_SIDE, SUBVOXEL_COUNT, SUBVOXEL_SIDE,
+    FILL_SIDE, SUBVOXEL_COUNT, SUBVOXEL_SIDE, morton3, morton3_of,
 };
 pub use identity::{Digest, Identity};
 pub use material::{

@@ -1,0 +1,24 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libcpufeatures-db911beae73f1263.rmeta
+   Compiling voxel-audio v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-audio)
+   Compiling voxel-stream v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-stream)
+error[E0786]: found invalid metadata files for crate `voxel_shapers`
+  --> crates\voxel-audio\src\lib.rs:48:5
+   |
+48 | use voxel_shapers::spec::WorldSpec;
+   |     ^^^^^^^^^^^^^
+   |
+   = note: failed to mmap file '\\?\C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libvoxel_shapers-d9dd74b1a2b9fc7b.rlib': The paging file is too small for this operation to complete. (os error 1455)
+
+For more information about this error, try `rustc --explain E0786`.
+error: could not compile `voxel-audio` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error[E0786]: found invalid metadata files for crate `voxel_model`
+  --> crates\voxel-stream\src\horizons.rs:35:5
+   |
+35 | use voxel_model::{ChunkPos, Refusal, RefusalKind, Refused, CHUNK_SIDE};
+   |     ^^^^^^^^^^^
+   |
+   = note: failed to mmap file '\\?\C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libvoxel_model-06e46e018c68209d.rlib': The paging file is too small for this operation to complete. (os error 1455)
+
+error: could not compile `voxel-stream` (lib test) due to 1 previous error

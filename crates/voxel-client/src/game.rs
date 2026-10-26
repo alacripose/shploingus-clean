@@ -125,6 +125,32 @@ pub const GAME_SEED: u64 = 9_418_646_105_956_113_635;
 /// `Clock::tick`, which is what the HUD prints.
 pub const GAME_TICK: u64 = voxel_shapers::climate::TICKS_PER_DAY * 3 / 8;
 
+/// **The new moon the shipped world's lunar cycle is measured from** — half a synodic month
+/// *after* [`GAME_TICK`], so the world opens on a **full moon**.
+///
+/// # Which clock moved, and why it is this one
+///
+/// The phase mapping did not move: [`voxel_shapers::sky::moon_phase_fraction`] is `(1 − cos E)/2`
+/// on the elongation `moon_elongation_deg`, and `the_moon_is_dark_at_new_and_full_at_the_half_cycle`
+/// pins both ends of it. What moved is the **lunar epoch** — the tick the cycle is measured from,
+/// which `moon_elongation_deg`'s own doc calls a property of the world. Nor did the *solar* start
+/// tick move: `GAME_TICK` is tuned to a morning sun (`10.57°`, long shadows, night a quarter-day
+/// away) and shifting it to reach a full moon would move the sun and the clock together.
+///
+/// # What it fixes, measured
+///
+/// With the epoch at `0` — the value the shipped run passed — the opening tick was `0.375` days
+/// into the lunar cycle, an elongation of `4.57°` and a phase of `0.0016`. The first night was
+/// therefore a **new moon**: no lit disc for `DrawnMoon::of`, no reflected beam for `moonlight`,
+/// no moon light in the rig, and a night lit by nothing at all. Moving the epoch half a month ahead
+/// puts the opening at `−180°` of elongation — **phase `1.000`, a full moon** — and the moon wanes
+/// from there over the next fortnight, which is an orbit rather than a switch.
+///
+/// A full moon is still the Moon: its light is the Sun's reflected through a `0.12` Bond albedo
+/// over the body's tiny solid angle, some `10⁻⁶` of the Sun's beam. What it changes is that the
+/// night has *a* light, not that the night is day.
+pub const GAME_NEW_MOON_TICK: u64 = GAME_TICK + voxel_shapers::sky::HALF_SYNODIC_TICKS;
+
 /// **A world: a seed, a tick and a configuration, held together.**
 ///
 /// H-7.6 asks for the seed to be a property of a world rather than a constant, and

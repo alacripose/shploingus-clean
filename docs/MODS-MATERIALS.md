@@ -545,8 +545,10 @@ not a tier list, and not a mass of material rows. Design, to be built after the 
   temperatures + 45 hazards + 654 material ids + machine sample; BluePower alloy furnace ratios +
   boule + doping; RS2 silicon/processors; Calculator circuits/coal process; weathering system;
   sapping; sifting; casting; all cited above.
-- **[NS] (needs its own real-world source before a value hardens):** temperature unit of the GT
-  builder (°C vs K); Forestry fermenter yields (config [D]); the TFC ore-grade values; steelmaking
+- **[NS] (needs its own real-world source before a value hardens):** ~~temperature unit of the GT
+  builder (°C vs K)~~ — **resolved 2026-10-23 in §8.5**: read as kelvin, each number is that
+  metal's real melting point (Copper 1358 = 1085 °C, Tin 505 = 232, Zinc 693 = 420, Bismuth 545 =
+  272, Nickel 1728 = 1455); Forestry fermenter yields (config [D]); the TFC ore-grade values; steelmaking
   numbers beyond Railcraft's; MFR plastic feedstock; wafer dopants; Jaffa specifics (pack jars);
   TFMG (not read, by design); Tinkers hepatizon/nicrosil compositions; Ratatouille (unread page);
   `optical` (empty clone).
@@ -554,3 +556,123 @@ not a tier list, and not a mass of material rows. Design, to be built after the 
   no rotational power model (shafts are physical parts; **the CA carries machines, not energy
   networks** — boilers/turbines/water wheels are machines and captured sources, per the S-01
   best guess awaiting the user).
+
+### 8.5 The declared tree — 2026-10-23
+
+The roster above is a table of contents; the tree it describes is now **declared, gated and owned**.
+`crates/voxel-model/materials/` holds the whole ladder as rows, the generator writes the compiled
+table from them, `build.rs` refuses a table that no longer matches its declaration, and
+`materials::tree` walks the result and refuses a tree that is not reachable.
+
+| | count |
+|---|---|
+| tiers | **8** — hands & stone 0, bound & composite 1, fire & clay 2, copper & bronze 3, iron & steel 4, mill & mechanism 5, chemistry & weathering 6, electricity & precision 7 |
+| substances | **146** — 66 world-held (mined / grown / gathered / salvaged) and **80 made**, every one produced by a firing process |
+| processes | **79**, every one firing; 7 / 2 / 8 / 16 / 9 / 13 / 20 / 4 per rung from the first to the last |
+| vocabulary | **32** — the structures, tools and skills a process may require, each required by some process |
+
+The **`source` column** is new and mandatory: a process row with an empty source is refused as an
+invented row. It names the harvested artifact (`_harvest/create-processes/out.crushing`,
+`_harvest/gt-conditions.tsv`, `_harvest/railcraft-values.tsv`, `_harvest/stage-a-passes.md`), the
+roster row in §8.1, or — where the harvest is silent — `declared:`, with the real-world fact the
+number rests on. **The technology and its direction are harvested; the mass yields and rates are
+this tree's own `[D]` unless the harvest measured them** (the TFC alloy ranges, GT's metal
+temperatures, the coke oven's 1800 ticks with 500 mb creosote per coal, the blast furnace's 1280
+ticks and one slag, the rolling mill's 6 ingots → 16 rails, the washing's 9 nuggets + clay,
+BluePower's 8 coal + 8 sand boule, Forestry's 10 mb → 3 mb still).
+
+**Where the harvest's ratio is a count or a mod fluid volume rather than a mass ratio, the row's
+masses are this tree's own and the citation names only the technology.** The coke oven's 500 mb of
+creosote per coal is 535 g, which would leave 465 g of coke; the row gives the coal's real 85/15
+coke-to-creosote split instead, and says so. The rolling mill's 6 ingots → 16 rails is a count of
+toy items; the row's rail is a declared 950 g. Rubberworks' 500 mb → 2 rubber and the still's
+10 mb → 3 mb are the same kind of figure, and those rows settle their masses by balance. No row
+claims a mass the harvest measured when the harvest measured a count.
+
+**The `state` axis is new, and it is what makes a melt or a solution a row.** `State` is
+`Solid | Liquid | Molten | Solution | Gas`; the unit and the state must agree (a solid is never
+counted by volume, a melt always is, and only a gas uses the gas unit and the atmosphere sink).
+`Molten` and `Solution` are **derived** states and their row must name the solid it is derived from
+in `phase_of` — molten copper is copper at 1085 °C, pregnant liquor is crushed ore's copper carried
+in water. The gate also refuses a molten row **no process melts** (a process that outputs it and
+consumes either that solid or a molten constituent) and any derived row held by the world rather
+than made. Seven melts (copper, tin, zinc, iron, bronze, brass, glass), three liquors (pregnant,
+clear, spent) and the leach residue are declared this way; casting and moulds, glassblowing, the
+alloying rows and the iron cast now consume them.
+
+**What the harvest is silent on, and what the rows say instead.** Brick firing temperature (the
+930 °C sample in §8.1 is TFC's *brass* heating, not brick — the row declares 900–1000 °C as real
+kiln practice); the charcoal burn's own temperature and yield (the coke oven's `logWood → charcoal`
+is a measured charring row, but no measured burn); black powder (GT lists `saltpeter` and
+`gunpowder` as material ids only — 75/15/10 is declared); the crucible (no row; nearest is §8.1
+ceramics); creosote *treatment* of timber (the harvest measures creosote as the coke oven's product
+and oil impregnation separately); potash from ash and vermilion from cinnabar (only the dye set and
+the ore row); lime and gypsum calcination temperatures; a diesel/gasoline split (CDG's measured
+50/50 is noted, the three-way split with tar is declared); and every agriculture, baking and glass
+*batch* ratio. **With the state axis:** the molten densities of bronze and brass are declared
+(their copper and tin/zinc ends are sourced), the three liquor densities are declared, and the
+leach's carry, the centrifuge's fines, the cell's plating and the oil press's yield are all
+declared — the harvest names the machines and the technologies, not these process numbers. Wafer
+dopants remain `[NS]` as §8.4 records. **With the agricultural families:** the feed-to-meat ratio,
+the beast's respiration, the compost yield and the 600 g it vents, and the dye bath's 7 % add-on are
+all `declared:` — the harvest names MFR's husbandry and composting machines, Forestry's peat and GT's
+dye set, and measures none of these masses; MFR's `meat 2000` is a block fluid, not tissue, and the
+row says so.
+
+**The owner.** `materials::tree::Table::tree()` walks the table in ordinal order, starting from what
+the world holds, firing every process whose inputs are available at or before its rung (iterating
+inside a rung, because a rung may build on itself). It refuses four facts: a tier no work reaches
+(a forward edge is reported as that tier's fault, with the missing inputs named), a `made` substance
+nothing produces, a process that never fires, and a name the table does not declare. The generator
+refuses to write while either the gate or the walk reports a defect, and
+`the_committed_tree_is_complete_and_reachable` fails loudly if a future edit orphans a node.
+The walk's counts are the report: **tiers 8/8 reached, substances 146/146 available (80 made, 80
+produced), processes 79/79 fired.** A derived state has no exemption from the walk: if nothing
+melts a melt, the melt is an orphan and the process that wants it is named dead.
+
+**The three families the state pass left out, now declared.** Husbandry, composting and dyeing were
+unrowed for one honest reason — each opens a substance family, and a family is rows, not a process.
+The four rows they needed are `meat` (muscle tissue, 1.05 g/cm³), `manure` (the byre's dung, 0.9 g/cm³
+bulk), `compost` (thermophilic compost, 0.6 g/cm³ bulk, the heap self-heating to 55–65 °C `[V]`) and
+`dyed_cloth` (0.32 g/cm³); the hide was already rowed and hunted. The three processes are
+**`raise livestock`**, **`compost biomass`** and **`dye cloth`**, requiring two new structures
+(`byre`, `compost heap`), the already-declared `vat`, the new skill `husbandry` and the existing
+`farming`.
+
+None of the three is a machine row. Husbandry is a **feed conversion** — 2000 g forage and 1000 g
+water become 700 g meat, 250 g hide, 1500 g wet manure and 550 g of breath — and the animal is the
+process, so the row carries the year it takes (8760 h, 8 labour-hours) rather than a batch. Composting
+is a **turn cycle** — a kilogram of biomass, a kilogram of manure and half a kilogram of water become
+1900 g of compost and 600 g of vented carbon dioxide, which is the dry matter the heap burns — and the row
+carries its 30 days. Dyeing is **vat chemistry** — 1000 g of cloth, 20 g of vermilion and 50 g of
+ash as the mordant become 1070 g of dyed cloth, because ash lye and pigment both bind into the fibre
+and neither leaves as a liquor this table would have to invent. All three route their residue through
+rows that already existed (`manure`→the heap, `compost`→`plant grain`, `hide`→the tannery), so the
+consumer rule and the walk hold them like any other row: the heap's compost feeds the crop, the
+beast's manure feeds the heap, and a heap that produced nothing would be a heap nothing eats.
+
+**The second half of extraction: a solvent the harvest names, a row it does not measure.** §8.1's
+extraction rule was rowed by its mechanical half only — `press seed oil`, the Forestry squeezer. The
+solvent half needs an extractant, and the tree does not pick one out of the air: **ethanol** is the
+solvent, already a row, already made by a measured process (`ferment biomass`, Forestry's 10 mb → 3 mb
+still), and named as a substance twice by the harvest (`_harvest/gt-material-ids.txt`, and the
+`Ethanol` hazard line in `_harvest/gt-conditions.tsv`). What the harvest does not measure is a
+solvent *extraction*, so the new row `extract the press cake` — 700 g of cake washed with 2 L of
+ethanol at 78 °C, the solvent boiled back off — carries a declared 92 % recovery of the 50 g of oil
+a press leaves and a 99.5 % solvent recovery, and its `source` says exactly that. Its outputs are
+`seed_oil` again, the solvent it borrowed, and `spent_meal`, the defatted meal (a feed) — the one
+new substance. **The industrial solvent stays absent:** hexane is not in the harvest at all, and it
+would need a crude-oil fraction the measured distillation split (diesel / gasoline / tar) does not
+contain, so no hexane row exists and no row pretends one does.
+
+**What the roster still does not carry as rows.** Of §8.1's **41** rules, **38** have process rows,
+and all 38 are now rowed in full — extraction's solvent half included. The three that remain are
+named rather than implied: **wafer doping** (the harvest's dopants are refused and the real ones are
+`[NS]`, so the row would have to invent its chemistry); and **instrumentation** and
+**storage/logistics**, which are machines and handling rather than matter transformations — the gate
+balances grams, and a row for a gauge or a warehouse would be a lie about what it does. A reader can
+tell a fabricated need from a row here by the same mark: a rule that is not a row is left in this
+paragraph with its missing substance named, never given a row that balances by pretending.
+
+**Not built, deliberately:** there is no inventory, no recipe lookup and no craft action; the tree is
+data and its owner, not gameplay, and nothing in the appearance registry consumes it yet.

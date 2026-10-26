@@ -342,8 +342,9 @@ of its own, drawn by the world's own pass. That is what lets the streamer place 
 `voxel_client::quad`'s `BODY_KIND` and `BodyRecord` that carry it.
 
 A body's record is a rectangle's own stride. `vs_body` plots it at the **far plane** and
-`fs_body` gives every pixel the normal of the **sphere** at that pixel, which is what draws a
-*phase* rather than one face's single incidence.
+`fs_body` intersects the **cuboid** the record names, giving every pixel the normal of the face its
+ray enters — which is what draws a *phase* rather than one face's single incidence, and what makes
+the drawn body the shape the photometry measured.
 
 **Where the body stands and where it is plotted are two different numbers, and only the first
 is the world's own.** The record carries the body at `voxel_shapers::scale`'s 1:8 ruling —
@@ -355,19 +356,34 @@ that: at 1.87e10 m the depth is `1 − near/d = 5.3e-12`, which rounds to the pl
 `half · drawn / distance` — which leaves the subtended angle exactly the world's own, at any
 plot distance.
 
-**And the body is a sphere here where the model's own body is a cuboid.** `BodyCuboid` is the
-shape the photometry is measured against: the solid angle the Sun's irradiance is divided by,
-and the body a shadow's penumbra marches toward. What the eye sees has to be a sphere, because
-a phase *is* a per-pixel normal and a cuboid has one normal per visible face — a cube draws a
-full moon at every elongation, which is what the retired pass did. The one place the two shapes
-part company in flux is that a face-on square covers `4/π` times the disc inscribed in it, so
-the drawn disc delivers that much less of the body's own irradiance; it is named here rather
-than corrected by a second brightness scale in `sun.rs`.
+**There is one shape, and it is the cuboid.** `BodyCuboid` is the shape the photometry is
+measured against — the solid angle the Sun's irradiance is divided by, and the body a shadow's
+penumbra marches toward — and it is the shape the pass draws: `fs_body` is a slab test on the
+record's cube, whose faces are the world's own axes, and the normal it shades with is the entry
+face's (one of six exact vectors). The plot quad is `√3` of the cube's half-edge, because a rotated
+cube's furthest silhouette point is a corner and the quad has to contain it; the body is the cube,
+not the quad.
 
-`renderer::tests::the_sun_is_drawn_as_the_disc_the_model_says` holds the drawn edge to the
-Sun's own angular radius per pixel, and
-`renderer::tests::the_moons_phase_is_drawn_from_its_own_geometry` holds the crescent to the
-orbit's own `moon_phase_fraction`.
+**This replaces a sphere that was inscribed in the cuboid, and the sphere was wrong in three
+places at once.** It delivered `π/4` of the irradiance the law divided by the body's own
+`4·(R/d)²` — a face-on square covers `4/π` times the disc inside it — so the drawn body and the
+photometric law disagreed about the same body's solid angle; it put a curved terminator on a body
+with six flat faces; and the `(1 − cos E)/2` lit fraction the Moon's aggregate test used to assert
+is the law of a **sphere's disc**, not of a cube, whose lit area steps as the Sun crosses its faces.
+The correction is the shape, not a brightness scale: nothing divides a face radiance by `4/π` here,
+and no test band was widened to absorb the difference.
+
+**And the law follows the drawn cube's orientation.** A cube of half-edge `R` seen along the unit
+direction `u` covers `4R²(|uₓ| + |u_y| + |u_z|)/d²` — face-on the `4·(R/d)²` above, corner-on `√3`
+of it — so `sun::cuboid_solid_angle_sr` is what `DrawnSun::of` divides the sky's irradiance by. A
+law that took only the distance would make a cubed Sun brighten by up to 73 % as its corners turned
+toward the eye, which is the same defect from the other side.
+
+`renderer::tests::the_sun_is_drawn_as_the_cuboid_the_model_says` holds the drawn silhouette to the
+record's cube per pixel and measures its coverage against the inscribed disc's (1.6× at the shipped
+opening tick), and `renderer::tests::the_moons_phase_is_drawn_from_its_own_geometry` holds the drawn
+lit area to the cube's own six-face closed form, with the sphere's disc law printed beside it as the
+expectation this body does not have.
 
 *— stood in `crates/voxel-client/src/shading.wgsl`, the astronomical-body block (C-184), and in
 `crates/voxel-client/src/sun.rs`, `DrawnSun::body_record`/`DrawnMoon::body_record`.*
@@ -776,3 +792,136 @@ astronomical twilight rather than stop. The claim is pinned by
 `voxel_appearance::sky::tests::the_suns_own_light_is_not_a_switch_at_the_horizon`, and the dome is
 still the named absence it was — `dome_radiance` is a separate function and stays black below the
 horizon, which is a claim about the *dome* rather than about the Sun.
+
+## The horizon's streaming rules
+
+The streamed light horizon (`crates/voxel-client/src/horizon.rs`) is a window on world space, not a
+cache that is rebuilt: a 96 m cube of subvoxel occupancy in the fine band, an 8 m summary over 256 m
+behind it, anchored on the eye's own chunk minus one so the eye stands in the middle.
+
+**A chunk crossing shifts the cube; it does not clear it.** Two thirds of the world in the cube is the
+same world one chunk over, so `recenter` copies both bands to their new addresses — one row copy per
+line, the far band's 32 m step falling on four whole 8 m cells — and keeps every stamp whose chunk is
+still inside the box. That is what makes the per-frame stamp budget cheap: a crossing owes only the
+chunks that entered, which is why `HORIZON_CHUNKS_PER_FRAME` is nine and not twenty-seven. The version
+that cleared the cube and restamped all twenty-seven walked every leaf of three unchanged chunks in the
+frame the player crossed a boundary, which is a stall the eye reads as the game hitching at a chunk.
+
+**A slot that has not been stamped is unmeasured, never air.** The coverage mask carries one bit per
+chunk slot; where it is clear the march reports no measurement and the shadow map keeps the answer. So a
+partially filled cube is a box with some of its answer delegated, and never a chunk-shaped hole in the
+light.
+
+**A chunk that leaves the window is forgotten from both bands — its own box only.** A coarse cell is
+8 m and a chunk is four of them aligned to its corner, so no neighbour shares one. Clearing the whole
+coarse band instead (which the first version did) threw away every other chunk's summary while leaving
+their versions current, so the far field went blank on the frame the window moved and stayed blank.
+
+**Stamps are keyed by the version of the tree they were taken from** (`voxel_work::Streamer::tree_version`),
+so an edit's rebuilt chunk is stamped again on the frame its new tree lands, and an untouched chunk is
+never walked twice.
+
+**The coarse band is a level of the same octree, not a mask.** Each 8 m cell carries the share of its
+512 voxels that hold matter (bits 0–7) beside the stamped bit, accumulated during the same leaf walk
+the fine band is stamped from: a `Uniform` leaf adds all of its volume, a `Mixed` leaf its solid
+subvoxels, and a leaf wider than eight metres divides its volume across the cells it spans. The
+mesher itself meshes every leaf at its own level (`mesh::leaf_region`), so the coarse band reads the
+same leaves at the level of its own cell — no second ladder is invented, and the share is exactly the
+mean of the fine band over that cell, which is why the two agree where they meet instead of
+disagreeing at the ring.
+
+The march composes the bands by transmittance, `(1 − fine) · Π(1 − share)`: eight metres that are a
+third full dim by a third instead of blocking the ray, and a cell that is a one-voxel roof is 3 % of a
+wall rather than a wall. That is the rule the material ladder already states (`pattern::octave_weight`
+gives a rung the share it covers), applied to occupancy instead of to a material's detail. The direct
+beam still ignores the coarse band entirely; only the dome reads it.
+
+## The far surface: a chunk at the coarse cell's own level
+
+The light horizon answers *how much sky a cell sees*; it does not draw anything. The drawn far
+field is a second, separate subject, and it has its own owner: `crates/voxel-client/src/far_surface.rs`
+(`FarSurface`), with the horizon's shader extracted to `horizon.wgsl` so that neither file carries the
+other's subject.
+
+**One chunk, two levels, and one rule.** `coarse_mesh` walks the chunk's own octree at
+`FAR_LEVEL` (3 — an 8 m cell, `2^3` voxels) with the octree's `visit_at_level`, which reports the
+same regions whether or not the tree compressed there. A cell is drawn when **at least half of it is
+matter** (`COARSE_MAJORITY`) and takes the material holding the largest share of it, tie broken by
+the lower id. That is the octree's own "a region is one material" rule read at level 3 instead of
+level 0, so there is no second classifier: a cell that is 3 % occupied is *not* drawn at this level
+and the fine band still draws it, which is the one place the levels legitimately disagree and it is
+stated rather than hidden.
+
+**Volumetric, not a heightfield.** The cells are octree regions in three axes, above and below the
+surface, so rock, water and air are classified the same way the fine band classifies them. Nothing
+in this module addresses a chunk by `(x, z)`; the terrain is a volume and the far level samples that
+volume coarsely.
+
+**The mesh is the chunk's own frame.** Quads are emitted in subvoxel coordinates (a cell face is 32
+subvoxels across), at the chunk's own origin, with the same winding and material as the fine
+mesher's. No new vertex format, no new origin field and no new pass: the far meshes travel into
+`ResidentScene::sync` beside the fine ones. A face on the chunk's outer boundary *is* emitted — the
+neighbour's tree is not held here, and a hole in a distant cliff is worse than two coincident quads
+buried inside the solid.
+
+**The handover.** `FAR_HANDOVER_CHUNKS` is 3: a chunk inside that Chebyshev radius is drawn fine,
+outside it the coarse mesh replaces it. One chunk is never drawn at both levels, so there is no
+double draw to z-fight and no ring the coarse mesh has to clip against; both meshes share the same
+chunk box, so the seam is a boundary rather than a gap. The jump is a quantisation of the same
+surface, not a different one, and how visible it is at 96 m is a measurement rather than an
+argument.
+
+**Streaming, and what an absent slot means.** `FarSurface` keeps one entry per resident chunk,
+keyed with the version of the tree it was built from — the same `Streamer::tree_version` the stamps
+use. A chunk that leaves the window loses its entry and keeps nothing; a chunk that is resident
+without an entry is **absent from the frame**, not drawn as a stand-in. `main.rs` builds at most
+three a frame, so a crossing is the chunks that entered rather than a rebuild of the far field.
+
+**Not proven without an eye on the screen:** whether the level-3 surface reads as terrain rather
+than as stair-steps at the ring; whether the 96 m handover pops in motion; and what the far field
+costs as a share of a frame. The tests prove the geometry, the share rule, the residency and the
+level choice — not the picture.
+
+## A chunk is drawn only with sampled light
+
+**The rule.** A chunk whose horizon cells have not been stamped is **not drawn**: it is absent from
+the frame, exactly as an unmeshed chunk is, and it is retried on the next frame. It is never drawn
+on the rig's flat ambient as a stand-in.
+
+**Why the rule had to be written.** A chunk that streamed in was handed to the scene before its
+light had arrived, so its fragments fell through to `rig.ambient` — one number for the whole frame —
+and the chunk read as unlit against the chunks beside it. That is the whole visible defect: not a
+wrong light, but a *missing* one with a plausible-looking substitute behind it. The same rule the
+far surface already obeys applied here: unfilled slots are unmeasured, not air.
+
+**Where it lives.** The frame's stamp pass runs before the residency sync
+(`crates/shploingus/src/main.rs`, the horizon block), and the chunks still wanting a stamp inside
+the horizon cube are filtered out of `drawn_meshes()` before `ResidentScene::sync` sees them. The
+cost is one map lookup per resident chunk per frame and no new state; the budget that stamps nine
+chunks a frame is unchanged, so a chunk that lands during a crossing becomes drawable within one or
+two frames.
+
+**What this trades.** The demo walk's "the chunk under the eye is drawn on the frame it arrives"
+count now measures *lighted* arrivals: a chunk the streamer holds and the light has not stamped is
+counted absent, because it is. That is the honest reading — a chunk drawn without its light was the
+defect, not the arrival.
+
+**What it does not claim.** Cells outside the horizon cube (96 m around the eye, three chunks a
+side) have no stamp and no rule; a fragment there takes the frame's sampled sky and the shadow map,
+which is the far field's own answer rather than a chunk's. The cube is the boundary of the claim.
+
+## The dome reads the fine band only
+
+**Corrected 2026-10-25.** The dome's five stencil rays used to run to `HORIZON_FAR_REACH_M` and
+continue into the coarse band, so a cell's *ambient* was a view fraction quantised to eight
+metres. On a surface whose own detail is a thirty-second of a block that reads as a false edge
+beside every cliff and every step in the terrain — a patch of light or shade eight metres across,
+in the wrong place, wherever the coarse grid disagreed with the geometry. The coarse band is a
+**beam** instrument: it lets a long ray be stopped at a kilometre, and it is eight times cheaper
+per metre *because* it is eight times coarser, which is exactly why it cannot answer a dome.
+
+The dome now asks `HORIZON_REACH_M` and the coarse band is never walked on its behalf, so the far
+path in `horizon_transmittance` is entered by no caller. A corridor longer than the fine box reads
+open — the answer this had before the coarse band existed, and the one a quantised dome was
+hiding. What is lost is stated rather than papered over: ambient occlusion past 96 m is not
+measured, and the fragment falls back to the frame's sampled sky there.

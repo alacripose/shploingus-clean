@@ -1,0 +1,88 @@
+# The packaged cell frame — the re-pin, old and new side by side
+#
+# Taken 2026-10-24 on the working tree at aef0971 with uncommitted changes present.
+# Re-taken the same day after the audit fix: the format cell is a Subject measured through the
+# one report loop, its grade falls with any row that did not light, and the stale pins were
+# re-derived with the recipe in conformance/missing-docs.txt's header.
+# This folder is the capture: the emit and the counts after the frame became a packaged
+# artifact, with the previous reading kept rather than edited.
+
+## display-packages — the emit is unchanged by packaging the frame
+
+before  docs/baselines/mount-v2-shell-cells-2026-10-24/display-packages-2026-10-24.txt
+        89 lines
+        sha256:3f7c92309db59d04aab9bf03ebe7e479434f943627e434715971966ee28c0809
+after   display-packages-after-2026-10-24.txt (copied from a fresh `voxel-layers display-packages`)
+        180 lines
+        sha256:13d93263cf7dd64cd128fc8b4ad8535b658b480bb41e5895a83c4ba75996b7c4
+
+The digest did not move when the frame moved into `SHPKG003`: the emit reads the display
+package's folder, and that folder's bytes did not change. What changed is the compiled
+package beside it — 18 352 bytes, magic `SHPKG003` — and the mount now grades the frame
+from that package's artifact table.
+
+## census — a real format row, not only a file-count change
+
+`voxel-census` (exit 0) writes 16 folder rows and 1 format row:
+
+    shploingus.cellframe/1	format	display-packages/alpha-shell/frames/MAP-0001.frame	10008	2
+
+    census-folders	16
+    census-formats	1
+    census-unclassified	0
+    census-excluded	2
+
+The row is refused if the witness is gone (`census::folders::FORMATS` is checked like every
+other declaration), and `folders::table_names_format` is what the axis cell reads back.
+
+## missing-docs — re-derived, three pins moved, every count unmoved
+
+Both commands from `conformance/missing-docs.txt`'s header were run in the order it gives,
+after the last edit to the crate.
+
+    crates: 23
+    undocumented items: 2 342 (sum of the rows)
+    stale pins: 0
+
+    pins moved by this fix:
+      voxel-axis-verify  0 items   sha256:9b2689bd...
+      voxel-axis-mcp     0 items   sha256:93087391...
+      voxel-mcp          0 items   sha256:c353c2fb...
+
+The earlier pass moved `shploingus`, `voxel-client`, `voxel-package` and `voxel-ui`; those
+rows still match (`0 / 195 / 341 / 155`). No count was edited to match an expected total:
+the compiler pass printed 0 / 0 / 0 / 195 / 341 / 155 for the moved rows and 2 342 across the 23
+crates, and the pins came from the census's own hashing test over the same bytes. The
+`voxel-axis-verify` and `voxel-axis-mcp` pins had gone stale because their sources changed after
+the previous pin was taken; that is what made the axis segment read `evidence_grade C` and the
+suite fail, and it is why the two crates were re-pinned after the final formatting pass.
+
+## prose frame — the crate is back inside its declared share
+
+`conformance/prose-frame.txt` declares `voxel-axis-verify	3`; the compiler pass reads the crate
+at 3% plain comment after the format cell's rationale moved into rustdoc. The prose source is
+not refused, so no segment loses its `prose_frame` row.
+
+## checks
+
+    cargo check --workspace --all-targets   exit 0 (4 m 55 s, includes the gate)
+    cargo test -p voxel-axis-verify --lib   19 passed, 0 failed
+    cargo test -p voxel-axis-mcp             18 passed, 0 failed
+    cargo test -p voxel-package --lib cellframe::     13 passed, 0 failed
+    cargo test -p voxel-client --lib shell::cells::tests::  15 passed, 0 failed
+    cargo test -p voxel-client --lib shell::mount::tests::a_shipped_cell_frame...  1 passed
+    cargo test -p voxel-client --lib shell::mount::tests::a_package_whose_frame...  1 passed
+    cargo test -p shploingus --test packaged_frame   1 passed, 0 failed
+    tests-2026-10-24.txt                    every cited suite, with its exit status
+
+The axis suite is the one that was red before this fix: `axis` read ★4 / `evidence_grade C`
+because its pin was stale. It now reads ★5 / `evidence_grade B`, and the format cell reads
+★5 / `grade B` with all six rows lit.
+
+## The parallel-harness caveat, restated
+
+`tests-2026-10-24.txt` records `renderer::tests` under `--test-threads=1` (22 passed,
+86.08 s). The earlier parallel reading in `mount-v2-shell-cells-2026-10-24` reported six
+failures once and a hang once; this pass did not re-run the parallel harness, so it neither
+confirms nor denies that. The serial reading is the one recorded, and the instability is
+reported as un-reproduced here rather than rounded into a pass.

@@ -1,0 +1,10 @@
+[package]
+name = "voxel-axis-ladder"
+description = "The axis vocabulary the layers above share: the nine ladders, their tokens, the bare-token rule, the coverage pin and the refusals that keep a ladder from becoming a score."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-model = { path = "../../voxel-model" }

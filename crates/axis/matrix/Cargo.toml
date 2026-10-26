@@ -1,0 +1,10 @@
+[package]
+name = "voxel-axis-matrix"
+description = "The calibration matrix: one cell per segment and axis, the five-star reading and the bronze-to-platinum tier, and the recipe line that hands a person or an agent the fix. Every line cites a ticket and a file:line, and nothing is lit by a predicate that did not run."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-model = { path = "../../voxel-model" }

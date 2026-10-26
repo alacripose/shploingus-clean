@@ -185,3 +185,18 @@ recipe grammar back to version 3 as it was, and the ballot files stay readable a
   and a ballot's `max-age` is declared but not checked.
 - **No answer cache.** Upstream measured that a repeat ask recomputes (*"content-addressed caching is
   ours to add"*). Every judgment pays its ~3.3 s, and nothing here caches by state digest.
+
+## Recipes
+
+```recipe
+segment: tooling
+axis: evidence_grade
+ticket: T-0954
+site: crates/voxel-von/src/judge.rs:61
+what: keep `decide` a pure Decision whose EvidenceOrigin is Oracle and which no ballot field can set
+because: a live session's 0.9651 belongs and 0.5704 documented are evidence for laya to weigh, never a verdict; a shape mismatch is NoReading and a missing answer is a non-reading
+check: cargo test -p voxel-von --lib -> failures 0
+witness: crates/voxel-von/src/judge.rs
+expects: 0
+requires: cargo check --workspace
+```

@@ -1,0 +1,181 @@
+The layer recipes and package rows, rendered from the display packages' own declarations — 2026-10-24
+=====================================================================================================
+
+Subject: M10.2's acceptance — *a rendered recipe for the fixture package that names every layer,
+every window and every row, with no path that exists only in the prose; and the recipe is byte-stable
+across two runs.* This is the one command that answers it, run from the workspace root on the final
+bytes, after the two documents added on 2026-10-24 were consumed into `worldgen/`.
+
+What is measured, and why these are the numbers
+-----------------------------------------------
+
+`voxel-layers` walks `display-packages/` and, for every folder holding a `package.shspec`:
+
+* parses the folder's recipe (`shploingus.recipe/3`) — the join a layer is named by — and prints its
+  name and version, **every window id**, every home (tab, bar, filed, pin), and **every row** with
+  the record's own words;
+* parses each `layers/<id>.layer` (`shploingus.layer/1`), refusing a shader naming `shading.wgsl` or
+  any path outside the package's own `src/`, an unknown key, a duplicate, a missing key, or a file
+  name that disagrees with the layer's id;
+* requires a `row` in that recipe whose id **is** the layer's id, so a layer the package does not name
+  is refused rather than printed as if it were carried;
+* requires the shader file the layer names to exist under the package and hold bytes — a layer that
+  names a shader it does not carry is a pass that draws nothing;
+* reads `layers/<id>.md` and requires all four sections (`# Change`, `# Acceptance`, `# Evidence`,
+  `# Rollback`), each with text under it;
+* renders the pair as one block.
+
+The counts follow from the folders, not from a literal: **3** folders measured, **1** layer declared
+with **3** uniforms, **3** rows, **0** refusals. `alpha-shell` reports 16 windows, 6 tabs, the console
+bar entry, 6 filed windows and 3 pins, and `layers none declared` — the honest state of a package that
+draws with the renderer's own pipelines. `worldgen` reports no window, no layer and three rows.
+
+The run
+-------
+
+command: cargo run -q -p voxel-package --bin voxel-layers -- display-packages
+subject exit: 0
+
+--- the output, verbatim (89 lines; sha256 3f7c92309db59d04aab9bf03ebe7e479434f943627e434715971966ee28c0809)
+
+  # display-packages/alpha-shell
+  package     alpha-shell v1-alpha
+  windows     inventory, trees, governance, mods, docs, settings, tools, map-plan, console, log, api-viewer, notifications, streamer, world, determinism, refusals
+  tabs        inventory, trees, mods, docs, settings, map-plan
+  bar         console
+  filed       tools->inventory, api-viewer->mods, refusals->docs, notifications->settings, determinism->settings, world->map-plan
+  pins        streamer, determinism, refusals
+  rows        none
+  layers      none declared
+
+  # display-packages/horizon-lod
+  package     horizon-lod v0
+  windows     none
+  tabs        none
+  bar         none
+  filed       none
+  pins        none
+  rows        1
+  row         LOD-0001  draw the far ring from the rung's own record: terrain at the horizon is the LOD rung's, not the near mesh's
+  layers      1
+
+  ## display-packages/horizon-lod/layers/LOD-0001.layer
+
+  api-layer · LOD-0001 · pipeline terrain-lod · entry fs_horizon · uniforms view_proj:mat4<f32>@64, rung:u32@4, rung_colour:vec4<f32>@16
+
+  ```api-layer
+  id          LOD-0001
+  pipeline    terrain-lod
+  shader      src/LOD-0001.wgsl
+  entry       fs_horizon
+  bind-group  1
+  uniform     view_proj mat4<f32> 64
+  uniform     rung u32 4
+  uniform     rung_colour vec4<f32> 16
+  lod         0
+  order       10
+  requires    none
+  ```
+
+  # Change
+
+  Add a `terrain-lod` layer that draws the rung `voxel_stream::horizons` chooses for the horizon, with
+  its own shader (`src/LOD-0001.wgsl`), one bind group and three uniforms: the camera's `view_proj`, the
+  rung index, and the rung's declared colour.
+
+  The layer exists because **a package can express only what its layers name**. `voxel_stream` chooses
+  the rung and `voxel-client::world` draws it, but a package that can name only the near ring is a
+  package for an island — and this world is planetary: terrain at a distant horizon is drawn from the
+  rung, not from the near mesh (M10.0.2).
+
+  # Acceptance
+
+  The horizon sweep — the eye at the world's scale, the far ring beyond the near one — draws the far
+  terrain through this layer, at the rung `horizons` chose, with **no hole and no double geometry at the
+  handoff**. A package whose layer writes `shading.wgsl` is refused with the layer id and the path in
+  the same sentence (`voxel_package::layer`), and a layer declared but named by no row is refused with
+  both files named.
+
+  The rendered recipe is byte-stable across two runs: `voxel-layers` over this folder prints the same
+  bytes twice, and the reading is kept in `docs/baselines/mount-v2/layer-recipes-2026-10-24.txt`.
+
+  # Evidence
+
+  * `cargo run -p voxel-package --bin voxel-layers -- display-packages/horizon-lod`
+    → the rendered block, exit 0.
+  * `cargo test -p voxel-package layer::` → the grammar's own refusals: the look refused by name, a
+    shader outside `src/` refused, an unknown key refused, a duplicate refused, a missing key refused,
+    a record without `# Rollback` refused.
+  * `docs/baselines/mount-v2/layer-recipes-2026-10-24.txt` — the command and its verbatim output.
+
+  # Rollback
+
+  Delete `layers/LOD-0001.layer`, `layers/LOD-0001.md`, `src/LOD-0001.wgsl` and the `row` in
+  `package.shspec`. The package then declares no layer and the near ring is untouched; nothing else reads
+  the id, so no code change is needed and no window moves.
+
+  # display-packages/worldgen
+  package     worldgen v0
+  windows     none
+  tabs        none
+  bar         none
+  filed       none
+  pins        none
+  rows        3
+  row         OPT-0001  at the 1/32 cubic-field cell, express BOTH optical mechanisms the two documents name — droplet diffraction (corona/aureole, droplet-size controlled) and hexagonal ice-crystal refraction (22-degree minimum deviation halo) — as scattering terms of the one sky transport, measured in angular degrees rather than pixels
+  row         ORO-0001  at the 1/32 cubic-field cell, sample terrain-forced lift (approach, expansion and cooling, condensation, lee descent) so cloud forms only where moisture, temperature and stability allow it; a rain shadow is an outcome of the parcel path, never a guarantee
+  row         WAV-0001  at the 1/32 cubic-field cell, carry terrain-generated gravity waves upward — displacement, buoyancy oscillation, propagation, breaking and momentum deposition — and let a wave exist in a clear sky, with cloud only where condensation cooperates
+  layers      none declared
+
+
+What the output says, one clause at a time
+------------------------------------------
+
+* **The package header is the recipe's own, not a paraphrase.** `package alpha-shell v1-alpha`, then
+  the 16 window ids, the six tabs in strip order, `bar console`, the six `filed` homes, the three
+  pins, and `rows none`. A reader can check every line against `package.shspec` without opening it,
+  and a window with no home would be visibly absent from all four lists.
+* **Every field of the layer declaration is in the block.** `id LOD-0001`, `pipeline terrain-lod`,
+  `shader src/LOD-0001.wgsl`, `entry fs_horizon`, `bind-group 1`, the three uniforms with their
+  declared types and byte counts, `lod 0`, `order 10`, `requires none`.
+* **The four sections are the record's, verbatim.** Nothing in the block is written twice: the prose
+  under `# Change`, `# Acceptance`, `# Evidence` and `# Rollback` is `layers/LOD-0001.md`'s own text,
+  and a record missing a section is refused by the section's name rather than rendered short.
+* **The join is the row.** `horizon-lod`'s `row LOD-0001` is what names the layer; the reader refuses
+  a layer the recipe names by no row, so the block cannot show a layer the package does not carry.
+  That is M10.1 item 3 made mechanical without a new recipe column (`R-64.1`).
+* **`worldgen` is the two documents, consumed as rows.** `OPT-0001`, `ORO-0001` and `WAV-0001` each
+  carry the 1/32 cubic-field shaper scale in their own words, and `OPT-0001` carries **both** optical
+  mechanisms because the two documents disagree: the PDF says a classic 22° halo *cannot be
+  confirmed* from the photograph, the Markdown asserts it. The package keeps the disagreement instead
+  of resolving it by fiat.
+* **The look is not a layer's.** The grammar refuses `shading.wgsl` by name, with the layer id and
+  the path in the sentence (`C-33`, `AR15`). That refusal is held by
+  `cargo test -p voxel-package layer::` — 11 tests, including the look, a shader outside `src/`, an
+  unknown key, a duplicate key, a missing key, and a record without `# Rollback`.
+
+Byte stability, measured rather than assumed
+--------------------------------------------
+
+command: cargo run -q -p voxel-package --bin voxel-layers -- display-packages > /tmp/layers-a.txt
+         cargo run -q -p voxel-package --bin voxel-layers -- display-packages > /tmp/layers-b.txt
+         cmp /tmp/layers-a.txt /tmp/layers-b.txt
+subject exit: 0 0 0
+  (no output — the two runs are the same bytes, 89 lines, sha256 3f7c9230…)
+
+**Two runs, one digest.** The render is assembled from ordered vectors and the files' own lines, so
+it does not depend on a map's iteration order, on the platform's path separator (the reader writes
+`/`), or on the clock. That is the property M10.2 asks for, and the reason it is stated as a command
+rather than as a sentence.
+
+What this does not prove
+------------------------
+
+* **No pixel is drawn by this record.** `Mount::load_display_package` (M10.3) does not exist, so the
+  packages are source a human reads and a test checks; the horizon sweep's drawn witness is M10.3's
+  and is not claimed here.
+* **No physics is implemented by `worldgen`.** Its rows are the contract. `ORO-0001` and `OPT-0001`
+  are owed shaper and sky-transport measurements, and `WAV-0001` has **no module today** — the row is
+  open, and no layer, shader or frame may pretend it ran.
+* **`claims.shpkg` is absent** from every package. The axis package's claims/pin/reproduce file is
+  M10.3's; nothing writes one today, and a placeholder would be a claim nobody made.

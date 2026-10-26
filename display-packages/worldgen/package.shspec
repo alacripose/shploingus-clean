@@ -1,0 +1,21 @@
+shploingus.recipe/3
+package	worldgen	v0
+# A world-generation package: its rows are the simulation work, and it declares no window and no
+# layer — the terrain, cloud and sky passes are the renderer's, and the shapers are the shapers'.
+#
+# The two documents this package is derived from live in `docs/`:
+#   docs/colorado_atmospheric_effects_scientific_report.pdf   (7 pages, 9 references)
+#   docs/deepseek-co-aerosol.md                               (a looser summary of the same scene)
+#
+# **They disagree about the photograph and this package keeps the disagreement.** The PDF says the
+# glow is "consistent with a lunar corona or diffuse aureole" and that "a classic 22-degree
+# ice-crystal halo cannot be confirmed from this photo alone"; the Markdown summary asserts the halo
+# outright. A package that picked one would be inventing an observation, so OPT-0001 carries both
+# mechanisms and the identification is left to a measurement in angular degrees.
+#
+# Every row runs at the **1/32 cubic-field shaper scale** — `coord::FILL_SIDE = 32`,
+# `pattern::octave_cell_m(1) = 31.25 mm` at a 1 m voxel — and blends on the LOD ladder rather than
+# switching rungs (M2.0/M2.1).
+row	OPT-0001	at the 1/32 cubic-field cell, express BOTH optical mechanisms the two documents name — droplet diffraction (corona/aureole, droplet-size controlled) and hexagonal ice-crystal refraction (22-degree minimum deviation halo) — as scattering terms of the one sky transport, measured in angular degrees rather than pixels
+row	ORO-0001	at the 1/32 cubic-field cell, sample terrain-forced lift (approach, expansion and cooling, condensation, lee descent) so cloud forms only where moisture, temperature and stability allow it; a rain shadow is an outcome of the parcel path, never a guarantee
+row	WAV-0001	at the 1/32 cubic-field cell, carry terrain-generated gravity waves upward — displacement, buoyancy oscillation, propagation, breaking and momentum deposition — and let a wave exist in a clear sky, with cloud only where condensation cooperates

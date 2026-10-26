@@ -18,9 +18,14 @@ use voxel_package::conformance;
 use voxel_package::policy::{self, PermissionClass};
 use voxel_package::{bloat, filing};
 
-/// The tools that read, and the filing tool that needs an author.
+/// The tools that run on a capability alone. Two need an author — filing onto the chain and
+/// applying a recipe under a signed grant (`resolve_ticket`'s `RequiresGrant` class) — and both are
+/// named here rather than discovered by a filter, so a new gated tool fails this test instead of
+/// being quietly exempted from it.
 fn reads() -> impl Iterator<Item = &'static str> {
-    TOOLS.into_iter().filter(|name| *name != "reject_non_conformance")
+    TOOLS
+        .into_iter()
+        .filter(|name| !matches!(*name, "reject_non_conformance" | "apply_recipe"))
 }
 
 /// The capability the bridge declares a served tool's row needs — read from the partition, never

@@ -1,0 +1,89 @@
+# display-packages/alpha-shell
+package     alpha-shell v1-alpha
+windows     inventory, trees, governance, mods, docs, settings, tools, map-plan, console, log, api-viewer, notifications, streamer, world, determinism, refusals
+tabs        inventory, trees, mods, docs, settings, map-plan
+bar         console
+filed       tools->inventory, api-viewer->mods, refusals->docs, notifications->settings, determinism->settings, world->map-plan
+pins        streamer, determinism, refusals
+rows        none
+layers      none declared
+
+# display-packages/horizon-lod
+package     horizon-lod v0
+windows     none
+tabs        none
+bar         none
+filed       none
+pins        none
+rows        1
+row         LOD-0001  draw the far ring from the rung's own record: terrain at the horizon is the LOD rung's, not the near mesh's
+layers      1
+
+## display-packages/horizon-lod/layers/LOD-0001.layer
+
+api-layer · LOD-0001 · pipeline terrain-lod · entry fs_horizon · uniforms view_proj:mat4<f32>@64, rung:u32@4, rung_colour:vec4<f32>@16
+
+```api-layer
+id          LOD-0001
+pipeline    terrain-lod
+shader      src/LOD-0001.wgsl
+entry       fs_horizon
+bind-group  1
+uniform     view_proj mat4<f32> 64
+uniform     rung u32 4
+uniform     rung_colour vec4<f32> 16
+lod         0
+order       10
+requires    none
+```
+
+# Change
+
+Add a `terrain-lod` layer that draws the rung `voxel_stream::horizons` chooses for the horizon, with
+its own shader (`src/LOD-0001.wgsl`), one bind group and three uniforms: the camera's `view_proj`, the
+rung index, and the rung's declared colour.
+
+The layer exists because **a package can express only what its layers name**. `voxel_stream` chooses
+the rung and `voxel-client::world` draws it, but a package that can name only the near ring is a
+package for an island — and this world is planetary: terrain at a distant horizon is drawn from the
+rung, not from the near mesh (M10.0.2).
+
+# Acceptance
+
+The horizon sweep — the eye at the world's scale, the far ring beyond the near one — draws the far
+terrain through this layer, at the rung `horizons` chose, with **no hole and no double geometry at the
+handoff**. A package whose layer writes `shading.wgsl` is refused with the layer id and the path in
+the same sentence (`voxel_package::layer`), and a layer declared but named by no row is refused with
+both files named.
+
+The rendered recipe is byte-stable across two runs: `voxel-layers` over this folder prints the same
+bytes twice, and the reading is kept in `docs/baselines/mount-v2/layer-recipes-2026-10-24.txt`.
+
+# Evidence
+
+* `cargo run -p voxel-package --bin voxel-layers -- display-packages/horizon-lod`
+  → the rendered block, exit 0.
+* `cargo test -p voxel-package layer::` → the grammar's own refusals: the look refused by name, a
+  shader outside `src/` refused, an unknown key refused, a duplicate refused, a missing key refused,
+  a record without `# Rollback` refused.
+* `docs/baselines/mount-v2/layer-recipes-2026-10-24.txt` — the command and its verbatim output.
+
+# Rollback
+
+Delete `layers/LOD-0001.layer`, `layers/LOD-0001.md`, `src/LOD-0001.wgsl` and the `row` in
+`package.shspec`. The package then declares no layer and the near ring is untouched; nothing else reads
+the id, so no code change is needed and no window moves.
+
+# display-packages/worldgen
+package     worldgen v0
+windows     none
+tabs        none
+bar         none
+filed       none
+pins        none
+rows        3
+row         OPT-0001  at the 1/32 cubic-field cell, express BOTH optical mechanisms the two documents name — droplet diffraction (corona/aureole, droplet-size controlled) and hexagonal ice-crystal refraction (22-degree minimum deviation halo) — as scattering terms of the one sky transport, measured in angular degrees rather than pixels
+row         ORO-0001  at the 1/32 cubic-field cell, sample terrain-forced lift (approach, expansion and cooling, condensation, lee descent) so cloud forms only where moisture, temperature and stability allow it; a rain shadow is an outcome of the parcel path, never a guarantee
+row         WAV-0001  at the 1/32 cubic-field cell, carry terrain-generated gravity waves upward — displacement, buoyancy oscillation, propagation, breaking and momentum deposition — and let a wave exist in a clear sky, with cloud only where condensation cooperates
+layers      none declared
+

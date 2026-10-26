@@ -1,0 +1,17 @@
+[package]
+name = "voxel-axis-verify"
+description = "The walk and the report: reads the evidence the tree already holds — the census and its pins, the conformance files, the workspace's declared witnesses and the axis ladders — and emits the calibration matrix's cells, or the refusal that says which source declined."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-model = { path = "../../voxel-model" }
+voxel-axis-ladder = { path = "../ladder" }
+voxel-axis-coverage = { path = "../coverage" }
+voxel-axis-unit = { path = "../unit" }
+voxel-axis-claim = { path = "../claim" }
+voxel-axis-view = { path = "../view" }
+voxel-axis-matrix = { path = "../matrix" }
+voxel-package = { path = "../../voxel-package" }

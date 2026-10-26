@@ -118,7 +118,7 @@ pub struct TicketRow {
 /// Every entry is a **landed** declaration in the governed record, chosen so that no two ladders
 /// rest on the same surface — a table where seven rows read one file would be one measurement
 /// wearing seven names.
-pub const WITNESSES: [(AxisKind, &str, &str); 7] = [
+pub const WITNESSES: [(AxisKind, &str, &str); 9] = [
     // Who acted, on every entry — a change the record cannot attribute is not evidence.
     (
         AxisKind::TicketEvidence,
@@ -160,6 +160,18 @@ pub const WITNESSES: [(AxisKind, &str, &str); 7] = [
         AxisKind::OrgRank,
         "crates/voxel-model/src/world/transition.rs",
         "pub struct ActorId",
+    ),
+    // The prose kind is declared on the axis itself, where the classifier's labels live.
+    (
+        AxisKind::ProseKind,
+        "crates/voxel-model/src/axis.rs",
+        "pub enum ProseKind",
+    ),
+    // The establishment ladder moved out of `features` and is re-exported there unchanged.
+    (
+        AxisKind::Establishment,
+        "crates/voxel-model/src/axis.rs",
+        "pub enum Establishment",
     ),
 ];
 
@@ -401,7 +413,7 @@ mod tests {
         witness_files.dedup();
         assert!(
             witness_files.len() > 3,
-            "seven rows over {} file(s) would be one measurement wearing seven names",
+            "nine rows over {} file(s) would be one measurement wearing nine names",
             witness_files.len()
         );
         // One row per ladder, and every ladder this build knows is covered.
@@ -414,10 +426,10 @@ mod tests {
 
     #[test]
     fn the_landed_record_carries_every_witness() {
-        // The measured state of this tree, not a hope: each of the seven declarations landed
-        // with the governed record, so the arm reports seven present witnesses today.
+        // The measured state of this tree, not a hope: each of the nine declarations landed
+        // with the governed record, so the arm reports nine present witnesses today.
         let observations = observe(&root());
-        assert_eq!(observations.len(), 7);
+        assert_eq!(observations.len(), 9);
         for observation in &observations {
             assert!(observation.readable, "{} is unreadable", observation.witness);
             assert!(
@@ -474,9 +486,41 @@ mod tests {
     }
 
     #[test]
+    fn an_absent_witness_is_a_state_and_only_an_unreadable_one_is_a_refusal() {
+        // The owner is `voxel_axis_civilians::LadderReading`; this is its consumer's answer, so
+        // the two cannot disagree about which half is a refusal.
+        let absent = LadderObservation {
+            ladder: AxisKind::EvidenceGrade,
+            witness: "a/file/that/read/fine",
+            token: "pub enum Establishment",
+            readable: true,
+            present: false,
+            rows: Vec::new(),
+            rows_unread: None,
+        };
+        let (state, reason) = crate::decision::rule_for_civilian(&absent);
+        assert_eq!(state, crate::features::Establishment::Unchecked);
+        assert!(
+            reason.as_deref().is_some_and(|reason| reason.contains("carries no witness")),
+            "an absent witness is a state, and the reason says which: {reason:?}"
+        );
+
+        let unreadable = LadderObservation {
+            readable: false,
+            ..absent
+        };
+        let (state, reason) = crate::decision::rule_for_civilian(&unreadable);
+        assert_eq!(state, crate::features::Establishment::Refused);
+        assert!(
+            reason.as_deref().is_some_and(|reason| reason.contains("could not be read")),
+            "an unreadable witness is the refusal, and it does not claim unwitnessed: {reason:?}"
+        );
+    }
+
+    #[test]
     fn an_unreadable_record_is_not_a_record_that_lacks_the_witness() {
         let observations = observe(Path::new("a/root/that/is/not/here"));
-        assert_eq!(observations.len(), 7, "every ladder is still reported");
+        assert_eq!(observations.len(), AxisKind::ALL.len(), "every ladder is still reported");
         for observation in &observations {
             assert!(!observation.readable);
             assert!(!observation.present);

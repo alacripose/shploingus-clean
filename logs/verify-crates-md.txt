@@ -1,0 +1,563 @@
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libcpufeatures-db911beae73f1263.rmeta
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libshlex-e3cfa4f8f6e8146d.rmeta
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libvoxel_model-06e46e018c68209d.rmeta
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libitoa-c2a71f8e590ef6f3.rmeta
+warning: esaxx-rs@0.1.10: cl : Command line warning D9002 : ignoring unknown option '-std=c++11'
+kache: this volume (C:\) has no copy-on-write, so cache hits are restored by COPY — the cache and build tree do not share storage blocks, roughly doubling disk for cached content. For zero-copy dedup put the cache + build dir on a ReFS Dev Drive, or set `[cache] windows_hardlink = true` (only if your build never deletes or rewrites an object output). If this layout is intentional, silence this advice with `[cache] storage_layout_advice = false` (clone faults are still reported).
+         affected output: C:\Users\ala\Documents\shploingus-clean\target\debug\deps\libort_sys-ef2b1da0562260df.rmeta
+   Compiling voxel-mcp v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-mcp)
+    Finished `test` profile [optimized + debuginfo] target(s) in 5.71s
+     Running unittests src\lib.rs (target\debug\deps\voxel_mcp-8bae6413b3b41b61.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\main.rs (target\debug\deps\voxel_mcp-021b7cfbb2a0f206.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\api_layer.rs (target\debug\deps\api_layer-14f0a2087d7e6f17.exe)
+
+running 8 tests
+test a_grant_must_name_both_an_author_and_a_scope ... ok
+test nothing_is_implicit_including_reading ... ok
+test the_filing_tool_is_the_bridge_row_append_event_and_the_matrix_gates_it ... ok
+test the_api_view_is_rendered_from_declarations_and_cannot_advertise_a_permission_it_lacks ... ok
+test a_tool_the_surface_does_not_carry_is_refused_by_coverage_never_by_a_fallthrough ... ok
+test the_game_s_per_run_queue_is_out_of_reach_of_this_crate ... ok
+test a_refused_filing_changes_nothing_on_disk ... ok
+test the_rejections_become_refusal_recorded_events_chained_to_the_chain_they_join ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.98s
+
+     Running tests\protocol.rs (target\debug\deps\protocol-56e1758b5d511c84.exe)
+
+running 10 tests
+test an_unknown_method_is_an_error_and_a_notification_is_not_answered ... ok
+test a_missing_path_argument_is_refused_with_the_shape_it_wants ... ok
+test the_tool_list_carries_every_tool_with_a_description_and_a_schema ... ok
+test a_line_that_is_not_json_is_a_parse_error_and_the_stream_continues ... ok
+test initialize_names_the_protocol_and_the_server ... ok
+test a_tool_nobody_serves_is_refused_by_name_and_the_tools_are_listed ... ok
+test the_root_is_found_above_the_crate_and_holds_the_gate_it_serves ... ok
+test ownership_names_the_crate_and_the_records_that_own_a_path ... ok
+test the_patch_set_is_served_with_the_target_each_record_declares ... ok
+test the_test_measurement_is_served_without_a_census ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running unittests src\lib.rs (target\debug\deps\voxel_package-a658111639fcbc1a.exe)
+
+running 339 tests
+test ballot::tests::a_choice_and_a_score_carry_their_terms_in_the_roles_they_declared ... ok
+test ballot::tests::a_body_with_no_header_parses_the_same_terms_a_file_does ... ok
+test ballot::tests::a_block_written_with_presentational_indentation_reads_the_same ... ok
+test ballot::tests::a_question_with_no_terms_is_refused_rather_than_asked ... ok
+test ballot::tests::an_answer_nobody_declared_the_age_of_is_refused ... ok
+test bloat::tests::a_crate_with_no_sources_has_no_prose_share_rather_than_a_share_of_zero ... ok
+test bloat::tests::a_measured_report_states_the_linkage_caveat_beside_the_number ... ok
+test bloat::tests::a_second_marker_does_not_count_the_same_lines_twice ... ok
+test ballot::tests::a_file_that_declares_nothing_is_a_no_reading_and_not_a_pass ... ok
+test ballot::tests::the_declared_fields_are_the_keys_the_parser_dispatches ... ok
+test ballot::tests::every_problem_is_reported_not_only_the_first ... ok
+test ballot::tests::two_ballots_sharing_an_id_would_make_an_answer_ambiguous_and_are_refused ... ok
+test bloat::tests::a_file_under_tests_is_test_lines_and_is_not_called_an_inline_module ... ok
+test ballot::tests::a_declared_ballot_round_trips_through_its_own_text ... ok
+test bloat::tests::a_test_measurement_that_did_not_run_prints_no_count ... ok
+test ballot::tests::a_question_that_does_not_say_what_passes_cannot_produce_a_verdict ... ok
+test bloat::tests::a_zero_byte_file_is_a_measurement_and_not_a_missing_one ... ok
+test bloat::tests::an_inline_module_is_counted_from_its_marker_and_the_production_lines_are_not ... ok
+test bloat::tests::an_unmeasured_report_prints_no_counts_at_all ... ok
+test bloat::tests::prose_is_counted_by_line_and_the_share_is_a_percentage_of_the_whole ... ok
+test bloat::tests::measuring_a_file_that_is_not_there_says_so_rather_than_reporting_zero ... ok
+test bridge::tests::a_call_runs_only_when_every_check_ran_and_all_of_them_passed ... ok
+test bridge::tests::a_capability_nobody_can_spell_is_refused_rather_than_guessed ... ok
+test bridge::tests::a_capability_the_session_does_not_hold_refuses_before_the_matrix_runs ... ok
+test bridge::tests::a_row_no_caller_can_spell_is_reported_by_the_row_check ... ok
+test bridge::tests::a_refusal_goes_on_the_record_and_a_permitted_call_files_nothing ... ok
+test bridge::tests::a_tool_name_the_surface_does_not_carry_is_refused_by_name ... ok
+test bridge::tests::every_capability_carries_at_least_one_act_so_none_is_decorative ... ok
+test bridge::tests::holding_every_capability_is_still_not_permission ... ok
+test bridge::tests::the_act_the_record_forbids_is_refused_at_the_gate_and_not_by_the_matrix ... ok
+test bridge::tests::the_capability_map_and_the_always_denied_set_are_the_same_actions ... ok
+test bridge::tests::the_surface_is_total_over_the_action_vocabulary_and_named_after_it ... ok
+test census::tests::a_crate_name_round_trips_and_an_unknown_one_is_refused ... ok
+test census::tests::a_heading_defines_only_what_it_begins_with ... ok
+test census::tests::a_short_census_is_refused_rather_than_being_called_one ... ok
+test census::tests::an_unmeasured_cell_is_refused_rather_than_reported_as_a_pass ... ok
+test bloat::tests::an_invented_record_is_found_by_extension_and_an_empty_result_is_a_measurement ... ok
+test census::tests::every_workspace_member_is_in_the_table ... ok
+test census::tests::every_crate_has_a_row_and_a_witness ... ok
+test census::tests::every_crate_has_a_witness_file_on_disk ... ok
+test census::tests::the_axes_are_six_and_each_names_itself ... ok
+test census::tests::the_prose_ratchet_refuses_a_rise_and_allows_a_fall ... ok
+test census::tests::an_orphan_is_a_library_an_entry_point_is_not_and_an_unreadable_manifest_is_neither ... ok
+test census::tests::the_dependency_disciplines_second_rule_is_measured_and_finds_the_crates_nothing_reads ... ok
+test civilians::tests::an_unreadable_record_is_not_a_record_that_lacks_the_witness ... ok
+test census::tests::the_manifest_check_can_fail_and_names_what_it_found ... ok
+test civilians::tests::every_ladder_has_exactly_one_witness_and_they_are_distinct ... ok
+test civilians::tests::a_record_whose_rows_all_hold_says_so_in_its_reason ... ok
+test compendium::tests::a_citing_heading_is_not_mistaken_for_a_decision ... ok
+test census::tests::a_frame_line_that_is_not_a_budget_is_refused_by_name ... ok
+test census::tests::a_missing_witness_is_fatal_when_the_row_says_required_and_shown_when_it_does_not ... ok
+test civilians::tests::the_tickets_rows_verify_against_the_documents_they_cite ... ok
+test compendium::tests::a_decision_body_is_verbatim_so_the_record_cannot_drift_from_the_format ... ok
+test compendium::tests::a_hash_inside_a_fenced_block_is_not_a_heading ... ok
+test compendium::tests::a_decision_can_be_found_by_the_anchor_the_record_writes_it_under ... ok
+test compendium::tests::a_malformed_anchor_is_refused_by_name_rather_than_guessed ... ok
+test compendium::tests::a_derived_document_is_read_even_though_it_declares_no_anchors ... ok
+test compendium::tests::a_derived_recipe_licenses_the_words_the_record_used ... ok
+test compendium::tests::a_recipe_citing_a_decision_nobody_made_is_refused ... ok
+test compendium::tests::a_recipe_with_no_anchors_licenses_nothing_rather_than_everything ... ok
+test compendium::tests::an_anchor_round_trips_through_its_rendered_form ... ok
+test compendium::tests::an_empty_compendium_is_refused_rather_than_shipped ... ok
+test compendium::tests::a_recipe_is_derived_from_the_record_s_own_words ... ok
+test compendium::tests::an_indented_hash_is_a_code_block_and_not_a_heading ... ok
+test compendium::tests::an_unknown_series_is_refused_and_the_refusal_names_the_letter ... ok
+test compendium::tests::a_subsections_content_is_part_of_its_entry_and_not_dropped_between_headings ... ok
+test compendium::tests::every_series_has_a_row ... ok
+test compendium::tests::a_twice_written_anchor_contributes_both_occurrences ... ok
+test compendium::tests::an_entry_written_at_subsection_depth_is_still_its_own_entry ... ok
+test compendium::tests::research_is_not_authority_and_the_type_says_so ... ok
+test compendium::tests::research_cannot_license_a_recipe_unless_the_caller_says_so_in_the_open ... ok
+test compendium::tests::the_record_digest_changes_when_any_document_changes ... ok
+test compendium::tests::the_record_compresses_to_decisions_and_the_check_passes ... ok
+test compendium::tests::the_compression_reports_what_it_found ... ok
+test compiler::tests::a_bare_token_the_recipe_could_not_carry_is_not_a_window_id ... ok
+test compiler::tests::a_closed_ticket_is_not_recompiled ... ok
+test compiler::tests::a_compiler_does_not_verify_the_world_and_does_not_claim_to ... ok
+test compendium::tests::compression_is_deterministic ... ok
+test compiler::tests::a_denied_stage_stops_the_compile_and_is_still_recorded ... ok
+test compiler::tests::a_line_that_is_one_token_is_a_bare_window_id ... ok
+test compiler::tests::a_prose_line_naming_a_window_in_words_declares_nothing ... ok
+test compiler::tests::a_prose_ticket_renders_and_compiles_to_a_package_with_no_window ... ok
+test compiler::tests::a_rendered_solution_compiles_and_round_trips ... ok
+test compiler::tests::a_solution_names_only_the_windows_the_ticket_mentions ... ok
+test compiler::tests::a_ticket_naming_no_window_compiles_to_a_solution_with_none ... ok
+test compiler::tests::a_whole_compile_without_a_grant_stops_at_the_first_write_stage ... ok
+test compiler::tests::every_stage_is_audited_and_the_audit_is_on_the_chain ... ok
+test compiler::tests::every_stage_names_an_action_and_every_action_is_one_the_matrix_has ... ok
+test compiler::tests::prose_does_not_become_windows ... ok
+test bloat::tests::the_workspace_measurement_runs_over_this_tree_and_finds_more_than_one_test ... ok
+test compiler::tests::an_arrangement_over_the_window_ceiling_is_refused_not_truncated ... ok
+test compiler::tests::provenance_is_verified_by_round_trip_and_not_by_assertion ... ok
+test compiler::tests::the_two_reader_stages_are_reads_and_the_two_chain_writes_need_a_grant ... ok
+test compiler::tests::the_bare_form_and_the_bracket_form_declare_the_same_window ... ok
+test compiler::tests::the_emitter_produces_a_package_from_a_ticket_on_the_chain ... ok
+test conformance::tests::a_declared_key_that_no_refusal_answers_is_a_stale_acceptance_and_is_not_a_pass ... ok
+test conformance::tests::an_accepted_refusal_is_still_reported_and_no_longer_rejected ... ok
+test conformance::tests::an_absent_acceptance_list_accepts_nothing_and_says_that_it_was_not_declared ... ok
+test conformance::tests::an_unaccepted_refusal_is_what_the_gate_rejects ... ok
+test compendium::tests::the_record_keeps_its_three_twice_written_anchors_rather_than_being_tidied ... ok
+test conformance::tests::an_unchecked_cell_is_not_a_pass_even_when_nothing_is_refused ... ok
+test context::tests::an_empty_chain_gives_an_empty_projection_that_says_which_empty_it_is ... ok
+test context::tests::the_address_names_the_campaign_the_world_and_the_season_separately ... ok
+test context::tests::the_lineage_stops_where_the_record_stops_being_a_descent ... ok
+test context::tests::the_lineage_walks_back_to_the_first_event ... ok
+test context::tests::the_projection_is_a_function_of_the_chain_alone ... ok
+test context::tests::the_projection_partitions_every_event_exactly_once ... ok
+test context::tests::the_refusals_are_carried_rather_than_left_to_be_found ... ok
+test decision::tests::a_count_that_does_not_add_up_to_what_it_counts_is_refused ... ok
+test conformance::tests::the_declared_list_is_read_by_line_and_ignores_comments_and_blank_lines ... ok
+test decision::tests::a_report_with_no_decision_layer_is_refused_rather_than_read_as_four_zeros ... ok
+test compendium::tests::the_record_s_open_questions_are_found_by_its_own_convention ... ok
+test decision::tests::a_subject_printed_without_a_reason_is_refused ... ok
+test census::tests::the_prose_frame_prints_every_crates_share_so_the_numbers_are_a_reading ... ok
+test decision::tests::an_unreachable_decider_refuses_every_subject_and_nothing_passes ... ok
+test decision::tests::every_row_of_the_bridge_s_surface_holds_as_a_decided_subject ... ok
+test civilians::tests::the_landed_record_carries_every_witness ... ok
+test census::tests::a_gap_is_reported_with_its_axis_and_reason ... ok
+test census::tests::a_crate_that_cannot_refuse_is_reported_as_inactive_with_a_reason ... ok
+test census::tests::a_single_file_crate_is_measured_by_its_tests_not_by_its_file_count ... ok
+test decision::tests::the_subject_vocabulary_is_closed_and_counted ... ok
+test census::tests::the_report_prints_every_crate_and_every_axis ... ok
+test features::tests::a_feature_name_round_trips_and_an_unknown_one_is_refused ... ok
+test census::tests::the_census_finds_the_untested_crates_rather_than_this_module_asserting_it ... ok
+test features::tests::a_feature_this_file_implements_is_reported_active ... ok
+test features::tests::a_required_feature_and_a_pending_feature_are_different_decisions ... ok
+test features::tests::a_forged_table_claiming_a_feature_with_no_witness_is_refused_by_name ... ok
+test features::tests::a_required_missing_feature_fails_the_build_and_a_pending_one_does_not ... ok
+test features::tests::every_establishment_has_a_distinct_slug_and_a_rendering ... ok
+test features::tests::every_feature_has_exactly_one_row ... ok
+test features::tests::every_feature_name_is_unique_so_a_name_can_address_one_feature ... ok
+test features::tests::every_feature_names_a_witness_and_a_declaring_authority ... ok
+test features::tests::a_row_with_no_meaning_is_refused ... ok
+test features::tests::every_problem_is_collected_rather_than_the_first_one ... ok
+test features::tests::missing_lists_only_what_is_actually_absent ... ok
+test features::tests::table_shape_is_checkable_on_a_tree_that_is_mid_build ... ok
+test features::tests::the_real_tree_is_evaluated_and_every_feature_gets_a_state ... ok
+test features::tests::the_missing_feature_report_is_printed_so_it_can_be_read_and_not_merely_asserted ... ok
+test features::tests::the_row_count_is_pinned_to_the_feature_count ... ok
+test features::tests::the_workspace_root_is_found_by_walking_up_and_is_not_guessed ... ok
+test features::tests::unchecked_and_refused_are_different_states ... ok
+test features::tests::the_required_check_refuses_only_what_the_build_depends_on ... ok
+test filing::tests::a_dangling_symlink_is_not_absent ... ok
+test filing::tests::a_first_filing_writes_and_a_second_refuses ... ok
+test census::tests::the_census_prints_its_own_measurements ... ok
+test filing::tests::growing_a_chain_that_was_never_filed_is_refused_rather_than_creating_one ... ok
+test filing::tests::reading_an_unfiled_workspace_is_empty_rather_than_a_failure ... ok
+test filing::tests::growing_a_chain_extends_it_and_never_shortens_what_was_already_filed ... ok
+test ingest::tests::a_manifest_that_is_not_declared_measures_nothing_and_says_so ... ok
+test filing::tests::a_chain_doubled_twice_is_compacted_to_the_frames_that_link ... ok
+test ingest::tests::a_manifest_line_that_names_no_kind_is_a_problem_and_not_a_root ... ok
+test ingest::tests::a_walk_that_cannot_finish_reports_itself_truncated ... ok
+test ingest::tests::an_absent_root_is_reported_absent_rather_than_as_a_zero ... ok
+test ingest::tests::an_id_both_trees_carry_is_reported_carried_here_and_the_rest_only_there ... ok
+test conformance::tests::the_real_tree_has_no_refusal_the_declared_list_does_not_accept ... ok
+test migration::tests::an_empty_record_is_refused_rather_than_filing_a_chain_of_nothing ... ok
+test ingest::tests::the_walk_classifies_by_name_and_counts_every_byte_it_does_not_read ... ok
+test migration::tests::file_the_record_once ... ignored, a one-shot that writes the record; run it deliberately, once
+test ingest::tests::two_roots_with_one_label_are_refused_because_a_report_cannot_name_them_apart ... ok
+test migration::tests::an_import_does_not_file_the_record_as_tickets ... ok
+test migration::tests::the_importer_is_not_wired_into_the_build_gate ... ok
+test migration::tests::the_record_yields_every_c_entry_whole ... ok
+test migration::tests::the_oversize_count_is_reported_rather_than_hidden ... ok
+test numbers::tests::a_row_always_declares_something_to_check ... ok
+test numbers::tests::an_unreadable_document_is_not_agreement ... ok
+test numbers::tests::every_row_names_a_document_the_record_carries ... ok
+test numbers::tests::the_reader_reports_and_the_layer_decides ... ok
+test numbers::tests::the_table_is_total_and_handed_written ... ok
+test numbers::tests::the_two_known_stale_numbers_are_still_stale_and_the_gate_says_so ... ok
+test oracle::tests::a_calibration_against_zero_answers_is_not_calibrated_however_the_flag_is_set ... ok
+test numbers::tests::a_row_declared_stale_is_reported_inactive_and_does_not_fail_the_build ... ok
+test oracle::tests::a_comment_and_a_pure_shape_line_have_nothing_to_judge ... ok
+test oracle::tests::a_holding_reading_passes_with_no_reason_needed ... ok
+test oracle::tests::a_judge_that_never_answers_is_unmeasured ... ok
+test oracle::tests::a_licensed_term_is_licensed_whatever_its_spelling ... ok
+test oracle::tests::a_misread_with_a_reason_is_recorded_and_the_reason_travels_with_it ... ok
+test oracle::tests::a_misread_without_a_reason_is_refused_and_returns_no_finding ... ok
+test oracle::tests::a_numeric_literal_is_a_value_and_not_a_word ... ok
+test oracle::tests::a_recipe_can_widen_the_declared_set_but_never_narrow_it ... ok
+test oracle::tests::an_empty_known_answer_set_is_unmeasured_rather_than_a_pass ... ok
+test oracle::tests::an_undeclared_reading_names_the_culprit ... ok
+test oracle::tests::an_underscored_identifier_is_one_term_and_is_not_silently_split ... ok
+test oracle::tests::an_unmeasured_calibration_refuses_before_the_oracle_is_consulted ... ok
+test oracle::tests::an_unmeasured_model_refuses_every_subject_before_reading_anything ... ok
+test oracle::tests::an_unreachable_oracle_is_refused_because_a_missing_instrument_is_not_a_pass ... ok
+test oracle::tests::no_reading_and_unreachable_are_different_verdicts ... ok
+test oracle::tests::no_reading_at_all_is_refused_because_absence_is_not_a_free_pass ... ok
+test oracle::tests::terms_are_lowercased_split_and_deduplicated ... ok
+test oracle::tests::the_bar_is_the_majority_class_and_tying_does_not_pass ... ok
+test oracle::tests::the_gate_checks_the_feature_table_as_well_as_the_oracle ... ok
+test oracle::tests::a_negative_reading_is_refused_without_a_reason_and_kept_with_one ... ok
+test oracle::tests::the_known_answer_set_is_not_one_sided ... ok
+test oracle::tests::the_judge_is_measured_and_the_measurement_is_reported_honestly ... ok
+test oracle::tests::the_model_s_name_is_the_judge_s_name_rather_than_a_second_name_for_it ... ok
+test oracle::tests::the_unreachable_oracle_is_the_bound_default_and_it_refuses ... ok
+test oracle::tests::the_verdict_vocabulary_is_closed ... ok
+test patch::tests::a_dependency_that_names_no_record_is_dangling_and_one_that_names_a_record_is_not ... ok
+test patch::tests::a_directory_the_record_names_places_the_files_under_it ... ok
+test patch::tests::a_missing_section_is_named_rather_than_counted ... ok
+test patch::tests::a_path_is_extracted_from_prose_and_prose_punctuation_is_not_part_of_it ... ok
+test patch::tests::a_placeholder_or_absent_digest_is_not_evaluable ... ok
+test patch::tests::a_record_that_carries_every_section_and_a_real_digest_is_complete ... ok
+test patch::tests::a_set_that_did_not_read_reports_no_coverage_rather_than_an_empty_tree ... ok
+test patch::tests::a_set_that_did_not_read_says_so_and_prints_no_count ... ok
+test patch::tests::an_unmeasured_set_prints_no_placement ... ok
+test patch::tests::coverage_counts_a_record_that_names_an_artifact_and_not_one_that_names_a_word ... ok
+test patch::tests::placement_counts_both_ways_and_keeps_a_generated_file_out_of_the_work_list ... ok
+test patch::tests::the_patches_directory_reads_and_every_dependency_resolves ... ok
+test patch::tests::the_real_patch_set_is_joined_against_the_real_parts ... ok
+test ingest::tests::the_real_manifest_parses_and_the_real_corpus_surveys ... ok
+test policy::tests::a_denial_comes_with_a_refusal_that_names_the_action ... ok
+test policy::tests::a_forbidden_act_stays_forbidden_under_a_perfect_grant ... ok
+test policy::tests::a_read_only_act_needs_no_grant ... ok
+test policy::tests::a_scoped_and_attributed_grant_permits_a_gated_action_and_names_who ... ok
+test policy::tests::an_action_with_no_permission_entry_would_not_compile ... ok
+test policy::tests::an_authorization_with_no_author_is_not_an_authorization ... ok
+test policy::tests::an_authorization_with_no_scope_is_refused_too ... ok
+test policy::tests::both_defects_are_collected_rather_than_the_first_one ... ok
+test policy::tests::every_action_name_round_trips_and_an_unknown_one_is_refused ... ok
+test policy::tests::every_permission_class_has_a_distinct_slug_and_a_rendering ... ok
+test policy::tests::raising_a_toast_is_allowed_because_a_refusal_must_be_visible ... ok
+test policy::tests::silence_is_not_permission ... ok
+test policy::tests::the_matrix_is_total_and_every_action_is_described ... ok
+test policy::tests::the_three_classes_are_all_represented_in_the_matrix ... ok
+test projection::tests::a_filed_event_renders_once_not_twice ... ok
+test projection::tests::a_projection_is_never_written_over_a_disagreement ... ok
+test projection::tests::an_empty_chain_against_a_written_record_is_a_disagreement_and_never_a_pass ... ok
+test projection::tests::the_projection_uses_the_record_s_own_heading_shape ... ok
+test projection::tests::two_views_that_both_hold_an_entry_with_different_bytes_are_divergent ... ok
+test provenance::tests::a_digest_moves_when_a_file_moves_even_if_its_bytes_do_not ... ok
+test provenance::tests::a_digest_that_could_not_be_computed_says_so_rather_than_hashing_nothing ... ok
+test provenance::tests::a_symbolic_head_is_a_branch_and_not_a_commit ... ok
+test provenance::tests::an_absent_git_directory_is_a_condition_and_never_a_zero ... ok
+test patch::tests::the_real_tree_is_placed_against_the_real_records ... ok
+test census::tests::the_census_measures_every_crate_and_every_cell ... ok
+test recipe::tests::a_ballot_block_ends_at_the_next_row_that_is_not_a_ballot_term ... ok
+test recipe::tests::a_ballot_block_is_read_into_the_package_and_does_not_swallow_it ... ok
+test recipe::tests::a_ballot_is_read_by_the_ballot_parser_and_its_own_refusals_are_the_ones_reported ... ok
+test recipe::tests::a_ballot_rides_the_package_through_compile_and_load ... ok
+test recipe::tests::a_bar_entry_that_is_not_a_tab_is_declared_and_a_window_has_one_home ... ok
+test recipe::tests::a_comment_is_part_of_the_format_and_cannot_smuggle_a_key ... ok
+test recipe::tests::a_compile_and_load_round_trip_preserves_the_exact_source ... ok
+test recipe::tests::a_complete_window_parses_and_carries_every_field_uispec_requires ... ok
+test recipe::tests::a_duplicate_key_is_refused_rather_than_silently_overwriting ... ok
+test recipe::tests::a_missing_required_key_is_refused_and_every_one_is_reported ... ok
+test recipe::tests::a_package_that_declares_no_question_still_parses_and_is_not_given_one ... ok
+test recipe::tests::a_policy_denies_by_default_because_the_empty_mask_permits_nothing ... ok
+test recipe::tests::a_policy_naming_something_the_window_may_not_have_is_refused ... ok
+test recipe::tests::a_recipe_that_declares_no_window_and_no_row_declares_nothing ... ok
+test recipe::tests::a_row_carries_the_records_own_words_and_its_id_is_the_records_shape ... ok
+test recipe::tests::a_row_with_a_tab_or_no_text_is_refused_rather_than_split ... ok
+test recipe::tests::a_second_ballot_block_is_read_and_the_first_is_not_swallowed ... ok
+test recipe::tests::a_second_window_block_is_read_and_the_first_is_not_swallowed ... ok
+test recipe::tests::a_tab_that_names_no_window_or_appears_twice_is_refused ... ok
+test recipe::tests::a_tampered_payload_is_refused_rather_than_mounted ... ok
+test recipe::tests::a_truncated_or_trailing_frame_is_refused ... ok
+test recipe::tests::a_window_is_addressed_by_id_and_two_may_not_share_one ... ok
+test recipe::tests::a_window_may_be_a_tab_and_pinned_because_those_are_different_questions ... ok
+test recipe::tests::an_older_source_is_refused_rather_than_converted ... ok
+test recipe::tests::an_unknown_content_kind_or_lane_is_refused_by_name ... ok
+test recipe::tests::elevation_above_four_is_refused_rather_than_clamped ... ok
+test recipe::tests::non_utf8_and_oversized_sources_are_refusals_not_panics ... ok
+test recipe::tests::opacity_outside_its_declared_range_is_refused ... ok
+test recipe::tests::pinning_a_window_that_does_not_exist_is_refused ... ok
+test recipe::tests::pinning_a_window_that_is_not_pinnable_is_refused ... ok
+test recipe::tests::the_bar_s_tabs_are_declared_and_read_in_strip_order ... ok
+test recipe::tests::the_content_vocabulary_is_the_records_twelve_plus_four_extensions ... ok
+test recipe::tests::the_declared_vocabulary_carries_every_enum_value_the_parser_accepts ... ok
+test recipe::tests::the_lane_vocabulary_is_exactly_six ... ok
+test recipe::tests::two_ballots_sharing_an_id_would_make_an_answer_ambiguous_and_are_refused ... ok
+test record::tests::a_citation_that_names_no_ruling_is_refused_by_name ... ok
+test record::tests::a_digest_binds_the_bytes_that_were_read_and_changes_when_the_text_does ... ok
+test record::tests::every_declared_feature_cites_an_anchor_that_exists_in_the_record ... ok
+test record::tests::every_document_is_described_and_has_a_role_with_a_rendering ... ok
+test record::tests::every_document_of_the_record_exists_and_reads ... ok
+test record::tests::the_features_this_module_serves_are_real_features ... ok
+test record::tests::the_full_record_check_covers_both_halves_of_the_gate ... ok
+test record::tests::the_handoff_is_derived_and_is_the_only_derived_document ... ok
+test signing::tests::a_key_id_in_a_foreign_scheme_is_refused_rather_than_coerced ... ok
+test signing::tests::a_key_id_is_a_name_for_a_key_and_is_hashed_like_everything_else ... ok
+test signing::tests::a_missing_backend_never_reports_the_signature_as_wrong ... ok
+test signing::tests::a_verifier_is_the_authority_on_whether_it_can_check_a_signature ... ok
+test signing::tests::an_empty_signature_is_no_signature_and_says_so ... ok
+test signing::tests::the_signature_carries_the_attribution_it_was_given ... ok
+test signing::tests::the_three_absences_are_three_different_refusals ... ok
+test signing::tests::with_no_backend_every_verification_is_refused_and_the_reason_survives ... ok
+test signing::tests::with_no_backend_signing_refuses_rather_than_producing_an_empty_signature ... ok
+test space::tests::a_bad_floor_is_refused_and_the_default_stands ... ok
+test space::tests::a_floor_the_volume_cannot_meet_is_reported_as_short_and_the_keep_list_survives ... ok
+test census::tests::an_incomplete_crate_is_reported_as_incomplete_and_not_hidden ... ok
+test space::tests::a_link_is_never_followed_and_never_counted ... ok
+test space::tests::a_path_outside_the_tree_is_refused_rather_than_removed ... ok
+test space::tests::a_symlink_is_skipped_and_named_instead_of_counted ... ok
+test space::tests::a_part_trimmed_to_nothing_still_says_where_it_looked ... ok
+test space::tests::a_tree_with_room_is_reported_as_room_and_nothing_is_removed ... ok
+test space::tests::a_trim_takes_the_cheapest_part_and_leaves_the_kept_ones_alone ... ok
+test space::tests::a_volume_above_the_minimum_is_not_a_refusal_even_below_the_floor ... ok
+test space::tests::a_trim_that_cannot_meet_its_budget_takes_only_the_parts_it_may ... ok
+test space::tests::a_volume_reading_is_either_a_number_or_a_reason_with_every_probe_in_it ... ok
+test space::tests::an_unreadable_volume_falls_back_to_the_tree_budget_and_says_so ... ok
+test space::tests::bytes_read_as_a_person_reads_them ... ok
+test space::tests::a_volume_with_no_room_ends_in_a_refusal_that_names_what_holds_the_space ... ok
+test space::tests::every_part_of_an_empty_tree_renders_as_searched_and_never_blank ... ok
+test space::tests::every_path_the_guard_removes_is_inside_the_tree ... ok
+test space::tests::the_keep_list_is_never_a_candidate_and_every_entry_says_why ... ok
+test space::tests::the_scan_separates_what_is_there_from_where_it_looked ... ok
+test space::tests::the_target_directory_follows_cargos_own_override ... ok
+test space::tests::the_three_thresholds_are_the_ones_the_measurements_derived ... ok
+test tests::a_checksum_is_admitted_and_does_not_claim_to_prove_identity ... ok
+test tests::a_correctly_pinned_signer_is_the_one_case_that_proves_identity ... ok
+test tests::a_manifest_can_be_checked_before_its_bytes_are_fetched ... ok
+test tests::a_material_the_registry_has_not_admitted_is_refused ... ok
+test tests::a_named_signer_nobody_pinned_is_refused_rather_than_assumed ... ok
+test tests::a_payload_that_changed_after_the_manifest_was_written_is_refused ... ok
+test tests::a_pin_for_a_different_payload_is_refused_even_when_the_claim_matches_itself ... ok
+test tests::a_refused_package_is_not_partially_admitted ... ok
+test tests::a_sound_package_is_admitted_and_every_line_says_so ... ok
+test tests::a_stage_the_world_does_not_run_is_refused_by_name ... ok
+test tests::an_empty_trust_list_refuses_every_named_signer ... ok
+test tests::build_and_client_readers_share_the_exact_admitted_report ... ok
+test tests::every_problem_is_collected_rather_than_the_first_one ... ok
+test tests::intake_is_deterministic ... ok
+test tests::payload_admission_cannot_bypass_manifest_structure_validation ... ok
+test tests::rejected_intake_preserves_findings_for_the_client_without_admitting_bytes ... ok
+test space::tests::the_report_carries_every_removal_with_its_cost_and_every_kept_entry ... ok
+test provenance::tests::the_workspace_digest_is_computed_and_covers_the_record ... ok
+test census::tests::a_census_is_deterministic ... ok
+test provenance::tests::two_reads_of_the_same_tree_agree ... ok
+test decision::tests::the_readers_report_and_the_layer_rules ... ok
+test migration::tests::the_migration_lands_and_both_views_can_then_be_compared ... ok
+test oracle::tests::the_model_pass_offers_every_subject_and_names_what_it_could_not_read ... ok
+test decision::tests::a_key_the_report_never_writes_is_refused_by_name_rather_than_skipped has been running for over 60 seconds
+test decision::tests::a_recipe_that_does_not_conform_is_decided_and_not_raised has been running for over 60 seconds
+test decision::tests::a_section_after_the_two_passes_is_not_read_as_the_model_s_rows has been running for over 60 seconds
+test decision::tests::an_absent_instrument_is_not_a_disagreement has been running for over 60 seconds
+test decision::tests::every_subject_gets_a_decision_from_the_seam has been running for over 60 seconds
+test decision::tests::the_report_reads_back_exactly_what_the_report_wrote has been running for over 60 seconds
+test decision::tests::the_seam_answers_what_the_surfaces_answer has been running for over 60 seconds
+test decision::tests::the_two_passes_are_side_by_side_and_their_disagreements_are_preserved has been running for over 60 seconds
+test decision::tests::a_recipe_that_does_not_conform_is_decided_and_not_raised ... ok
+test decision::tests::the_report_reads_back_exactly_what_the_report_wrote ... ok
+test decision::tests::every_subject_gets_a_decision_from_the_seam ... ok
+test decision::tests::a_section_after_the_two_passes_is_not_read_as_the_model_s_rows ... ok
+test decision::tests::an_absent_instrument_is_not_a_disagreement ... ok
+test decision::tests::a_key_the_report_never_writes_is_refused_by_name_rather_than_skipped ... ok
+test decision::tests::the_seam_answers_what_the_surfaces_answer ... ok
+test decision::tests::the_two_passes_are_side_by_side_and_their_disagreements_are_preserved ... ok
+
+test result: ok. 338 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 258.89s
+
+     Running tests\answer_audit.rs (target\debug\deps\answer_audit-e9318d08a726891d.exe)
+
+running 2 tests
+test every_answered_question_is_audited_against_the_tree ... ok
+test the_feature_rows_are_the_audits_already_declared_and_measured ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\board_report.rs (target\debug\deps\board_report-89a8ab5cef0be441.exe)
+
+running 3 tests
+test the_board_names_every_duplicate_filing_and_says_the_count_is_not_a_count_of_work ... ok
+test every_ticket_on_the_board_is_named_in_full_and_none_is_deferred ... ok
+test the_record_is_filed_and_the_board_reads_it ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.28s
+
+     Running tests\chain_repair.rs (target\debug\deps\chain_repair-f8256a4050aab1c9.exe)
+
+running 1 test
+test repair_the_chain_onto_the_record ... ignored, compacts the canonical record; run it deliberately, once
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\claimed_by_spec.rs (target\debug\deps\claimed_by_spec-9bf5f46f334ea781.exe)
+
+running 5 tests
+test the_check_can_fail_and_that_is_the_whole_point ... ok
+test a_claim_carries_its_locator_so_a_reader_is_one_click_away ... ok
+test an_unclaimed_crate_is_not_called_mis_conformant ... ok
+test the_spec_declares_fewer_crates_than_the_workspace_holds ... ok
+test the_whole_project_against_the_spec ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\file_civilian_scope.rs (target\debug\deps\file_civilian_scope-c48373a4cb6dfe55.exe)
+
+running 1 test
+test file_the_civilian_scope_ruling ... ignored, files one ticket onto the canonical record; run it deliberately, once
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\file_civilian_sim_scope.rs (target\debug\deps\file_civilian_sim_scope-650c47a085909657.exe)
+
+running 1 test
+test file_the_civilian_sim_scope_ruling ... ignored, files one ticket onto the canonical record; run it deliberately, once
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\file_questions.rs (target\debug\deps\file_questions-44fec8c61d49225a.exe)
+
+running 2 tests
+test the_twenty_seven_questions_are_filed_with_the_kind_the_record_actually_gives_them ... ok
+test the_filed_questions_read_back_as_a_chain_that_says_what_it_says ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests\file_reference_gaps.rs (target\debug\deps\file_reference_gaps-ab1a1f9fb0a79a40.exe)
+
+running 1 test
+test the_reference_gaps_are_filed_as_tickets_and_read_back_off_the_board ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\file_the_ledger.rs (target\debug\deps\file_the_ledger-026f17a467233cb1.exe)
+
+running 2 tests
+test file_the_ledger_onto_the_record ... ignored, files the game's ledger index onto the canonical record; run it deliberately
+test every_c_entry_is_one_ticket ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\file_work.rs (target\debug\deps\file_work-df56ca92b1beed5f.exe)
+
+running 7 tests
+test file_the_governance_stack_repair_ticket_onto_the_record ... ignored, files the governance-stack repair ticket onto the canonical record; run it deliberately, once
+test file_the_governance_ticket_onto_the_record ... ignored, files one governance ticket onto the canonical record; run it deliberately, once
+test file_the_session_tickets_onto_the_record ... ignored, files the session tickets onto the canonical record; run it deliberately, once
+test file_the_six_framework_findings_onto_the_record ... ignored, files the six framework findings onto the canonical record; run it deliberately, once
+test file_the_window_and_oracle_ticket_onto_the_record ... ignored, files the user's three-part ticket onto the canonical record; run it deliberately
+test file_the_work_tickets_onto_the_record ... ignored, files the 42 work tickets onto the canonical record; run it deliberately, once
+test the_work_is_filed_as_tickets_and_read_back_off_the_board ... ok
+
+test result: ok. 1 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\filed_record.rs (target\debug\deps\filed_record-efe11b61d3be4a65.exe)
+
+running 3 tests
+test linked_records_make_the_chain_tamper_evident_rather_than_merely_append_only ... ok
+test a_second_filing_of_the_same_record_refuses_and_keeps_the_first ... ok
+test filing_one_real_record_makes_the_gap_wider_by_exactly_one_and_names_the_cost ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.13s
+
+     Running tests\first_ticket.rs (target\debug\deps\first_ticket-5f692300c9996638.exe)
+
+running 5 tests
+test a_document_is_not_the_judges_sentence ... ok
+test a_document_with_no_decision_behind_it_says_so ... ok
+test the_calibration_can_fail_and_that_is_the_whole_point ... ok
+test the_document_carries_its_anchors_so_a_reader_can_check_them ... ok
+test the_first_ticket_is_documented_and_the_document_survives_the_judge ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\open_questions.rs (target\debug\deps\open_questions-1a1776f9e7fb212c.exe)
+
+running 3 tests
+test the_records_open_questions_are_printed_and_counted ... ok
+test an_anchor_is_read_once_regardless_of_how_many_times_it_is_asked ... ok
+test the_open_list_is_wrong_and_how_wrong_is_the_measurement ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\retire_the_broken_rows.rs (target\debug\deps\retire_the_broken_rows-0cb1c5ed6c6269b3.exe)
+
+running 2 tests
+test retire_the_old_tilers_broken_fragments_on_the_record ... ignored, files retirements onto the canonical record; run it deliberately
+test a_retirement_filed_on_the_chain_attaches_its_own_record_to_the_ticket ... ok
+
+test result: ok. 1 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\round_trip.rs (target\debug\deps\round_trip-9c89eb77a0a17c6a.exe)
+
+running 7 tests
+test every_written_axis_is_a_closed_vocabulary_and_the_writer_proves_it ... ok
+test a_word_outside_the_closed_vocabulary_is_refused_by_name_rather_than_defaulted ... ok
+test a_refused_write_is_refused_before_the_bytes_exist ... ok
+test a_ticket_filed_in_game_comes_back_and_compiles_into_a_recipe ... ok
+test the_record_keeps_what_the_chain_cannot_hold ... ok
+test a_broken_frame_boundary_stops_the_fold_and_says_so ... ok
+test a_corrupt_record_loses_that_record_and_not_the_file ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests\two_views.rs (target\debug\deps\two_views-9630314e990ef9ad.exe)
+
+running 2 tests
+test there_is_no_writer_and_that_is_deliberate ... ok
+test the_two_views_are_measured_against_each_other ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.32s
+
+   Doc-tests voxel_mcp
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests voxel_package
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

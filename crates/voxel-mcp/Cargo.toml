@@ -11,6 +11,15 @@ description = "The gate's read surface: an MCP tool server over the census, the 
 # one `voxel-package` already computed, so a tool call cannot disagree with the build.
 voxel-package = { path = "../voxel-package" }
 voxel-model = { path = "../voxel-model" }
+# **The authority layer, served rather than restated.** The axis route is four tools over
+# `voxel-axis-mcp`: the server serialises what the registry answers and verifies nothing itself, so a
+# tool call and the shell's own mount cannot disagree about a cell, a recipe or a grant.
+voxel-axis-mcp = { path = "../axis/mcp" }
+# The segment a recipe request names, parsed by the matrix's own parser.
+voxel-axis-matrix = { path = "../axis/matrix" }
+# This machine's key, opened only by the two tools that sign or verify a grant. The reads walk the
+# matrix without a key, so reading never mints one.
+voxel-axis-security = { path = "../axis/security" }
 # **The classifier, so the agent can judge its own work.** This is the one edge in this crate that
 # carries a model: it is here because the request is that the agent judges its work through the
 # surface, and it is *lazy* — the ONNX session is loaded on the first judgment, never at startup,

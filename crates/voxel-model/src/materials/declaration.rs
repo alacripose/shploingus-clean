@@ -22,7 +22,7 @@ use crate::identity::Digest;
 use crate::material::Ratio;
 use crate::materials::schema::{
     parse_ratio, Availability, Family, HeatKind, Hue, Mechanism, Process, Qty, Requires, Sink,
-    Source, Substance, Tag, Tier, Unit, VocabKind, Vocabulary,
+    Source, State, Substance, Tag, Tier, Unit, VocabKind, Vocabulary,
 };
 use crate::refusal::{RefusalKind, RefusalSet};
 
@@ -151,10 +151,11 @@ fn ratio_or_zero(
 }
 
 const SUBSTANCE_COLUMNS: &[&str] = &[
-    "name", "family", "hue", "unit", "density", "unit_mass", "rot", "tags", "source", "sink",
-    "display_unit", "display_grams", "porosity", "fluid_capacity", "provenance", "note", "no_consumer",
+    "name", "family", "hue", "unit", "state", "phase_of", "density", "unit_mass", "rot", "tags",
+    "source", "sink", "display_unit", "display_grams", "porosity", "fluid_capacity", "provenance",
+    "note", "no_consumer",
 ];
-const SUBSTANCE_REQUIRED: &[&str] = &["name", "family", "hue", "unit", "source", "provenance"];
+const SUBSTANCE_REQUIRED: &[&str] = &["name", "family", "hue", "unit", "state", "source", "provenance"];
 
 /// Parse the substances declaration.
 pub fn parse_substances(label: &str, text: &str) -> Result<Vec<Substance>, RefusalSet> {
@@ -190,6 +191,17 @@ pub fn parse_substances(label: &str, text: &str) -> Result<Vec<Substance>, Refus
                     None
                 }
             });
+        let state = row
+            .required(&columns, "state", label, &mut defects)
+            .and_then(|text| match State::parse(&text) {
+                Ok(state) => Some(state),
+                Err(refusal) => {
+                    defects.refuse(refusal.kind(), format!("{label} line {} ({name}): {text:?} is not a declared state", row.line));
+                    None
+                }
+            });
+        let phase_of = row.cell(&columns, "phase_of", label, &mut defects)
+            .map(str::to_string);
         let source = row
             .required(&columns, "source", label, &mut defects)
             .and_then(|text| match Source::parse(&text) {
@@ -245,13 +257,15 @@ pub fn parse_substances(label: &str, text: &str) -> Result<Vec<Substance>, Refus
         let note = row.cell(&columns, "note", label, &mut defects).unwrap_or_default().to_string();
         let no_consumer = row.cell(&columns, "no_consumer", label, &mut defects).map(str::to_string);
 
-        match (family, hue, unit, source, provenance) {
-            (Some(family), Some(hue), Some(unit), Some(source), Some(provenance)) => {
+        match (family, hue, unit, state, source, provenance) {
+            (Some(family), Some(hue), Some(unit), Some(state), Some(source), Some(provenance)) => {
                 substances.push(Substance {
                     name,
                     family,
                     hue,
                     unit,
+                    state,
+                    phase_of,
                     density_g_ml: density,
                     unit_mass_g: unit_mass,
                     rot_per_day: rot,
@@ -305,9 +319,9 @@ fn parse_side(
 
 const PROCESS_COLUMNS: &[&str] = &[
     "name", "tier", "inputs", "outputs", "heat_c", "heat_kind", "hours", "labour_hours", "power_kw",
-    "structure", "tool", "skill", "provenance", "note",
+    "structure", "tool", "skill", "source", "provenance", "note",
 ];
-const PROCESS_REQUIRED: &[&str] = &["name", "tier", "outputs", "provenance"];
+const PROCESS_REQUIRED: &[&str] = &["name", "tier", "outputs", "source", "provenance"];
 
 /// Parse the processes declaration.
 pub fn parse_processes(label: &str, text: &str) -> Result<Vec<Process>, RefusalSet> {
@@ -348,6 +362,7 @@ pub fn parse_processes(label: &str, text: &str) -> Result<Vec<Process>, RefusalS
             skill: row.cell(&columns, "skill", label, &mut defects).map(str::to_string),
         };
         let note = row.cell(&columns, "note", label, &mut defects).unwrap_or_default().to_string();
+        let source = row.required(&columns, "source", label, &mut defects).unwrap_or_default();
 
         if let Some(provenance) = provenance {
             processes.push(Process {
@@ -357,6 +372,7 @@ pub fn parse_processes(label: &str, text: &str) -> Result<Vec<Process>, RefusalS
                 outputs,
                 mechanism: Mechanism { heat_c, heat_kind, hours, labour_hours, power_kw },
                 requires,
+                source,
                 provenance,
                 note,
             });
@@ -446,10 +462,10 @@ mod tests {
     use super::*;
 
     const SUBSTANCES: &str = "\
-name\tfamily\thue\tunit\tdensity\tunit_mass\trot\ttags\tsource\tsink\tdisplay_unit\tdisplay_grams\tporosity\tfluid_capacity\tprovenance\tnote\tno_consumer
-timber\torganic\tnatural\tMass\t-\t-\t0\tfuel,structure\tgathered\tholding\tkg\t1000\t-\t-\tV\tthe first material a founder touches\t-
-water\twater\tnatural\tVolume\t1\t-\t0\t-\tgathered\tholding\tL\t1000\t-\t-\tV\tdensity of 1 g/mL, exact by construction\tthe world draws it
-flue_gas\tsoil\tnatural\tGas\t13/10000\t-\t0\t-\tmade\tatmosphere\tL\t1000\t-\t-\tV\tair's own density at STP\tup the chimney
+name\tfamily\thue\tunit\tstate\tphase_of\tdensity\tunit_mass\trot\ttags\tsource\tsink\tdisplay_unit\tdisplay_grams\tporosity\tfluid_capacity\tprovenance\tnote\tno_consumer
+timber\torganic\tnatural\tMass\tSolid\t-\t-\t-\t0\tfuel,structure\tgathered\tholding\tkg\t1000\t-\t-\tV\tthe first material a founder touches\t-
+water\twater\tnatural\tVolume\tLiquid\t-\t1\t-\t0\t-\tgathered\tholding\tL\t1000\t-\t-\tV\tdensity of 1 g/mL, exact by construction\tthe world draws it
+flue_gas\tsoil\tnatural\tGas\tGas\t-\t13/10000\t-\t0\t-\tmade\tatmosphere\tL\t1000\t-\t-\tV\tair's own density at STP\tup the chimney
 ";
 
     #[test]
@@ -458,9 +474,11 @@ flue_gas\tsoil\tnatural\tGas\t13/10000\t-\t0\t-\tmade\tatmosphere\tL\t1000\t-\t-
         assert_eq!(substances.len(), 3);
         let water = &substances[1];
         assert_eq!(water.unit, Unit::Volume);
+        assert_eq!(water.state, State::Liquid);
         assert_eq!(water.density_g_ml, Some(Ratio::ONE));
         assert_eq!(water.sink, Sink::Holding);
         let gas = &substances[2];
+        assert_eq!(gas.state, State::Gas);
         assert_eq!(gas.sink, Sink::Atmosphere);
         assert_eq!(gas.density_g_ml, Some(Ratio::new(13, 10_000).unwrap()));
         let mut timber = substances[0].clone();
@@ -495,14 +513,15 @@ flue_gas\tsoil\tnatural\tGas\t13/10000\t-\t0\t-\tmade\tatmosphere\tL\t1000\t-\t-
     #[test]
     fn a_process_side_parses_and_a_bad_item_is_refused() {
         let text = "\
-name\ttier\tinputs\toutputs\theat_c\theat_kind\thours\tlabour_hours\tpower_kw\tstructure\ttool\tskill\tprovenance\tnote
-riven haft\thands & stone\ttimber*3000\thaft_blank*2400;timber_offcuts*600\t-\t-\t1/3\t1/3\t0\t-\t-\t-\tD\triving, not sawing
+name\ttier\tinputs\toutputs\theat_c\theat_kind\thours\tlabour_hours\tpower_kw\tstructure\ttool\tskill\tsource\tprovenance\tnote
+riven haft\thands & stone\ttimber*3000\thaft_blank*2400;timber_offcuts*600\t-\t-\t1/3\t1/3\t0\t-\t-\t-\tthe record's worked chain\tD\triving, not sawing
 ";
         let processes = parse_processes("test", text).expect("a clean declaration");
         assert_eq!(processes.len(), 1);
         assert_eq!(processes[0].inputs.len(), 1);
         assert_eq!(processes[0].outputs.len(), 2);
         assert!(processes[0].requires.is_empty());
+        assert_eq!(processes[0].source, "the record's worked chain");
 
         let bad = text.replace("timber*3000", "timber*3000;oops");
         let defects = parse_processes("test", &bad).expect_err("a malformed item");

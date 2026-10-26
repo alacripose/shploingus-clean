@@ -56,6 +56,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod atmosphere;
 pub mod camera;
 pub mod camera_overhaul;
 pub mod clock;
@@ -64,17 +65,23 @@ pub mod cloud_field;
 pub mod quad;
 pub mod debug;
 pub mod field;
+pub mod fog_cubes;
 pub mod frame;
+pub mod horizon;
 pub mod game;
 pub mod hud;
+pub mod measure;
 pub mod motion;
 pub mod renderer;
 pub mod scene;
 pub mod pattern;
 pub mod shell;
 pub mod shading;
+mod shaped;
+mod sun_shadow;
 pub mod skylight;
 pub mod sun;
+pub mod work;
 pub mod world;
 
 pub use camera::Camera;
@@ -86,24 +93,38 @@ pub use cloud_field::{
     cloud_transmittance, density_of, extinction_per_m, optical_depth, CloudField, CloudMedium,
     CloudSun, CLOUD_BLOCK_SIDE, CLOUD_COLUMNS, CLOUD_SAMPLE_M, CLOUD_SPAN_M,
 };
-pub use field::{CellField, ChunkTrees, BEAM_STEP_DEG, CELLS_PER_FRAME, REACH_M};
+pub use field::{CellField, ChunkTrees, SubvoxelPos, BEAM_STEP_DEG, REACH_M};
+pub use horizon::{
+    HorizonStream, FAR_MEASURED, FAR_SHARE, HORIZON_CELLS, HORIZON_CELL_M, HORIZON_FAR_CELLS,
+    HORIZON_FAR_CELL_M, HORIZON_FAR_REACH_M, HORIZON_REACH_M, HORIZON_SKY_REACH_M,
+    HORIZON_SUBVOXEL_M, HORIZON_SUBVOXEL_SIDE, SKY_RAYS,
+};
+pub use measure::{Ask, Measured, Measurer, CELLS_PER_ASK};
 pub use frame::{luminance, Frame};
 pub use game::{
     spawn_eye, GAME_CEILING_BYTES, GAME_PITCH_RAD, GAME_SEED, GAME_TICK, GAME_WINDOW,
 };
+pub use atmosphere::{Atmosphere, AtmosphereAhead};
 pub use hud::{HudRenderer, HudState, BRIGHTEST_BACKDROP, DIGEST_CHARS};
 pub use pattern::{
-    address_at, eye_footprint_m, eye_phase, eye_voxel, octave_cell_m, octave_weight,
-    pixel_angle_rad, quantise, quantise_cell, Pattern, DETAIL_CELL_M, FACE_COS_FLOOR,
-    MAX_FEATURE_M, MIN_FEATURE_M, OCTAVE_GAIN, OCTAVE_TOP, SUBVOXEL_CELL_M, SUBVOXEL_OCTAVE,
+    address_at, cell_weight, eye_footprint_m, eye_phase, eye_voxel, footprint_distance_m,
+    pixel_angle_rad, Pattern, DETAIL_CELL_M, FAR_CELL_M, NEAR_CELL_M, RUNGS_M,
+    SUBVOXEL_CELL_M,
 };
-pub use renderer::{offscreen_device, Renderer, DEPTH_FORMAT, TARGET_FORMAT};
-pub use scene::{LightAt, Scene, Vertex};
+pub use renderer::{
+    offscreen_device, offscreen_device_for, world_samples, Renderer, DEPTH_FORMAT, TARGET_FORMAT,
+};
+pub use scene::{
+    LightAt, ResidentScene, Residency, Scene, SceneBuild, SceneCache, SceneKey, Vertex,
+    SHADOW_LATTICE,
+};
+pub use sun_shadow::{NEAR_RANGE_M, SHADOW_BIAS_M, SHADOW_RESOLUTION};
+pub use work::{CornerUpload, FrameWork};
 pub use shading::{
     shade_cpu, table, world_lattice_uniform, GpuRig, MaterialParams, ShadingReport,
     MESH_DOES_NOT_CARRY_OPEN,
 };
-pub use world::WorldPipeline;
+pub use world::{CornerTraffic, WorldPipeline};
 
 use voxel_model::{Refusal, RefusalSet};
 use voxel_ui::UiRefusal;

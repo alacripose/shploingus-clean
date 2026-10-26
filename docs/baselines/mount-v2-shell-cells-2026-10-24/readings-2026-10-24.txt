@@ -1,0 +1,104 @@
+The shell's drawing and the cell frames inside mount v2 — 2026-10-24
+====================================================================
+
+Subject: the shell's cell format may address only a window's content space, and the chrome is drawn
+by the element path. Measured on the working tree at `aef0971`, which carries uncommitted changes;
+this folder is the baseline that PATCH-075 and PATCH-076 cite.
+
+Base of every number below
+--------------------------
+
+    base_ref:    shploingus-clean@aef0971 (working tree, uncommitted changes present)
+    base_digest: sha256:67379c35af2fa29f7c03384d95efb1f315a57ed3630ebde0a64073a881a9460a
+    digest rule: `git ls-files -z | sort -z | xargs -0 sha256sum | sha256sum`
+                 over 3148 tracked files' content and paths
+
+What is in this folder
+----------------------
+
+* `display-packages-2026-10-24.txt` — the folder-indexed emit of the display packages, verbatim:
+  **89 lines**, `sha256:3f7c92309db59d04aab9bf03ebe7e479434f943627e434715971966ee28c0809`.
+  This is the `3f7c9230…` baseline every pass since PATCH-074 has been held to, captured in the same
+  folder as the new readings so the package format and the shell drawing are one measurement.
+* `display-packages-after-2026-10-24.txt` — the same command **after PATCH-076 added the cell frame
+  artifact class**: **180 lines**,
+  `sha256:13d93263cf7dd64cd128fc8b4ad8535b658b480bb41e5895a83c4ba75996b7c4`. Both captures are kept,
+  side by side, because the digest moving is the declaration this folder is the baseline for.
+* `tests-2026-10-24.txt` — the test summaries, captured, not retyped:
+  * `shell::cells::tests` — **15 passed, 0 failed**
+  * `cell_version_refusal` — **2 passed, 0 failed**
+  * `clock::tests` — **13 passed, 0 failed**
+
+The drawing, and the prohibition
+---------------------------------
+
+The cell raster is no longer handed the whole composed interface. `cells::surface_in` classifies an
+element as content **only when its whole rect lies inside a declared window content rect**; every
+other element is returned exactly as composed, in its own z-order, and the raster's runs are emitted
+where the first content element stood. `Mount::content_space()` states the mask from `window_body`,
+the same arithmetic the window's own drawing and the pane hit-tests use.
+
+Measured by `shell::cells::tests::the_raster_draws_only_inside_a_window_content_space`:
+
+| element | where it stands | what the raster does |
+|---|---|---|
+| a bar surface, same paint as the body | outside every content rect | copied through, byte-identical, first in the list |
+| a body surface | inside the declared content rect | rasterised to 8 × 16 cell runs |
+| a text run | inside the declared content rect | reaches the grid, glyphs present |
+| anything above the content space | — | no cell is painted there |
+| the whole composed list | no content space declared | returned unchanged — no cells at all |
+
+What is *not* covered by this baseline
+---------------------------------------
+
+* **No screenshot is in this folder.** The window's own frame was not captured in this pass; the
+  claim is the raster's output, held by the tests above, not a picture.
+* **No GPU frame.** The change is in the shell's element raster and in the upload path's first-fill
+  rule; `renderer::tests` was green at 22 passed on the same tree, but that reading is recorded in
+  PATCH-074, not duplicated here.
+* **No new artifact class, in the capture that this section was written for.** Cell *data frames* as
+  a graded package artifact were not in the shell-cells baseline; that was PATCH-076's pass, and it
+  is in this folder now — see "The re-pin, both digests" below. What the 89-line capture holds is the
+  declaration (`cells 0|1` via `voxel-package::cells`), the content-space prohibition and the mount's
+  own mask, and it is kept unchanged so the before reading cannot be quietly re-written.
+
+The re-pin, both digests
+------------------------
+
+PATCH-076 added the artifact class this folder's earlier section named as the next pass, so the
+folder-indexed emit was re-taken deliberately on the final bytes:
+
+| reading | before (the 89-line capture) | after (the frame exists) |
+|---|---|---|
+| lines | 89 | **180** |
+| sha256 | `3f7c92309db59d04aab9bf03ebe7e479434f943627e434715971966ee28c0809` | `13d93263cf7dd64cd128fc8b4ad8535b658b480bb41e5895a83c4ba75996b7c4` |
+| `alpha-shell` rows | `rows none` | `rows 1` |
+| `alpha-shell` frames | the line does not exist | `frames 1` |
+| the frame | — | `MAP-0001 · map-plan · 56 × 22 · 2 fills · 345 runs` |
+
+Two consecutive runs of the command produced the same 180 lines (`cmp` exit 0), so the new digest is
+reproducible from `display-packages-after-2026-10-24.txt`. **What the re-pin does not change** is the
+prohibition: the frame is graded at mount and placed in its window's content container by
+`Mount::frame_space()`, and `cells::surface_in` still passes everything outside a declared content
+rect through untouched.
+
+Readings taken on the same bytes
+--------------------------------
+
+* `cargo run -p voxel-package --bin voxel-census` — **16 folders, 0 unclassified**, 2 excluded
+  (`.git`, `target`) with their reasons printed; `table packages/census.tsv`.
+* `conformance/missing-docs.txt` — **23 crates, 0 stale pins**, **2 342** undocumented public items,
+  after five crates this pass edited and four whose pins had already moved were re-taken (the reading
+  file's own header records both lists and every count). A stale pin is what made the `world` segment
+  read `evidence_grade C` at four stars; with the pins current it is `B` at five.
+* `cargo test -p voxel-axis-verify` — **16 passed, 0 failed**: eight cells (seven segments plus the
+  artifact format's own), all ★5; the format's at `Segment::Tooling` / `AxisKind::Grade`, `grade A`,
+  witness `display-packages/alpha-shell/frames/MAP-0001.frame`.
+* `cargo test -p voxel-package --lib cellframe::` — **11 passed, 0 failed**; `layer::` — **11 passed**.
+* `cargo test -p voxel-client --lib renderer::tests -- --test-threads=1` — **22 passed, 0 failed**
+  (86.66 s, on the final bytes). Parallel runs of the same suite were not stable on this machine (one
+  reported 6 failures, one did not finish in 400 s); the serial reading is the recorded one, and the
+  variance is stated rather than rounded into a pass.
+* `cargo check --workspace --all-targets` — exit 0, 5 m 33 s, warnings only (the advisory
+  `missing_docs` list among them; nothing denies a warning in this tree); `cargo build -p shploingus`
+  — exit 0, 5 m 45 s, which is the conformance gate's own door.

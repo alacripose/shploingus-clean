@@ -56,7 +56,7 @@ pub const LEAF: MaterialId = MaterialId(10);
 pub const CONIFER: MaterialId = MaterialId(11);
 pub const SAND: MaterialId = MaterialId(12);
 /// The trunk of a tree (C-159.11). Not chosen by any biome: it is what
-/// [`crate::flora`] stands, wherever a tree exists.
+/// [`crate::gaia`] stands, wherever a tree exists.
 pub const WOOD: MaterialId = MaterialId(13);
 
 /// The material a rock class is made of.
@@ -446,9 +446,11 @@ pub enum SurfacePattern {
     Speckle,
     /// Clumps twice the cell across on every axis — leaves, grass.
     Foliage,
-    /// Grain stretched four cells **along z**, a tree's own axis — bark.
+    /// Grain stretched four cells **along the trunk's axis** — a world's `y` on the
+    /// four sides of a trunk, no stretch on a log's end face. Bark.
     Bark,
-    /// Grain stretched **along x** — brushed stone now, the library's metals
+    /// Grain stretched **along the face's horizontal** — brushed stone now, the
+    /// library's metals
     /// later (the user's own example: *"metal could be brushed/shiny"*).
     Brushed,
 }
@@ -477,19 +479,61 @@ impl SurfacePattern {
     ///
     /// So the shaper's stretch is **relative to the cell the ladder draws**, not an
     /// absolute length: at the floor rung (31.25 mm) bark's grain runs ~125 mm along
-    /// z; twice as far out it runs 250 mm, and it still reads as bark.
+    /// the trunk's axis; twice as far out it runs 250 mm, and it still reads as bark.
     ///
     /// The stencil is applied **before** the ladder quantises the address (the
     /// call order `pattern::Pattern::deviation` and `shading.wgsl` both state),
     /// which is what lets a rung coarser than the shift still see the stretch.
-    pub const fn stencil(self, at: DetailIndex) -> DetailIndex {
+    ///
+    /// `plane` is the face's own axis (`Face::axis`); see [`Self::stretch_axis`]
+    /// for why the axis is the face's to state and not the world's.
+    pub const fn stencil(self, at: DetailIndex, plane: Option<u32>) -> DetailIndex {
         match self {
             SurfacePattern::Speckle => at,
             SurfacePattern::Foliage => {
                 DetailIndex { x: at.x >> 1, y: at.y >> 1, z: at.z >> 1 }
             }
-            SurfacePattern::Bark => DetailIndex { x: at.x, y: at.y, z: at.z >> 2 },
-            SurfacePattern::Brushed => DetailIndex { x: at.x >> 2, y: at.y, z: at.z },
+            SurfacePattern::Bark | SurfacePattern::Brushed => match self.stretch_axis(plane) {
+                Some(0) => DetailIndex { x: at.x >> 2, y: at.y, z: at.z },
+                Some(1) => DetailIndex { x: at.x, y: at.y >> 2, z: at.z },
+                Some(_) => DetailIndex { x: at.x, y: at.y, z: at.z >> 2 },
+                None => at,
+            },
+        }
+    }
+
+    /// **Which axis a directional shaper stretches — the face's plane axis says.**
+    ///
+    /// A grain is a property of the *surface* the eye is looking at, so it belongs in
+    /// that surface's own basis. Keyed to a world axis instead, the stretch is swallowed
+    /// on the face that looks along it: a wall whose normal is `x` has `x` constant
+    /// across it, so a grain along `x` draws square cells there and four-to-one cells on
+    /// every other side of the same block — and a trunk's grain appeared on two of its
+    /// four sides and vanished on the other two. That is the user's report of
+    /// 2026-10-21: *"cells are the right size except in certain cases on vertical sides
+    /// of blocks where they stop being squares"*.
+    ///
+    /// `plane` is the face's axis (`Face::axis`); `None` is a corner — the refined-vertex
+    /// format, which states no plane — and there the material's world axis is the only
+    /// basis there is.
+    pub const fn stretch_axis(self, plane: Option<u32>) -> Option<u32> {
+        match self {
+            // Isotropic: no axis is stretched. Foliage clumps on every axis instead.
+            SurfacePattern::Speckle | SurfacePattern::Foliage => None,
+            // A trunk's grain runs **up**, so on the four sides of a trunk it is the
+            // face's own `y` whatever way the face is turned. A log's end face (plane 1)
+            // has the trunk's axis perpendicular to it and shows rings, not grain.
+            SurfacePattern::Bark => match plane {
+                Some(1) => None,
+                _ => Some(1),
+            },
+            // Brushed grain runs **horizontally**: on a wall it is whichever in-plane
+            // axis is not `y` — `x` on a z-facing wall, `z` on an x-facing one — and on
+            // a floor it is `x`.
+            SurfacePattern::Brushed => match plane {
+                Some(0) => Some(2),
+                _ => Some(0),
+            },
         }
     }
 

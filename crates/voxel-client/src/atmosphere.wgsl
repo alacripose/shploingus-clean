@@ -135,6 +135,19 @@ fn sky_radiance_rgb(direction: vec3<f32>) -> vec3<f32> {
     // metres deep — two media, two geometries. One shared column would extinguish the beam before
     // it arrived and a fog would never load a sky.
     let elevation_deg = clamp(asin(clamp(direction.y, -1.0, 1.0)) * DEGREES_PER_RADIAN, 0.0, 90.0);
+    // **The clamped ray is the ray the model is asked about.** Below the horizon the pass answers
+    // with the horizon's own sky, and the horizon in this ray's azimuth is a *direction*, not only
+    // an elevation: the phase needs the same ray the column used, or a downward ray is lit at a
+    // sun angle no horizon pixel has. `skylight::sky_exposed_at` rebuilds it with `sun_direction`;
+    // this is that line, so the two readings of one model cannot disagree about which ray they
+    // were asked for.
+    let azimuth = atan2(direction.x, -direction.z);
+    let elevation = elevation_deg / DEGREES_PER_RADIAN;
+    let ray = vec3<f32>(
+        sin(azimuth) * cos(elevation),
+        sin(elevation),
+        -cos(azimuth) * cos(elevation),
+    );
     let sin_e = abs(sin(elevation_deg / DEGREES_PER_RADIAN));
     let view_air_mass = clamp(1.0 / max(sin_e, 1.0e-9), 1.0, grazing);
     let air_path_view = scale_height_m * view_air_mass;
@@ -144,7 +157,7 @@ fn sky_radiance_rgb(direction: vec3<f32>) -> vec3<f32> {
     // is very nearly a conservative scatterer, which is why a fog *loads* a sky as it hides the
     // ground behind it.
     let droplet_scatter = droplets * droplet_albedo;
-    let cos_theta = dot(direction, sky_model[2].xyz);
+    let cos_theta = dot(ray, sky_model[2].xyz);
 
     var acc = vec3<f32>(0.0);
     var total = 0.0;
@@ -181,7 +194,7 @@ fn sky_radiance_rgb(direction: vec3<f32>) -> vec3<f32> {
                 a.w,
                 b.x,
                 droplet_scatter,
-                dot(direction, moon_dir_row.xyz),
+                dot(ray, moon_dir_row.xyz),
                 mie_asymmetry,
                 droplet_asymmetry,
             );
@@ -203,3 +216,46 @@ fn sky_radiance_rgb(direction: vec3<f32>) -> vec3<f32> {
     }
     return acc * (exposure * total / shape);
 }
+/// **What the water did to the beam on its way in**, per channel, as a filter on the beam's own
+/// colour.
+///
+/// **The air is already in the beam, and that is why this is water and not atmosphere.**
+/// `skylight::daylight_of` hands `lights[0]` the *transmitted* Sun — `Sky::sun` is
+/// `total_direct_normal · air_column`, and `air_column` is `exp(−(β_R·H_R + β_M·turbidity·H_M)·m)` per
+/// channel — with `intensity` that band's luminance over the year's peak. A low Sun therefore
+/// arrives at this file already reddened by its Rayleigh path and already dimmer. Marching an air
+/// mass here as well would put the sunset through the atmosphere twice, which is an orange that is
+/// orange twice over and a beam that is dark before the water is counted.
+///
+/// **What the rig cannot know is the water over *this* fragment.** `air_column` carries Rayleigh and
+/// Mie and no droplets; the model keeps those in `head.y` (per metre) and `head.z` (the layer's
+/// depth above the eye), and the sky pass transports them with `path_in_layer`. So the beam crosses
+/// the same medium the sky does, on its own ray: `air_mass` of the ray's elevation sets the path, and
+/// the layer above the fragment — `depth − local.y`, so a fragment above the eye stands outside part
+/// of it — decides how much of that path is inside the water. A beam under a cloud bank arrives
+/// dimmed; one above it does not; and a low Sun crosses more water than a high one, because the
+/// path, not the layer, is what grew.
+///
+/// **One exponential and not a band loop.** In this model `droplets` is a single per-metre number,
+/// so the water's transmittance is grey by construction; looping twelve bands over the same factor
+/// would be theatre. What the cloud scatters *into* a column is the dome's, and the dome already
+/// carries it.
+fn beam_cloud_filter(local: vec3<f32>, dir: vec3<f32>) -> vec3<f32> {
+    // **A refusal, not a padded read** — the guard `sky_radiance_rgb` makes, for the same reason.
+    if (arrayLength(&sky_model) < SKY_MODEL_ROWS) {
+        return vec3<f32>(1.0);
+    }
+    let head = sky_model[0];
+    let optics = sky_model[3];
+    let droplets = head.y;
+    // The ray's own elevation, clamped the way the sky pass clamps it: a beam from below the horizon
+    // is the twilight branch's business and not an extrapolated path.
+    let elevation_deg = clamp(asin(clamp(dir.y, -1.0, 1.0)) * DEGREES_PER_RADIAN, 0.0, 90.0);
+    let sin_e = max(sin(elevation_deg / DEGREES_PER_RADIAN), SIN_FLOOR);
+    let air_path = head.x * clamp(1.0 / sin_e, 1.0, optics.z);
+    // **The layer above *this* fragment**, which is the one depth that is not the eye's.
+    let above = max(head.z - max(local.y, 0.0), 0.0);
+    let drop_path = path_in_layer(air_path, elevation_deg, above);
+    return vec3<f32>(exp(-droplets * drop_path));
+}
+

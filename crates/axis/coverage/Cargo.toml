@@ -1,0 +1,11 @@
+[package]
+name = "voxel-axis-coverage"
+description = "The coverage gate and the partition audit: every ladder has a row, and every unit tiles its source exactly — no gap, no overlap, no empty range and nothing past the end."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+voxel-axis-ladder = { path = "../ladder" }
+voxel-model = { path = "../../voxel-model" }

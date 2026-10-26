@@ -45,9 +45,8 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 use voxel_model::identity::Digest;
-use voxel_model::laya::{commit_site_artifact, queue_dir, Notification, ProofOfWork};
+use voxel_model::laya::{queue_dir, Notification, ProofOfWork};
 use voxel_model::observer::recorder::drain_committed_actions;
-use voxel_model::ticket::EvidenceOrigin;
 
 /// A streamed read of the queue the gate wrote: **one record at a time**, in
 /// decision order — the chunk streamer's shape applied to the queue. The whole
@@ -333,7 +332,8 @@ impl ToastQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use voxel_model::laya::evaluate_project;
+    use voxel_model::laya::{commit_site_artifact, evaluate_project};
+    use voxel_model::ticket::EvidenceOrigin;
 
     fn root() -> PathBuf {
         voxel_package::features::workspace_root(Path::new(env!("CARGO_MANIFEST_DIR")))

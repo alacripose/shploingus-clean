@@ -1,0 +1,273 @@
+ Documenting voxel-package v0.1.0 (C:\Users\ala\Documents\shploingus-clean\crates\voxel-package)
+warning: unresolved link to `Verdict`
+  --> crates\voxel-package\src\apidoc.rs:14:82
+   |
+14 | //! be a judge whose sentence could be quoted."* And this tree inherits that — [`Verdict`] is
+   |                                                                                  ^^^^^^^ no item named `Verdict` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+   = note: `#[warn(rustdoc::broken_intra_doc_links)]` on by default
+
+warning: unresolved link to `Expectation::slug`
+  --> crates\voxel-package\src\apidoc.rs:71:65
+   |
+71 | /// too. So the paragraph is **cut**, and what replaced it is [`Expectation::slug`]: the
+   |                                                                 ^^^^^^^^^^^^^^^^^ no item named `Expectation` in scope
+
+warning: public documentation for `comment_lines` links to private item `is_comment`
+   --> crates\voxel-package\src\bloat.rs:456:36
+    |
+456 | /// This is the second reader of [`is_comment`], and it exists so the model instrument reads
+    |                                    ^^^^^^^^^^ this item is private
+    |
+    = note: this link will resolve properly if you pass `--document-private-items`
+    = note: `#[warn(rustdoc::private_intra_doc_links)]` on by default
+
+warning: unresolved link to `witness_of`
+  --> crates\voxel-package\src\census.rs:25:57
+   |
+25 | //! * **an exhaustive `match` with no wildcard arm** ([`witness_of`]) — add a
+   |                                                         ^^^^^^^^^^ no item named `witness_of` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `Axis::Declared`
+  --> crates\voxel-package\src\census.rs:55:9
+   |
+55 | //! * [`Axis::Declared`] — the record states what it is **for**. Checkable: the
+   |         ^^^^^^^^^^^^^^ the enum `Axis` has no variant or associated item named `Declared`
+
+warning: unresolved link to `census::tests_report`
+  --> crates\voxel-package\src\census.rs:67:18
+   |
+67 | //! here — see [`census::tests_report`]. It is not fixed by this module. It is
+   |                  ^^^^^^^^^^^^^^^^^^^^ `census` is a function, not a module or type, and cannot have associated items
+
+warning: unresolved link to `crate::census::tests::every_workspace_member_is_in_the_table`
+  --> crates\voxel-package\src\census.rs:98:19
+   |
+98 | /// member, and [`crate::census::tests::every_workspace_member_is_in_the_table`]
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no item named `tests` in module `census`
+
+warning: unresolved link to `should`
+   --> crates\voxel-package\src\census.rs:510:31
+    |
+510 |     /// actual documentation [should] live inside rust docs, so when we study why some bullshit value
+    |                               ^^^^^^ no item named `should` in scope
+    |
+    = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `Decree`
+  --> crates\voxel-package\src\compendium.rs:13:17
+   |
+13 | //! becomes a [`Decree`] carrying its own text, the document it came from, the
+   |                 ^^^^^^ no item named `Decree` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `tests::a_ticket_naming_no_window_compiles_to_a_solution_with_none`
+   --> crates\voxel-package\src\compiler.rs:335:58
+    |
+335 |     /// 2026-10-01 at the user's ruling, and pinned by [`tests::a_ticket_naming_no_window_compiles_to_a_solution_with_none`].
+    |                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no item named `tests` in scope
+
+warning: public documentation for `projections` links to private item `append_event`
+   --> crates\voxel-package\src\compiler.rs:840:47
+    |
+840 |     /// envelope's descriptive axes** — see [`append_event`] — so a reader who needs them reads
+    |                                               ^^^^^^^^^^^^ this item is private
+    |
+    = note: this link will resolve properly if you pass `--document-private-items`
+
+warning: public documentation for `ChainCompaction` links to private item `append_event`
+   --> crates\voxel-package\src\compiler.rs:894:25
+    |
+894 | /// not**, decided by [`append_event`] — the same function the reader uses to decide it. There is no
+    |                         ^^^^^^^^^^^^ this item is private
+    |
+    = note: this link will resolve properly if you pass `--document-private-items`
+
+warning: unresolved link to `Unchecked`
+  --> crates\voxel-package\src\features.rs:51:18
+   |
+51 | //! Collapsing [`Unchecked`] into [`Active`] is how an unverified package comes to
+   |                  ^^^^^^^^^ no item named `Unchecked` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `Active`
+  --> crates\voxel-package\src\features.rs:51:37
+   |
+51 | //! Collapsing [`Unchecked`] into [`Active`] is how an unverified package comes to
+   |                                     ^^^^^^ no item named `Active` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `Inactive`
+  --> crates\voxel-package\src\features.rs:52:33
+   |
+52 | //! look verified. Collapsing [`Inactive`] into [`Refused`] is how an honest
+   |                                 ^^^^^^^^ no item named `Inactive` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `Refused`
+  --> crates\voxel-package\src\features.rs:52:51
+   |
+52 | //! look verified. Collapsing [`Inactive`] into [`Refused`] is how an honest
+   |                                                   ^^^^^^^ no item named `Refused` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `bloat::read_chain`
+  --> crates\voxel-package\src\filing.rs:61:35
+   |
+61 | /// `chain-2.chain`) would give [`bloat::read_chain`] two files and a refusal on the second
+   |                                   ^^^^^^^^^^^^^^^^^ no item named `bloat` in scope
+
+warning: unresolved link to `import`
+  --> crates\voxel-package\src\migration.rs:20:49
+   |
+20 | //! path, it is **whether it runs again**. So [`import`] is a function a person calls, it is
+   |                                                 ^^^^^^ no item named `import` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `refuses_to_be_a_build_input`
+  --> crates\voxel-package\src\migration.rs:21:38
+   |
+21 | //! not wired into `build.rs`, and [`refuses_to_be_a_build_input`] is the test that says so.
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^ no item named `refuses_to_be_a_build_input` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `oversize`
+  --> crates\voxel-package\src\migration.rs:70:50
+   |
+70 | //! an oversize event folds today. That is why [`oversize`] is part of the return value: the
+   |                                                  ^^^^^^^^ no item named `oversize` in scope
+   |
+   = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `oversize`
+   --> crates\voxel-package\src\migration.rs:128:67
+    |
+128 |     /// The body, verbatim. **Whole**, subsections included, or [`oversize`] is false.
+    |                                                                   ^^^^^^^^ no item named `oversize` in scope
+    |
+    = help: to escape `[` and `]` characters, add '\' before them like `\[` or `\]`
+
+warning: unresolved link to `census::CrateRow::means`
+   --> crates\voxel-package\src\recipe.rs:499:55
+    |
+499 | /// written by hand beside the enums it mirrors, is [`census::CrateRow::means`]'s error
+    |                                                       ^^^^^^^^^^^^^^^^^^^^^^^ no item named `census` in scope
+
+warning: `file` is both a function and a macro
+  --> crates\voxel-package\src\filing.rs:36:30
+   |
+36 | //!   (`AlreadyExists`)."* [`file`] returns that refusal rather than truncating, so pointing
+   |                              ^^^^ ambiguous link
+   |
+help: to link to the function, add parentheses
+   |
+36 | //!   (`AlreadyExists`)."* [`file()`] returns that refusal rather than truncating, so pointing
+   |                                  ++
+help: to link to the macro, add an exclamation mark
+   |
+36 | //!   (`AlreadyExists`)."* [`file!`] returns that refusal rather than truncating, so pointing
+   |                                  +
+
+warning: `file` is both a function and a macro
+  --> crates\voxel-package\src\filing.rs:37:9
+   |
+37 | //!   [`file`] at `docs/LEDGER.md` destroys nothing.
+   |         ^^^^ ambiguous link
+   |
+help: to link to the function, add parentheses
+   |
+37 | //!   [`file()`] at `docs/LEDGER.md` destroys nothing.
+   |             ++
+help: to link to the macro, add an exclamation mark
+   |
+37 | //!   [`file!`] at `docs/LEDGER.md` destroys nothing.
+   |             +
+
+warning: `file` is both a function and a macro
+  --> crates\voxel-package\src\filing.rs:38:74
+   |
+38 | //! * **H-8.1:** the chain is canonical and the Markdown is output. So [`file`] writes *chain
+   |                                                                          ^^^^ ambiguous link
+   |
+help: to link to the function, add parentheses
+   |
+38 | //! * **H-8.1:** the chain is canonical and the Markdown is output. So [`file()`] writes *chain
+   |                                                                              ++
+help: to link to the macro, add an exclamation mark
+   |
+38 | //! * **H-8.1:** the chain is canonical and the Markdown is output. So [`file!`] writes *chain
+   |                                                                              +
+
+warning: `file` is both a function and a macro
+   --> crates\voxel-package\src\filing.rs:132:7
+    |
+132 | /// [`file`], which refuses the **path**. That is correct for *creating* a record and wrong
+    |       ^^^^ ambiguous link
+    |
+help: to link to the function, add parentheses
+    |
+132 | /// [`file()`], which refuses the **path**. That is correct for *creating* a record and wrong
+    |           ++
+help: to link to the macro, add an exclamation mark
+    |
+132 | /// [`file!`], which refuses the **path**. That is correct for *creating* a record and wrong
+    |           +
+
+warning: `file` is both a function and a macro
+   --> crates\voxel-package\src\filing.rs:142:20
+    |
+142 | /// **Everything [`file`] refuses, and one more.** Nothing is truncated and nothing is
+    |                    ^^^^ ambiguous link
+    |
+help: to link to the function, add parentheses
+    |
+142 | /// **Everything [`file()`] refuses, and one more.** Nothing is truncated and nothing is
+    |                        ++
+help: to link to the macro, add an exclamation mark
+    |
+142 | /// **Everything [`file!`] refuses, and one more.** Nothing is truncated and nothing is
+    |                        +
+
+warning: `file` is both a function and a macro
+   --> crates\voxel-package\src\filing.rs:378:95
+    |
+378 | /// 6. only then: the repaired bytes are written to `keep/workspace.chain.repaired` through [`file`],
+    |                                                                                               ^^^^ ambiguous link
+    |
+help: to link to the function, add parentheses
+    |
+378 | /// 6. only then: the repaired bytes are written to `keep/workspace.chain.repaired` through [`file()`],
+    |                                                                                                   ++
+help: to link to the macro, add an exclamation mark
+    |
+378 | /// 6. only then: the repaired bytes are written to `keep/workspace.chain.repaired` through [`file!`],
+    |                                                                                                   +
+
+warning: `file` is both a function and a macro
+   --> crates\voxel-package\src\migration.rs:211:30
+    |
+211 | /// side effect. Filing is [`file`], which is the only thing that touches disk.
+    |                              ^^^^ ambiguous link
+    |
+help: to link to the function, add parentheses
+    |
+211 | /// side effect. Filing is [`file()`], which is the only thing that touches disk.
+    |                                  ++
+help: to link to the macro, add an exclamation mark
+    |
+211 | /// side effect. Filing is [`file!`], which is the only thing that touches disk.
+    |                                  +
+
+warning: `voxel-package` (lib doc) generated 29 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 2.54s
+   Generated C:\Users\ala\Documents\shploingus-clean\target\doc\voxel_package\index.html

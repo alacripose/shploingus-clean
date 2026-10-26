@@ -48,7 +48,7 @@
 # incremental off the same command exits 0. Both facts are from runs, not from reading about them.
 #
 # **A crate the run did not check is not a crate with zero**, which is why the rows below are exactly
-# the sixteen the last run named: a crate whose line is missing leaves this file without that line
+# the crates the last run named: a crate whose line is missing leaves this file without that line
 # rather than with a zero, and the axis then refuses it. That failure direction is deliberate — an
 # inaccurate zero would be a credential nobody earned.
 #
@@ -59,25 +59,138 @@
 # discovered later; a malformed line, an unknown crate name, a missing or unparseable pin, or a
 # duplicate is a refusal of the whole census.
 #
-# Re-read 2026-10-10, pins added the same day by the recipe above: **2285 public items across sixteen
-# crates carry no doc comment**; three crates are at zero, and the largest single reading is
-# `voxel-model` at 907. The counts did not move when the pins were added, and the pins are the state
-# of the bytes that produced them.
+# Re-read 2026-10-10, pins added the same day by the recipe above: **2 285 public items across
+# sixteen crates had no doc comment**; three crates were at zero, and the largest single reading was
+# `voxel-model` at 907. **Re-taken 2026-10-21**, after the axis folder's fifth crate: **2 334 items
+# across 21 crates**, with `voxel-model` 948, `voxel-light` 10, `voxel-work` 61, `voxel-client` 191
+# and the three new axis crates at 0 the readings that moved. **Re-taken 2026-10-21 again**, after
+# `voxel-axis-mcp` joined the axis folder: the new crate reads **0** and the counts of the other
+# crates did not move, while the pins of `voxel-package`, `voxel-client` and `voxel-axis-verify`
+# moved with their edits. **Re-taken once more the same day**, after `voxel-mcp` was given the axis
+# route: both crates still read 0, and only `voxel-mcp`'s and `voxel-axis-mcp`'s pins moved. The pins
+# are the state of the bytes that produced them, and a count
+# without one is a number about a tree nobody named.
+
+# **Re-taken 2026-10-22**, after the scene cache's own edits to `voxel-client`: the count reads
+# **191** again, unmoved — the edits were a loop label, two guarded exits and tests, none of
+# them a public item — and only the crate's pin moved with its bytes.
+
+# **Re-taken the same day**, after the shaped-run owner moved `voxel-client`'s text shaping into
+# its own module: **191** for the third time, because the new module, its key and its store are all
+# `pub(crate)` and every new test is inside a `#[cfg(test)]` block. Both commands were run in the
+# order the recipe gives — the count from the compiler pass, the pin from the census — and only the
+# pin moved.
+
+# **And once more**, after the pixel witness became its own test binary and the renderer gained two
+# documented measurements (`shaped_runs`, `settled_frames`): `voxel-client` reads **191** again. The
+# two getters are documented, and a documented item is not a missing one.
+
+# **Re-taken 2026-10-22**, after the atmosphere cadence moved behind a look-ahead: `voxel-client`
+# reads **191** for the fourth time — `atmosphere.rs` is a new module with every public item
+# documented, and the field's and the solver's new constructors carry theirs — and `shploingus`
+# reads **0** with its pin moved, because the frame loop's cadence block was replaced by one call.
+# Both commands were run in the order the recipe gives.
+
+# **Re-taken 2026-10-22**, after the light field's address law became one law in `voxel-model`:
+# the counts are **unmoved** — `voxel-model` **948** (the new `VoxelPos::of_point`, `centre_m` and
+# `chunk` all carry their docs), `voxel-client` **191**, `voxel-work` **61**, `shploingus` **0** — and
+# only the four pins moved with their bytes. Both commands were run in the order the recipe gives,
+# the count from the compiler pass and the pin from the census.
+
+# **Re-taken 2026-10-23**, after the shadow lattice and the cell shell moved the draw and the
+# light: ten crates' pins had moved with the thread's edits — `shploingus`, `voxel-client`,
+# `voxel-model`, `voxel-mesh`, `voxel-stream`, `voxel-work`, `voxel-package`, `voxel-mcp`,
+# `voxel-shapers` and `voxel-axis-balance` — so the `documented` axis read every one of them as
+# `stale`, the `missing_docs_pin` row did not light, and the shell segment fell to
+# `evidence_grade C` and four stars. **That was the state of the bytes, not of the test.** The
+# counts: `voxel-client` reads **195** after this pass documented twelve public items the recent
+# work added (the remaining four are reported here rather than rounded away), and `voxel-model`
+# reads **951**, three above its last reading. Both commands were run in the order the recipe
+# gives, and the pins below are the bytes as they stand now.
+
+# **Re-taken 2026-10-24**, after the cell data frame (`voxel-package/src/cellframe.rs`), its mount
+# registration and the frame rows in `packages/alpha-shell.shspec`: four counts read unmoved —
+# `shploingus` **0**, `voxel-axis-matrix` **0**, `voxel-axis-verify` **0**, `voxel-client` **195** —
+# and `voxel-package` reads **341**, one above the last pinned reading. **That one is not this
+# pass's `cellframe.rs`**: every public item there carries its doc (the compiler names none of
+# them), so the item came with the earlier uncommitted work this tree already carried. The count is
+# reported as measured rather than attributed. Only the pins of the crates this pass edited moved;
+# both commands were run in the order the recipe gives.
+#
+# **Four more pins had moved** with the work already in this tree — `voxel-appearance`,
+# `voxel-light`, `voxel-mcp` and `voxel-shapers` — so the `documented` axis read them as `stale`
+# and the `world` segment's cells fell to `evidence_grade C` and four stars. The counts were
+# re-measured rather than assumed: **54, 10, 0 and 464**, all unmoved, so only their pins changed.
+# That re-pin is the repair the file's header names — a command, not an edit to a number.
+#
+# `voxel-client`'s pin was re-taken **once more** at the end of the same pass, after two `///` lines
+# in `atmosphere.rs` stopped saying "column" for an `x`/`z` position (the column format is refused in
+# this tree, so the word was a stale address in a doc comment). The count reads **195**, unmoved —
+# the edit was prose on existing items — and the pin below is the bytes as they now stand.
+#
+# **And once more at the very end**, when `cells::raster`/`surface_at` stopped taking a `viewport`
+# they no longer used (a dead parameter is a claim about the grid that nothing read). `voxel-client`
+# reads **195** again and `shploingus` **0**; only their pins moved with the signature.
+#
+# `voxel-package`'s pin moved one last time for the `Feature::CellFrames` doc, whose text still said
+# the format was the next pass after the format had landed. The count stays **341**; the pin is the
+# bytes after the sentence was corrected.
+#
+# **Re-taken 2026-10-24 (the packaged cell frame)**, after `SHPKG003` carried `frames/` into the
+# package, the census grew a format row and the frame reader gained its artifact-map half: the
+# counts read **0 / 0 / 195 / 341 / 155** for `shploingus`, `voxel-axis-verify`, `voxel-client`,
+# `voxel-package` and `voxel-ui`, all unmoved, and only those five pins moved with their bytes.
+# Both commands were run in the order the recipe gives.
+#
+# **Re-taken 2026-10-24 (the materials stock)**, after `materials::stock` added `Stock`, `Offer`,
+# `Missing`, `Table::offers`, `Table::process` and `Table::craft`, and `materials-options` became a
+# second binary: `voxel-model` reads **951** again — every new public item carries its docs — and
+# its pin moved with the new file. `voxel-mcp`'s pin also moved, for its axis-route test: the test
+# now derives the cell count from `Segment::ALL` and asks PATCH-056 (which has no block) for the
+# prose refusal, because PATCH-059 and PATCH-060 gained recipes this pass. Its count stays **0**. The count
+# command and the pin test were both re-run; no count was edited.
+#
+# **Re-pinned 2026-10-25 (the PATCH-061 source audit)**, after the axis-route test was corrected to
+# the record's two true blocks and their real sites. `voxel-mcp`'s pin moved; its count stays **0**.
+# The count recipe was re-run in the order above; no count was edited.
+# **Re-pinned 2026-10-25 (the six axis layers)**, after `voxel-axis-ladder`, `-coverage`, `-unit`,
+# `-claim`, `-view` and `-civilians` joined the workspace: all six read **0**, because every public
+# item in them was written with its doc comment. `voxel-package` reads **340**, and
+# `voxel-axis-verify` / `voxel-model` moved with their bytes; no count was typed without the command
+# behind it. Both commands were run in the order the recipe gives; no count was edited by hand.
+# **Re-pinned 2026-10-25 (the six-crate contract audit)**, after the ladder reading gained one
+# owner and the document dropped its unreachable section: `voxel-axis-unit`, `-claim`, `-view`,
+# `-civilians`, `voxel-axis-verify` and `voxel-package` moved. Every count was re-taken with the
+# compiler command above and is **unchanged** — the axis crates still read 0 and the package 340 —
+# so only the six pins moved. Both commands were run in the recipe's order; no count was edited.
 
 # crate	missing	sha256: (the pin over the crate's covered files, when the count was taken)
-shploingus	0	sha256:5ee08eef554e5e2115bc24cf49ac87a4d02c2d5228f3515562a09be3526800eb
-voxel-appearance	54	sha256:4944c09f954064e336408b9dca7d10ecf9dcd933de8b094b3e500e1055873cf6
+shploingus	0	sha256:220f3e91c8fd7e20ea6bf7f068d12e30ef7563aa2eae067f18f600550908da30
+voxel-appearance	54	sha256:ccf9585288f828ac0a12dc34aa125e95a50f2f67a7549386c909fcae182ce54e
 voxel-audio	1	sha256:3ea1edaaefc7b5e930ff254a7151bd8551f8545a749c2faccb1ccbb9e5bd2adf
-voxel-client	190	sha256:f399af3ae95337d603caab08a29994bfc39920ceb11a7cab73d6178028fc9ff5
-voxel-instrument	33	sha256:241e0fdc649b114e376f15f3c7aad67d64c83e51d48be20ee9a4e7e67ac44dc4
-voxel-light	6	sha256:48e9c70fe027d602484392b89bbc95f1428072eee1ca72ca32c6b858e89585d9
-voxel-mcp	0	sha256:9715586b665b9a8ed65f9b21d78bfe3dd35f73205cce952d575fdfc46ba95cf7
-voxel-mesh	40	sha256:a9e84c17e84b7f6bdc81b699424a0de59e1f6f79639ccd22633da4b6ea6fcfc6
-voxel-model	907	sha256:7eb76a30f1b02dd24617716eb5f04ce7bcda8685f0e954cc2968952c63f1fb4e
+voxel-axis-artifact	0	sha256:a83de0b5cf510e6ef334fa63c9c0acf8990c7c0c1dc311b31a9c8da5b2e541f8
+voxel-axis-balance	0	sha256:411cd6ca36d4a4e7790e4d40ef9a744976a75e5b8e122ea54079ab9cf76b4090
+voxel-axis-being	0	sha256:06334909536fe2044ec05b37518552c216c75a8ff72e2adfa9135f8e467dd2fd
+voxel-axis-civilians	0	sha256:4fe618b8a9c7c1804b43693ea1aafb4ec3581945a3353f4fbafe7b6197b1aad3
+voxel-axis-claim	0	sha256:36fd0a45aa52e852608355015e5d62a1166cbf524b34d8c07be3b4961f2b2d97
+voxel-axis-coverage	0	sha256:0ebd9697a048324bb7f645979a0ded626723373b790721e6054c24fe9ecbf0ba
+voxel-axis-ladder	0	sha256:034b67056eba53276843df97913e8768b9940836fc6140549e067d6d5a6654bc
+voxel-axis-matrix	0	sha256:442842395bb41e5167ac8daf03d722246dd457eb7d39c776820b85e900272c1f
+voxel-axis-mcp	0	sha256:fecef2666df82271bee5afd9ced7ffeec138c31020e12044708c53b6a7075270
+voxel-axis-security	0	sha256:6c486a2580a1266eb0c024b8709b2e79c73a4dcf8eeed8dd34947d1fa9a04e6f
+voxel-axis-unit	0	sha256:68f0a202bffa88abfc1596be38090071a29ff5ae11b8038caa5d58ea1acabebf
+voxel-axis-verify	0	sha256:078fac7bac113722744e73c8670354292ad155feddf9d39b403928c1ef6037c1
+voxel-axis-view	0	sha256:eb65e6c81c380aa5c6545c9d21d4aa16742bb8f64795970a6e3a6cbb9bdc4e10
+voxel-client	195	sha256:d87e2de689591cd307e7f34db52ceeaf882edf0a45ac8394f6a75013fd3ec69f
+voxel-instrument	33	sha256:45bec69954bc4903d6bf74ec99c6975c86274165fa10638200d3a9151f545842
+voxel-light	10	sha256:558db4ef5f7fbe357fdac27c7116ce215807e3f3f30b73f6a46e12d4be33b8fa
+voxel-mcp	0	sha256:592cc2353b3a945a13572d208066cce9cb562dc9fbfa23dbad78ebddd01bbf79
+voxel-mesh	40	sha256:c33c9d31f9e30850f08d9ab8566eb3539144d6ed49a4b696087613333569479d
+voxel-model	951	sha256:e5fcb752d2d413c729d1b9311d556eb18bc556c6afe65da8070217f084008455
 voxel-noise	15	sha256:7abdb14ba34cab876ed3f29584b21227fbc2405e76a62fde9b41c10815e2f432
-voxel-package	340	sha256:abea3aeafe71ed1efb39dc29c956ee288b0b5e12eb7df752e0c32b5c33c3f8d1
-voxel-shapers	464	sha256:55f4f2d8395763bc7491bb28befea0f531aef2b632f5dba8738b5ddd57859f88
-voxel-stream	22	sha256:f2808cb8ed7404e42bf461a8a46fc420de588f9785c7acff6ddb0d681892ec4c
-voxel-ui	155	sha256:85646f3f4c646f8dca36db1293b6fc13412334a103335f696630ddf1bba27290
+voxel-package	340	sha256:8591e3d9d1652bd3c7857cd084fecf37f3b2cf0b9a4d4761dc832858259bbe81
+voxel-shapers	464	sha256:6756ed1ebfecba6ab9399b4e3f51f08ac49464c33112964021abeb258b49b99f
+voxel-stream	22	sha256:b07852ea892444bcf95bd5eac838cb905915b90233d618d580ca1474b98fbe3c
+voxel-ui	155	sha256:3006f21dcb49e93fc6dfb671ffbfb30beeceb98c628662d030594defe7e238c9
 voxel-von	0	sha256:b7f2cb28c34de0e0e99763b94be86f7ce627d750b4f5e0ad1f9d89eeab719ff8
-voxel-work	58	sha256:f233e05d6b880e19fef53631e82e567df97d50d1c0fadc09d13f97bb647c3cc2
+voxel-work	61	sha256:0618d87001e61d8d8bc5ffa1205072a96789794a5488fb3846fd49a3a343bace

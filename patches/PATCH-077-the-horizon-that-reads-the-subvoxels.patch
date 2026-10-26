@@ -1,0 +1,2353 @@
+diff --git a/crates/voxel-client/src/horizon.rs b/crates/voxel-client/src/horizon.rs
+new file mode 100644
+index 0000000..f7b8ce3
+--- /dev/null
++++ b/crates/voxel-client/src/horizon.rs
+@@ -0,0 +1,1014 @@
++//! **The light horizon: what stands between a cell and the sky, streamed as the world streams.**
++//!
++//! The frame's light used to be one global beam and one global ambient. A shadow map can answer
++//! *"is this pixel behind the world from the Sun?"* for one direction, but it cannot answer the
++//! other half of a cell's light — **how much of the dome it can see** — and it has no opinion at
++//! all about the air the beam crossed before it reached the world. This module is the second half:
++//! a small world-aligned volume of **occupancy**, built from each resident chunk's **subvoxel
++//! octree**, that `shading.wgsl` traverses from the fragment toward the frame's beam and toward the
++//! sky. The beam itself is still the solver's own `voxel_light` reading, transmitted through the
++//! atmosphere (`skylight::WorldLight::beam_rgb` and `sky_radiance_rgb`), and at night it is the
++//! Sun's light **reflected off the Moon** (`voxel_light::moonlight`): the march only decides how
++//! much of either reaches this cell.
++//!
++//! # Why a volume and not a per-corner band
++//!
++//! A per-corner measurement is built on the CPU and arrives a chunk at a time, which is the
++//! defect PATCH-074 removed from the picture: the light lagged the geometry. A volume is
++//! **streamed**: a chunk that lands stamps its own 32³ voxels, a chunk that leaves leaves air,
++//! and the fragment samples whatever is resident *this frame* rather than a number baked into a
++//! vertex last second. The march happens where the frame needs it — at the fragment — so no cell
++//! the eye is not looking at is ever marched.
++//!
++//! # The grain, and why it is the octree's own
++//!
++//! One cell is **one metre**, the octree's voxel, and each cell carries the **64 bits of that
++//! voxel's 4×4×4 subvoxel grid** — the octree's leaf shape, not a boolean derived from it. A
++//! half-dug voxel therefore shadows exactly the quarters that still hold matter, which is what
++//! `voxel_stream::light::transmittance_tree` measures on the CPU and what the player sees when a
++//! block is broken: the shadow of a broken corner has a corner missing.
++//!
++//! The words are **two `u32` per metre rather than one `u64`**, because WGSL has no 64-bit
++//! integer: bit `x + 4y + 16z` of the pair is subvoxel `(x, y, z)`, low word first, which is
++//! `SubvoxelIndex::flat` in `voxel-model` written twice.
++//!
++//! # The box, and what is outside it
++//!
++//! The box is three chunks square — [`HORIZON_CELLS`] × [`HORIZON_CELL_M`] = 96 m — with the eye's
++//! chunk in the middle, so it follows the eye one chunk at a time and covers a chunk behind the
++//! camera as well as the chunk ahead of it. **Past its edge there is no
++//! measurement, and the shader says so by returning `1.0`** rather than treating the edge as
++//! clear air: outside the volume the frame's answer is the shadow map's (or the rig's), which is
++//! the light the frame had before this field existed and a different claim from "this cell sees
++//! the whole sky". The box is inside the shadow map's own 256 m range, so the two terms overlap
++//! where both are measured and the near field is the finer of the two.
++//!
++//! # A stamp belongs to a version of a tree
++//!
++//! A stamp is a fact about a *tree*, and a tree is a fact about the world record at one moment.
++//! `Streamer::edit` records the change, and the rebuilt chunk arrives carrying a new **version**
++//! (`Streamer::tree_version`, bumped whenever a chunk's mesh or tree enters or is replaced). This
++//! volume keeps the version it stamped each chunk at, so **an edit is a chunk that wants
++//! stamping again** and a chunk that has not moved costs one map lookup. A stamp that outlived
++//! its tree would be the shadow of a block that is no longer there: break one out of a wall and
++//! the hole has to let light through on the frame the new tree lands, not at the next recentre.
++//!
++//! # One body, or the other
++//!
++//! `WorldLight` switches the beam from the Sun to the Moon at the solver level, with the Moon's
++//! bands being the Sun's own reflected (`voxel_light::moonlight`). The march takes the direction
++//! and the spectrum it is handed: **it does not know which body it is lighting from**, and that
++//! is deliberate — a second body in this module would be a second atmosphere.
++
++use std::collections::{BTreeMap, BTreeSet};
++
++use voxel_mesh::octree::Node;
++use voxel_mesh::SparseVoxelOctree;
++use voxel_model::{ChunkPos, CHUNK_SIDE, SUBVOXEL_SIDE};
++
++/// **Metres per volume cell** — the octree's own voxel.
++pub const HORIZON_CELL_M: f32 = 1.0;
++
++/// Cells along one edge of the volume: `96`, so the box is [`HORIZON_CELL_M`] × this = 96 m.
++pub const HORIZON_CELLS: u32 = 96;
++
++/// **Subvoxels along one edge of a cell** — `SUBVOXEL_SIDE`, the model's own 4.
++pub const HORIZON_SUBVOXEL_SIDE: u32 = SUBVOXEL_SIDE;
++
++/// **Metres per subvoxel** — `0.25`, the grain the octree's leaf shapes are authored at.
++pub const HORIZON_SUBVOXEL_M: f32 = HORIZON_CELL_M / HORIZON_SUBVOXEL_SIDE as f32;
++
++/// The `u32` words one cell's 64-bit mask occupies: two, because WGSL has no `u64`.
++pub const HORIZON_WORDS_PER_CELL: usize = 2;
++
++/// **How far the fragment's beam march walks in the fine band**, metres — the box's own span, so
++/// the subvoxel answer is used everywhere it exists and the coarse band takes over only past it.
++pub const HORIZON_REACH_M: f32 = 96.0;
++
++/// **How far the dome's own rays walk**, metres: the sky a cell can see is decided by what stands
++/// within a few chunks of it, and a dome ray is spent on a share of an ambient rather than on a
++/// shadow a player can walk up to.
++pub const HORIZON_SKY_REACH_M: f32 = 32.0;
++
++/// **Metres per coarse cell** — the far band's grain, one eighth of the world's chunk.
++pub const HORIZON_FAR_CELL_M: f32 = 8.0;
++
++/// Coarse cells along one edge of the far band: 32 × [`HORIZON_FAR_CELL_M`] = 256 m.
++pub const HORIZON_FAR_CELLS: u32 = 32;
++
++/// **How far a far-band ray walks**, metres — a quarter of the band's diagonal, so a ray that
++/// starts at the eye has the whole declared horizon ahead of it and not just half of one side.
++pub const HORIZON_FAR_REACH_M: f32 = 160.0;
++
++/// Chunks along one edge of the far band: 256 m / 32 m.
++pub const HORIZON_FAR_SLOTS: i32 = 8;
++
++/// The far band's word: **bits 0–7 are the share of this cell that holds matter** (`0` empty,
++/// `255` full), and bit 8 says the cell was stamped.
++///
++/// **A share rather than a flag**, because a coarse cell is the same octree data at a coarser
++/// resolution: eight metres of a chunk holds a *fraction* of matter, and the march lets that
++/// fraction of the ray through. That is what makes the far field a lower-detail level of the same
++/// volume instead of a wall of eight-metre stones, and it is why the two bands agree where they
++/// meet: the coarse share is the mean of the fine cells it covers.
++pub const FAR_SHARE: u32 = 0xFF;
++/// See [`FAR_SHARE`]: the coarse cell has been looked at.
++pub const FAR_MEASURED: u32 = 1 << 8;
++
++/// The three directions the dome is sampled along, in the shader's own order.
++///
++/// **Three rays, and the count is declared.** A dome is not three rays, and this module says so
++/// rather than implying an integral: the sample is the same three directions at every fragment,
++/// so two cells' skies are comparable, and the shader's `horizon_sky` is their mean.
++pub const SKY_RAYS: [[f32; 3]; 3] = [
++    [0.0, 1.0, 0.0],
++    [0.707_106_77, 0.707_106_77, 0.0],
++    [0.0, 0.707_106_77, -0.707_106_77],
++];
++
++/// The volume's uniform: the anchor in the fragment's own eye-relative frame, the cell and the
++/// three dimensions, and **which chunk slots have been stamped**.
++///
++/// **`to_anchor` is `anchor − eye` and not the anchor itself**, because the fragment already has
++/// its point relative to the eye (`shading.wgsl`'s `eye_rel`). Keeping the subtraction in a small
++/// number rather than a world coordinate is what keeps a metre a metre a kilometre from the
++/// origin.
++///
++/// **The coverage mask exists because a clear cell and an unstamped cell are not the same fact.**
++/// Zero means "nothing stands here", which is a measurement; a chunk that has not landed yet has
++/// no measurement at all, and a march that read its empty cells as clear air would refuse the
++/// shadow map for a whole box of world it had never looked at. The cube is exactly 3 × 3 chunk
++/// slots a side (the anchor is a chunk corner), so **one bit per slot** — 27 of the word's 32 —
++/// says which of them the volume has looked at.
++const UNIFORM_BYTES: u64 = 80;
++
++/// **The streamed occupancy volume, and the two GPU handles the world pass reads it through.**
++///
++/// The cells are [`HORIZON_WORDS_PER_CELL`] words per metre — the octree's own 4×4×4 occupancy,
++/// not a boolean and not one word a cell, because the march's bit test *is* the subvoxel address
++/// law and a coarser word would be a second grid the CPU measurement does not have. One cube is
++/// 96³ × 8 B = 6.75 MB, uploaded only on a frame whose contents moved.
++pub struct HorizonStream {
++    /// `HORIZON_WORDS_PER_CELL` words per cell, in `x + n·(y + n·z)` order.
++    cells: Vec<u32>,
++    /// **The far band**: one [`FAR_SHARE`]/[`FAR_MEASURED`] word per 8 m cell, 32³ = 256 m.
++    ///
++    /// It is what lets a march reach a kilometre of tunnel at a cost a frame can carry: an empty
++    /// coarse cell is one compare for eight metres, and a full one stops the ray. Its grain is the
++    /// chunk mesh's own second rung rather than four cells of the near band, so past the fine
++    /// band's edge the answer is eight times coarser and arrives eight times cheaper — the same
++    /// trade every LOD in this client makes, stated rather than implied.
++    far: Vec<u32>,
++    /// The world-voxel corner of cell `(0, 0, 0)`.
++    anchor: [i32; 3],
++    /// The world-voxel corner of far cell `(0, 0, 0)`.
++    far_anchor: [i32; 3],
++    /// **Chunks stamped into this anchor's cube, and the version of the tree each was stamped
++    /// from** — so a chunk is walked once per version of it and an edit is walked again.
++    stamped: BTreeMap<(i32, i32, i32), u64>,
++    /// Whether the CPU cube has moved since the last upload.
++    dirty: bool,
++    buffer: wgpu::Buffer,
++    far_buffer: wgpu::Buffer,
++    uniform: wgpu::Buffer,
++}
++
++impl HorizonStream {
++    /// The cube, empty and anchored at the origin until a frame recentres it.
++    pub fn new(device: &wgpu::Device) -> Self {
++        let cells = (HORIZON_CELLS * HORIZON_CELLS * HORIZON_CELLS) as usize;
++        let bytes = (cells * HORIZON_WORDS_PER_CELL * 4) as u64;
++        let far_cells = (HORIZON_FAR_CELLS * HORIZON_FAR_CELLS * HORIZON_FAR_CELLS) as usize;
++        HorizonStream {
++            cells: vec![0; cells * HORIZON_WORDS_PER_CELL],
++            far: vec![0; far_cells],
++            anchor: [0, 0, 0],
++            far_anchor: [0, 0, 0],
++            stamped: BTreeMap::new(),
++            dirty: true,
++            buffer: device.create_buffer(&wgpu::BufferDescriptor {
++                label: Some("light-horizon"),
++                size: bytes,
++                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
++                mapped_at_creation: false,
++            }),
++            far_buffer: device.create_buffer(&wgpu::BufferDescriptor {
++                label: Some("light-horizon-far"),
++                size: (far_cells * 4) as u64,
++                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
++                mapped_at_creation: false,
++            }),
++            uniform: device.create_buffer(&wgpu::BufferDescriptor {
++                label: Some("light-horizon-view"),
++                size: UNIFORM_BYTES,
++                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
++                mapped_at_creation: false,
++            }),
++        }
++    }
++
++    /// **The two entries the world pass adds for the horizon** — the cells at binding 10 and the
++    /// view at 11, after the shadow's 6–9.
++    pub(crate) fn layout_entries() -> [wgpu::BindGroupLayoutEntry; 3] {
++        let storage = |binding: u32| wgpu::BindGroupLayoutEntry {
++            binding,
++            visibility: wgpu::ShaderStages::FRAGMENT,
++            ty: wgpu::BindingType::Buffer {
++                ty: wgpu::BufferBindingType::Storage { read_only: true },
++                has_dynamic_offset: false,
++                min_binding_size: None,
++            },
++            count: None,
++        };
++        [
++            storage(10),
++            wgpu::BindGroupLayoutEntry {
++                binding: 11,
++                visibility: wgpu::ShaderStages::FRAGMENT,
++                ty: wgpu::BindingType::Buffer {
++                    ty: wgpu::BufferBindingType::Uniform,
++                    has_dynamic_offset: false,
++                    min_binding_size: None,
++                },
++                count: None,
++            },
++            storage(12),
++        ]
++    }
++
++    /// The bind-group entries that pair with [`HorizonStream::layout_entries`].
++    pub(crate) fn bind_entries(&self) -> [wgpu::BindGroupEntry<'_>; 3] {
++        [
++            wgpu::BindGroupEntry { binding: 10, resource: self.buffer.as_entire_binding() },
++            wgpu::BindGroupEntry { binding: 11, resource: self.uniform.as_entire_binding() },
++            wgpu::BindGroupEntry { binding: 12, resource: self.far_buffer.as_entire_binding() },
++        ]
++    }
++
++    /// The world-voxel corner the cube is anchored on.
++    pub fn anchor(&self) -> [i32; 3] {
++        self.anchor
++    }
++
++    /// **Which of the cube's 3 × 3 × 3 chunk slots hold a stamp**, as `sx + 3·(sy + 3·sz)` bits
++    /// — the mask the shader reads to tell an empty cell from an unmeasured one.
++    pub fn coverage(&self) -> u32 {
++        let mut mask = 0u32;
++        for ((x, y, z), _version) in &self.stamped {
++            let slot = [
++                (x * CHUNK_SIDE - self.anchor[0]).div_euclid(CHUNK_SIDE),
++                (y * CHUNK_SIDE - self.anchor[1]).div_euclid(CHUNK_SIDE),
++                (z * CHUNK_SIDE - self.anchor[2]).div_euclid(CHUNK_SIDE),
++            ];
++            if slot.iter().any(|v| *v < 0 || *v >= 3) {
++                continue;
++            }
++            mask |= 1 << (slot[0] + 3 * (slot[1] + 3 * slot[2]));
++        }
++        mask
++    }
++
++    /// Whether a chunk's 32 m box touches the cube.
++    pub fn covers(&self, pos: ChunkPos) -> bool {
++        let (origin, far) = self.box_of(pos);
++        origin[0] < far[0] && origin[1] < far[1] && origin[2] < far[2]
++    }
++
++    /// **Whether this chunk's cube still needs this version of its tree.**
++    ///
++    /// True when the chunk is in the box and the version it was stamped at is not the version it
++    /// has now — which is every chunk after a recentre, the chunk an edit rebuilt, and no chunk
++    /// on an ordinary frame of a still world.
++    pub fn wants(&self, pos: ChunkPos, version: u64) -> bool {
++        self.covers(pos) && self.stamped.get(&(pos.x, pos.y, pos.z)) != Some(&version)
++    }
++
++    /// **Move the cube to the eye's own chunk, and carry what it already knows.**
++    ///
++    /// Returns whether it moved. The anchor is the eye's chunk **minus one on each axis**, so a
++    /// 96 m cube is three chunks a side with the eye's own chunk in the middle: a chunk behind
++    /// the camera and the chunk ahead of it are both measured.
++    ///
++    /// **A crossing shifts the bands; it does not clear them.** The cube is a window on world space,
++    /// and stepping it one chunk along moves two thirds of the world it holds. Clearing it and
++    /// restamping all twenty-seven chunks is a frame that walks every leaf of three chunks it had
++    /// already walked — the stall at a chunk boundary, and the reason the light arrived a chunk at a
++    /// time. So the cells are copied to their new addresses, and every chunk still inside the new box
++    /// keeps its stamped version. What fell out is forgotten; the chunks that entered are the only
++    /// work the next stamp loop has to do.
++    pub fn recenter(&mut self, eye_m: [f64; 3]) -> bool {
++        let chunk = chunk_of(eye_m);
++        let anchor = [
++            (chunk.x - 1) * CHUNK_SIDE,
++            (chunk.y - 1) * CHUNK_SIDE,
++            (chunk.z - 1) * CHUNK_SIDE,
++        ];
++        if anchor == self.anchor {
++            return false;
++        }
++        // **The far band is centred on the eye's own chunk too**, four chunks out on each axis: a
++        // 256 m box with the player in the middle, so a tunnel mouth and the skyline are both in
++        // it and nothing the eye can walk toward arrives half a box late.
++        let far_anchor = [
++            (chunk.x - HORIZON_FAR_SLOTS / 2) * CHUNK_SIDE,
++            (chunk.y - HORIZON_FAR_SLOTS / 2) * CHUNK_SIDE,
++            (chunk.z - HORIZON_FAR_SLOTS / 2) * CHUNK_SIDE,
++        ];
++        // Where the old bands' first cells land in the new ones, in their own grains. A chunk is 32
++        // m and a coarse cell 8 m, so the far shift is four whole cells on every crossing.
++        let cell_shift = [
++            self.anchor[0] - anchor[0],
++            self.anchor[1] - anchor[1],
++            self.anchor[2] - anchor[2],
++        ];
++        let far_shift = [
++            (self.far_anchor[0] - far_anchor[0]) / HORIZON_FAR_CELL_M as i32,
++            (self.far_anchor[1] - far_anchor[1]) / HORIZON_FAR_CELL_M as i32,
++            (self.far_anchor[2] - far_anchor[2]) / HORIZON_FAR_CELL_M as i32,
++        ];
++        self.cells = shifted(
++            &self.cells,
++            HORIZON_CELLS as i32,
++            HORIZON_WORDS_PER_CELL,
++            cell_shift,
++        );
++        self.far = shifted(&self.far, HORIZON_FAR_CELLS as i32, 1, far_shift);
++        self.anchor = anchor;
++        self.far_anchor = far_anchor;
++        // **A stamp survives only while its chunk is still in the box.** Its cells moved with the
++        // band, so the version it was taken at is still the version standing in them.
++        let n = HORIZON_CELLS as i32;
++        self.stamped.retain(|key, _| {
++            let origin = ChunkPos::new(key.0, key.1, key.2).origin();
++            [origin.x, origin.y, origin.z]
++                .iter()
++                .enumerate()
++                .all(|(axis, start)| {
++                    *start < anchor[axis] + n && *start + CHUNK_SIDE > anchor[axis]
++                })
++        });
++        self.dirty = true;
++        true
++    }
++
++    /// **Forget the chunks a resident set no longer holds.**
++    ///
++    /// A chunk that leaves the window leaves no occluder behind: its trees are gone, so the cells
++    /// stamped from them describe a world that is no longer streamed. Both bands are cleared **for
++    /// that chunk's own box** — a coarse cell is 8 m and a chunk is four of them, aligned to its
++    /// corner, so no neighbour shares one. Clearing the coarse band whole instead (which this did)
++    /// was a bug with two faces: it threw away every other chunk's summary, and nothing restamped
++    /// them, because their versions had not changed — so the far field went blank on the frame the
++    /// window moved and stayed blank on every frame after it.
++    ///
++    /// Returns whether anything was forgotten.
++    pub fn retain(&mut self, resident: &BTreeSet<(i32, i32, i32)>) -> bool {
++        let gone: Vec<(i32, i32, i32)> = self
++            .stamped
++            .keys()
++            .copied()
++            .filter(|key| !resident.contains(key))
++            .collect();
++        if gone.is_empty() {
++            return false;
++        }
++        for key in &gone {
++            self.stamped.remove(key);
++            let base = [key.0 * CHUNK_SIDE, key.1 * CHUNK_SIDE, key.2 * CHUNK_SIDE];
++            self.clear_chunk(base);
++            self.clear_far_chunk(base);
++        }
++        self.dirty = true;
++        true
++    }
++
++    /// **Stamp one resident chunk's octree into the cube, at the octree's own subvoxel grain.**
++    ///
++    /// A `Uniform(m)` region sets every cell it covers solid — all 64 bits, because one material
++    /// filling a voxel is 64 solid subvoxels — and a `Mixed(shape)` leaf sets exactly the bits its
++    /// 4×4×4 grid holds matter in. That is the whole of the question the march asks, and it is
++    /// asked of the same leaves the mesher reads, so a dug quarter is a hole in the shadow rather
++    /// than a whole metre of darkness.
++    ///
++    /// The chunk's own cells are **cleared first**, because a chunk replaces the one it was: an
++    /// edit is served by a new tree for the same chunk, and a stamp that only ever added bits
++    /// would keep the block the player broke. Chunks do not overlap, so this costs no neighbour's
++    /// cells.
++    ///
++    /// Returns the number of cells the chunk marked (including cells already carrying a mask).
++    pub fn stamp(&mut self, pos: ChunkPos, tree: &SparseVoxelOctree, version: u64) -> usize {
++        if !self.wants(pos, version) {
++            return 0;
++        }
++        self.stamped.insert((pos.x, pos.y, pos.z), version);
++        let origin = pos.origin();
++        let base = [origin.x, origin.y, origin.z];
++        self.clear_chunk(base);
++        let mut marked = 0usize;
++        // **The coarse band first, and measured even where the chunk is all air.** The 4 × 4 × 4
++        // far cells this chunk owns are its own: 32 m of chunk is four 8 m cells aligned to the
++        // chunk's corner, so clearing them is not a neighbour's loss and a chunk of sky is a
++        // measured hole rather than an unstamped one.
++        for fy in 0..4 {
++            for fz in 0..4 {
++                for fx in 0..4 {
++                    let corner = [
++                        base[0] + fx * HORIZON_FAR_CELL_M as i32,
++                        base[1] + fy * HORIZON_FAR_CELL_M as i32,
++                        base[2] + fz * HORIZON_FAR_CELL_M as i32,
++                    ];
++                    if let Some(index) = self.far_index(corner) {
++                        self.far[index] = FAR_MEASURED;
++                    }
++                }
++            }
++        }
++        // **The coarse band's own census**, in solid voxels out of the 512 an 8 m cell holds. Every
++        // leaf adds its own volume — `Uniform` all of it, `Mixed` its solid subvoxels — so a cell's
++        // share is the mean of the fine band over that cell and the two agree at the handover.
++        let mut solids = [[[0u32; 4]; 4]; 4];
++        tree.visit_leaves(&mut |local: [i32; 3], level: u32, node: &Node| {
++            match node {
++                Node::Empty | Node::Branch(_) => {}
++                Node::Uniform(_) => {
++                    let side = 1i32 << level;
++                    add_solid_volume(&mut solids, local, side, (side * side * side) as u32);
++                    let words = [u32::MAX, u32::MAX];
++                    for y in local[1]..local[1] + side {
++                        for z in local[2]..local[2] + side {
++                            for x in local[0]..local[0] + side {
++                                if self.mark(
++                                    [base[0] + x, base[1] + y, base[2] + z],
++                                    words,
++                                ) {
++                                    marked += 1;
++                                }
++                            }
++                        }
++                    }
++                }
++                Node::Mixed(shape) => {
++                    let words = subvoxel_words(shape.cells());
++                    if words != [0, 0]
++                        && self.mark([base[0] + local[0], base[1] + local[1], base[2] + local[2]], words)
++                    {
++                        marked += 1;
++                    }
++                    add_solid_volume(
++                        &mut solids,
++                        local,
++                        1,
++                        words[0].count_ones() + words[1].count_ones(),
++                    );
++                }
++            }
++        });
++        for fy in 0..4 {
++            for fz in 0..4 {
++                for fx in 0..4 {
++                    let corner = [
++                        base[0] + fx * HORIZON_FAR_CELL_M as i32,
++                        base[1] + fy * HORIZON_FAR_CELL_M as i32,
++                        base[2] + fz * HORIZON_FAR_CELL_M as i32,
++                    ];
++                    let solid = solids[fz as usize][fy as usize][fx as usize];
++                    let share = (solid * FAR_SHARE / 512).min(FAR_SHARE);
++                    if let Some(index) = self.far_index(corner) {
++                        self.far[index] |= share;
++                    }
++                }
++            }
++        }
++        self.dirty = true;
++        marked
++    }
++
++    /// The coarse cell index of a world corner aligned to the far grid, or `None` outside it.
++    fn far_index(&self, world: [i32; 3]) -> Option<usize> {
++        let cell = HORIZON_FAR_CELL_M as i32;
++        let q = [
++            (world[0] - self.far_anchor[0]).div_euclid(cell),
++            (world[1] - self.far_anchor[1]).div_euclid(cell),
++            (world[2] - self.far_anchor[2]).div_euclid(cell),
++        ];
++        let n = HORIZON_FAR_CELLS as i32;
++        if q.iter().any(|v| *v < 0 || *v >= n) {
++            return None;
++        }
++        Some((q[0] + n * (q[1] + n * q[2])) as usize)
++    }
++
++    /// **Whether the coarse cell at a world point holds matter**, or `None` where it is unstamped
++    /// or outside the band.
++    pub fn far_solid_at(&self, world_m: [f64; 3]) -> Option<bool> {
++        Some(self.far_share_at(world_m)? >= 0.5)
++    }
++
++    /// **How much of the coarse cell at a world point holds matter** — `Some(0.0)` for a stamped
++    /// empty cell, `None` where it is unstamped or outside the band.
++    pub fn far_share_at(&self, world_m: [f64; 3]) -> Option<f32> {
++        let cell = HORIZON_FAR_CELL_M as f64;
++        let corner = [
++            ((world_m[0] / cell).floor() as i32) * HORIZON_FAR_CELL_M as i32,
++            ((world_m[1] / cell).floor() as i32) * HORIZON_FAR_CELL_M as i32,
++            ((world_m[2] / cell).floor() as i32) * HORIZON_FAR_CELL_M as i32,
++        ];
++        let word = *self.far.get(self.far_index(corner)?)?;
++        if word & FAR_MEASURED == 0 {
++            return None;
++        }
++        Some((word & FAR_SHARE) as f32 / FAR_SHARE as f32)
++    }
++
++    /// Clear the coarse cells one chunk's box owns: four 8 m cells a side, aligned to its corner.
++    fn clear_far_chunk(&mut self, base: [i32; 3]) {
++        let step = HORIZON_FAR_CELL_M as i32;
++        for fy in 0..4 {
++            for fz in 0..4 {
++                for fx in 0..4 {
++                    let corner = [
++                        base[0] + fx * step,
++                        base[1] + fy * step,
++                        base[2] + fz * step,
++                    ];
++                    if let Some(index) = self.far_index(corner) {
++                        self.far[index] = 0;
++                    }
++                }
++            }
++        }
++    }
++
++    /// Clear the cells one chunk's box covers inside the cube.
++    fn clear_chunk(&mut self, base: [i32; 3]) {
++        let n = HORIZON_CELLS as i32;
++        let near = [
++            base[0].max(self.anchor[0]),
++            base[1].max(self.anchor[1]),
++            base[2].max(self.anchor[2]),
++        ];
++        let far = [
++            (base[0] + CHUNK_SIDE).min(self.anchor[0] + n),
++            (base[1] + CHUNK_SIDE).min(self.anchor[1] + n),
++            (base[2] + CHUNK_SIDE).min(self.anchor[2] + n),
++        ];
++        for y in near[1]..far[1] {
++            for z in near[2]..far[2] {
++                for x in near[0]..far[0] {
++                    if let Some(index) = self.index([x, y, z]) {
++                        let at = index * HORIZON_WORDS_PER_CELL;
++                        self.cells[at] = 0;
++                        self.cells[at + 1] = 0;
++                    }
++                }
++            }
++        }
++    }
++
++    /// OR one world voxel's mask into its cell, if the cell is inside the cube.
++    fn mark(&mut self, world: [i32; 3], words: [u32; 2]) -> bool {
++        let Some(index) = self.index(world) else {
++            return false;
++        };
++        let at = index * HORIZON_WORDS_PER_CELL;
++        let already = self.cells[at] != 0 || self.cells[at + 1] != 0;
++        self.cells[at] |= words[0];
++        self.cells[at + 1] |= words[1];
++        !already
++    }
++
++    /// The cell index of a world voxel, or `None` outside the cube.
++    fn index(&self, world: [i32; 3]) -> Option<usize> {
++        let q = [
++            world[0] - self.anchor[0],
++            world[1] - self.anchor[1],
++            world[2] - self.anchor[2],
++        ];
++        let n = HORIZON_CELLS as i32;
++        if q.iter().any(|v| *v < 0 || *v >= n) {
++            return None;
++        }
++        Some((q[0] + n * (q[1] + n * q[2])) as usize)
++    }
++
++    /// **Whether the cell at a world point holds any matter**, by the cube's own address law.
++    ///
++    /// The CPU mirror of the shader's voxel lookup, kept for tests and for a caller that has to
++    /// say what the volume holds; the march itself is the shader's, because a second march here
++    /// would be a second light.
++    pub fn solid_at(&self, world_m: [f64; 3]) -> Option<bool> {
++        let words = self.mask_at(world_m)?;
++        Some(words != [0, 0])
++    }
++
++    /// **Whether the subvoxel at a world point is solid** — the address law
++    /// `shading.wgsl`'s `horizon_subvoxel_solid` states, transcribed once for a test to hold.
++    pub fn subvoxel_at(&self, world_m: [f64; 3]) -> Option<bool> {
++        let words = self.mask_at(world_m)?;
++        let cell = HORIZON_CELL_M as f64;
++        let at: Vec<u32> = (0..3)
++            .map(|axis| {
++                let fraction = (world_m[axis] / cell).rem_euclid(1.0);
++                (fraction * HORIZON_SUBVOXEL_SIDE as f64).floor() as u32
++            })
++            .collect();
++        let ordinal = at[0] + HORIZON_SUBVOXEL_SIDE * (at[1] + HORIZON_SUBVOXEL_SIDE * at[2]);
++        let word = words[(ordinal / 32) as usize];
++        Some((word >> (ordinal % 32)) & 1 == 1)
++    }
++
++    /// The two words of the mask covering a world point, or `None` outside the cube.
++    fn mask_at(&self, world_m: [f64; 3]) -> Option<[u32; 2]> {
++        let cell = HORIZON_CELL_M as f64;
++        let index = self.index([
++            (world_m[0] / cell).floor() as i32,
++            (world_m[1] / cell).floor() as i32,
++            (world_m[2] / cell).floor() as i32,
++        ])?;
++        let at = index * HORIZON_WORDS_PER_CELL;
++        Some([self.cells[at], self.cells[at + 1]])
++    }
++
++    /// **Send the cube and the view to the frame**, if either moved.
++    ///
++    /// The view is written every frame because the eye moves every frame and `to_anchor` is
++    /// relative to it; the cube is written only when a chunk stamped it, an edit forgot it or the
++    /// cube recentred.
++    pub fn write(&mut self, queue: &wgpu::Queue, eye_m: [f64; 3]) {
++        if self.dirty {
++            let mut bytes = Vec::with_capacity(self.cells.len() * 4);
++            for cell in &self.cells {
++                bytes.extend_from_slice(&cell.to_le_bytes());
++            }
++            queue.write_buffer(&self.buffer, 0, &bytes);
++            self.dirty = false;
++        }
++        if self.dirty {
++            let mut far = Vec::with_capacity(self.far.len() * 4);
++            for cell in &self.far {
++                far.extend_from_slice(&cell.to_le_bytes());
++            }
++            queue.write_buffer(&self.far_buffer, 0, &far);
++        }
++        let mut view = [0.0f32; 20];
++        for axis in 0..3 {
++            view[axis] = self.anchor[axis] as f32 - eye_m[axis] as f32;
++            view[8 + axis] = self.far_anchor[axis] as f32 - eye_m[axis] as f32;
++        }
++        view[4] = HORIZON_CELL_M;
++        view[5] = HORIZON_CELLS as f32;
++        view[6] = HORIZON_CELLS as f32;
++        view[7] = HORIZON_CELLS as f32;
++        view[12] = HORIZON_FAR_CELL_M;
++        view[13] = HORIZON_FAR_CELLS as f32;
++        view[14] = HORIZON_FAR_CELLS as f32;
++        view[15] = HORIZON_FAR_CELLS as f32;
++        let mut bytes = [0u8; UNIFORM_BYTES as usize];
++        for (slot, value) in view.iter().enumerate() {
++            bytes[slot * 4..slot * 4 + 4].copy_from_slice(&value.to_le_bytes());
++        }
++        bytes[64..68].copy_from_slice(&self.coverage().to_le_bytes());
++        queue.write_buffer(&self.uniform, 0, &bytes);
++    }
++
++    fn box_of(&self, pos: ChunkPos) -> ([i32; 3], [i32; 3]) {
++        let origin = pos.origin();
++        let near = [
++            origin.x.max(self.anchor[0]),
++            origin.y.max(self.anchor[1]),
++            origin.z.max(self.anchor[2]),
++        ];
++        let far = [
++            (origin.x + CHUNK_SIDE).min(self.anchor[0] + HORIZON_CELLS as i32),
++            (origin.y + CHUNK_SIDE).min(self.anchor[1] + HORIZON_CELLS as i32),
++            (origin.z + CHUNK_SIDE).min(self.anchor[2] + HORIZON_CELLS as i32),
++        ];
++        (near, far)
++    }
++}
++
++/// **One band, moved to its new anchor**, zeroing the cells the old anchor did not hold.
++///
++/// `shift` is where the old band's cell `0` lands in the new one, so a positive component is a band
++/// that moved backwards into the cube and a negative one is a band that moved forwards. A shift at
++/// least as large as the band is a clear: nothing overlaps, and copying nothing is the honest copy.
++///
++/// The `x` axis is contiguous in the index, so this is one row copy per `(y, z)` line rather than a
++/// cell at a time — 96 MB/s of work would not be, and a crossing is a frame the player is watching.
++fn shifted(words: &[u32], side: i32, stride: usize, shift: [i32; 3]) -> Vec<u32> {
++    let mut moved = vec![0u32; words.len()];
++    if shift.iter().any(|d| d.abs() >= side) {
++        return moved;
++    }
++    let lo = [shift[0].max(0), shift[1].max(0), shift[2].max(0)];
++    let hi = [
++        (shift[0] + side).min(side),
++        (shift[1] + side).min(side),
++        (shift[2] + side).min(side),
++    ];
++    if lo.iter().zip(hi.iter()).any(|(low, high)| low >= high) {
++        return moved;
++    }
++    let run = (hi[0] - lo[0]) as usize * stride;
++    for y in lo[1]..hi[1] {
++        for z in lo[2]..hi[2] {
++            let from = (((y - shift[1]) * side + (z - shift[2])) * side + (lo[0] - shift[0])) as usize
++                * stride;
++            let to = ((y * side + z) * side + lo[0]) as usize * stride;
++            moved[to..to + run].copy_from_slice(&words[from..from + run]);
++        }
++    }
++    moved
++}
++
++/// Add one leaf's solid volume to the coarse cells its own region covers, in solid voxels.
++///
++/// A leaf at level ≤ 3 sits inside one 8 m cell, because it is aligned to its own size; one above
++/// that spans several, and each takes its share of the volume. That is the coarse band read from
++/// the tree's own structure rather than from its voxels, which is why a 256 m band costs less to
++/// stamp than the 96 m one.
++fn add_solid_volume(solids: &mut [[[u32; 4]; 4]; 4], local: [i32; 3], side: i32, solid: u32) {
++    let cell = HORIZON_FAR_CELL_M as i32;
++    let lo = [local[0] / cell, local[1] / cell, local[2] / cell];
++    let hi = [
++        (local[0] + side - 1) / cell,
++        (local[1] + side - 1) / cell,
++        (local[2] + side - 1) / cell,
++    ];
++    let count = ((hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)) as u32;
++    let each = solid / count.max(1);
++    for z in lo[2]..=hi[2] {
++        for y in lo[1]..=hi[1] {
++            for x in lo[0]..=hi[0] {
++                if let Some(row) = solids.get_mut(z as usize) {
++                    if let Some(plane) = row.get_mut(y as usize) {
++                        if let Some(cell) = plane.get_mut(x as usize) {
++                            *cell += each;
++                        }
++                    }
++                }
++            }
++        }
++    }
++}
++
++/// **One voxel's 4×4×4 occupancy as two words**, in the model's own flat order
++/// (`x + 4y + 16z`), low word first.
++///
++/// A shape with every cell solid is `[u32::MAX, u32::MAX]` and one with no matter at all is
++/// `[0, 0]`, which is why a caller can test the two cheap cases before looking at a bit.
++fn subvoxel_words(cells: &[voxel_model::MaterialId; 64]) -> [u32; 2] {
++    let mut words = [0u32; 2];
++    for (ordinal, material) in cells.iter().enumerate() {
++        if !material.is_empty() {
++            words[ordinal / 32] |= 1 << (ordinal % 32);
++        }
++    }
++    words
++}
++
++/// The chunk a world point is in, through the one address law the field already uses.
++fn chunk_of(point_m: [f64; 3]) -> ChunkPos {
++    let side = CHUNK_SIDE as f64;
++    ChunkPos::new(
++        (point_m[0] / side).floor() as i32,
++        (point_m[1] / side).floor() as i32,
++        (point_m[2] / side).floor() as i32,
++    )
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use voxel_mesh::octree::SparseVoxelOctree;
++    use voxel_model::{MaterialId, SubvoxelIndex};
++
++    fn device() -> (wgpu::Device, wgpu::Queue) {
++        let (device, queue, _name) = crate::renderer::offscreen_device().expect("a GPU for the volume");
++        (device, queue)
++    }
++
++    fn tree_with_roof() -> SparseVoxelOctree {
++        let mut tree = SparseVoxelOctree::new();
++        // A 4 x 4 m roof, exactly one voxel thick and three metres above the chunk's floor.
++        // `set_material_region` aligns its origin to its own level, so the roof is laid a
++        // voxel at a time: a region at level 3 starting at y = 3 would snap to y = 0 and
++        // become a floor rather than a roof.
++        for x in 2..6 {
++            for z in 2..6 {
++                tree.set_voxel(
++                    voxel_model::LocalPos::new(x, 3, z).expect("inside the chunk"),
++                    voxel_model::VoxelShape::solid(MaterialId(1)),
++                );
++            }
++        }
++        tree
++    }
++
++    #[test]
++    fn a_chunks_octree_stamps_its_own_metres_and_the_shadow_is_a_cell() {
++        let (device, _queue) = device();
++        let mut stream = HorizonStream::new(&device);
++        stream.recenter([1.0, 1.0, 1.0]);
++        assert_eq!(stream.anchor(), [-32, -32, -32]);
++        assert!(stream.wants(ChunkPos::new(0, 0, 0), 1));
++        let marked = stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 1);
++        assert_eq!(marked, 16, "the roof is 4 x 4 x 1 m");
++        assert_eq!(stream.solid_at([4.0, 3.4, 4.0]), Some(true));
++        assert_eq!(stream.solid_at([4.0, 2.4, 4.0]), Some(false));
++        assert_eq!(stream.solid_at([-100.0, 0.0, 0.0]), None, "outside is not air");
++        assert!(!stream.wants(ChunkPos::new(0, 0, 0), 1), "a version is stamped once");
++        assert!(stream.wants(ChunkPos::new(0, 0, 0), 2), "a new version of the tree wants stamping");
++        // **The claim the shader reads**: the eye's own chunk is slot `1 + 3·(1 + 3·1)`, and a
++        // second chunk sets its own bit rather than speaking for the box.
++        assert_eq!(stream.coverage(), 1 << 13, "the stamped slot is not the mask's own bit");
++        stream.stamp(ChunkPos::new(1, 0, 0), &tree_with_roof(), 1);
++        assert_eq!(stream.coverage(), (1 << 13) | (1 << 14));
++        assert!(
++            !stream.wants(ChunkPos::new(2, 0, 0), 1) && stream.coverage() & (1 << 15) == 0,
++            "a chunk outside the cube claimed a slot"
++        );
++    }
++
++    /// **The stamp keeps the octree's own 4×4×4 grid, not one bit for the metre.**
++    ///
++    /// A voxel with one subvoxel column solid is a real thing the player makes by digging: three
++    /// quarters of the block are gone and the corner that is left casts the corner's shadow. A
++    /// volume that marked the whole metre would shade the dug quarters too, which is exactly the
++    /// defect PATCH-070 fixed in the CPU walk and this volume must not reintroduce on the GPU.
++    #[test]
++    fn a_partly_dug_voxel_carries_its_sixty_four_bits_and_not_one() {
++        let (device, _queue) = device();
++        let mut stream = HorizonStream::new(&device);
++        stream.recenter([1.0, 1.0, 1.0]);
++        let mut tree = SparseVoxelOctree::new();
++        let voxel = voxel_model::LocalPos::new(5, 2, 5).expect("inside the chunk");
++        // One subvoxel column: x = 0, z = 0, all four y. Ordinals 0, 4, 8, 12.
++        for y in 0..4u8 {
++            tree.set_subvoxel(
++                voxel,
++                SubvoxelIndex::new(0, y, 0).expect("a subvoxel"),
++                MaterialId(7),
++            );
++        }
++        assert_eq!(stream.stamp(ChunkPos::new(0, 0, 0), &tree, 1), 1, "one voxel, one cell");
++
++        assert_eq!(stream.solid_at([5.5, 2.5, 5.5]), Some(true), "the cell is not empty");
++        assert_eq!(
++            stream.subvoxel_at([5.125, 2.5, 5.125]),
++            Some(true),
++            "the solid column is not solid: the mask dropped the subvoxel grid"
++        );
++        for dug in [[5.375, 2.5, 5.125], [5.125, 2.5, 5.375], [5.875, 2.875, 5.875]] {
++            assert_eq!(
++                stream.subvoxel_at(dug),
++                Some(false),
++                "a dug subvoxel at {dug:?} is marked solid"
++            );
++        }
++    }
++
++    /// **A crossing carries the cube's knowledge with it**, which is the difference between a
++    /// stepped window and a rebuilding one.
++    ///
++    /// The player walks from chunk 0 into chunk 1: the 96 m box slides one chunk, two thirds of the
++    /// world in it is the same world, and the cells stamped from those chunks are the same cells at
++    /// new addresses. Clearing and restamping all twenty-seven was a stall at every boundary and a
++    /// light that arrived a chunk at a time — the two things the running window reported.
++    #[test]
++    fn a_crossing_shifts_the_cube_and_keeps_what_it_already_knows() {
++        let (device, _queue) = device();
++        let mut stream = HorizonStream::new(&device);
++        assert!(stream.recenter([1.0, 1.0, 1.0]));
++        stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 1);
++        assert_eq!(stream.solid_at([4.0, 3.4, 4.0]), Some(true), "the roof was not stamped");
++        assert!(!stream.recenter([1.0, 1.0, 1.0]), "the same chunk does not move it");
++
++        assert!(stream.recenter([40.0, 1.0, 1.0]), "the next chunk does");
++        assert_eq!(
++            stream.solid_at([4.0, 3.4, 4.0]),
++            Some(true),
++            "chunk 0 is still in the box, so its stamp is still the truth about it"
++        );
++        assert!(!stream.wants(ChunkPos::new(0, 0, 0), 1), "a carried chunk is not walked again");
++        assert!(stream.wants(ChunkPos::new(2, 0, 0), 1), "the chunk that entered wants a stamp");
++        assert!(!stream.wants(ChunkPos::new(3, 0, 0), 1), "a chunk past the 96 m box is not in it");
++
++        // Two chunks along, the chunk that stamped the roof is out of the box and must be forgotten.
++        assert!(stream.recenter([80.0, 1.0, 1.0]));
++        assert_eq!(stream.solid_at([4.0, 3.4, 4.0]), None, "a cell outside the cube has no answer");
++        assert!(!stream.stamped.contains_key(&(0, 0, 0)), "the stamp outlived its chunk's slot");
++    }
++
++    /// **An edit is a new version, and the replaced chunk's cells follow it.**
++    ///
++    /// The block a stamp was taken from is a fact about one version of one tree. A dig that
++    /// removed it does not move the cell the old stamp marked; the chunk has to be stamped again,
++    /// or the hole the player just made keeps the shadow of the block that was in it. The second
++    /// half is the other side of the same rule: a version already stamped is not walked again.
++    #[test]
++    fn a_new_version_of_a_tree_restamps_the_cells_the_old_one_marked() {
++        let (device, _queue) = device();
++        let mut stream = HorizonStream::new(&device);
++        stream.recenter([1.0, 1.0, 1.0]);
++        stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 6);
++        assert_eq!(stream.solid_at([4.0, 3.4, 4.0]), Some(true), "the roof was not stamped");
++        assert_eq!(stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 6), 0, "a held version is not walked again");
++
++        // The player breaks the whole roof: the rebuilt chunk arrives as version 7.
++        let empty = SparseVoxelOctree::new();
++        assert!(stream.wants(ChunkPos::new(0, 0, 0), 7), "the edit must want stamping");
++        assert_eq!(stream.stamp(ChunkPos::new(0, 0, 0), &empty, 7), 0, "nothing is left to mark");
++        assert_eq!(
++            stream.solid_at([4.0, 3.4, 4.0]),
++            Some(false),
++            "the roof of the tree before the edit is still standing"
++        );
++    }
++
++    #[test]
++    fn the_shaders_reach_and_the_hosts_are_one_number() {
++        let source = include_str!("horizon.wgsl");
++        for (what, literal) in [
++            ("the march reach", "const HORIZON_REACH_M: f32 = 96.0;"),
++            ("the dome reach", "const HORIZON_SKY_REACH_M: f32 = 32.0;"),
++            ("the cell size", "const HORIZON_CELL_M: f32 = 1.0;"),
++            ("the subvoxel side", "const HORIZON_SUBVOXEL_SIDE: u32 = 4u;"),
++            ("the coarse reach", "const HORIZON_FAR_REACH_M: f32 = 160.0;"),
++            ("the coarse share", "const FAR_SHARE: u32 = 0xFFu;"),
++            ("the coarse stamped bit", "const FAR_MEASURED: u32 = 256u;"),
++        ] {
++            assert!(source.contains(literal), "the shader's {what} moved without this module's");
++        }
++        assert_eq!(HORIZON_CELLS as f32 * HORIZON_CELL_M, 96.0);
++        assert_eq!(HORIZON_FAR_CELLS as f32 * HORIZON_FAR_CELL_M, 256.0);
++        assert_eq!(HORIZON_SUBVOXEL_M, 0.25);
++        assert_eq!(SKY_RAYS.len(), 3);
++    }
++
++    /// **The coarse band is stamped from the tree's own structure, and it is what makes a long
++    /// corridor measurable.**
++    ///
++    /// The fine band answers to 96 m and the coarse one to 256 m; a wall 60 m away is a fine-band
++    /// answer to a ray that starts near it, and a coarse-band one to a ray that is looking down a
++    /// tunnel from the eye. Both are stamped from the same leaves — the coarse cell is matter if
++    /// any voxel in its eight metres is — and an unstamped coarse cell is `None`, not air.
++    #[test]
++    fn the_coarse_band_carries_each_cells_share_and_says_where_it_has_not_looked() {
++        let (device, _queue) = device();
++        let mut stream = HorizonStream::new(&device);
++        stream.recenter([1.0, 1.0, 1.0]);
++        assert_eq!(stream.far_share_at([4.0, 3.5, 4.0]), None, "nothing is stamped yet");
++        stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 1);
++        // **A share, not a stone**: the roof is sixteen of this cell's 512 voxels.
++        let share = stream.far_share_at([4.0, 3.5, 4.0]).expect("the cell is stamped");
++        assert!(
++            (share - 16.0 / 512.0).abs() < 1.0 / 255.0,
++            "a one-voxel roof is {share} of its eight metres, not all of them"
++        );
++        assert_eq!(stream.far_solid_at([4.0, 3.5, 4.0]), Some(false), "and it is not a wall");
++        assert_eq!(
++            stream.far_share_at([4.0, 20.0, 4.0]),
++            Some(0.0),
++            "a measured empty cell reads as air, not as unmeasured"
++        );
++        assert_eq!(
++            stream.far_share_at([200.0, 3.5, 4.0]),
++            None,
++            "a cell no chunk has stamped claimed to be measured"
++        );
++
++        // The other end: a whole 8 m cell of matter is a share of one — one cell, not the chunk.
++        let mut full = SparseVoxelOctree::new();
++        full.set_material_region([0, 0, 0], 3, MaterialId(1));
++        assert_eq!(stream.stamp(ChunkPos::new(0, 0, 0), &full, 2), 512, "eight metres, not one");
++        assert_eq!(stream.far_share_at([4.0, 3.5, 4.0]), Some(1.0), "a full cell is a full share");
++        assert_eq!(stream.far_solid_at([4.0, 3.5, 4.0]), Some(true));
++        assert_eq!(
++            stream.far_share_at([12.0, 3.5, 4.0]),
++            Some(0.0),
++            "the neighbouring cell is its own share and holds nothing"
++        );
++    }
++
++    /// **A chunk that leaves the window leaves no occluder behind.**
++    #[test]
++    fn a_chunk_that_is_no_longer_resident_is_forgotten() {
++        let (device, _queue) = device();
++        let mut stream = HorizonStream::new(&device);
++        stream.recenter([1.0, 1.0, 1.0]);
++        stream.stamp(ChunkPos::new(0, 0, 0), &tree_with_roof(), 1);
++        assert_eq!(stream.solid_at([4.0, 3.4, 4.0]), Some(true));
++        let mut resident = BTreeSet::new();
++        resident.insert((0, 0, 0));
++        assert!(!stream.retain(&resident), "a chunk still resident is not forgotten");
++        let empty = BTreeSet::new();
++        assert!(stream.retain(&empty), "an evicted chunk must be forgotten");
++        assert_eq!(
++            stream.solid_at([4.0, 3.4, 4.0]),
++            Some(false),
++            "the evicted chunk's roof is still standing in the fine band"
++        );
++        assert_eq!(stream.far_solid_at([4.0, 3.5, 4.0]), None, "the coarse band restreamed");
++    }
++}
+diff --git a/crates/voxel-client/src/horizon.wgsl b/crates/voxel-client/src/horizon.wgsl
+new file mode 100644
+index 0000000..e0f926d
+--- /dev/null
++++ b/crates/voxel-client/src/horizon.wgsl
+@@ -0,0 +1,328 @@
++// **The streamed light horizon**: the two bands the fragment marches, their address laws, and the
++// dome. `voxel_client::horizon` owns the state these read — this file owns only the reading of it.
++//
++// Composed by `world::pass_source` between `atmosphere.wgsl` and the pass that draws with it, so a
++// binding number here is that file's neighbour rather than a fact of this one.
++
++// **The streamed light horizon** — one word per metre of the world around the eye, stamped from
++// the resident chunks' subvoxel octrees (`voxel-client/src/horizon.rs`) and streamed in as those
++// chunks land. `to_anchor` is the cube's world corner in this frame's eye-relative frame, so the
++// fragment subtracts a small number instead of a world coordinate; `params` is `(metres per
++// cell, cells x, cells y, cells z)`. A cell that is non-zero is solid, and a ray that meets one
++// delivers nothing.
++struct HorizonView {
++    // The fine band's corner in the eye's frame, then its `(metres per cell, cells x, y, z)`.
++    to_anchor: vec4<f32>,
++    near: vec4<f32>,
++    // The coarse band's corner in the eye's frame, then its own cell and dimensions.
++    to_far: vec4<f32>,
++    far: vec4<f32>,
++    // **Which chunk slots the fine band has looked at**: bit `sx + 3·(sy + 3·sz)` of `x`, one per
++    // 32 m slot of the 3×3×3 cube. A cell in an unset slot is *unmeasured*, not air — zero means
++    // "nothing stands here" and that is a claim only a stamped chunk may make. The coarse band
++    // carries its own "stamped" bit per cell instead, because one word there is already spent.
++    coverage: vec4<u32>,
++};
++@group(0) @binding(10) var<storage, read> horizon_cells: array<u32>;
++@group(0) @binding(11) var<uniform> horizon: HorizonView;
++@group(0) @binding(12) var<storage, read> horizon_far: array<u32>;
++
++// **The host's two numbers, restated because a shader cannot import Rust** —
++// `voxel_client::HORIZON_CELL_M` and `HORIZON_REACH_M`, held to these literals by
++// `horizon::tests::the_shaders_reach_and_the_hosts_are_one_number`.
++const HORIZON_CELL_M: f32 = 1.0;
++// **The fine band's whole span**, so the subvoxel answer is used everywhere it exists; the coarse
++// band continues past it. A ray leaves the fine cube sooner than this near its faces, and the
++// traversal reports where.
++const HORIZON_REACH_M: f32 = 96.0;
++// **The CPU sampler's own sky reach**, kept because `horizon::tests::the_shaders_reach_and_the_
++// hosts_are_one_number` holds the host and this file to one literal. The dome no longer marches
++// this far: its rays are as long as the volume, so a corridor's ambient stops at its far end.
++const HORIZON_SKY_REACH_M: f32 = 32.0;
++// **The coarse band**: 8 m cells over 256 m. It is what lets a beam cross a kilometre at a cost a
++// frame can carry, and its grain is the second rung of the chunk mesh's own ladder.
++const HORIZON_FAR_REACH_M: f32 = 160.0;
++// The coarse word's share and stamped bit, `voxel_client::horizon`'s `FAR_SHARE`/`FAR_MEASURED`.
++const FAR_SHARE: u32 = 0xFFu;
++const FAR_MEASURED: u32 = 256u;
++// The cell's own grain, restated from `voxel_client::HORIZON_SUBVOXEL_SIDE` and held to it by
++// the same witness: the octree authors a voxel as 4×4×4 subvoxels and the mask has one bit each.
++const HORIZON_SUBVOXEL_SIDE: u32 = 4u;
++const HORIZON_SUBVOXEL_M: f32 = HORIZON_CELL_M / f32(HORIZON_SUBVOXEL_SIDE);
++// **Cells along one chunk's edge**, `CHUNK_SIDE` restated: the volume's coverage mask is one bit
++// per 32 m slot, and `horizon_stamped` divides a cell's index by this.
++const CHUNK_SIDE_CELLS: u32 = 32u;
++// **A partly-dug voxel costs at most one subvoxel's worth of steps**: 4 subvoxels crossed at
++// half-subvoxel stride, with one spare for the boundary. A whole block never enters the loop.
++const HORIZON_SUB_STEPS: i32 = 10;
++// **The traversal's own bound**, in cells: a ray crossing all three axes of the fine band visits
++// fewer than `96 · 3 + 1`, so this is a ceiling and not a budget the march can hit unseen. It was
++// 128 when the reach was 32 m; a bound below the geometry's own count turns a long diagonal into
++// "unmeasured", which hands the answer back to the shadow map on exactly the rays a corner casts.
++const HORIZON_MAX_STEPS: i32 = 320;
++
++// **The cascade handover's width, in texels of the coarser map** — see `sun_visibility`. The
++// materials' ladder fades a rung out at a quarter of its cell (`octave_weight`); a cascade is not
++// a rung on that ladder but a *level* of one shadow, and the level it hands over to is nine
++// texels coarser, so the band is measured in the coarse map's own texels.
++const SHADOW_BLEND_TEXELS: f32 = 2.0;
++// How far inside a map's border its weight ramps to zero, in that map's own texels: enough that a
++// cascade's box edge is a ramp like the split, not a line where one level stops answering.
++const SHADOW_EDGE_TEXELS: f32 = 2.0;
++
++/// **One voxel's 4×4×4 occupancy**, as the two words `voxel_client::horizon` stamped.
++///
++/// `x` is the low word, `y` the high one, and bit `x + 4y + 16z` of the pair is the subvoxel at
++/// that address — `SubvoxelIndex::flat` in `voxel-model`, which is the order the octree's leaf
++/// shapes are authored in. Two words because WGSL has no `u64`.
++fn horizon_mask(i: vec3<i32>) -> vec2<u32> {
++    let n = i32(horizon.near.y);
++    let index = 2u * u32(i.x + n * (i.y + n * i.z));
++    return vec2<u32>(horizon_cells[index], horizon_cells[index + 1u]);
++}
++
++/// One coarse band cell's word: bit 0 matter, bit 1 stamped.
++fn horizon_far_word(i: vec3<i32>) -> u32 {
++    let n = i32(horizon.far.y);
++    return horizon_far[u32(i.x + n * (i.y + n * i.z))];
++}
++
++/// **Has the volume looked at the chunk slot this cell belongs to?**
++///
++/// A cube is 96 cells and a chunk is 32, so `i / 32` is the slot on each axis — the anchor is a
++/// chunk's own corner, which is what makes that division exact. An unstamped slot is not air: it
++/// is a chunk that has not landed, and the march reports no measurement there rather than an
++/// unshadowed one.
++fn horizon_stamped(i: vec3<i32>) -> bool {
++    let slot = i / vec3<i32>(i32(CHUNK_SIDE_CELLS));
++    let bit = u32(slot.x + 3 * (slot.y + 3 * slot.z));
++    return ((horizon.coverage.x >> bit) & 1u) != 0u;
++}
++
++/// **Is the subvoxel this cube-relative point stands in solid?**
++///
++/// `world` is the point relative to the cube's own corner, in metres. The cell is its floor and
++/// the subvoxel is the fractional part at `HORIZON_SUBVOXEL_SIDE` grain, which is the whole of the
++/// address law: no second grid, no per-metre boolean. This is the question
++/// `voxel_stream::light::transmittance_tree` asks of the same leaves on the CPU.
++fn horizon_subvoxel_solid(world: vec3<f32>) -> bool {
++    let cell = floor(world / HORIZON_CELL_M);
++    let inside = fract(world / HORIZON_CELL_M) * f32(HORIZON_SUBVOXEL_SIDE);
++    let at = clamp(vec3<i32>(floor(inside)), vec3<i32>(0), vec3<i32>(i32(HORIZON_SUBVOXEL_SIDE) - 1));
++    let mask = horizon_mask(vec3<i32>(cell));
++    let ordinal = u32(at.x + i32(HORIZON_SUBVOXEL_SIDE) * (at.y + i32(HORIZON_SUBVOXEL_SIDE) * at.z));
++    let word = select(mask.y, mask.x, ordinal < 32u);
++    return ((word >> (ordinal % 32u)) & 1u) != 0u;
++}
++
++/// **The stretch of a partly-occupied voxel this ray crosses**: `true` when it meets matter.
++///
++/// A voxel is entered through one subvoxel and left through another, so testing the entry alone
++/// would let a beam through a dug corner and out through the rock behind it. This is the
++/// cell-by-cell answer `raycast::Spans` gives for a `Mixed` leaf, at the subvoxel's own stride —
++/// and it is only ever paid for a voxel whose mask is **partial**: an empty one costs a compare
++/// and a full one is an answer, so a world of whole blocks never enters here.
++fn horizon_partial_blocked(local: vec3<f32>, d: vec3<f32>, enter: f32, exit: f32) -> bool {
++    var t = enter + HORIZON_SUBVOXEL_M * 0.5;
++    for (var step = 0; step < HORIZON_SUB_STEPS; step = step + 1) {
++        if (t >= exit) {
++            break;
++        }
++        if (horizon_subvoxel_solid(local + d * t - horizon.to_anchor.xyz)) {
++            return true;
++        }
++        t = t + HORIZON_SUBVOXEL_M * 0.5;
++    }
++    return false;
++}
++
++/// **One band's traversal**: `vec4(distance, blocked, left_at, measured)`. The fine band's
++/// `blocked` is a hit, `0` or `1`; the coarse band's is the share of the ray it stopped, so it
++/// accrues across cells and reads `1 − transmittance` rather than a flag.
++///
++/// Amanatides & Woo's walk — the same one `raycast::Crossings` and
++/// `SparseVoxelOctree::raycast_local` use — so **every cell the ray passes through is visited in
++/// order**, and a wall a metre thick cannot fall between two samples however oblique the ray is.
++/// `band` is 0 for the octree's own subvoxel grain and 1 for the coarse 8 m summary; the coarse
++/// band is what makes a kilometre of tunnel one hundred compares instead of a thousand, and it is
++/// the same trade the chunk meshes make one rung out.
++///
++/// **`from_t` is where the caller's own ray has already walked**, so the bands are one march and
++/// not two: the coarse band starts at the distance the fine one stopped measuring.
++///
++/// **The fragment's own cell is not tested**, because the surface is drawn on its boundary — the
++/// rule `transmittance_tree`'s `skip_own_voxel` states, arrived at here by advancing before
++/// testing. A cell with no bits costs one compare, a fully-solid cell ends the walk, and a
++/// partly-dug one is walked at subvoxel grain.
++///
++/// **`measured` is what makes the answer usable as an authority**: leaving the box is `left_at`
++/// with `measured` clear if the cell there was never stamped, so the caller keeps the coarser
++/// shadow map rather than believing an answer the volume does not have.
++fn horizon_walk(
++    to_anchor: vec3<f32>,
++    cells: vec3<f32>,
++    cell_m: f32,
++    band: u32,
++    local: vec3<f32>,
++    d: vec3<f32>,
++    from_t: f32,
++    reach_m: f32,
++) -> vec4<f32> {
++    let rel = (local + d * from_t - to_anchor) / cell_m;
++    if (any(rel < vec3<f32>(0.0)) || any(rel >= cells)) {
++        return vec4<f32>(0.0, 0.0, from_t, 0.0);
++    }
++    var i = vec3<i32>(floor(rel));
++    // **The distance to this cell's next face on each axis**, and the stride to the one after it:
++    // a zero component is infinity, so the walk never steps on an axis the ray does not cross.
++    let f = rel - floor(rel);
++    var t_max = vec3<f32>(1e30);
++    var walk = vec3<i32>(0);
++    for (var axis = 0; axis < 3; axis = axis + 1) {
++        if (d[axis] > 0.0) {
++            t_max[axis] = (cell_m - f[axis] * cell_m) / d[axis];
++            walk[axis] = 1;
++        } else if (d[axis] < 0.0) {
++            t_max[axis] = (f[axis] * cell_m) / -d[axis];
++            walk[axis] = -1;
++        }
++    }
++    let t_delta = vec3<f32>(cell_m) / max(abs(d), vec3<f32>(1e-20));
++    // **The coarse band lets its share through**: a cell eight metres wide holds a fraction of
++    // matter, so the ray keeps that fraction and walks on. Nothing accumulates in the fine band,
++    // so `blocked` there is still a hit and not a share.
++    var coarse_clear = 1.0;
++    for (var step = 0; step < HORIZON_MAX_STEPS; step = step + 1) {
++        // The axis whose next face comes first. Ties are resolved in x, y, z order, which is a
++        // corner a ray touches at a point and not a cell it passes through.
++        var axis = 0;
++        if (t_max.y <= t_max.x && t_max.y <= t_max.z) {
++            axis = 1;
++        } else if (t_max.z < t_max.x) {
++            axis = 2;
++        }
++        let enter = from_t + t_max[axis];
++        if (enter >= reach_m) {
++            return vec4<f32>(0.0, 1.0 - coarse_clear, reach_m, 1.0);
++        }
++        i[axis] = i[axis] + walk[axis];
++        let exit = from_t + t_max[axis] + t_delta[axis];
++        t_max[axis] = t_max[axis] + t_delta[axis];
++        if (any(i < vec3<i32>(0)) || any(i >= vec3<i32>(cells))) {
++            return vec4<f32>(0.0, 1.0 - coarse_clear, enter, 1.0);
++        }
++        if (band == 0u) {
++            if (!horizon_stamped(i)) {
++                return vec4<f32>(0.0, 0.0, enter, 0.0);
++            }
++            let mask = horizon_mask(i);
++            if (mask.x == 0u && mask.y == 0u) {
++                continue;
++            }
++            if (mask.x == 0xFFFFFFFFu && mask.y == 0xFFFFFFFFu) {
++                return vec4<f32>(enter, 1.0, enter, 1.0);
++            }
++            if (horizon_partial_blocked(local, d, enter, min(exit, reach_m))) {
++                return vec4<f32>(enter, 1.0, enter, 1.0);
++            }
++        } else {
++            let word = horizon_far_word(i);
++            if ((word & FAR_MEASURED) == 0u) {
++                return vec4<f32>(0.0, 1.0 - coarse_clear, enter, 0.0);
++            }
++            coarse_clear = coarse_clear * (1.0 - f32(word & FAR_SHARE) / 255.0);
++        }
++    }
++    return vec4<f32>(0.0, 1.0 - coarse_clear, reach_m, 0.0);
++}
++
++/// **What one direction carries from an eye-relative point**: `x` is **stopped in the fine band**,
++/// `y` **whether the fine band walked the whole reach**, `z` stopped in the coarse band, and `w`
++/// whether the coarse one walked its whole reach.
++///
++/// **The fine band answers first and the coarse band carries on from where it stopped.** A cell's
++/// beam crosses the subvoxel geometry of the 96 m box and then, if it is still going, as much of
++/// 256 m of 8 m summary as the caller's reach allows — so a corridor a hundred metres long is
++/// occluded at its own end rather than at the fine box's edge, and the answer is eight times
++/// cheaper per metre exactly where one coarse cell is smaller than the pixel looking at it.
++///
++/// **`y` and `z` are separate because the caller trusts them differently.** Inside the fine band
++/// the march is finer than the shadow map's 0.28 m texel and may overrule it; past the band it is
++/// coarser, and only a *hit* there is taken — an occluder adds up, but a clear answer eight metres
++/// wide is not evidence that the map's half-metre one is wrong.
++fn horizon_transmittance(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> vec4<f32> {
++    let fine = horizon_walk(
++        horizon.to_anchor.xyz, horizon.near.yzw, horizon.near.x, 0u, local, d, 0.0, reach_m,
++    );
++    if (fine.y > 0.5) {
++        return vec4<f32>(1.0, 1.0, 0.0, 0.0);
++    }
++    if (fine.w < 0.5) {
++        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
++    }
++    // **A reach that ends with the fine band never pays for the coarse one.** The beam asks for
++    // `HORIZON_REACH_M` and refuses the coarse band's answer, so walking it would be a measurement
++    // nobody reads; the dome asks for more and gets both.
++    if (reach_m <= fine.z + 0.001 || reach_m <= HORIZON_REACH_M) {
++        return vec4<f32>(0.0, 1.0, 0.0, 0.0);
++    }
++    let far = horizon_walk(
++        horizon.to_far.xyz, horizon.far.yzw, horizon.far.x, 1u, local, d, fine.z,
++        min(reach_m, HORIZON_FAR_REACH_M),
++    );
++    // **`z` is the share the coarse band stopped, not a yes**: the two bands compose by
++    // transmittance, so the handover is `(1 − fine) · (1 − coarse)` and an eight-metre cell that is
++    // a third full dims by a third instead of blocking the ray.
++    return vec4<f32>(0.0, 1.0, far.y, far.w);
++}
++
++/// **How much of one direction reaches an eye-relative point**: `1` clear, `0` stopped.
++///
++/// The same answer `voxel_stream::light` gives for a solid material, at the octree's own subvoxel
++/// grain and then at the coarse band's. A direction that could not be measured — a degenerate one,
++/// or one that leaves a band nothing is stamped in — is `1.0`, the answer the dome had before the
++/// volume existed, because an unmeasured ray is not a shadow.
++fn horizon_visibility(local: vec3<f32>, dir: vec3<f32>, reach_m: f32) -> f32 {
++    let length_dir = length(dir);
++    if (length_dir <= 0.0) {
++        return 1.0;
++    }
++    let marched = horizon_transmittance(local, dir / length_dir, reach_m);
++    // **Both bands count here, and only here.** This is the dome's question — how much of the sky
++    // a cell can see — and a diffuse answer does not need half-metre boundaries: an eight-metre
++    // cell that holds matter is a wall a corridor's ambient must stop at, however coarse it is.
++    // The two are composed as transmittances, which is what makes the coarse share a blend.
++    return select(1.0, 0.0, marched.x > 0.5) * (1.0 - marched.z);
++}
++
++/// **The dome's own share at a point**, and whether the stencil was measured: `vec2(view, measured)`.
++///
++/// **Five directions, and the count is the CPU sampler's own** (`voxel_stream::light::SKY_STENCIL`):
++/// up and four at 45°, the same rays at every fragment, so two cells' skies are comparable and a
++/// cave mouth reads darker than a ridge. Five is not a hemisphere and this is not an integral; it
++/// is a declared stencil, and the bounce below is what carries light past it.
++///
++/// **The rays are as long as the volume is**, not the fine band: a stencil that stopped at 96 m
++/// would report every long corridor as open sky, which is the one answer a tunnel must not get.
++///
++/// **`measured` is a majority, not a unanimity**: a stencil half in the next chunk slot along is
++/// still an answer about this cell, and refusing it would put a chunk-corners pattern into every
++/// cave's ambient.
++fn horizon_dome(local: vec3<f32>) -> vec2<f32> {
++    let rays = array<vec3<f32>, 5>(
++        vec3<f32>(0.0, 1.0, 0.0),
++        vec3<f32>(0.70710677, 0.70710677, 0.0),
++        vec3<f32>(0.0, 0.70710677, 0.70710677),
++        vec3<f32>(-0.70710677, 0.70710677, 0.0),
++        vec3<f32>(0.0, 0.70710677, -0.70710677),
++    );
++    var total = 0.0;
++    var measured = 0.0;
++    for (var ray = 0; ray < 5; ray = ray + 1) {
++        let answer = horizon_transmittance(local, rays[ray], HORIZON_FAR_REACH_M);
++        total = total + select(1.0, 0.0, answer.x > 0.5) * (1.0 - answer.z);
++        measured = measured + select(0.0, 1.0, answer.y + answer.w > 0.5);
++    }
++    return vec2<f32>(total / 5.0, select(0.0, 1.0, measured > 2.5));
++}
++
+diff --git a/crates/voxel-client/src/far_surface.rs b/crates/voxel-client/src/far_surface.rs
+new file mode 100644
+index 0000000..7972d45
+--- /dev/null
++++ b/crates/voxel-client/src/far_surface.rs
+@@ -0,0 +1,369 @@
++//! **The far surface: a resident chunk drawn at the coarse cell's own level.**
++//!
++//! The near band meshes every subvoxel of a chunk. That is the right answer at 20 m and a waste at
++//! 120: a chunk of hillside behind a ridge is a few hundred pixels, and it is still carrying the
++//! quads of every leaf and every half-voxel. This module builds the **same tree** at
++//! [`FAR_CELL_VOXELS`]'s grain and hands the result to the same draw path, so the far field is the
++//! world at a coarser level rather than a flat tint or a second world.
++//!
++//! # The rule the two bands share
++//!
++//! A coarse cell is drawn when **at least half of it is matter** ([`COARSE_MAJORITY`]) and its
++//! material is the one holding the largest share of it ([`dominant`]). That is the same rule
++//! `voxel-mesh`'s own octree uses to decide a region is one material — the share it covers — read
++//! at level [`FAR_LEVEL`] instead of level 0, so the coarse level is the tree's answer at its own
++//! resolution and not a second classifier. Because the share is per cell and the cell is inside
++//! one chunk, the coarse surface's mean height over a cell agrees with the fine band's by
++//! construction; a cell that is 3 % occupied is **not drawn** and the fine band still is, which is
++//! the one place the levels legitimately disagree and it is stated here rather than hidden.
++//!
++//! # Streaming
++//!
++//! Residency is the world's: an entry exists for a resident chunk and is dropped when the chunk
++//! leaves. A crossing drops the chunks that left and keeps every mesh whose chunk is still held,
++//! so a crossing costs the chunks that entered and never a whole rebuild. A chunk with no entry
++//! yet is **absent** rather than drawn as a stand-in.
++//!
++//! # The handover
++//!
++//! Inside [`FAR_HANDOVER_CHUNKS`] the chunk is drawn fine and the far mesh is not drawn; outside,
++//! the far mesh replaces it. So the two levels never draw the same chunk: there is no double
++//! draw to z-fight and no ring the far mesh has to clip against. Both are meshes over the same
++//! chunk box at the same origin, so the seam is a shared boundary rather than a gap. The jump
++//! itself is a quantisation, not a different surface, and how visible it is at
++//! [`FAR_HANDOVER_CHUNKS`] is a measurement rather than an argument.
++
++use std::collections::BTreeMap;
++
++use voxel_mesh::octree::{Node, SparseVoxelOctree};
++use voxel_mesh::{Mesh, MeshStats, Quad};
++use voxel_model::{ChunkPos, Face, MaterialId, CHUNK_SIDE, SUBVOXEL_SIDE};
++
++/// **Voxels along a coarse cell's edge** — 8, the same grain the light horizon's far band stamps.
++pub const FAR_CELL_VOXELS: i32 = 8;
++
++/// The octree level that cell is: `log2(8)`.
++pub const FAR_LEVEL: u32 = 3;
++
++/// Cells along a chunk's edge: `32 / 8`.
++const CELLS: i32 = CHUNK_SIDE / FAR_CELL_VOXELS;
++
++/// Subvoxels along a coarse cell's edge: `8 × 4`.
++const CELL_SUB: i32 = FAR_CELL_VOXELS * SUBVOXEL_SIDE as i32;
++
++/// Voxels in a coarse cell: the denominator of [`COARSE_MAJORITY`].
++const CELL_VOXELS: u32 = (FAR_CELL_VOXELS * FAR_CELL_VOXELS * FAR_CELL_VOXELS) as u32;
++
++/// **The share at which a coarse cell is drawn**: at least half of it is matter.
++pub const COARSE_MAJORITY: u32 = CELL_VOXELS / 2;
++
++/// **Chunks inside this Chebyshev radius of the eye are drawn fine**; beyond it, the far mesh.
++pub const FAR_HANDOVER_CHUNKS: i32 = 3;
++
++/// Whether a chunk is close enough to be drawn at the fine level.
++pub fn is_near(eye_chunk: ChunkPos, pos: ChunkPos) -> bool {
++    (pos.x - eye_chunk.x)
++        .abs()
++        .max((pos.y - eye_chunk.y).abs())
++        .max((pos.z - eye_chunk.z).abs())
++        <= FAR_HANDOVER_CHUNKS
++}
++
++/// One resident chunk's coarse mesh, and the tree version it was built from.
++struct Entry {
++    mesh: Mesh,
++    version: u64,
++}
++
++/// **The far meshes, one a resident chunk, keyed by the chunk they belong to.**
++#[derive(Default)]
++pub struct FarSurface {
++    entries: BTreeMap<(i32, i32, i32), Entry>,
++}
++
++impl FarSurface {
++    pub fn new() -> Self {
++        Self::default()
++    }
++
++    /// Whether a chunk still needs its coarse mesh built at this version.
++    pub fn wants(&self, pos: ChunkPos, version: u64) -> bool {
++        match self.entries.get(&(pos.x, pos.y, pos.z)) {
++            Some(entry) => entry.version != version,
++            None => true,
++        }
++    }
++
++    /// Build (or rebuild) one chunk's coarse mesh. Returns its quad count.
++    pub fn build(&mut self, pos: ChunkPos, tree: &SparseVoxelOctree, version: u64) -> usize {
++        let mesh = coarse_mesh(pos, tree);
++        let quads = mesh.quads.len();
++        self.entries
++            .insert((pos.x, pos.y, pos.z), Entry { mesh, version });
++        quads
++    }
++
++    /// Drop the chunks the world no longer holds. What is still resident keeps its mesh.
++    pub fn retain(&mut self, resident: &std::collections::BTreeSet<(i32, i32, i32)>) {
++        self.entries.retain(|pos, _| resident.contains(pos));
++    }
++
++    /// The far meshes this frame draws, in the streamer's own shape: built, and outside the
++    /// handover ring.
++    pub fn drawn(&self, eye_chunk: ChunkPos) -> impl Iterator<Item = (ChunkPos, u64, &Mesh)> {
++        self.entries.iter().filter_map(move |((x, y, z), entry)| {
++            let pos = ChunkPos::new(*x, *y, *z);
++            (!is_near(eye_chunk, pos)).then_some((pos, entry.version, &entry.mesh))
++        })
++    }
++
++    /// How many chunks hold a coarse mesh.
++    pub fn len(&self) -> usize {
++        self.entries.len()
++    }
++
++    pub fn is_empty(&self) -> bool {
++        self.entries.is_empty()
++    }
++}
++
++/// The share of a level-[`FAR_LEVEL`] region that holds matter, and the material holding most of it.
++///
++/// `None` for a region with no matter at all. The share is in voxels of the region's own
++/// [`CELL_VOXELS`], so a `Mixed` leaf — a voxel's 4×4×4 shape, which only exists at level 0 —
++/// counts its own solid subvoxels out of 64.
++fn occupancy(node: &Node) -> Option<(MaterialId, u32)> {
++    let mut tally: BTreeMap<u16, u32> = BTreeMap::new();
++    count(node, CELL_VOXELS, &mut tally);
++    let (material, most) = tally
++        .into_iter()
++        .max_by_key(|(material, voxels)| (*voxels, std::cmp::Reverse(*material)))?;
++    Some((MaterialId(material), most))
++}
++
++/// Add this node's voxels to the tally.
++///
++/// `voxels` is the volume of the node's region: 1 at a voxel, 8 per level above it. `Mixed` is
++/// only ever one voxel wide, so it is the leaf whose volume is its shape's own count.
++fn count(node: &Node, voxels: u32, tally: &mut BTreeMap<u16, u32>) {
++    match node {
++        Node::Empty => {}
++        Node::Uniform(material) => {
++            if !material.is_empty() {
++                *tally.entry(material.0).or_insert(0) += voxels;
++            }
++        }
++        Node::Mixed(shape) => {
++            for cell in shape.cells() {
++                if !cell.is_empty() {
++                    *tally.entry(cell.0).or_insert(0) += 1;
++                }
++            }
++        }
++        Node::Branch(children) => {
++            for child in children.iter() {
++                count(child, voxels / 8, tally);
++            }
++        }
++    }
++}
++
++/// **A chunk at the coarse level**: one quad per cell face whose neighbour is air or another
++/// material, in the chunk's own subvoxel frame.
++///
++/// A face on the chunk's outer boundary **is** emitted: the cell beyond it is a neighbour's, this
++/// call does not hold that tree, and a hole in a distant cliff is worse than the cost. Where both
++/// sides of a boundary are solid the two coincident quads face opposite ways inside the terrain,
++/// where the eye cannot reach them; where one side is air the face is the wall that side needs.
++pub fn coarse_mesh(pos: ChunkPos, tree: &SparseVoxelOctree) -> Mesh {
++    let mut materials = vec![MaterialId::EMPTY; (CELLS * CELLS * CELLS) as usize];
++    tree.visit_at_level(FAR_LEVEL, &mut |origin, node| {
++        let x = origin[0] / FAR_CELL_VOXELS;
++        let y = origin[1] / FAR_CELL_VOXELS;
++        let z = origin[2] / FAR_CELL_VOXELS;
++        if x < 0 || y < 0 || z < 0 || x >= CELLS || y >= CELLS || z >= CELLS {
++            return;
++        }
++        if let Some((material, share)) = occupancy(node) {
++            if share >= COARSE_MAJORITY {
++                materials[index(x, y, z)] = material;
++            }
++        }
++    });
++
++    let mut quads = Vec::new();
++    for z in 0..CELLS {
++        for y in 0..CELLS {
++            for x in 0..CELLS {
++                let material = materials[index(x, y, z)];
++                if material.is_empty() {
++                    continue;
++                }
++                for face in Face::ALL {
++                    let (nx, ny, nz) = face.normal();
++                    let (ax, ay, az) = (x + nx, y + ny, z + nz);
++                    let outside = ax < 0
++                        || ay < 0
++                        || az < 0
++                        || ax >= CELLS
++                        || ay >= CELLS
++                        || az >= CELLS;
++                    if !outside && materials[index(ax, ay, az)] == material {
++                        continue;
++                    }
++                    quads.push(cell_quad(face, [x, y, z], material));
++                }
++            }
++        }
++    }
++
++    let solid = materials.iter().filter(|m| !m.is_empty()).count() as u64;
++    Mesh {
++        chunk: pos,
++        loops: Vec::new(),
++        stats: MeshStats {
++            solid_voxels: solid * CELL_VOXELS as u64,
++            visible_faces: quads.len() as u64,
++            quads: quads.len() as u64,
++            loops: 0,
++        },
++        quads,
++    }
++}
++
++fn index(x: i32, y: i32, z: i32) -> usize {
++    (x + CELLS * (y + CELLS * z)) as usize
++}
++
++/// One cell's face as a quad, in the chunk's subvoxel frame.
++fn cell_quad(face: Face, cell: [i32; 3], material: MaterialId) -> Quad {
++    let axis = face.axis() as usize;
++    let base = [cell[0] * CELL_SUB, cell[1] * CELL_SUB, cell[2] * CELL_SUB];
++    let slice = if face.is_positive() {
++        base[axis] + CELL_SUB
++    } else {
++        base[axis]
++    };
++    // `mesh::axes`: axis 0 runs along `(y, z)`, axis 1 along `(x, z)`, axis 2 along `(x, y)`.
++    let uv = match axis {
++        0 => [base[1], base[2]],
++        1 => [base[0], base[2]],
++        _ => [base[0], base[1]],
++    };
++    Quad {
++        face,
++        slice: slice as u16,
++        uv: [uv[0] as u16, uv[1] as u16],
++        extent: [CELL_SUB as u16; 2],
++        material,
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    const STONE: MaterialId = MaterialId(3);
++    const SOIL: MaterialId = MaterialId(4);
++
++    fn chunk() -> ChunkPos {
++        ChunkPos::new(1, 0, -1)
++    }
++
++    fn filled(level: u32, material: MaterialId) -> SparseVoxelOctree {
++        let mut tree = SparseVoxelOctree::new();
++        tree.set_material_region([0, 0, 0], level, material);
++        tree
++    }
++
++    #[test]
++    fn a_solid_chunk_is_a_box_of_cell_faces_and_no_interior() {
++        let mesh = coarse_mesh(chunk(), &filled(5, STONE));
++        // Six sides, four by four cells a side, and the interior cells' faces cancelled.
++        assert_eq!(mesh.quads.len(), 6 * (CELLS * CELLS) as usize);
++        assert_eq!(mesh.stats.solid_voxels, (CHUNK_SIDE * CHUNK_SIDE * CHUNK_SIDE) as u64);
++        // Every quad is one whole cell on its own face, never a merged run: the coarse level's
++        // grain is the cell, and a merged quad would hide which cell it came from.
++        assert!(mesh.quads.iter().all(|q| q.extent == [CELL_SUB as u16; 2]));
++    }
++
++    #[test]
++    fn an_empty_chunk_draws_nothing_at_all() {
++        let mesh = coarse_mesh(chunk(), &SparseVoxelOctree::new());
++        assert!(mesh.quads.is_empty());
++        assert_eq!(mesh.stats.solid_voxels, 0);
++    }
++
++    #[test]
++    fn a_cell_is_drawn_by_its_share_and_a_thin_roof_is_below_half() {
++        // One voxel of roof: 1/512 of the cell, so the coarse level says "no surface here".
++        let mut thin = SparseVoxelOctree::new();
++        thin.set_material_region([5, 20, 5], 0, STONE);
++        let mesh = coarse_mesh(chunk(), &thin);
++        assert!(mesh.quads.is_empty(), "a one-voxel roof is not a coarse cell");
++
++        // Half the cell filled (four 4-voxel quarters, 256 of 512): the share is exactly
++        // `COARSE_MAJORITY` and the cell is drawn, which is the boundary the rule is stated at
++        // rather than one short of it.
++        let mut half = SparseVoxelOctree::new();
++        for x in [0, 4] {
++            for z in [0, 4] {
++                half.set_material_region([x, 0, z], 2, STONE);
++            }
++        }
++        let mesh = coarse_mesh(chunk(), &half);
++        assert!(!mesh.quads.is_empty(), "half a cell is a coarse cell");
++    }
++
++    #[test]
++    fn the_coarse_surface_sits_where_the_fine_one_does() {
++        // Soil over stone, the shape of a hillside: the coarse mesh's top faces are at the
++        // boundary between the two materials, in the chunk's own subvoxel frame.
++        let mut tree = SparseVoxelOctree::new();
++        tree.set_material_region([0, 0, 0], 5, STONE);
++        for x in 0..CELLS {
++            for z in 0..CELLS {
++                tree.set_material_region([x * FAR_CELL_VOXELS, 24, z * FAR_CELL_VOXELS], 3, SOIL);
++            }
++        }
++        let mesh = coarse_mesh(chunk(), &tree);
++        let top: Vec<&Quad> = mesh
++            .quads
++            .iter()
++            .filter(|q| q.face == Face::PosY && q.material == SOIL)
++            .collect();
++        assert_eq!(top.len(), (CELLS * CELLS) as usize, "one top face per cell");
++        // `24` voxels is `96` subvoxels, and the cell's own 8 m is another 32: the top face is
++        // where the fine band's is, in the same frame.
++        assert_eq!(top[0].slice, 128);
++    }
++
++    #[test]
++    fn a_far_mesh_is_drawn_only_past_the_handover_ring() {
++        let eye = ChunkPos::new(0, 0, 0);
++        let mut far = FarSurface::new();
++        let near = ChunkPos::new(1, 0, 0);
++        assert!(!is_near(eye, near) || !far.drawn(eye).any(|(pos, _, _)| pos == near));
++        far.build(near, &filled(5, STONE), 1);
++        assert_eq!(far.drawn(eye).count(), 0, "a chunk inside the ring is drawn fine");
++
++        let beyond = ChunkPos::new(FAR_HANDOVER_CHUNKS + 1, 0, 0);
++        far.build(beyond, &filled(5, STONE), 1);
++        let drawn: Vec<ChunkPos> = far.drawn(eye).map(|(pos, _, _)| pos).collect();
++        assert_eq!(drawn, vec![beyond]);
++    }
++
++    #[test]
++    fn a_crossing_keeps_what_is_still_resident() {
++        let mut far = FarSurface::new();
++        far.build(ChunkPos::new(0, 0, 0), &filled(5, STONE), 1);
++        far.build(ChunkPos::new(9, 0, 0), &filled(5, STONE), 1);
++        let mut resident = std::collections::BTreeSet::new();
++        resident.insert((9, 0, 0));
++        far.retain(&resident);
++        assert_eq!(far.len(), 1);
++        assert!(far.wants(ChunkPos::new(0, 0, 0), 1), "a dropped chunk is owed again");
++        assert!(!far.wants(ChunkPos::new(9, 0, 0), 1));
++        assert!(far.wants(ChunkPos::new(9, 0, 0), 2), "an edit wants remeshing");
++    }
++}
+diff --git a/crates/voxel-client/src/shading.wgsl b/crates/voxel-client/src/shading.wgsl
+--- a/crates/voxel-client/src/shading.wgsl
++++ b/crates/voxel-client/src/shading.wgsl
+@@ -1,328 +1,5 @@
+ // the Valve Source 2 stylisation, transcribed into WGSL — docs/lighting-sky-and-moon.md
+ 
+-
+-// **The streamed light horizon** — one word per metre of the world around the eye, stamped from
+-// the resident chunks' subvoxel octrees (`voxel-client/src/horizon.rs`) and streamed in as those
+-// chunks land. `to_anchor` is the cube's world corner in this frame's eye-relative frame, so the
+-// fragment subtracts a small number instead of a world coordinate; `params` is `(metres per
+-// cell, cells x, cells y, cells z)`. A cell that is non-zero is solid, and a ray that meets one
+-// delivers nothing.
+-struct HorizonView {
+-    // The fine band's corner in the eye's frame, then its `(metres per cell, cells x, y, z)`.
+-    to_anchor: vec4<f32>,
+-    near: vec4<f32>,
+-    // The coarse band's corner in the eye's frame, then its own cell and dimensions.
+-    to_far: vec4<f32>,
+-    far: vec4<f32>,
+-    // **Which chunk slots the fine band has looked at**: bit `sx + 3·(sy + 3·sz)` of `x`, one per
+-    // 32 m slot of the 3×3×3 cube. A cell in an unset slot is *unmeasured*, not air — zero means
+-    // "nothing stands here" and that is a claim only a stamped chunk may make. The coarse band
+-    // carries its own "stamped" bit per cell instead, because one word there is already spent.
+-    coverage: vec4<u32>,
+-};
+-@group(0) @binding(10) var<storage, read> horizon_cells: array<u32>;
+-@group(0) @binding(11) var<uniform> horizon: HorizonView;
+-@group(0) @binding(12) var<storage, read> horizon_far: array<u32>;
+-
+-// **The host's two numbers, restated because a shader cannot import Rust** —
+-// `voxel_client::HORIZON_CELL_M` and `HORIZON_REACH_M`, held to these literals by
+-// `horizon::tests::the_shaders_reach_and_the_hosts_are_one_number`.
+-const HORIZON_CELL_M: f32 = 1.0;
+-// **The fine band's whole span**, so the subvoxel answer is used everywhere it exists; the coarse
+-// band continues past it. A ray leaves the fine cube sooner than this near its faces, and the
+-// traversal reports where.
+-const HORIZON_REACH_M: f32 = 96.0;
+-// **The CPU sampler's own sky reach**, kept because `horizon::tests::the_shaders_reach_and_the_
+-// hosts_are_one_number` holds the host and this file to one literal. The dome no longer marches
+-// this far: its rays are as long as the volume, so a corridor's ambient stops at its far end.
+-const HORIZON_SKY_REACH_M: f32 = 32.0;
+-// **The coarse band**: 8 m cells over 256 m. It is what lets a beam cross a kilometre at a cost a
+-// frame can carry, and its grain is the second rung of the chunk mesh's own ladder.
+-const HORIZON_FAR_REACH_M: f32 = 160.0;
+-// The coarse word's share and stamped bit, `voxel_client::horizon`'s `FAR_SHARE`/`FAR_MEASURED`.
+-const FAR_SHARE: u32 = 0xFFu;
+-const FAR_MEASURED: u32 = 256u;
+-// The cell's own grain, restated from `voxel_client::HORIZON_SUBVOXEL_SIDE` and held to it by
+-// the same witness: the octree authors a voxel as 4×4×4 subvoxels and the mask has one bit each.
+-const HORIZON_SUBVOXEL_SIDE: u32 = 4u;
+-const HORIZON_SUBVOXEL_M: f32 = HORIZON_CELL_M / f32(HORIZON_SUBVOXEL_SIDE);
+-// **Cells along one chunk's edge**, `CHUNK_SIDE` restated: the volume's coverage mask is one bit
+-// per 32 m slot, and `horizon_stamped` divides a cell's index by this.
+-const CHUNK_SIDE_CELLS: u32 = 32u;
+-// **A partly-dug voxel costs at most one subvoxel's worth of steps**: 4 subvoxels crossed at
+-// half-subvoxel stride, with one spare for the boundary. A whole block never enters the loop.
+-const HORIZON_SUB_STEPS: i32 = 10;
+-// **The traversal's own bound**, in cells: a ray crossing all three axes of the fine band visits
+-// fewer than `96 · 3 + 1`, so this is a ceiling and not a budget the march can hit unseen. It was
+-// 128 when the reach was 32 m; a bound below the geometry's own count turns a long diagonal into
+-// "unmeasured", which hands the answer back to the shadow map on exactly the rays a corner casts.
+-const HORIZON_MAX_STEPS: i32 = 320;
+-
+-// **The cascade handover's width, in texels of the coarser map** — see `sun_visibility`. The
+-// materials' ladder fades a rung out at a quarter of its cell (`octave_weight`); a cascade is not
+-// a rung on that ladder but a *level* of one shadow, and the level it hands over to is nine
+-// texels coarser, so the band is measured in the coarse map's own texels.
+-const SHADOW_BLEND_TEXELS: f32 = 2.0;
+-// How far inside a map's border its weight ramps to zero, in that map's own texels: enough that a
+-// cascade's box edge is a ramp like the split, not a line where one level stops answering.
+-const SHADOW_EDGE_TEXELS: f32 = 2.0;
+-
+-/// **One voxel's 4×4×4 occupancy**, as the two words `voxel_client::horizon` stamped.
+-///
+-/// `x` is the low word, `y` the high one, and bit `x + 4y + 16z` of the pair is the subvoxel at
+-/// that address — `SubvoxelIndex::flat` in `voxel-model`, which is the order the octree's leaf
+-/// shapes are authored in. Two words because WGSL has no `u64`.
+-fn horizon_mask(i: vec3<i32>) -> vec2<u32> {
+-    let n = i32(horizon.near.y);
+-    let index = 2u * u32(i.x + n * (i.y + n * i.z));
+-    return vec2<u32>(horizon_cells[index], horizon_cells[index + 1u]);
+-}
+-
+-/// One coarse band cell's word: bit 0 matter, bit 1 stamped.
+-fn horizon_far_word(i: vec3<i32>) -> u32 {
+-    let n = i32(horizon.far.y);
+-    return horizon_far[u32(i.x + n * (i.y + n * i.z))];
+-}
+-
+-/// **Has the volume looked at the chunk slot this cell belongs to?**
+-///
+-/// A cube is 96 cells and a chunk is 32, so `i / 32` is the slot on each axis — the anchor is a
+-/// chunk's own corner, which is what makes that division exact. An unstamped slot is not air: it
+-/// is a chunk that has not landed, and the march reports no measurement there rather than an
+-/// unshadowed one.
+-fn horizon_stamped(i: vec3<i32>) -> bool {
+-    let slot = i / vec3<i32>(i32(CHUNK_SIDE_CELLS));
+-    let bit = u32(slot.x + 3 * (slot.y + 3 * slot.z));
+-    return ((horizon.coverage.x >> bit) & 1u) != 0u;
+-}
+-
+-/// **Is the subvoxel this cube-relative point stands in solid?**
+-///
+-/// `world` is the point relative to the cube's own corner, in metres. The cell is its floor and
+-/// the subvoxel is the fractional part at `HORIZON_SUBVOXEL_SIDE` grain, which is the whole of the
+-/// address law: no second grid, no per-metre boolean. This is the question
+-/// `voxel_stream::light::transmittance_tree` asks of the same leaves on the CPU.
+-fn horizon_subvoxel_solid(world: vec3<f32>) -> bool {
+-    let cell = floor(world / HORIZON_CELL_M);
+-    let inside = fract(world / HORIZON_CELL_M) * f32(HORIZON_SUBVOXEL_SIDE);
+-    let at = clamp(vec3<i32>(floor(inside)), vec3<i32>(0), vec3<i32>(i32(HORIZON_SUBVOXEL_SIDE) - 1));
+-    let mask = horizon_mask(vec3<i32>(cell));
+-    let ordinal = u32(at.x + i32(HORIZON_SUBVOXEL_SIDE) * (at.y + i32(HORIZON_SUBVOXEL_SIDE) * at.z));
+-    let word = select(mask.y, mask.x, ordinal < 32u);
+-    return ((word >> (ordinal % 32u)) & 1u) != 0u;
+-}
+-
+-/// **The stretch of a partly-occupied voxel this ray crosses**: `true` when it meets matter.
+-///
+-/// A voxel is entered through one subvoxel and left through another, so testing the entry alone
+-/// would let a beam through a dug corner and out through the rock behind it. This is the
+-/// cell-by-cell answer `raycast::Spans` gives for a `Mixed` leaf, at the subvoxel's own stride —
+-/// and it is only ever paid for a voxel whose mask is **partial**: an empty one costs a compare
+-/// and a full one is an answer, so a world of whole blocks never enters here.
+-fn horizon_partial_blocked(local: vec3<f32>, d: vec3<f32>, enter: f32, exit: f32) -> bool {
+-    var t = enter + HORIZON_SUBVOXEL_M * 0.5;
+-    for (var step = 0; step < HORIZON_SUB_STEPS; step = step + 1) {
+-        if (t >= exit) {
+-            break;
+-        }
+-        if (horizon_subvoxel_solid(local + d * t - horizon.to_anchor.xyz)) {
+-            return true;
+-        }
+-        t = t + HORIZON_SUBVOXEL_M * 0.5;
+-    }
+-    return false;
+-}
+-
+-/// **One band's traversal**: `vec4(distance, blocked, left_at, measured)`. The fine band's
+-/// `blocked` is a hit, `0` or `1`; the coarse band's is the share of the ray it stopped, so it
+-/// accrues across cells and reads `1 − transmittance` rather than a flag.
+-///
+-/// Amanatides & Woo's walk — the same one `raycast::Crossings` and
+-/// `SparseVoxelOctree::raycast_local` use — so **every cell the ray passes through is visited in
+-/// order**, and a wall a metre thick cannot fall between two samples however oblique the ray is.
+-/// `band` is 0 for the octree's own subvoxel grain and 1 for the coarse 8 m summary; the coarse
+-/// band is what makes a kilometre of tunnel one hundred compares instead of a thousand, and it is
+-/// the same trade the chunk meshes make one rung out.
+-///
+-/// **`from_t` is where the caller's own ray has already walked**, so the bands are one march and
+-/// not two: the coarse band starts at the distance the fine one stopped measuring.
+-///
+-/// **The fragment's own cell is not tested**, because the surface is drawn on its boundary — the
+-/// rule `transmittance_tree`'s `skip_own_voxel` states, arrived at here by advancing before
+-/// testing. A cell with no bits costs one compare, a fully-solid cell ends the walk, and a
+-/// partly-dug one is walked at subvoxel grain.
+-///
+-/// **`measured` is what makes the answer usable as an authority**: leaving the box is `left_at`
+-/// with `measured` clear if the cell there was never stamped, so the caller keeps the coarser
+-/// shadow map rather than believing an answer the volume does not have.
+-fn horizon_walk(
+-    to_anchor: vec3<f32>,
+-    cells: vec3<f32>,
+-    cell_m: f32,
+-    band: u32,
+-    local: vec3<f32>,
+-    d: vec3<f32>,
+-    from_t: f32,
+-    reach_m: f32,
+-) -> vec4<f32> {
+-    let rel = (local + d * from_t - to_anchor) / cell_m;
+-    if (any(rel < vec3<f32>(0.0)) || any(rel >= cells)) {
+-        return vec4<f32>(0.0, 0.0, from_t, 0.0);
+-    }
+-    var i = vec3<i32>(floor(rel));
+-    // **The distance to this cell's next face on each axis**, and the stride to the one after it:
+-    // a zero component is infinity, so the walk never steps on an axis the ray does not cross.
+-    let f = rel - floor(rel);
+-    var t_max = vec3<f32>(1e30);
+-    var walk = vec3<i32>(0);
+-    for (var axis = 0; axis < 3; axis = axis + 1) {
+-        if (d[axis] > 0.0) {
+-            t_max[axis] = (cell_m - f[axis] * cell_m) / d[axis];
+-            walk[axis] = 1;
+-        } else if (d[axis] < 0.0) {
+-            t_max[axis] = (f[axis] * cell_m) / -d[axis];
+-            walk[axis] = -1;
+-        }
+-    }
+-    let t_delta = vec3<f32>(cell_m) / max(abs(d), vec3<f32>(1e-20));
+-    // **The coarse band lets its share through**: a cell eight metres wide holds a fraction of
+-    // matter, so the ray keeps that fraction and walks on. Nothing accumulates in the fine band,
+-    // so `blocked` there is still a hit and not a share.
+-    var coarse_clear = 1.0;
+-    for (var step = 0; step < HORIZON_MAX_STEPS; step = step + 1) {
+-        // The axis whose next face comes first. Ties are resolved in x, y, z order, which is a
+-        // corner a ray touches at a point and not a cell it passes through.
+-        var axis = 0;
+-        if (t_max.y <= t_max.x && t_max.y <= t_max.z) {
+-            axis = 1;
+-        } else if (t_max.z < t_max.x) {
+-            axis = 2;
+-        }
+-        let enter = from_t + t_max[axis];
+-        if (enter >= reach_m) {
+-            return vec4<f32>(0.0, 1.0 - coarse_clear, reach_m, 1.0);
+-        }
+-        i[axis] = i[axis] + walk[axis];
+-        let exit = from_t + t_max[axis] + t_delta[axis];
+-        t_max[axis] = t_max[axis] + t_delta[axis];
+-        if (any(i < vec3<i32>(0)) || any(i >= vec3<i32>(cells))) {
+-            return vec4<f32>(0.0, 1.0 - coarse_clear, enter, 1.0);
+-        }
+-        if (band == 0u) {
+-            if (!horizon_stamped(i)) {
+-                return vec4<f32>(0.0, 0.0, enter, 0.0);
+-            }
+-            let mask = horizon_mask(i);
+-            if (mask.x == 0u && mask.y == 0u) {
+-                continue;
+-            }
+-            if (mask.x == 0xFFFFFFFFu && mask.y == 0xFFFFFFFFu) {
+-                return vec4<f32>(enter, 1.0, enter, 1.0);
+-            }
+-            if (horizon_partial_blocked(local, d, enter, min(exit, reach_m))) {
+-                return vec4<f32>(enter, 1.0, enter, 1.0);
+-            }
+-        } else {
+-            let word = horizon_far_word(i);
+-            if ((word & FAR_MEASURED) == 0u) {
+-                return vec4<f32>(0.0, 1.0 - coarse_clear, enter, 0.0);
+-            }
+-            coarse_clear = coarse_clear * (1.0 - f32(word & FAR_SHARE) / 255.0);
+-        }
+-    }
+-    return vec4<f32>(0.0, 1.0 - coarse_clear, reach_m, 0.0);
+-}
+-
+-/// **What one direction carries from an eye-relative point**: `x` is **stopped in the fine band**,
+-/// `y` **whether the fine band walked the whole reach**, `z` stopped in the coarse band, and `w`
+-/// whether the coarse one walked its whole reach.
+-///
+-/// **The fine band answers first and the coarse band carries on from where it stopped.** A cell's
+-/// beam crosses the subvoxel geometry of the 96 m box and then, if it is still going, as much of
+-/// 256 m of 8 m summary as the caller's reach allows — so a corridor a hundred metres long is
+-/// occluded at its own end rather than at the fine box's edge, and the answer is eight times
+-/// cheaper per metre exactly where one coarse cell is smaller than the pixel looking at it.
+-///
+-/// **`y` and `z` are separate because the caller trusts them differently.** Inside the fine band
+-/// the march is finer than the shadow map's 0.28 m texel and may overrule it; past the band it is
+-/// coarser, and only a *hit* there is taken — an occluder adds up, but a clear answer eight metres
+-/// wide is not evidence that the map's half-metre one is wrong.
+-fn horizon_transmittance(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> vec4<f32> {
+-    let fine = horizon_walk(
+-        horizon.to_anchor.xyz, horizon.near.yzw, horizon.near.x, 0u, local, d, 0.0, reach_m,
+-    );
+-    if (fine.y > 0.5) {
+-        return vec4<f32>(1.0, 1.0, 0.0, 0.0);
+-    }
+-    if (fine.w < 0.5) {
+-        return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+-    }
+-    // **A reach that ends with the fine band never pays for the coarse one.** The beam asks for
+-    // `HORIZON_REACH_M` and refuses the coarse band's answer, so walking it would be a measurement
+-    // nobody reads; the dome asks for more and gets both.
+-    if (reach_m <= fine.z + 0.001 || reach_m <= HORIZON_REACH_M) {
+-        return vec4<f32>(0.0, 1.0, 0.0, 0.0);
+-    }
+-    let far = horizon_walk(
+-        horizon.to_far.xyz, horizon.far.yzw, horizon.far.x, 1u, local, d, fine.z,
+-        min(reach_m, HORIZON_FAR_REACH_M),
+-    );
+-    // **`z` is the share the coarse band stopped, not a yes**: the two bands compose by
+-    // transmittance, so the handover is `(1 − fine) · (1 − coarse)` and an eight-metre cell that is
+-    // a third full dims by a third instead of blocking the ray.
+-    return vec4<f32>(0.0, 1.0, far.y, far.w);
+-}
+-
+-/// **How much of one direction reaches an eye-relative point**: `1` clear, `0` stopped.
+-///
+-/// The same answer `voxel_stream::light` gives for a solid material, at the octree's own subvoxel
+-/// grain and then at the coarse band's. A direction that could not be measured — a degenerate one,
+-/// or one that leaves a band nothing is stamped in — is `1.0`, the answer the dome had before the
+-/// volume existed, because an unmeasured ray is not a shadow.
+-fn horizon_visibility(local: vec3<f32>, dir: vec3<f32>, reach_m: f32) -> f32 {
+-    let length_dir = length(dir);
+-    if (length_dir <= 0.0) {
+-        return 1.0;
+-    }
+-    let marched = horizon_transmittance(local, dir / length_dir, reach_m);
+-    // **Both bands count here, and only here.** This is the dome's question — how much of the sky
+-    // a cell can see — and a diffuse answer does not need half-metre boundaries: an eight-metre
+-    // cell that holds matter is a wall a corridor's ambient must stop at, however coarse it is.
+-    // The two are composed as transmittances, which is what makes the coarse share a blend.
+-    return select(1.0, 0.0, marched.x > 0.5) * (1.0 - marched.z);
+-}
+-
+-/// **The dome's own share at a point**, and whether the stencil was measured: `vec2(view, measured)`.
+-///
+-/// **Five directions, and the count is the CPU sampler's own** (`voxel_stream::light::SKY_STENCIL`):
+-/// up and four at 45°, the same rays at every fragment, so two cells' skies are comparable and a
+-/// cave mouth reads darker than a ridge. Five is not a hemisphere and this is not an integral; it
+-/// is a declared stencil, and the bounce below is what carries light past it.
+-///
+-/// **The rays are as long as the volume is**, not the fine band: a stencil that stopped at 96 m
+-/// would report every long corridor as open sky, which is the one answer a tunnel must not get.
+-///
+-/// **`measured` is a majority, not a unanimity**: a stencil half in the next chunk slot along is
+-/// still an answer about this cell, and refusing it would put a chunk-corners pattern into every
+-/// cave's ambient.
+-fn horizon_dome(local: vec3<f32>) -> vec2<f32> {
+-    let rays = array<vec3<f32>, 5>(
+-        vec3<f32>(0.0, 1.0, 0.0),
+-        vec3<f32>(0.70710677, 0.70710677, 0.0),
+-        vec3<f32>(0.0, 0.70710677, 0.70710677),
+-        vec3<f32>(-0.70710677, 0.70710677, 0.0),
+-        vec3<f32>(0.0, 0.70710677, -0.70710677),
+-    );
+-    var total = 0.0;
+-    var measured = 0.0;
+-    for (var ray = 0; ray < 5; ray = ray + 1) {
+-        let answer = horizon_transmittance(local, rays[ray], HORIZON_FAR_REACH_M);
+-        total = total + select(1.0, 0.0, answer.x > 0.5) * (1.0 - answer.z);
+-        measured = measured + select(0.0, 1.0, answer.y + answer.w > 0.5);
+-    }
+-    return vec2<f32>(total / 5.0, select(0.0, 1.0, measured > 2.5));
+-}
+-
+ struct Light {
+     direction: vec4<f32>,   // xyz toward the light, w intensity
+     colour: vec4<f32>,
+diff --git a/crates/voxel-client/src/world.rs b/crates/voxel-client/src/world.rs
+--- a/crates/voxel-client/src/world.rs
++++ b/crates/voxel-client/src/world.rs
+@@ -26,6 +26,8 @@
+ use crate::scene::{Scene, Vertex};
+ use crate::quad::{origin_bytes, QuadRecord, ORIGIN_SIZE};
+ use crate::shading::{GpuRig, MaterialParams};
++use std::collections::BTreeSet;
++
+ use crate::skylight::{admit_sky_rows, SkyModel, NO_SKY_ROWS, SKY_MODEL_BYTES, SKY_MODEL_ROWS};
+ use crate::ClientError;
+ 
+@@ -1096,21 +1098,29 @@
+         self.horizon.recenter(eye_m)
+     }
+ 
+-    /// Whether a chunk has yet to be stamped into the cube.
+-    pub fn horizon_wants(&self, pos: voxel_model::ChunkPos) -> bool {
+-        self.horizon.wants(pos)
++    /// **Forget every chunk the resident set no longer holds**, so an evicted chunk's occluder
++    /// does not outlive the geometry it was stamped from.
++    pub fn horizon_retain(&mut self, resident: &BTreeSet<(i32, i32, i32)>) -> bool {
++        self.horizon.retain(resident)
++    }
++
++    /// Whether a chunk's cube still needs this version of its tree
++    /// (`voxel_work::Streamer::tree_version`).
++    pub fn horizon_wants(&self, pos: voxel_model::ChunkPos, version: u64) -> bool {
++        self.horizon.wants(pos, version)
+     }
+ 
+     /// **Stamp one resident chunk's subvoxel octree into the light horizon.**
+     ///
+-    /// Returns the cells the chunk marked. A chunk the cube does not cover, or one already
+-    /// stamped, costs nothing and marks nothing.
++    /// Returns the cells the chunk marked. A chunk the cube does not cover, or one whose version
++    /// is already stamped, costs nothing and marks nothing.
+     pub fn horizon_stamp(
+         &mut self,
+         pos: voxel_model::ChunkPos,
+         tree: &voxel_mesh::SparseVoxelOctree,
++        version: u64,
+     ) -> usize {
+-        self.horizon.stamp(pos, tree)
++        self.horizon.stamp(pos, tree, version)
+     }
+ 
+     /// The world-voxel corner the cube is anchored on, for a report that has to say what the
+@@ -3182,4 +3192,108 @@
+         );
+     }
+ 
+-}
+\ No newline at end of file
++    /// **A dug quarter lets its light through, and the CPU's own walk is the reference.**
++    ///
++    /// The occluder is one voxel with one subvoxel column left standing: three quarters of it have
++    /// been taken out, which is the shape a player makes in three clicks. `voxel_stream::light`
++    /// measures the two rays on the same tree — `0.0` through the column that is left, `1.0`
++    /// through the quarters that are gone — and the picture must follow it, because a volume that
++    /// marked the whole metre would shade the dug quarters too and the march would be a second,
++    /// coarser shadow than the one this project measures on the CPU.
++    #[test]
++    fn a_partly_dug_voxel_shadows_its_columns_and_not_its_metre() {
++        use crate::renderer::Renderer;
++        use crate::scene::{Scene, SHADOW_LATTICE};
++        use crate::shading::{GpuLight, GpuRig, MaterialParams};
++        use voxel_mesh::{Mesh, MeshStats, Quad, SparseVoxelOctree};
++        use voxel_model::{ChunkPos, Face, LocalPos, MaterialId, SubvoxelIndex, VoxelShape};
++        use voxel_stream::light::{transmittance_tree, ChunkMatter};
++
++        let floor = Mesh {
++            chunk: ChunkPos::new(0, 0, 0),
++            quads: vec![Quad { face: Face::PosY, slice: 0, uv: [0, 0], extent: [8, 8], material: MaterialId(0) }],
++            loops: Vec::new(),
++            stats: MeshStats { solid_voxels: 1, visible_faces: 1, quads: 1, loops: 0 },
++        };
++        let mut camera = crate::Camera::standard([1.0, 2.0, -1.0], 1.0);
++        camera.pitch_rad = -0.55;
++        let clear = |_: [f64; 3]| Some([1.0f32, 1.0, 1.0, 0.0, 0.0, 0.0]);
++        let scene = Scene::build_with_light_lattice(
++            [&floor], camera.position_m, &clear, None, None, SHADOW_LATTICE,
++        );
++        let material = MaterialParams {
++            base_color_and_present: [0.7, 0.7, 0.7, 1.0],
++            rough_metal: [0.9, 1.0, 0.0, 0.0],
++            ..MaterialParams::default()
++        };
++        let mut rig = GpuRig::default();
++        rig.count[0] = 1;
++        rig.lights[0] = GpuLight { direction: [0.0, 1.0, 0.0, 1.0], colour: [1.0, 1.0, 1.0, 0.0] };
++        let mut renderer = Renderer::new(128, 128, &[material], &rig).expect("a GPU");
++        renderer.world_mut().write_no_sky_model();
++        // **No shadow pass**, so the map cannot be what darkens a column or lets one through.
++        renderer.world_mut().set_shadows(false);
++        renderer.world_mut().horizon_recenter(camera.position_m);
++
++        // One voxel three metres up, with only its `x = 0, z = 0` subvoxel column left: three
++        // quarters dug out, which is `set_subvoxel` three times and not a region.
++        let mut tree = SparseVoxelOctree::new();
++        let voxel = LocalPos::new(1, 3, 1).expect("inside the chunk");
++        let mut shape = VoxelShape::empty();
++        for y in 0..4u8 {
++            shape.set(SubvoxelIndex::new(0, y, 0).expect("a subvoxel"), MaterialId(1));
++        }
++        tree.set_voxel(voxel, shape);
++        assert!(renderer.world_mut().horizon_stamp(ChunkPos::new(0, 0, 0), &tree, 1) > 0);
++
++        // **The reference, on the same tree**: the two floor points differ only in which quarter
++        // of one voxel stands above them.
++        let matter = ChunkMatter::new(&tree, [0, 0, 0]);
++        let above = |x: f64, z: f64| {
++            transmittance_tree(&matter, &tree, [x, 0.001, z], [0.0, 1.0, 0.0], 8.0)
++        };
++        assert_eq!(above(1.125, 1.125), 0.0, "the reference let a beam through the standing column");
++        assert_eq!(above(1.75, 1.125), 1.0, "the reference shadowed a dug quarter");
++
++        let (width, height) = (128u32, 128u32);
++        let to_pixel = |point: [f64; 3]| -> (u32, u32) {
++            let matrix = camera.view_projection();
++            let v = [
++                point[0] - camera.position_m[0],
++                point[1] - camera.position_m[1],
++                point[2] - camera.position_m[2],
++            ];
++            let mut clip = [0.0f64; 4];
++            for (row, slot) in clip.iter_mut().enumerate() {
++                for (column, value) in v.iter().enumerate() {
++                    *slot += matrix[column][row] as f64 * value;
++                }
++                *slot += matrix[3][row] as f64;
++            }
++            let x = ((clip[0] / clip[3] * 0.5 + 0.5) * f64::from(width)) as u32;
++            let y = ((1.0 - (clip[1] / clip[3] * 0.5 + 0.5)) * f64::from(height)) as u32;
++            (x.min(width - 1), y.min(height - 1))
++        };
++        let frame = renderer.render(&scene, &camera).expect("a frame");
++        let brightest = |point: [f64; 3]| -> f64 {
++            let (x, y) = to_pixel(point);
++            let mut best = 0.0f64;
++            for dy in -1i32..=1 {
++                for dx in -1i32..=1 {
++                    let sx = (x as i32 + dx).clamp(0, width as i32 - 1) as u32;
++                    let sy = (y as i32 + dy).clamp(0, height as i32 - 1) as u32;
++                    best = best.max(frame.luminance_at(sx, sy).unwrap_or(0.0));
++                }
++            }
++            best
++        };
++        let under_column = brightest([1.125, 0.0, 1.125]);
++        let under_dug = brightest([1.75, 0.0, 1.125]);
++        assert!(under_dug > 0.0, "the floor is black: nothing was drawn");
++        assert!(
++            under_column < under_dug * 0.5,
++            "the standing quarter did not shadow its own column: {under_column:.3} under it \
++             against {under_dug:.3} under the dug quarter"
++        );
++    }
++}
+diff --git a/crates/voxel-client/src/lib.rs b/crates/voxel-client/src/lib.rs
+--- a/crates/voxel-client/src/lib.rs
++++ b/crates/voxel-client/src/lib.rs
+@@ -94,11 +94,16 @@
+     cloud_transmittance, density_of, extinction_per_m, optical_depth, CloudField, CloudMedium,
+     CloudSun, CLOUD_BLOCK_SIDE, CLOUD_COLUMNS, CLOUD_SAMPLE_M, CLOUD_SPAN_M,
+ };
++pub use far_surface::{
++    coarse_mesh, is_near, FarSurface, COARSE_MAJORITY, FAR_CELL_VOXELS, FAR_HANDOVER_CHUNKS,
++    FAR_LEVEL,
++};
+ pub use field::{CellField, ChunkTrees, SubvoxelPos, BEAM_STEP_DEG, REACH_M};
+ pub use horizon::{
+-    HorizonStream, HORIZON_CELLS, HORIZON_CELL_M, HORIZON_REACH_M, SKY_RAYS,
++    HorizonStream, FAR_MEASURED, FAR_SHARE, HORIZON_CELLS, HORIZON_CELL_M, HORIZON_FAR_CELLS,
++    HORIZON_FAR_CELL_M, HORIZON_FAR_REACH_M, HORIZON_REACH_M, HORIZON_SKY_REACH_M,
++    HORIZON_SUBVOXEL_M, HORIZON_SUBVOXEL_SIDE, SKY_RAYS,
+ };
+-
+ pub use measure::{Ask, Measured, Measurer, CELLS_PER_ASK};
+ pub use frame::{luminance, Frame};
+ pub use game::{
+diff --git a/crates/voxel-work/src/stream.rs b/crates/voxel-work/src/stream.rs
+--- a/crates/voxel-work/src/stream.rs
++++ b/crates/voxel-work/src/stream.rs
+@@ -427,6 +427,17 @@
+         self.trees.get(&pos).map(|tree| tree.as_ref())
+     }
+ 
++    /// **The version of the tree a chunk holds**, or `None` where it holds none.
++    ///
++    /// The streamer's own residency counter, the same one [`Self::drawn_meshes`] reports: it is
++    /// bumped whenever a chunk's mesh or tree enters, leaves or is replaced, so a caller that
++    /// keeps a tree's *contents* somewhere else can tell a tree it has already read from one an
++    /// edit has rebuilt. `voxel_client::horizon` is the caller there — a lit volume stamped from
++    /// the tree of a record that has since been dug is the shadow of a block that is gone.
++    pub fn tree_version(&self, pos: ChunkPos) -> Option<u64> {
++        self.versions.get(&pos).copied()
++    }
++
+     /// **The same tree as a handle**, for a caller measuring on another thread.
+     ///
+     /// A refcount rather than a copy: `voxel_client::field`'s measurer keeps the trees its
+diff --git a/crates/shploingus/src/main.rs b/crates/shploingus/src/main.rs
+--- a/crates/shploingus/src/main.rs
++++ b/crates/shploingus/src/main.rs
+@@ -2847,30 +2847,62 @@
+         // nothing still moves nothing.
+         // ---- the light horizon, streamed from the octrees ----------------
+         // **The frame's own occlusion field, moved with the eye and fed by the chunks the
+-        // streamer holds.** The cube is recentred on the eye's chunk; a recentre clears it, and
++        // streamer holds.** The cube is recentred on the eye's chunk; a crossing shifts it, and
+         // the loop below stamps the chunks that are resident and not yet represented, a bounded
+         // number per frame. That is what "streamed" means here: the light the fragment marches
+         // arrives with the world rather than in one build behind it, and a chunk that has not
+-        // landed yet reads as air for the frames it is absent (its direct shadow is still the
+-        // shadow map's, which is drawn from the geometry that is present).
+-        const HORIZON_CHUNKS_PER_FRAME: usize = 8;
++        // landed yet reads as unmeasured for the frames it is absent (its direct shadow is still
++        // the shadow map's, which is drawn from the geometry that is present).
++        // Nine a frame: a crossing only owes the chunks that entered (docs/lighting-sky-and-moon.md,
++        // "The horizon's streaming rules").
++        const HORIZON_CHUNKS_PER_FRAME: usize = 9;
+         if let Some(graphics) = self.graphics.as_mut() {
+             let eye = self.camera.position_m;
+             graphics.world.horizon_recenter(eye);
+             if let Some(streamer) = self.streamer.as_ref() {
++                // A chunk the window dropped leaves its trees behind; the volume must drop its cells.
++                let resident: std::collections::BTreeSet<(i32, i32, i32)> =
++                    streamer.tree_chunks().map(|pos| (pos.x, pos.y, pos.z)).collect();
++                graphics.world.horizon_retain(&resident);
+                 let mut budget = HORIZON_CHUNKS_PER_FRAME;
+                 for pos in streamer.tree_chunks() {
+                     if budget == 0 {
+                         break;
+                     }
+-                    if !graphics.world.horizon_wants(pos) {
++                    // An edit bumps the chunk's version, so its stamp follows the new tree.
++                    let Some(version) = streamer.tree_version(pos) else {
++                        continue;
++                    };
++                    if !graphics.world.horizon_wants(pos, version) {
+                         continue;
+                     }
+                     if let Some(tree) = streamer.tree_shared(pos) {
+-                        graphics.world.horizon_stamp(pos, &tree);
++                        graphics.world.horizon_stamp(pos, &tree, version);
+                         budget -= 1;
+                     }
+                 }
++                // **The distant terrain streams the same way.** A chunk the window dropped loses
++                // its coarse mesh; a chunk that entered is meshed at the coarse cell's own level;
++                // a few a frame, so a crossing is not a rebuild of the far field. A chunk with no
++                // coarse mesh yet is absent from the frame rather than drawn as a stand-in.
++                const FAR_SURFACE_PER_FRAME: usize = 3;
++                self.far_surface.retain(&resident);
++                let mut far_budget = FAR_SURFACE_PER_FRAME;
++                for pos in streamer.tree_chunks() {
++                    if far_budget == 0 {
++                        break;
++                    }
++                    let Some(version) = streamer.tree_version(pos) else {
++                        continue;
++                    };
++                    if !self.far_surface.wants(pos, version) {
++                        continue;
++                    }
++                    if let Some(tree) = streamer.tree_shared(pos) {
++                        self.far_surface.build(pos, &tree, version);
++                        far_budget -= 1;
++                    }
++                }
+             }
+         }
+ 
+@@ -2901,8 +2933,16 @@
+             // vertex format still carries the bands (a mesh is a format's to shrink, not this
+             // pass's), but they are no longer asked for, measured, or uploaded as a light.
+             let light: Option<&voxel_client::LightAt> = None;
++            // **One chunk, one level.** Inside the handover ring the fine mesh is drawn; outside
++            // it the coarse one replaces it, so the two never draw the same chunk and the seam is
++            // a shared boundary rather than an overlap.
++            let streamer = self.streamer.as_ref().expect("checked above");
++            let drawn = streamer
++                .drawn_meshes()
++                .filter(|(pos, _, _)| voxel_client::far_surface::is_near(eye_chunk, *pos))
++                .chain(self.far_surface.drawn(eye_chunk));
+             self.resident.sync(
+-                self.streamer.as_ref().expect("checked above").drawn_meshes(),
++                drawn,
+                 eye_chunk,
+                 light,
+                 Some(&self.displacement),

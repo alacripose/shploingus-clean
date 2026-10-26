@@ -48,13 +48,17 @@ use voxel_ui::{Element, Palette, Rect, UiResult};
 /// console is shell state, so it arrives as the [`Console`] the mount owns (BLD-0018). It is
 /// passed in rather than read from the frame because a view is built before the frame is
 /// drawn, and a console read at draw time would be a different console than the one written.
-pub fn views(state: &HudState<'_>, console: &Console) -> ContentViews {
+pub fn views(state: &HudState<'_>, console: &Console, api: Option<super::api::ApiView>) -> ContentViews {
     ContentViews {
         world: hud::world_panel(state),
         streamer: hud::streamer_panel(state),
         determinism: hud::determinism_panel(state),
         refusals: hud::refusal_panel(state),
         console: Some(console.clone()),
+        // **The sixth is the API window's**, and it is the only one that is not a panel here: the
+        // document and the matrix are produced by their own crates when a subject is
+        // back-compiled, and this file composes them rather than restating them.
+        api,
     }
 }
 
@@ -160,6 +164,7 @@ pin\tworld\n"
             determinism: panel("Determinism"),
             refusals: panel("Refusals"),
             console: None,
+            api: None,
         }
     }
 
