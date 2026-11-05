@@ -4,6 +4,19 @@
 // Composed by `world::pass_source` between `atmosphere.wgsl` and the pass that draws with it, so a
 // binding number here is that file's neighbour rather than a fact of this one.
 
+// **The rung table's own width**, `voxel_client::lod::SURFACE_RUNG_SLOTS`, held to this literal by
+// `horizon::tests::the_shaders_reach_and_the_hosts_are_one_number`: a shader that believed a
+// different number than the host wrote would read a neighbour's entry as its own rung.
+const SURFACE_RUNG_SLOTS: u32 = 24u;
+
+/// **One surface rung's entry**: where its band's grid starts in this frame's eye-relative frame,
+/// and `(cell_m, cells, reach_m, word offset)` — the same four numbers the coarse rungs carry,
+/// which is what lets one walk answer for every rung on the ladder.
+struct SurfaceRung {
+    to_anchor: vec4<f32>,
+    params: vec4<f32>,
+};
+
 // **The streamed light horizon** — one word per metre of the world around the eye, stamped from
 // the resident chunks' subvoxel octrees (`voxel-client/src/horizon.rs`) and streamed in as those
 // chunks land. `to_anchor` is the cube's world corner in this frame's eye-relative frame, so the
@@ -17,15 +30,30 @@ struct HorizonView {
     // The coarse band's corner in the eye's frame, then its own cell and dimensions.
     to_far: vec4<f32>,
     far: vec4<f32>,
+    // Tier 6's band: sixteen-metre cells over a kilometre, the grain of the rung past the far ring.
+    to_wide: vec4<f32>,
+    wide: vec4<f32>,
+    // Tier 7's band: one 32 m cell a chunk over two kilometres, the last chunk-held rung.
+    to_chunk: vec4<f32>,
+    chunk: vec4<f32>,
+    // **Where each coarse rung starts in the one band buffer**, in words: far, wide, chunk, and
+    // **how far the surface rung table reaches**. Adding a rung appends words and an entry here
+    // rather than spending a binding.
+    offsets: vec4<f32>,
     // **Which chunk slots the fine band has looked at**: bit `sx + 3·(sy + 3·sz)` of `x`, one per
     // 32 m slot of the 3×3×3 cube. A cell in an unset slot is *unmeasured*, not air — zero means
     // "nothing stands here" and that is a claim only a stamped chunk may make. The coarse band
     // carries its own "stamped" bit per cell instead, because one word there is already spent.
     coverage: vec4<u32>,
+    // **The surface rungs' table**, one entry a tier above the chunk-held ones, at the end because
+    // a uniform's array is its last member. A rung that has not been measured holds `cell_m` zero,
+    // and `offsets.w` says how far the table reaches, so a lookup walks the rungs that exist.
+    surfaces: array<SurfaceRung, SURFACE_RUNG_SLOTS>,
 };
+
 @group(0) @binding(10) var<storage, read> horizon_cells: array<u32>;
 @group(0) @binding(11) var<uniform> horizon: HorizonView;
-@group(0) @binding(12) var<storage, read> horizon_far: array<u32>;
+@group(0) @binding(12) var<storage, read> horizon_coarse: array<u32>;
 
 // **The host's two numbers, restated because a shader cannot import Rust** —
 // `voxel_client::HORIZON_CELL_M` and `HORIZON_REACH_M`, held to these literals by
@@ -39,12 +67,25 @@ const HORIZON_REACH_M: f32 = 96.0;
 // hosts_are_one_number` holds the host and this file to one literal. The dome no longer marches
 // this far: its rays are as long as the volume, so a corridor's ambient stops at its far end.
 const HORIZON_SKY_REACH_M: f32 = 32.0;
-// **The coarse band**: 8 m cells over 256 m. It is what lets a beam cross a kilometre at a cost a
-// frame can carry, and its grain is the second rung of the chunk mesh's own ladder.
-const HORIZON_FAR_REACH_M: f32 = 160.0;
+// **The coarse band**: 8 m cells over the whole 512 m box it holds. Reaching the band's own edge is
+// the point — the march stops when it leaves the box anyway, and a reach shorter than the data was
+// an eighth-metre rung that answered only a third of the ground that exists.
+const HORIZON_FAR_REACH_M: f32 = 512.0;
+// **The wide band**: sixteen-metre cells, 64 of them a side — the tier-6 rung's own grain and the
+// range a rung past the far ring is lit over. Held to `voxel_client::horizon`'s literals by
+// `horizon::tests::the_shaders_reach_and_the_hosts_are_one_number` like the two below it.
+const HORIZON_WIDE_CELL_M: f32 = 16.0;
+const HORIZON_WIDE_REACH_M: f32 = 1024.0;
+// **The chunk tier**: 32 m cells, 64 of them a side — the last chunk-held rung.
+const HORIZON_CHUNK_CELL_M: f32 = 32.0;
+const HORIZON_CHUNK_REACH_M: f32 = 2048.0;
 // The coarse word's share and stamped bit, `voxel_client::horizon`'s `FAR_SHARE`/`FAR_MEASURED`.
 const FAR_SHARE: u32 = 0xFFu;
 const FAR_MEASURED: u32 = 256u;
+/// **The share at which an eight-metre cell is in a ray's way**: three quarters of the cell holding
+/// matter is a canopy, a wall, or a hillside's own bulk; below that the cell is mostly air the ray
+/// crosses, and a surface passing through it is not a wall. See `world_far_share`.
+const FAR_BLOCKS: f32 = 0.75;
 // The cell's own grain, restated from `voxel_client::HORIZON_SUBVOXEL_SIDE` and held to it by
 // the same witness: the octree authors a voxel as 4×4×4 subvoxels and the mask has one bit each.
 const HORIZON_SUBVOXEL_SIDE: u32 = 4u;
@@ -81,10 +122,30 @@ fn horizon_mask(i: vec3<i32>) -> vec2<u32> {
     return vec2<u32>(horizon_cells[index], horizon_cells[index + 1u]);
 }
 
-/// One coarse band cell's word: bit 0 matter, bit 1 stamped.
+//// **One surface rung's band word at a point of its own grid.** The rung's words live in the same
+/// buffer as the three chunk-held bands, at the offset its entry states.
+fn horizon_surface_word(rung: i32, i: vec3<i32>) -> u32 {
+    let entry = horizon.surfaces[rung];
+    let n = i32(entry.params.y);
+    return horizon_coarse[u32(entry.params.w) + u32(i.x + n * (i.y + n * i.z))];
+}
+
+// One coarse band cell's word: bit 0 matter, bit 1 stamped.
 fn horizon_far_word(i: vec3<i32>) -> u32 {
     let n = i32(horizon.far.y);
-    return horizon_far[u32(i.x + n * (i.y + n * i.z))];
+    return horizon_coarse[u32(horizon.offsets.x) + u32(i.x + n * (i.y + n * i.z))];
+}
+
+/// One wide cell's word, the same two fields one rung up.
+fn horizon_wide_word(i: vec3<i32>) -> u32 {
+    let n = i32(horizon.wide.y);
+    return horizon_coarse[u32(horizon.offsets.y) + u32(i.x + n * (i.y + n * i.z))];
+}
+
+/// One cell of the 32 m (one-a-chunk) band.
+fn horizon_chunk_word(i: vec3<i32>) -> u32 {
+    let n = i32(horizon.chunk.y);
+    return horizon_coarse[u32(horizon.offsets.z) + u32(i.x + n * (i.y + n * i.z))];
 }
 
 /// **Has the volume looked at the chunk slot this cell belongs to?**

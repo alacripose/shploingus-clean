@@ -131,7 +131,13 @@ impl FogCubes {
             }
         }
         let foggy = cells.len();
-        FogCubes { cells, columns, foggy, cell_m, radius_m: radius }
+        FogCubes {
+            cells,
+            columns,
+            foggy,
+            cell_m,
+            radius_m: radius,
+        }
     }
 }
 
@@ -233,13 +239,21 @@ mod tests {
             let depth = sample.layer_top_m - sample.layer_base_m;
             assert!((cell.transmittance - (-sample.extinction_per_m * depth).exp()).abs() < 1e-12);
             assert!((0.0..=1.0).contains(&cell.transmittance));
-            assert!((cell.lo_m[1] - ground).abs() < 1e-12, "a cell floated off its ground");
+            assert!(
+                (cell.lo_m[1] - ground).abs() < 1e-12,
+                "a cell floated off its ground"
+            );
         }
         // And a cell can be found by its own box, which is what a renderer's culling asks.
         let cell = hollow_cubes.cells.first().expect("a cell");
         let centre = cell.centre_m();
-        assert!(hollow_cubes.cell_at(centre).is_some(), "a cell does not contain its centre");
-        assert!(hollow_cubes.cell_at([centre[0], centre[1] + 10.0, centre[2]]).is_none());
+        assert!(
+            hollow_cubes.cell_at(centre).is_some(),
+            "a cell does not contain its centre"
+        );
+        assert!(hollow_cubes
+            .cell_at([centre[0], centre[1] + 10.0, centre[2]])
+            .is_none());
     }
 
     /// **The seed moves the cells**, because the terrain under them is the seed's: a cell set that
@@ -256,7 +270,10 @@ mod tests {
             "seed 4242: {} of {}, seed 2468: {} of {}",
             first.foggy, first.columns, second.foggy, second.columns
         );
-        assert!(first.columns == second.columns, "the two lattices are the same size");
+        assert!(
+            first.columns == second.columns,
+            "the two lattices are the same size"
+        );
         assert!(
             first.foggy != second.foggy || first.cells != second.cells,
             "two worlds drew the same fog cells"

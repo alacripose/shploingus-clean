@@ -98,11 +98,11 @@
 //! pre-built, so the fluid pass opens the door instead of refactoring around it.
 
 use voxel_appearance::{DetailLattice, DetailSample};
-use voxel_noise::Vec3;
 use voxel_model::{
     DetailIndex, MaterialId, Refusal, RefusalKind, Refused, ShadingField, DETAIL_SIDE,
     SUBVOXEL_SIDE,
 };
+use voxel_noise::Vec3;
 use voxel_shapers::materials::SurfacePattern;
 
 /// One block edge, in metres. The generator's own scale (`C-6`: 1 m voxels).
@@ -392,8 +392,6 @@ pub fn eye_voxel(eye_m: [f64; 3]) -> [i32; 3] {
     out
 }
 
-
-
 /// The pattern a world's field and lattice make of a material.
 #[derive(Clone, Copy, Debug)]
 pub struct Pattern<'a> {
@@ -522,7 +520,11 @@ impl<'a> Pattern<'a> {
                     let sample = self.lattice.sample(
                         material,
                         corner,
-                        DetailIndex { x: addr[0], y: addr[1], z: addr[2] },
+                        DetailIndex {
+                            x: addr[0],
+                            y: addr[1],
+                            z: addr[2],
+                        },
                     )?;
                     let w = wu * wv * ww;
                     roughness += w * sample.roughness_delta;
@@ -530,9 +532,11 @@ impl<'a> Pattern<'a> {
                 }
             }
         }
-        Ok(DetailSample { roughness_delta: roughness, reflectance_delta: reflectance })
+        Ok(DetailSample {
+            roughness_delta: roughness,
+            reflectance_delta: reflectance,
+        })
     }
-
 }
 
 /// The lattice's flat address, as `voxel-appearance::detail` flattens it: `x` is
@@ -543,7 +547,6 @@ pub fn flat_address(at: DetailIndex) -> u32 {
     let shift = DETAIL_SIDE.trailing_zeros();
     at.x as u32 | ((at.y as u32) << shift) | ((at.z as u32) << (2 * shift))
 }
-
 
 /// A refusal for a point the pattern cannot be asked about — a non-finite world
 /// position. Refused rather than defaulted, the same rule as everywhere else: a
@@ -604,7 +607,10 @@ mod tests {
         // every rung's weight at once.
         for eye_height in [1.2, 1.62, 1.7, 2.7] {
             let p_rel = [0.0, -eye_height, 4.0];
-            assert!((footprint_distance_m(p_rel) - 4.0).abs() < 1e-15, "eye {eye_height}");
+            assert!(
+                (footprint_distance_m(p_rel) - 4.0).abs() < 1e-15,
+                "eye {eye_height}"
+            );
         }
         // **Looking down still measures the drop**, so the floor under the eye keeps its LOD.
         assert!((footprint_distance_m([0.0, -1.7, 0.0]) - 1.7).abs() < 1e-15);
@@ -625,13 +631,14 @@ mod tests {
         // `floor((p_rel + phase) * 4) + eye_voxel * 4` is the same cell this file
         // computes from the world position.
         let rel = [0.3, 0.55, 1.2];
-        for eye in [[5.3, -2.7, 100.1], [-0.5, 0.25, 1234.75], [2_000_000.125, 0.0, -17.5]] {
-            let (true_cell, true_at) = address_at([
-                eye[0] + rel[0],
-                eye[1] + rel[1],
-                eye[2] + rel[2],
-            ])
-            .expect("a finite point");
+        for eye in [
+            [5.3, -2.7, 100.1],
+            [-0.5, 0.25, 1234.75],
+            [2_000_000.125, 0.0, -17.5],
+        ] {
+            let (true_cell, true_at) =
+                address_at([eye[0] + rel[0], eye[1] + rel[1], eye[2] + rel[2]])
+                    .expect("a finite point");
             let voxel = eye_voxel(eye);
             let phase = eye_phase(eye);
             let mut cell = [0i32; 3];
@@ -674,7 +681,10 @@ mod tests {
         // moves the footprint by that step times the angle — never by a quad's worth,
         // which is the boil's whole cause.
         let step = eye_footprint_m(2.0 + a, a) - eye_footprint_m(2.0, a);
-        assert!((step - a * a).abs() < 1e-15, "a pixel moved the footprint by {step}");
+        assert!(
+            (step - a * a).abs() < 1e-15,
+            "a pixel moved the footprint by {step}"
+        );
         // A taller frame has smaller pixels, so the same surface draws finer rungs:
         // the footprint halves when the height doubles.
         assert!((pixel_angle_rad(1.2, 1440) as f64 - a / 2.0).abs() < 1e-12);
@@ -690,9 +700,16 @@ mod tests {
     #[test]
     fn the_ladder_is_five_cells_a_quarter_octave_apart_and_hands_over_smoothly() {
         assert_eq!(RUNGS_M, [0.03125, 0.125, 0.5, 2.0, 8.0]);
-        assert_eq!(RUNGS_M[0], NEAR_CELL_M, "the near cell left the eye's 32-per-face floor");
+        assert_eq!(
+            RUNGS_M[0], NEAR_CELL_M,
+            "the near cell left the eye's 32-per-face floor"
+        );
         assert_eq!(RUNGS_M[RUNGS_M.len() - 1], FAR_CELL_M);
-        assert_eq!(NEAR_CELL_M, 1.0 / 32.0, "32 addressable cells a face, no finer");
+        assert_eq!(
+            NEAR_CELL_M,
+            1.0 / 32.0,
+            "32 addressable cells a face, no finer"
+        );
         for pair in RUNGS_M.windows(2) {
             assert!(
                 (pair[1] / pair[0] - 4.0).abs() < 1e-12,
@@ -708,7 +725,11 @@ mod tests {
         for (rung, cell) in RUNGS_M.iter().enumerate().skip(1) {
             let mut expected = [0.0; 5];
             expected[rung] = 1.0;
-            assert_eq!(rung_weights(cell / 4.0), expected, "rung {rung} at its own handover point");
+            assert_eq!(
+                rung_weights(cell / 4.0),
+                expected,
+                "rung {rung} at its own handover point"
+            );
         }
         // **Half way between two handovers the two rungs are half each**, which is the smooth
         // handover itself rather than an artefact of where the table is read.
@@ -717,7 +738,11 @@ mod tests {
         // **And nothing past the coarse one.** Eight metres of footprint is one pixel per coarse
         // cell; beyond that a lattice cannot be drawn without aliasing, so the material shows its
         // mean rather than a shimmer.
-        assert_eq!(rung_weights(FAR_CELL_M), [0.0; 5], "the ladder never retired");
+        assert_eq!(
+            rung_weights(FAR_CELL_M),
+            [0.0; 5],
+            "the ladder never retired"
+        );
         // **At most two rungs, weights a partition of one wherever anything is drawn, and the
         // index never going backwards** across nine decades of footprint.
         let mut last_index = 0usize;
@@ -726,19 +751,32 @@ mod tests {
             let weights = rung_weights(footprint);
             let drawn: Vec<usize> = (0..5).filter(|rung| weights[*rung] > 0.0).collect();
             let sum: f64 = weights.iter().sum();
-            assert!(drawn.len() <= 2, "{} rungs are drawn at {footprint} m", drawn.len());
+            assert!(
+                drawn.len() <= 2,
+                "{} rungs are drawn at {footprint} m",
+                drawn.len()
+            );
             if drawn.is_empty() {
-                assert!(footprint >= FAR_CELL_M, "the ladder went silent at {footprint} m");
+                assert!(
+                    footprint >= FAR_CELL_M,
+                    "the ladder went silent at {footprint} m"
+                );
             } else {
                 // **Above the coarse rung's own handover there is nothing finer to mix with**, so
                 // its weight fades to the material's mean and the sum falls with it. Below that
                 // the two drawn rungs are a partition of one.
                 if footprint <= FAR_CELL_M / 4.0 {
-                    assert!((sum - 1.0).abs() < 1e-9, "the weights sum to {sum} at {footprint} m");
+                    assert!(
+                        (sum - 1.0).abs() < 1e-9,
+                        "the weights sum to {sum} at {footprint} m"
+                    );
                 } else {
                     assert!(sum > 0.0 && sum <= 1.0, "the top fade is not a fade: {sum}");
                 }
-                assert!(drawn[0] >= last_index, "the ladder went backwards at {footprint} m");
+                assert!(
+                    drawn[0] >= last_index,
+                    "the ladder went backwards at {footprint} m"
+                );
                 last_index = drawn[0];
             }
         }
@@ -758,8 +796,12 @@ mod tests {
         let p = [3.0, 1.75, 7.0];
         for distance in [0.1, 0.5, 2.0, 8.0, 40.0] {
             let footprint = eye_footprint_m(distance, pixel);
-            let wall = pattern.at(material, p, footprint, SurfacePattern::Speckle).unwrap();
-            let floor = pattern.at(material, p, footprint, SurfacePattern::Speckle).unwrap();
+            let wall = pattern
+                .at(material, p, footprint, SurfacePattern::Speckle)
+                .unwrap();
+            let floor = pattern
+                .at(material, p, footprint, SurfacePattern::Speckle)
+                .unwrap();
             assert_eq!(wall, floor);
         }
         // **And a vertical step cannot reach it.** The footprint is measured in the plan
@@ -775,8 +817,12 @@ mod tests {
         );
         let footprint = eye_footprint_m(footprint_distance_m(p_rel_before), pixel);
         assert_eq!(
-            pattern.at(material, p, footprint, SurfacePattern::Speckle).unwrap(),
-            pattern.at(material, p, footprint, SurfacePattern::Speckle).unwrap()
+            pattern
+                .at(material, p, footprint, SurfacePattern::Speckle)
+                .unwrap(),
+            pattern
+                .at(material, p, footprint, SurfacePattern::Speckle)
+                .unwrap()
         );
     }
 
@@ -797,7 +843,9 @@ mod tests {
         let pattern = Pattern::new(&lattice, &field);
         let surface = SurfacePattern::Speckle;
         let at = |p: [f64; 3], footprint: f64| {
-            pattern.at(material, p, footprint, surface).expect("a finite point")
+            pattern
+                .at(material, p, footprint, surface)
+                .expect("a finite point")
         };
         // **Continuous across a cell edge**, at the finest rung and at the coarse one: this is the
         // property that keeps a micrometre of position jitter from becoming a different material.
@@ -808,8 +856,14 @@ mod tests {
             let a = at([p[0] - 1e-4 * cell_m, p[1], p[2]], footprint);
             let b = at(p, footprint);
             let c = at([p[0] + 1e-4 * cell_m, p[1], p[2]], footprint);
-            for (x, y) in [(a.roughness_delta, b.roughness_delta), (b.roughness_delta, c.roughness_delta)] {
-                assert!((x - y).abs() < 1e-3, "the field stepped at a {cell_m} m edge");
+            for (x, y) in [
+                (a.roughness_delta, b.roughness_delta),
+                (b.roughness_delta, c.roughness_delta),
+            ] {
+                assert!(
+                    (x - y).abs() < 1e-3,
+                    "the field stepped at a {cell_m} m edge"
+                );
             }
         }
         // **Affine inside one near cell** — a half-cell step moves the field by exactly half, which
@@ -820,8 +874,15 @@ mod tests {
                 .expect("a sample")
                 .roughness_delta
         };
-        let (a, b, c) = (field_at(0.0), field_at(NEAR_CELL_M / 2.0), field_at(NEAR_CELL_M));
-        assert!(((a + c) / 2.0 - b).abs() < 1e-12, "there is a feature below 31.25 mm");
+        let (a, b, c) = (
+            field_at(0.0),
+            field_at(NEAR_CELL_M / 2.0),
+            field_at(NEAR_CELL_M),
+        );
+        assert!(
+            ((a + c) / 2.0 - b).abs() < 1e-12,
+            "there is a feature below 31.25 mm"
+        );
         // **And the ladder is smooth in distance**: a step of the footprint moves the value by far
         // less than the rungs differ by — a handover, not a step between scales.
         //
@@ -837,7 +898,10 @@ mod tests {
             let b = at([1.234, 0.5, 2.345], footprint * 1.01);
             worst = worst.max((a.roughness_delta - b.roughness_delta).abs());
         }
-        assert!(worst < 0.02, "a 1% footprint step moved the material by {worst}");
+        assert!(
+            worst < 0.02,
+            "a 1% footprint step moved the material by {worst}"
+        );
         // **Half way between two handovers the read lies between the two rungs' own** — the
         // cross-fade mixes two scales and is bounded by them.
         let p = [1.234, 0.5, 2.345];
@@ -862,19 +926,25 @@ mod tests {
         // covers half a cell — a lattice there would shimmer, so the material shows its mean. An
         // average, not a guess.
         assert_ne!(
-            pattern.at(material, p, FAR_CELL_M / 4.0, SurfacePattern::Speckle).unwrap(),
+            pattern
+                .at(material, p, FAR_CELL_M / 4.0, SurfacePattern::Speckle)
+                .unwrap(),
             DetailSample::NONE,
             "the coarse rung is not drawn at its own handover point"
         );
         assert_eq!(
-            pattern.at(material, p, FAR_CELL_M, SurfacePattern::Speckle).unwrap(),
+            pattern
+                .at(material, p, FAR_CELL_M, SurfacePattern::Speckle)
+                .unwrap(),
             DetailSample::NONE,
             "the pattern did not retire where the coarse cell is one pixel across"
         );
         // A material the field does not vary is **exactly** none, and never touches the
         // lattice: "not varied at this level at all" is not "varied by zero".
         assert_eq!(
-            pattern.at(MaterialId(7), p, 0.0, SurfacePattern::Speckle).unwrap(),
+            pattern
+                .at(MaterialId(7), p, 0.0, SurfacePattern::Speckle)
+                .unwrap(),
             DetailSample::NONE
         );
     }
@@ -895,11 +965,20 @@ mod tests {
             SurfacePattern::Brushed,
         ] {
             for i in 0..64u64 {
-                let p = [(i as f64) * 0.137, (i as f64) * 0.291 + 0.5, (i as f64) * 0.053];
+                let p = [
+                    (i as f64) * 0.137,
+                    (i as f64) * 0.291 + 0.5,
+                    (i as f64) * 0.053,
+                ];
                 for footprint in [0.0, 1e-4, 0.001, 0.01, 0.1, 1.0] {
-                    let d = pattern.at(material, p, footprint, surface).expect("a sample");
+                    let d = pattern
+                        .at(material, p, footprint, surface)
+                        .expect("a sample");
                     for v in [d.roughness_delta, d.reflectance_delta] {
-                        assert!((-1.0..1.0).contains(&v), "deviation {v} at {p:?} {surface:?}");
+                        assert!(
+                            (-1.0..1.0).contains(&v),
+                            "deviation {v} at {p:?} {surface:?}"
+                        );
                     }
                     if d != DetailSample::NONE {
                         seen += 1;

@@ -58,7 +58,11 @@ const SEED: u64 = 2468;
 
 fn srgb(v: f32) -> u8 {
     let v = v.clamp(0.0, 1.0) as f64;
-    let encoded = if v <= 0.003_130_8 { 12.92 * v } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
+    let encoded = if v <= 0.003_130_8 {
+        12.92 * v
+    } else {
+        1.055 * v.powf(1.0 / 2.4) - 0.055
+    };
     (encoded * 255.0 + 0.5) as u8
 }
 
@@ -213,7 +217,10 @@ impl Law<'_> {
             .pattern
             .at(wall.material, p, footprint, wall.surface)
             .expect("a finite point");
-        let varied = wall.inputs.with_detail(deviation).expect("a legal deviation");
+        let varied = wall
+            .inputs
+            .with_detail(deviation)
+            .expect("a legal deviation");
         let view = Vec3::new(-d[0] / distance, -d[1] / distance, -d[2] / distance);
         shading::shade_cpu(&varied, Vec3::new(n[0], n[1], n[2]), view, 0.0, &self.rig)
             .ok()
@@ -307,7 +314,9 @@ fn shoot(
 }
 
 fn main() {
-    let phase = std::env::args().nth(1).unwrap_or_else(|| "after".to_string());
+    let phase = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "after".to_string());
     assert!(
         phase == "before" || phase == "after",
         "usage: face-refined [before|after] — the label of the `stretch_axis` table this binary carries"
@@ -353,7 +362,10 @@ fn main() {
             }
         }
     }
-    assert!(!meshes.is_empty(), "the world produced no chunks around the trunk");
+    assert!(
+        !meshes.is_empty(),
+        "the world produced no chunks around the trunk"
+    );
     println!(
         "meshed {} chunks, {} quads, {} of them wood",
         meshes.len(),
@@ -387,9 +399,19 @@ fn main() {
     // in front of where it is.
     let mut displacement = DisplacementField::none();
     let mut laws = 0usize;
-    for face in [Face::PosX, Face::NegX, Face::PosY, Face::NegY, Face::PosZ, Face::NegZ] {
+    for face in [
+        Face::PosX,
+        Face::NegX,
+        Face::PosY,
+        Face::NegY,
+        Face::PosZ,
+        Face::NegZ,
+    ] {
         for material in registry.materials() {
-            if displacement.declare(material.id, face, LIFT_SUBVOXELS).is_ok() {
+            if displacement
+                .declare(material.id, face, LIFT_SUBVOXELS)
+                .is_ok()
+            {
                 laws += 1;
             }
         }
@@ -436,7 +458,10 @@ fn main() {
                 shot.eye_y - wall.height_range.0
             );
             let slug = wall.slug();
-            write_png(&shot.frame, &format!("target/face-refined-{slug}-{phase}.png"));
+            write_png(
+                &shot.frame,
+                &format!("target/face-refined-{slug}-{phase}.png"),
+            );
 
             // ---- the stencil's own cell along each in-plane axis -------------------------
             //
@@ -484,8 +509,8 @@ fn main() {
             let mut fallback_err = Vec::new();
             for i in 0..GRID {
                 for j in 0..GRID {
-                    let across = shot.across_mid
-                        + shot.band * (2.0 * (i as f64 + 0.5) / GRID as f64 - 1.0);
+                    let across =
+                        shot.across_mid + shot.band * (2.0 * (i as f64 + 0.5) / GRID as f64 - 1.0);
                     let y = shot.eye_y + shot.band * (2.0 * (j as f64 + 0.5) / GRID as f64 - 1.0);
                     let p = wall.point(across, y);
                     let drawn =
@@ -534,8 +559,14 @@ fn pick_walls(
                 continue;
             }
             let corners = mesh.corner_positions_m(quad);
-            let hi_y = corners.iter().map(|c| c[1] as f64).fold(f64::NEG_INFINITY, f64::max);
-            let lo_y = corners.iter().map(|c| c[1] as f64).fold(f64::INFINITY, f64::min);
+            let hi_y = corners
+                .iter()
+                .map(|c| c[1] as f64)
+                .fold(f64::NEG_INFINITY, f64::max);
+            let lo_y = corners
+                .iter()
+                .map(|c| c[1] as f64)
+                .fold(f64::INFINITY, f64::min);
             let tall = 0.6;
             if hi_y - lo_y < tall {
                 continue;
@@ -565,7 +596,10 @@ fn pick_walls(
             let across_axis = if u_axis == 1 { w_axis } else { u_axis };
             let span = |which: usize| -> (f64, f64) {
                 let lo = world.iter().map(|c| c[which]).fold(f64::INFINITY, f64::min);
-                let hi = world.iter().map(|c| c[which]).fold(f64::NEG_INFINITY, f64::max);
+                let hi = world
+                    .iter()
+                    .map(|c| c[which])
+                    .fold(f64::NEG_INFINITY, f64::max);
                 (lo, hi)
             };
             let n = quad.normal();
@@ -590,8 +624,7 @@ fn pick_walls(
                 lift_m: LIFT_SUBVOXELS / SUBVOXEL_SIDE as f64,
                 material: quad.material,
                 surface,
-                inputs: shading::inputs_for(registry, quad.material)
-                    .expect("the material derives"),
+                inputs: shading::inputs_for(registry, quad.material).expect("the material derives"),
             }
         })
         .collect()

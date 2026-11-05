@@ -1,0 +1,419 @@
+{
+  "what": "frame-cost-world-pass",
+  "why": "The title line's fps swings 2x between runs of the same build (92, 112, 94 then 64, 49, 38), so it cannot say whether a shader change helped. This is the same frame measured out of the app: settled world, camera placed and never moved, every frame rendered and read back. The quarter-size batch is the breakdown: what falls with the pixel count is the per-fragment path.",
+  "package": "voxel-client",
+  "recipe": "cargo run --release -p voxel-client --example frame-cost (605 chunks, 57 175 quads, spawn at 0.5,19.62,-95.5; the horizon cube anchored on the eye and all 605 resident octrees stamped, so the marches run; 120 frames per batch after 24 warm-up, three batches, median of medians)",
+  "measured": "2026-10-26, sixth sitting (re-measured for PATCH-087, the surface ladder, whose rows are in `surface_ladder` below). **This sitting's machine drifted while the harness ran**: the same batch's three runs came back 36.60 / 36.27 / 27.58 ms before anything was added, and the batches run in order (baseline, far, tiers 6+7, ladder), so a delta between *distant* batches here is drift and not the batch. The absolute rows below 21.71 / 7.81 ms are still the fifth sitting's; the pairs that matter for this pass are same-run, adjacent-batch, and are stated in `surface_ladder`.",
+  "commit": "6049414 + working tree",
+  "rows": [
+    {
+      "name": "median frame cost, 1280x720",
+      "value": 21.71,
+      "unit": "ms",
+      "must": "at most",
+      "note": "47.1 fps. The same build measured 21.02 ms in the sitting before, and 23.13 ms before the ladder's channel pairing (PATCH-082) took 2.11 ms of it. The absolute number is not comparable across sittings: this dossier carried 18.04 ms for the identical harness a day earlier, and a machine at a different temperature moves it by more than any single term in `attribution`."
+    },
+    {
+      "name": "median frame cost, 640x360",
+      "value": 7.81,
+      "unit": "ms",
+      "must": "at most",
+      "note": "8.64 ms before the ladder change: the saving scales with the pixel count, which is what a per-fragment change should do."
+    },
+    {
+      "name": "full / quarter ratio",
+      "value": 2.78,
+      "must": "within 15%",
+      "note": "2.69 in the sitting before and 2.68 before the ladder change. The ratio has not moved; the two medians have, together."
+    },
+    {
+      "name": "drawn chunks",
+      "value": 605,
+      "must": "at least"
+    },
+    {
+      "name": "quads built into the scene",
+      "value": 57175,
+      "must": "within 5%",
+      "note": "the harness sees 57 175 where the app's own probe reported 60 759: the harness builds its scene without the sky's own lattice pass. Both are the same world at the same eye; the difference is which passes ran, not which chunks."
+    }
+  ],
+  "far_field": {
+    "what": "The world beyond the residency window, meshed from each chunk's own octree at the 8 m rung and drawn from its own record pair (PATCH-084), in three chunk layers — the eye's, one above and one below (PATCH-085). The same run, the same scene and camera, with the stack appended and its censuses stamped into the coarse band.",
+    "recipe": "cargo run --release -p voxel-client --example frame-cost; the harness builds a FarTerrain from the shipped spec, waits for its ring, then measures three batches with it and three without",
+    "rows": [
+      {
+        "name": "far chunks drawn",
+        "value": 312,
+        "must": "at least",
+        "note": "**Three layers** — the eye's, one above and one below — 104 chunks a layer, two chunks deep beyond the window's radius 5. The running app reports 312 of 312."
+      },
+      {
+        "name": "far quads drawn",
+        "value": 386,
+        "must": "within 5%",
+        "note": "**Unchanged from PATCH-084's 386**, and that is the honest reading at this eye: the spawn ring's surface sits inside the eye's layer, so the layers above are air and the layers below are solid — no faces. The stack's geometry shows where relief crosses a layer, which is what the peak test measures against a real summit."
+      },
+      {
+        "name": "frame with the far field, 1280x720",
+        "value": 22.30,
+        "unit": "ms",
+        "must": "within the noise band",
+        "note": "Same-run pairs: 22.30 vs 21.71 (+0.59 ms) and 21.89 vs 21.80 (+0.09 ms) — inside the ±0.6 ms band an unchanged build spreads over. 312 far meshes of which most are empty, and only 386 quads drawn. The honest reading is not \"free\" but \"too small for this instrument\"."
+      },
+      {
+        "name": "frame with the far field, 640x360",
+        "value": 8.26,
+        "unit": "ms",
+        "note": "8.26 vs 7.81 and 7.81 vs 8.16 ms; ratios 2.70 and 2.80 against 2.78 and 2.67."
+      },
+      {
+        "name": "stack generation, four census lanes",
+        "value": 20389,
+        "unit": "ms",
+        "must": "declared",
+        "note": "Three layers, **712 censuses + 312 meshes**, 21 301 and 20 389 ms — **3.0× faster than the one-lane 61.7 s and the same 312 chunks, 386 quads and band words**. The lanes are a wall-clock lever: each chunk's tree is a pure function of the spec, so the census is identical at any lane count."
+      }
+    ],
+    "at_launch": {
+      "what": "What the fill costs a player, not a background thread: the shipped app started from cold, its probe's lines timestamped by a wrapper process, and the frame intervals read between them.",
+      "rows": [
+        {
+          "name": "start to the first far geometry, one lane",
+          "value": 75.9,
+          "unit": "s",
+          "note": "The whole stack arrived 0.35 s later (76.2 s): the worker censuses the job before it meshes any of it, so the field popped in at once after the wait."
+        },
+        {
+          "name": "start to the first far geometry, four lanes",
+          "value": 35.3,
+          "unit": "s",
+          "note": "Complete at 35.7 s, same 312 chunks and 386 quads. 2.1× sooner at launch; the harness reads 3.0× because the app shares the machine with the streamer's own first fill."
+        },
+        {
+          "name": "frames while the stack is adopted, four lanes",
+          "value": 9.5,
+          "unit": "ms median",
+          "note": "p95 15 ms, max 21 ms across the 38 frames that adopt 312 chunks at 8 a frame: the adoption is quiet. **While the census is still running the lanes are not free to the frame** — before any geometry exists the four-lane run read median 8.0 ms, p95 35 ms, max 131 ms, against the one-lane run's 7.0 / 15 ms and one 702 ms start-up gap. That is four lanes sharing the machine with the streamer and the renderer, placed on the record rather than attributed away."
+        }
+      ]
+    }
+  },
+  "tier_six": {
+    "what": "The rung past the far ring: the same chunks generated from the same spec, censused and meshed at 16 m, drawn at radius+3 ..= radius+4 chunks (256–320 m at the shipped 160 m window) and stamped into its own 16 m band (64³ cells over 1024 m) before any face reaches the scene. The tier-5 ring and its 8 m band are untouched.",
+    "recipe": "cargo run --release -p voxel-client --example frame-cost; the harness builds a second FarTerrain with at_tier(spec, radius, 6, 3, 4), waits for its ring, appends it with add_far_at(…, 16.0), stamps every chunk through horizon_stamp_wide, then measures three batches with both rungs beside the three with only the far field",
+    "measured": "2026-10-26, sixth sitting (the tier-6 build). Two clean runs; each row carries both, because the delta moved from +0.18 ms to -0.06 ms between them and that is the instrument's noise, not the rung's price.",
+    "rows": [
+      {
+        "name": "tier-6 chunks drawn",
+        "value": 408,
+        "must": "at least",
+        "note": "136 a layer × 3 layers: radius 5 + 3 ..= 5 + 4 chunks, the ring outside the far field's 312."
+      },
+      {
+        "name": "tier-6 quads drawn",
+        "value": 225,
+        "must": "declared",
+        "note": "At the spawn eye the 16 m rung resolves less relief than the 8 m one (386 quads), which is the geometrically expected direction: a coarser cell drops sub-cell surface."
+      },
+      {
+        "name": "frame with both rungs, 1280x720",
+        "value": 14.74,
+        "unit": "ms",
+        "must": "declared",
+        "note": "Run 1: fine 14.31, far-only 14.29, both 14.48 — **+0.18 ms** for tier 6. Run 2: fine 14.87, far-only 14.80, both 14.74 — **-0.06 ms**. The rung's price is inside the ±0.6 ms band this harness spreads over an unchanged build, so it is declared unmeasurable here and bounded by that band, not claimed as free. The absolutes are not comparable with the 21.71 ms row above: a different sitting of the same machine, which this dossier already shows moving 18.04 → 23.13 for the identical harness."
+      },
+      {
+        "name": "frame with both rungs, 640x360",
+        "value": 4.76,
+        "unit": "ms",
+        "note": "Run 1: fine 4.73, far-only 4.60, both 4.53. Run 2: fine 4.87, far-only 4.73, both 4.76. The second run's +0.03 ms is the rung's whole reading at a quarter of the pixels; the per-pixel path did not grow."
+      },
+      {
+        "name": "tier-6 fill, four census lanes",
+        "value": 27400,
+        "unit": "ms",
+        "must": "declared",
+        "note": "408 chunks: 26.3 s and 27.4 s across the two runs. The far field's 312 chunks took 20.9 s and 21.8 s in the same runs, so the per-chunk fill is the same order (a tier-6 census is 8 cells, the tree build dominates). It arrives on the worker, not the frame; the shipped app starts it beside the far field at world-open."
+      }
+    ]
+  },
+  "tier_seven": {
+    "what": "The rung past tier 6: 32 m cells, **one cell a chunk**, drawn at radius+5 ..= radius+6 chunks (320–352 m) and stamped into its own 32 m band (64³ cells over 2048 m). The frontier test samples the cell behind the face — for a cell exactly one chunk wide that is the chunk the face belongs to, which is what makes this the last chunk-held rung.",
+    "recipe": "cargo run --release -p voxel-client --example frame-cost; the harness builds a third FarTerrain with at_tier(spec, radius, 7, 5, 6), waits for its ring, appends it with add_far_at(…, 32.0), stamps every chunk through horizon_stamp_chunk, then measures three batches with all three live fields beside the three with the 8 m field alone",
+    "measured": "2026-10-26, seventh sitting (the tier-7 build, one clean run; the fine, far-only, tier-6 and tier-7 numbers below are all from that one run, so the deltas are same-sitting)",
+    "rows": [
+      {
+        "name": "tier-7 chunks drawn",
+        "value": 504,
+        "must": "at least",
+        "note": "168 a layer × 3 layers: radius 5 + 5 ..= 5 + 6. Shares no chunk with tier 6's 408 (which ends at radius 4) and none with the far field's 312."
+      },
+      {
+        "name": "tier-7 quads drawn",
+        "value": 168,
+        "must": "declared",
+        "note": "Fewer than tier 6's 225 and the far field's 386: at 32 m the surface height quantises to whole chunks and most of a chunk's shell is buried. The counts fall as the cell grows, which is the right direction; the field is never empty."
+      },
+      {
+        "name": "frame with all live rungs, 1280x720",
+        "value": 25.16,
+        "unit": "ms",
+        "must": "declared",
+        "note": "Fine 24.30, far-only 23.77, all live rungs 25.16 — **+1.39 ms for tiers 6 and 7 together**, about 0.7 ms a rung at 1280×720. The quarter frame says 6.46 against 6.22, so the added cost is mostly fill, not per-pixel; it is above the ±0.6 ms band and is declared as a cost rather than called free."
+      },
+      {
+        "name": "tier-7 fill, four census lanes",
+        "value": 34709,
+        "unit": "ms",
+        "must": "declared",
+        "note": "504 chunks in 34.7 s (14.5 chunks/s), against tier 6's 408 in 29.7 s and the far field's 312 in 22.8 s in the same process. A 32 m census is one cell — the tree build is the whole cost, so the time tracks the chunk count, not the cell size."
+      },
+      {
+        "name": "census work for a complete horizon",
+        "value": 87.2,
+        "unit": "s of work",
+        "must": "declared",
+        "note": "22.8 + 29.7 + 34.7 s, the three fields generated back to back in one harness process. **The shipped app starts all three workers at world-open**, so the player's wait is bounded below by the longest field (~35 s) and above by this sum; it was not timed on the app in this sitting, and is declared as work rather than as a launch time. **This is the budget that stops the ladder at 7 in this pass**: each further two-chunk ring adds ~35 s of the same work, and rungs 8–31 at that price are minutes of census no matter how it is scheduled. The lever is a ring that is not generated whole for a cold eye, not one more field on the same schedule."
+      }
+    ]
+  },
+  "structure": {
+    "what": "What the ladder's plumbing costs now that the coarse bands share one buffer and the fill is a wave at a time.",
+    "measured": "2026-10-26, eighth sitting, the tier-7 build with the concatened band buffer and the progressive worker",
+    "rows": [
+      {
+        "name": "horizon storage bindings",
+        "value": 3,
+        "unit": "bindings",
+        "must": "at most",
+        "note": "10 (fine cells), 11 (view), 12 (all coarse bands). The four bands used five of the eight storage buffers a fragment stage is given; the rung ceiling that made tiers 11+ unreachable is gone."
+      },
+      {
+        "name": "first far chunk before the ring is complete",
+        "value": 1,
+        "unit": "property",
+        "must": "holds",
+        "note": "`far_terrain::tests::the_first_far_chunk_arrives_before_the_ring_is_complete`: the first adoption is fewer than the ring's own count on a live worker. A whole-ring delivery fails it."
+      },
+      {
+        "name": "fills in this run (far, tier 6, tier 7)",
+        "value": 23432,
+        "unit": "ms far",
+        "must": "declared",
+        "note": "23 432 / 30 665 / 37 146 ms in the same process, 312 / 408 / 504 chunks. The totals are the same work as the tier-7 sitting; the difference is delivery order, not speed."
+      },
+      {
+        "name": "frame with all live rungs, 1280x720",
+        "value": 14.61,
+        "unit": "ms",
+        "must": "declared",
+        "note": "Fine 15.11, far-only 14.74, all live rungs 14.61 — -0.13 ms for tiers 6+7, inside the harness's noise band of about ±0.6 ms. The absolute is this sitting's machine, not comparable with the 25.16 ms row above."
+      }
+    ]
+  },
+  "ladder": {
+    "what": "Which tier indices are actually live on 2026-10-26, so no later pass has to infer it from prose.",
+    "drawn_and_lit": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28],
+    "lit_only": [2],
+    "not_live": [0, 1, 3, 4],
+    "not_live_above": "29, 30, 31 — **address, not ground.** Tier 29's cell is 134 217 728 m and its own outer edge `16 × cell` is exactly 2 147 483 648 m, the world's `i32` voxel address in metres; the generator's material law is stated in `i32` voxels, so the outermost cell of a tier-29 disc cannot be named. The drawn ladder stops one tier below that. Tiers 30 and 31 (268 435 456 m and the top, 536 870 912 m) stand past it. `surface::tests::the_drawn_top_is_where_the_worlds_own_address_stops` holds the boundary.",
+    "top": "Tier 31's cell is 536 870 912 m ≈ 536 871 km and a rung draws 16 cells, so its outer radius would be 8 589 934 592 m ≈ 8 589 935 km — 22 Earth–Moon distances. Tier 28 — the drawn top — is a 67 108 864 m cell with an outer radius of **1 073 741 824 m ≈ 1 073 742 km**, and `camera::FAR_M` is twice that, so the frame's plane is 2 147 483 648 m. The ladder is not stacked inside a few kilometres: its rings are 384 m, 1 024 m, 2 048 m, … 1.07 million km, and a 384 m rung and a 1 073 742 km rung are both drawn in the same frame.",
+    "bands": "One storage buffer, `horizon_coarse`, holds every coarse rung and each rung's word offset rides its own `offsets` entry in the view (far 0, wide 262 144, chunk 524 288, then one 35 937-word slot per surface tier from 786 432). Adding a rung appends words and writes one offset — no new binding. This removes the five-of-eight binding ceiling the four-band split had; `horizon::tests::the_shaders_reach_and_the_hosts_are_one_number` holds the slot count to the shader's own literal.",
+    "fill": "Progressive: the far worker takes the ring eight chunks at a time, nearest first, censuses each wave and its neighbours in four lanes, and delivers each wave as it is meshed (`far_terrain::tests::the_first_far_chunk_arrives_before_the_ring_is_complete`). The surface ladder is progressive by rung: one rung measured at a time, nearest first, delivered two a frame (`surface::tests::the_ladder_fills_nearest_first_and_a_rung_at_a_time`).",
+    "why_it_stopped_at_7": [
+      "Tier 8's cell (64 m) is larger than a chunk, so one face looks outside its own census. A group field that censuses only its ring produces no quads at all (`a_group_cell_draws_nothing_into_an_unmeasured_neighbour`); drawing it needed a three-deep group census, 288 groups = 2 304 chunk builds ≈ 160 s at the measured 69 ms a chunk.",
+      "**The cost was the objection and it is answered, not sidestepped**: no rung above 7 is drawn from a group census. Each is measured one sample a cell from the generator's own surface law (`crate::surface`), so the rung's mesh and its band word are the same number. Tier 8 costs 12.79 ms of that, and all 21 drawn rungs cost 368 ms between them — see `surface_ladder`."
+    ]
+  },
+  "launch": {
+    "what": "**What \"running the client\" costs a person**, split into the part cargo pays and the part the process pays before it draws. The frame instrument cannot see either: it measures frames, and both of these happen before the first one. Measured on 2026-10-26 with `SHPLOINGUS_PROBE_DEBUG` boot phases, one bounded launch each, the game's own instance untouched.",
+    "recipe": "cargo build -p shploingus, then F:/shploingus-target/debug/shploingus.exe run for 20 s with SHPLOINGUS_PROBE_DEBUG=1 SHPLOINGUS_FRAMES=1, stdout timestamped line by line",
+    "rows": [
+      {
+        "name": "build, nothing changed",
+        "value": 1.9,
+        "unit": "s",
+        "must": "at most",
+        "note": "Cargo's up-to-date check and no work: `Finished in 1.94s`. This is what a second `cargo run -p shploingus` costs when the tree has not moved."
+      },
+      {
+        "name": "build, one client source file touched",
+        "value": 19.4,
+        "unit": "s",
+        "must": "declared",
+        "note": "19.4, 22.6, 22.7 and 24.9 s across four rebuilds in this sitting — recompile `voxel-client`, rebuild the shell's build gate, relink. **This is the steady state a change costs**, not the seven minutes a first build can."
+      },
+      {
+        "name": "first build after a dependency restore",
+        "value": 431,
+        "unit": "s",
+        "must": "declared",
+        "note": "**The 7 m 11 s the user waited on.** It was not the code under change: kache's store is on `C:` and the tree on `F:`, the machine's mechanical disk, so a restore is a cross-volume **copy** of every dependency's rlib — after which the same change is 19–25 s. One-time per invalidated dependency graph, and the reason a single slow build says nothing about the next one."
+      },
+      {
+        "name": "boot: shell mount",
+        "value": 3224,
+        "unit": "ms",
+        "must": "declared",
+        "note": "**The largest and noisiest term before a frame: 2 470 / 6 611 / 3 224 ms across three launches**, and the third is the median of those. `ShellMount::new` over a 45 KB package: read the cell-frame artifacts and adopt 16 windows. Its cost is inside the shell's own construction — eager, before any frame exists — and reducing it means changing *when* the shell is built or drawn, which is a UI change rather than a boot-order one."
+      },
+      {
+        "name": "boot: judgement",
+        "value": 1019,
+        "unit": "ms",
+        "note": "689 / 1 019 ms across two launches; the game's own tick-0 judgement and the notification queue it opens."
+      },
+      {
+        "name": "boot: graphics",
+        "value": 1897,
+        "unit": "ms",
+        "note": "1 469 / 1 897 ms. Device, surface and pipeline creation, including the shader's compilation — driver work, and the second-largest term."
+      },
+      {
+        "name": "boot: world-open",
+        "value": 6153,
+        "unit": "ms",
+        "must": "declared",
+        "note": "Process start to the frame loop: **4 680 / 7 456 / 6 153 ms across three launches**, the third as the median. The spread is this machine's, not the code's: the same batch of three frame-cost runs on one unchanged build spread 27.58–36.60 ms. Before PATCH-088 the first of those runs measured 5 408 ms, and the four measuring fields were built after this point rather than during it."
+      },
+      {
+        "name": "tier 8 after world-open",
+        "value": 2.0,
+        "unit": "s",
+        "must": "declared",
+        "note": "**The robust number**, because it is measured from the loop rather than from the process: the first rung (384–1 024 m) is drawn two rungs a frame after world-open. Before PATCH-088 it was 2.3 s, because the worker was only started at that point and then competed with the streamer."
+      },
+      {
+        "name": "whole ladder after world-open",
+        "value": 2.6,
+        "unit": "s",
+        "must": "declared",
+        "note": "**21 of 21 rungs, 28 478 quads, 2 569 ms after world-open** (7 249 ms from process start in the run whose world-open was fastest, 4 680 ms) — with 1 608 ms of samples, down from 3 904 ms, because the worker now measures through the device's own creation instead of competing with 605 chunk builds afterwards. Before PATCH-088 the same run measured 13 883 ms from process start. **The ladder is not what makes the client feel slow: it is drawn 2.6 s after the loop starts.**"
+      }
+    ]
+  },
+  "surface_ladder": {
+    "what": "**The ladder above a chunk, drawn, measured and lit at its own cell size** (`crates/voxel-client/src/surface.rs`, PATCH-087): tiers 8 through 28, one generator sample a cell, the mesh and the band word read from that same sample. This is the first rung past 7 that has been drawn at all, and the mechanism is deliberately not the group census: the group census is 2 304 chunk octrees for tier 8's ring (~160 s), one sample a column is 1 089 of them (12.79 ms).",
+    "recipe": "cargo run --release -p voxel-client --example frame-cost — the harness builds the same scene, appends the far field and then the whole surface ladder, waits for all 21 rungs and measures three batches of 120 frames after 24 warm-up; the fill numbers are the worker's own, from `SurfaceLadder::adopt` to the last rung",
+    "measured": "2026-10-26, the same sixth sitting as the top of this file (see `measured` above for the drift that bounds what a cross-batch delta can mean here)",
+    "rows": [
+      {
+        "name": "surface rungs drawn",
+        "value": 21,
+        "of": 21,
+        "must": "equal",
+        "note": "Tiers 8–28, the whole drawn ladder. Each is a ring of annuli: tier 8 covers 384–1 024 m, tier 9 1 024–2 048 m, and `16 × cell_t = 8 × cell_{t+1}`, so the rings tile the ground with no gap and no overlap out to 1 073 742 km."
+      },
+      {
+        "name": "surface quads drawn",
+        "value": 28478,
+        "must": "at least",
+        "note": "Against 386 for the whole chunk-held far field and 57 175 for the streamed scene. 2 744 of them are the tier-8 ring's own 800 annulus cells (a cell's top face stands at its sample's height, not at its cell top, so a ring is not a staircase)."
+      },
+      {
+        "name": "whole ladder fill, samples",
+        "value": 356.3,
+        "unit": "ms",
+        "must": "declared",
+        "note": "21 rungs × 1 089 columns = 22 869 generator samples, measured on the worker: **356.3 ms of samples, 368 ms of wall** for the whole ladder. Compare the chunk-held rungs above it — 22.8 s + 29.7 s + 34.7 s for tiers 5, 6 and 7 — and the 160 s the three-deep group census wanted for tier 8 alone."
+      },
+      {
+        "name": "per-rung fill",
+        "value": 19.14,
+        "unit": "ms",
+        "must": "declared",
+        "note": "**The slowest rung of the 21, and the spread is small**: 12.34 (tier 10) to 19.14 (tier 28), most 16–18 ms. Constant work a rung — 1 089 columns — so the cell size does not move it; the ladder is not more expensive the further it reaches."
+      },
+      {
+        "name": "first rung on screen",
+        "value": 12.79,
+        "unit": "ms",
+        "must": "declared",
+        "note": "Tier 8 alone, adopted two rungs a frame (`SURFACE_RUNG_WAVE`), so a frame after world-open draws the 64 m rung rather than waiting 368 ms for the ladder. This is the cold-start number that matters: the horizon the player sees at 384 m does not wait on any of the remaining 20 rungs."
+      },
+      {
+        "name": "band memory, all rung slots",
+        "value": 3.29,
+        "unit": "MiB",
+        "must": "at most",
+        "note": "24 slots (tiers 8–31) × 35 937 words (a 33 × 33 disc, 33 cells deep) × 4 B. Dense and flat: a band is a disc, not a per-cell hash, so the memory is the same whatever the cell size — 140 KB a rung from 64 m to 67 108 864 m. It is all inside `horizon_coarse`, the one buffer the coarse bands already shared."
+      },
+      {
+        "name": "frame with the surface ladder, 1280x720",
+        "value": 28.90,
+        "unit": "ms",
+        "must": "declared",
+        "note": "**The 21 rungs' own price is +1.17 ms** against the batch measured immediately before them in the same run (tiers 6+7, 27.73 ms) — for 28 478 more quads, a 2 000× increase over the far field's 386. The quarter frame says 12.67 ms against 13.95, so the cost is fill and not per-pixel. **Stated with its bound**: this sitting's own unchanged build spread 27.58–36.60 ms across three runs, so 1.17 ms is smaller than this instrument's drift here, and the batches run in the order baseline → far → tiers 6+7 → ladder while the machine drifted *downward* — which makes the ladder's +1.17 ms over the batch before it an over-estimate rather than a flattering one."
+      }
+    ],
+    "live_tier_indices": "Drawn **and** measured at their own cell size: **5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28** (and 2 for light alone). **Not live: 0, 1, 3, 4** — no field, no band, nothing drawn — and **29, 30, 31**, which are address rather than ground."
+  },
+  "attribution": {
+    "method": "One term disabled at a time by a scratch edit to `shading.wgsl`, rebuilt, the whole frame-cost recipe re-run. Deltas are the baseline median minus the variant's. The run-to-run spread of an unchanged build is about ±0.6 ms, so a delta inside that band is not a cost: three of these came back *negative*, which is the noise floor stated plainly.",
+    "baseline": 23.13,
+    "terms": [
+      {
+        "name": "the material ladder (`pattern_deviation` whole)",
+        "ms": 3.95,
+        "note": "the largest single term. Two live rungs, two channels, eight corners a rung: 32 lattice samples a fragment, each folding its corner's domain."
+      },
+      {
+        "name": "the three sky rays (`world_sky`)",
+        "ms": 2.38,
+        "note": "the earlier session measured 2.76 ms of an 18.04 ms frame for the same term."
+      },
+      {
+        "name": "the specular warp",
+        "ms": 2.08,
+        "note": "gated on `rough_present && weight_present && beam_known`; the predicate is what the variant removes."
+      },
+      {
+        "name": "the beam march",
+        "ms": 0.11,
+        "note": "one ray, and nearly free."
+      },
+      {
+        "name": "the coarse far band",
+        "ms": -0.54,
+        "must": "noise"
+      },
+      {
+        "name": "the subvoxel tests",
+        "ms": -0.57,
+        "must": "noise"
+      },
+      {
+        "name": "the shadow cascades (`sun_visibility`)",
+        "ms": -0.39,
+        "note": "**not a measurement of the cascades**: this harness renders no shadow pass, so `beam_shadow.direction.w` is zero and the function is never called. A frame with shadows drawn would have to be measured in the window."
+      },
+      {
+        "name": "the second bounce",
+        "ms": -0.37,
+        "must": "noise"
+      },
+      {
+        "name": "the rim and the coat",
+        "ms": -0.57,
+        "must": "noise",
+        "note": "the predicates are false for most materials in this frame."
+      }
+    ],
+    "sum": "8.5 ms of 23.13 is in the three terms above the noise floor; the other ~14.6 ms is not in any of them, and the quarter-size frame's own 8.6 ms says how much of the rest is pixel-independent (geometry, uploads, readback). The cost is **not** spread thin: the ladder alone is 17% of the frame."
+  },
+  "unstable": [
+    {
+      "name": "fps",
+      "note": "Not a row — see the medians above."
+    },
+    {
+      "name": "the full lib suite under parallel load",
+      "note": "Two consecutive full runs of one build failed different tests (`the_wireframe_outlines_the_records…`, then `the_two_trees_composite_on_the_target…`), and a control run on the pre-change shader failed two more again. Each passes alone. It is device contention in the test process, not a regression, and it is worth a fix of its own."
+    },
+    {
+      "name": "the suite's own clock, which is not a hang",
+      "note": "**Measured 2026-10-26**: the GPU modules are minutes each on this machine and a run killed at a 100 s cut-off reads exactly like a deadlock (it did, twice). The whole library suite at four threads is **601 passed, 0 failed, 2 ignored in 300 s, exit 0**; single-threaded, `renderer::` is 131 s, `skylight::` 228 s and `game::` 160 s, and every other module is seconds. A reviewer's budget has to cover five minutes for the suite, or the run looks like a spin."
+    }
+  ]
+}

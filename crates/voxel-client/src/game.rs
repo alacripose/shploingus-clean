@@ -35,7 +35,10 @@ use voxel_shapers::{Config, WorldSpec};
 use voxel_work::ChunkWindow;
 
 /// The chunk window the client streams.
-pub const GAME_WINDOW: ChunkWindow = ChunkWindow { radius_chunks: 5, vertical_chunks: 2 };
+pub const GAME_WINDOW: ChunkWindow = ChunkWindow {
+    radius_chunks: 5,
+    vertical_chunks: 2,
+};
 
 /// The memory ceiling handed to the streamer.
 pub const GAME_CEILING_BYTES: usize = 256 * 1024 * 1024;
@@ -172,7 +175,9 @@ pub struct World {
 impl World {
     /// The world the client ships: the target golden seed at tick zero.
     pub fn shipped() -> Self {
-        World { spec: WorldSpec::new(GAME_SEED, Config::default()) }
+        World {
+            spec: WorldSpec::new(GAME_SEED, Config::default()),
+        }
     }
 
     /// The world's seed — the first half of what a save has to name.
@@ -203,7 +208,11 @@ impl World {
         streamer: Option<&'a voxel_work::Streamer>,
         earthworks: &'a voxel_shapers::earthworks::Earthworks,
     ) -> Voxels<'a> {
-        Voxels { streamer, spec: &self.spec, earthworks }
+        Voxels {
+            streamer,
+            spec: &self.spec,
+            earthworks,
+        }
     }
 }
 
@@ -362,7 +371,10 @@ pub fn spawn_feet(world: &World) -> [f64; 3] {
     let world_view = world.voxels(None, &earthworks);
     let spec = world.spec();
     let surface = voxel_shapers::terrain::elevation_m(spec, GAME_SPAWN_XZ.0, GAME_SPAWN_XZ.1);
-    let (cx, cz) = (GAME_SPAWN_XZ.0.floor() as i32, GAME_SPAWN_XZ.1.floor() as i32);
+    let (cx, cz) = (
+        GAME_SPAWN_XZ.0.floor() as i32,
+        GAME_SPAWN_XZ.1.floor() as i32,
+    );
     // Descending from the clearance, and never further than 8 m below the surface:
     // a spawn with no floor under it at all is a broken world, and returning the
     // continuous elevation is the honest "there is nothing to stand on" rather than
@@ -419,7 +431,10 @@ mod tests {
             "nothing solid under the spawn at voxel y {below}"
         );
         // And the body is not standing inside the hill.
-        assert!(!w.is_solid(cx, feet[1] as i32, cz), "the feet are inside solid ground");
+        assert!(
+            !w.is_solid(cx, feet[1] as i32, cz),
+            "the feet are inside solid ground"
+        );
         assert!(
             !w.is_solid(cx, (feet[1] + crate::motion::BODY_HEIGHT - 0.01) as i32, cz),
             "there is no head clearance at the spawn"
@@ -437,7 +452,10 @@ mod tests {
             feet[1],
             player.motion.feet[1]
         );
-        assert!(player.motion.grounded, "the body is not standing on the ground at spawn");
+        assert!(
+            player.motion.grounded,
+            "the body is not standing on the ground at spawn"
+        );
         println!(
             "seed {} at tick {}: spawn feet {feet:?}, eye {:?}, sea level {} m",
             world.seed(),
@@ -468,9 +486,10 @@ mod tests {
         let source = voxel_stream::WorldSource::new(*world.spec());
         let registry = materials::registry().expect("the registry");
         let mesh_config = voxel_mesh::MeshConfig::from_registry(&registry).expect("a mesh config");
-        let mut streamer = voxel_work::Streamer::new(source, mesh_config, 1, crate::GAME_CEILING_BYTES)
-            .and_then(|s| s.with_window(GAME_WINDOW))
-            .expect("the streamer");
+        let mut streamer =
+            voxel_work::Streamer::new(source, mesh_config, 1, crate::GAME_CEILING_BYTES)
+                .and_then(|s| s.with_window(GAME_WINDOW))
+                .expect("the streamer");
         let feet = spawn_feet(&world);
         let (cx, cz) = (feet[0].floor() as i32, feet[2].floor() as i32);
         let ground = feet[1] as i32 - 1;
@@ -487,18 +506,29 @@ mod tests {
         // life, which is exactly the span the edits fall in.
         macro_rules! live {
             () => {
-                Voxels { streamer: Some(&streamer), spec: world.spec(), earthworks: &earthworks }
+                Voxels {
+                    streamer: Some(&streamer),
+                    spec: world.spec(),
+                    earthworks: &earthworks,
+                }
             };
         }
         macro_rules! generated {
             () => {
-                Voxels { streamer: None, spec: world.spec(), earthworks: &earthworks }
+                Voxels {
+                    streamer: None,
+                    spec: world.spec(),
+                    earthworks: &earthworks,
+                }
             };
         }
 
         // Before any edit the two records agree — otherwise this test would be
         // measuring a permanent disagreement rather than the effect of an edit.
-        assert!(live!().is_solid(cx, ground, cz), "the ground is not solid to begin with");
+        assert!(
+            live!().is_solid(cx, ground, cz),
+            "the ground is not solid to begin with"
+        );
         assert!(generated!().is_solid(cx, ground, cz));
 
         // **Dig it.** The collider must stop believing there is anything to stand on.
@@ -544,7 +574,10 @@ mod tests {
 
         // **Place one.** The collider must start believing there is something in the way.
         let air = feet[1] as i32;
-        assert!(!live!().is_solid(cx, air, cz), "the spawn column is not clear to begin with");
+        assert!(
+            !live!().is_solid(cx, air, cz),
+            "the spawn column is not clear to begin with"
+        );
         streamer
             .edit(voxel_work::pool::Edit {
                 x: cx,
@@ -565,7 +598,10 @@ mod tests {
     #[test]
     fn the_eye_is_the_eye_height_above_the_spawn_feet() {
         let world = shipped();
-        assert_eq!(spawn_eye(&world)[1], spawn_feet(&world)[1] + crate::motion::EYE_HEIGHT);
+        assert_eq!(
+            spawn_eye(&world)[1],
+            spawn_feet(&world)[1] + crate::motion::EYE_HEIGHT
+        );
     }
 
     /// **A world is a seed, a tick and a configuration, and the tick is part of it.**
@@ -579,8 +615,16 @@ mod tests {
         assert_eq!(world.seed(), GAME_SEED);
         assert_eq!(world.tick(), 0, "a fresh world starts at tick zero");
         let later = world.at_tick(9_000);
-        assert_eq!(later.seed(), world.seed(), "the tick must not disturb the seed");
+        assert_eq!(
+            later.seed(),
+            world.seed(),
+            "the tick must not disturb the seed"
+        );
         assert_eq!(later.tick(), 9_000);
-        assert_eq!(later.spec().tick, 9_000, "the spec the shapers see carries it too");
+        assert_eq!(
+            later.spec().tick,
+            9_000,
+            "the spec the shapers see carries it too"
+        );
     }
 }

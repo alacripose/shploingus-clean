@@ -102,6 +102,15 @@ impl<Q: FieldQuery + ?Sized> FieldQuery for ColumnMemo<'_, Q> {
     }
 }
 
+/// **How far below the ground plane a column's top voxel may lie**, in metres.
+///
+/// A cave mouth at the surface puts the topmost solid voxel under the plane rather than on
+/// it, and a column whose only matter is water answers nothing at all. The bound is the
+/// probe's own budget: it is one half-chunk, which is deeper than any surface opening the
+/// terrain's own strata leave, and a column that answers nothing inside it is one the law's
+/// elevation is the honest drawing for.
+pub const COLUMN_PROBE_DEPTH: i32 = 16;
+
 /// A world, as a source of voxels.
 #[derive(Clone, PartialEq, Debug)]
 pub struct WorldSource {
@@ -225,6 +234,68 @@ impl WorldSource {
             }
         }
         Ok(tree)
+    }
+
+    /// **The world's own surface at one column**: the top of the topmost voxel that is
+    /// solid matter — not water, not air — with any canopy standing over it included.
+    ///
+    /// **A handful of reads rather than a chunk.** The ground plane puts the surface at the
+    /// law's own elevation, and a canopy reaches at most
+    /// [`voxel_shapers::flora::MAX_TREE_ABOVE_GROUND_M`] above it, so the probe starts above
+    /// both and walks down to the first solid voxel. That is the **same rule** the mesher,
+    /// the movement check and the map's resident path ask
+    /// (`voxel_client::map_survey::absorb_surface`), reached without building the 32³ voxels
+    /// the chunk would have cost — which is what lets a map read the world beyond the
+    /// resident window at all.
+    ///
+    /// The ground voxel is the highest whose centre still lies under the plane, because
+    /// [`chunk_fields::material_of`] calls every voxel above `surface` air, sea or tree.
+    ///
+    /// `None` when nothing solid stands in the probed span: an ocean column whose only
+    /// matter is its water skin, a column cut through by a cave mouth deeper than
+    /// [`COLUMN_PROBE_DEPTH`]. A caller that needs a height there has the law's own, and
+    /// this refusal to invent one is what keeps "the world says nothing here" distinct from
+    /// "the world says zero".
+    pub fn column_surface(&self, x: i32, z: i32) -> Refused<Option<f32>> {
+        // The plane the surface stands on, read once: `material_of` samples the same field
+        // for every voxel it judges, and this is that field's own value.
+        let surface = voxel_shapers::terrain::elevation_m(&self.spec, x as f64 + 0.5, z as f64 + 0.5);
+        let ground = (surface - 0.5).floor();
+        // **The canopy's ceiling, from the lattice that makes the trees** rather than by
+        // walking up through the sky: the highest voxel any tree over this column can reach.
+        let mut ceiling = ground;
+        for tree in voxel_shapers::flora::trees_over_column(&self.spec, x, z)
+            .into_iter()
+            .flatten()
+        {
+            if !tree.reaches(x, z) {
+                continue;
+            }
+            let top = (tree.base_y + tree.trunk_height) as f64
+                + tree.canopy_radius_m.max(0.0).ceil()
+                + 1.0;
+            ceiling = ceiling.max(top);
+        }
+        // **The law's ceiling is not the world's.** A raise can stand above it (a placed block, a
+        // mound a hammer lifted) and a dig can cut below the generator's floor (a pit), so the walk
+        // starts and ends at the record's own reach where the record has touched this column — the
+        // same edits the resident chunk it would have been built with carries.
+        let law_top = ceiling.floor() as i32;
+        let law_bottom = (ground.floor() as i32 - COLUMN_PROBE_DEPTH).min(law_top);
+        let (top, bottom) = match self.earthworks.column_span(x, z) {
+            Some((low, high)) => (law_top.max(high), law_bottom.min(low)),
+            None => (law_top, law_bottom),
+        };
+        for y in (bottom..=top).rev() {
+            let m = self.material_at(x, y, z)?;
+            if m.is_empty() || voxel_shapers::materials::is_fluid(m) {
+                continue;
+            }
+            // A generator voxel is one whole cell, so its top face is its own y + 1 — the
+            // same number `absorb_surface` reads out of a uniform leaf.
+            return Ok(Some(y as f32 + 1.0));
+        }
+        Ok(None)
     }
 
     /// A neighbourhood that answers from the **world itself**.

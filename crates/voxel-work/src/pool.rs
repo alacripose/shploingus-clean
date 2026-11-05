@@ -400,6 +400,15 @@ impl Pool {
         self.shared.world.read().unwrap().source.material_at(x, y, z)
     }
 
+    /// **The world's own surface at one column**, read under **one** lock.
+    ///
+    /// The probe asks a handful of voxels of one column, and asking the world's lock per
+    /// voxel would be a lock per voxel; the whole read is one question about one place, so
+    /// it is taken once. See [`voxel_stream::WorldSource::column_surface`] for the rule.
+    pub fn column_surface(&self, x: i32, z: i32) -> Refused<Option<f32>> {
+        self.shared.world.read().unwrap().source.column_surface(x, z)
+    }
+
     /// Which version of the world new chunks are built from.
     pub fn generation(&self) -> u64 {
         self.shared.world.read().unwrap().generation

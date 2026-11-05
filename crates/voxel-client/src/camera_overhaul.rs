@@ -200,8 +200,7 @@ impl OverhaulOffsets {
     pub fn applied_to(&self, camera: &Camera) -> Camera {
         let mut drawn = *camera;
         drawn.yaw_rad += self.yaw_rad;
-        drawn.pitch_rad =
-            (drawn.pitch_rad + self.pitch_rad).clamp(-MAX_PITCH_RAD, MAX_PITCH_RAD);
+        drawn.pitch_rad = (drawn.pitch_rad + self.pitch_rad).clamp(-MAX_PITCH_RAD, MAX_PITCH_RAD);
         drawn.roll_rad += self.roll_rad;
         drawn
     }
@@ -365,7 +364,11 @@ impl CameraOverhaul {
             } else {
                 CAMERA_SWAY_FADE_OUT_LENGTH
             };
-            let fade_step = if fade_length > 0.0 { dt_s / fade_length } else { 1.0 };
+            let fade_step = if fade_length > 0.0 {
+                dt_s / fade_length
+            } else {
+                1.0
+            };
             self.sway_factor = step_towards(self.sway_factor, self.sway_factor_target, fade_step);
             let scaled_intensity =
                 CAMERA_SWAY_INTENSITY * self.sway_factor.powf(CAMERA_SWAY_FADING_SMOOTHNESS);
@@ -392,10 +395,10 @@ impl CameraOverhaul {
 
         // ---- forward velocity pitch, and the strafe's lateral component --------
         let (sin_yaw, cos_yaw) = camera.yaw_rad.sin_cos();
-        let forward_speed_bpt = (velocity_m_s[0] * sin_yaw + velocity_m_s[2] * cos_yaw)
-            / BLOCKS_PER_TICK_TO_M_S;
-        let right_speed_bpt = (velocity_m_s[0] * cos_yaw - velocity_m_s[2] * sin_yaw)
-            / BLOCKS_PER_TICK_TO_M_S;
+        let forward_speed_bpt =
+            (velocity_m_s[0] * sin_yaw + velocity_m_s[2] * cos_yaw) / BLOCKS_PER_TICK_TO_M_S;
+        let right_speed_bpt =
+            (velocity_m_s[0] * cos_yaw - velocity_m_s[2] * sin_yaw) / BLOCKS_PER_TICK_TO_M_S;
         let forward_target_deg = forward_speed_bpt * self.context.forward_velocity_pitch_factor;
         self.prev_forward_pitch = damp(
             self.prev_forward_pitch,
@@ -578,16 +581,27 @@ mod tests {
     #[test]
     fn the_offsets_are_added_to_a_copy_and_never_touch_the_players_camera() {
         let camera = Camera::standard([1.0, 2.0, 3.0], 1.0);
-        let offsets = OverhaulOffsets { yaw_rad: 0.1, pitch_rad: 0.05, roll_rad: 0.02 };
+        let offsets = OverhaulOffsets {
+            yaw_rad: 0.1,
+            pitch_rad: 0.05,
+            roll_rad: 0.02,
+        };
         let drawn = offsets.applied_to(&camera);
         assert_eq!(drawn.yaw_rad, 0.1);
         assert_eq!(drawn.pitch_rad, 0.05);
         assert_eq!(drawn.roll_rad, 0.02);
         assert_eq!(drawn.position_m, camera.position_m);
-        assert_eq!(camera.yaw_rad, 0.0, "the player's camera must not be written");
+        assert_eq!(
+            camera.yaw_rad, 0.0,
+            "the player's camera must not be written"
+        );
         assert_eq!(camera.roll_rad, 0.0);
         // A pitch offset cannot push the drawn camera through the pole.
-        let extreme = OverhaulOffsets { yaw_rad: 0.0, pitch_rad: 10.0, roll_rad: 0.0 };
+        let extreme = OverhaulOffsets {
+            yaw_rad: 0.0,
+            pitch_rad: 10.0,
+            roll_rad: 0.0,
+        };
         assert!(extreme.applied_to(&camera).pitch_rad <= MAX_PITCH_RAD);
     }
 
@@ -630,15 +644,23 @@ mod tests {
         let mut roll = 0.0;
         for i in 0..4 {
             camera.yaw_rad += 45.0_f64.to_radians();
-            roll = oh.update(&camera, [i as f64 * 0.01, 0.0, 0.0], false, DT).roll_rad;
+            roll = oh
+                .update(&camera, [i as f64 * 0.01, 0.0, 0.0], false, DT)
+                .roll_rad;
         }
-        assert!(roll < -0.015, "a 45°/frame right flick banked only {roll} rad");
+        assert!(
+            roll < -0.015,
+            "a 45°/frame right flick banked only {roll} rad"
+        );
         // Turning stopped: the bank decays through the reference's 0.0825 smoothing.
         let still = [0.1, -1.568, 0.0];
         for _ in 0..90 {
             roll = oh.update(&camera, still, false, DT).roll_rad;
         }
-        assert!(roll.abs() < 0.002, "the bank was still {roll} rad after 1.5 s");
+        assert!(
+            roll.abs() < 0.002,
+            "the bank was still {roll} rad after 1.5 s"
+        );
     }
 
     /// **The reference's strafing algebra, pinned**: a rightward velocity gives a
@@ -651,7 +673,9 @@ mod tests {
         let mut strafing = CameraOverhaul::new();
         let mut roll = 0.0;
         for _ in 0..60 {
-            roll = strafing.update(&camera, [4.317, 0.0, 0.0], false, DT).roll_rad;
+            roll = strafing
+                .update(&camera, [4.317, 0.0, 0.0], false, DT)
+                .roll_rad;
         }
         assert!(roll > 0.02, "a rightward strafe gave {roll} rad");
         let mut turning = CameraOverhaul::new();
@@ -659,7 +683,9 @@ mod tests {
         let mut turn_roll = 0.0;
         for i in 0..4 {
             camera.yaw_rad += 45.0_f64.to_radians();
-            turn_roll = turning.update(&camera, [i as f64 * 0.01, 0.0, 0.0], false, DT).roll_rad;
+            turn_roll = turning
+                .update(&camera, [i as f64 * 0.01, 0.0, 0.0], false, DT)
+                .roll_rad;
         }
         assert!(
             turn_roll < 0.0,
@@ -681,7 +707,10 @@ mod tests {
                 .update(&camera, [0.0, -2.0 - i as f64 * 1e-4, 0.0], false, DT)
                 .pitch_rad;
         }
-        assert_eq!(slow_pitch, 0.0, "a slow fall tilted the view by {slow_pitch} rad");
+        assert_eq!(
+            slow_pitch, 0.0,
+            "a slow fall tilted the view by {slow_pitch} rad"
+        );
         // A fall at 20 m/s is 1 block/tick × 2.5 = 2.5°, and the axis carries it up.
         let mut fast = CameraOverhaul::new();
         let mut fast_pitch = 0.0;
@@ -691,7 +720,10 @@ mod tests {
                 .pitch_rad;
         }
         let expected = 2.5_f64.to_radians();
-        assert!(fast_pitch > 0.0, "a fall must tilt the view up here, not down");
+        assert!(
+            fast_pitch > 0.0,
+            "a fall must tilt the view up here, not down"
+        );
         assert!(
             (fast_pitch - expected).abs() < 0.001,
             "a 20 m/s fall gave {fast_pitch} rad, expected {expected}"
@@ -706,7 +738,9 @@ mod tests {
         let mut oh = CameraOverhaul::new();
         let mut pitch = 0.0;
         for _ in 0..60 {
-            pitch = oh.update(&camera, [0.0, -1.568, 4.317], false, DT).pitch_rad;
+            pitch = oh
+                .update(&camera, [0.0, -1.568, 4.317], false, DT)
+                .pitch_rad;
         }
         // 4.317 m/s = 0.21585 blocks/tick × 7.0 = 1.511°, negated by the pitch axis.
         let expected = -(0.215_85 * 7.0_f64).to_radians();
@@ -729,9 +763,8 @@ mod tests {
         let mut biggest = 0.0_f64;
         for _ in 0..360 {
             let offsets = oh.update(&camera, still, false, DT);
-            let magnitude = (offsets.yaw_rad * offsets.yaw_rad
-                + offsets.pitch_rad * offsets.pitch_rad)
-                .sqrt();
+            let magnitude =
+                (offsets.yaw_rad * offsets.yaw_rad + offsets.pitch_rad * offsets.pitch_rad).sqrt();
             biggest = biggest.max(magnitude);
         }
         assert_eq!(oh.sway_factor, 1.0, "the sway never reached full strength");
@@ -806,7 +839,10 @@ mod tests {
             }
         }
         assert!(biggest > 0.2, "the noise is suspiciously flat: {biggest}");
-        assert!(biggest < 1.5, "the noise is outside the simplex-like range: {biggest}");
+        assert!(
+            biggest < 1.5,
+            "the noise is outside the simplex-like range: {biggest}"
+        );
     }
 
     #[test]

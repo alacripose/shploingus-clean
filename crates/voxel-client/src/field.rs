@@ -199,7 +199,14 @@ impl SubvoxelPos {
                 .floor()
                 .clamp(0.0, side - 1.0) as u8;
         }
-        Some(SubvoxelPos { voxel, at: SubvoxelIndex { x: at[0], y: at[1], z: at[2] } })
+        Some(SubvoxelPos {
+            voxel,
+            at: SubvoxelIndex {
+                x: at[0],
+                y: at[1],
+                z: at[2],
+            },
+        })
     }
 
     /// **The point a shadow ray leaves from**: the centre of the cell.
@@ -380,7 +387,8 @@ impl CellField {
             return None;
         };
         // **This cell's own swing**, dotted and compared against the step's cosine.
-        let dot = kept.toward[0] * toward[0] + kept.toward[1] * toward[1] + kept.toward[2] * toward[2];
+        let dot =
+            kept.toward[0] * toward[0] + kept.toward[1] * toward[1] + kept.toward[2] * toward[2];
         if dot < BEAM_STEP_COS {
             // Answered, counted, and queued: the ref-bands are near enough to draw and not near
             // enough to keep.
@@ -577,7 +585,11 @@ mod tests {
         let middle = SubvoxelPos::from(VoxelPos::new(2, 0, 0));
         assert_eq!((middle.at.x, middle.at.y, middle.at.z), (2, 2, 2));
         let centre = middle.centre_m();
-        assert_eq!(SubvoxelPos::of_point(centre), Some(middle), "the centre left its own cell");
+        assert_eq!(
+            SubvoxelPos::of_point(centre),
+            Some(middle),
+            "the centre left its own cell"
+        );
     }
 
     #[test]
@@ -587,8 +599,16 @@ mod tests {
         // down; the **sentinel** chunk is a chunk no world holds, so any provider answers `None`
         // for it and the cell reads as unmeasured — the rig lights it, which is the light this
         // field falls back to everywhere it has nothing to say.
-        assert_eq!(chunk_of([f64::NAN, 0.0, 0.0]).x, i32::MIN, "NaN names the sentinel");
-        assert_eq!(chunk_of([f64::INFINITY, 0.0, 0.0]).x, i32::MIN, "so does an infinity");
+        assert_eq!(
+            chunk_of([f64::NAN, 0.0, 0.0]).x,
+            i32::MIN,
+            "NaN names the sentinel"
+        );
+        assert_eq!(
+            chunk_of([f64::INFINITY, 0.0, 0.0]).x,
+            i32::MIN,
+            "so does an infinity"
+        );
         assert_eq!(chunk_of([f64::NEG_INFINITY, 0.0, 0.0]).x, i32::MIN);
         // And the ordinary cases, around zero: 0.0 through 31.999 is chunk 0.
         assert_eq!(chunk_of([0.0, 0.0, 0.0]).x, 0);
@@ -609,7 +629,11 @@ mod tests {
         let mut field = a_field(voxel_shapers::climate::TICKS_PER_DAY / 2);
         let cell = SubvoxelPos::from(VoxelPos::new(4, 0, 0));
         field.begin_frame();
-        assert_eq!(field.at(cell), None, "an unmeasured cell answered with a light");
+        assert_eq!(
+            field.at(cell),
+            None,
+            "an unmeasured cell answered with a light"
+        );
         assert_eq!(field.unmeasured(), 1, "a rigged corner went uncounted");
         assert_eq!(field.queued(), 1, "the frame's demand was not recorded");
         let wanted = field.wants(16);
@@ -620,7 +644,11 @@ mod tests {
         let (bands, _absent) = field.measure(&trees, cell).expect("a resident cell");
         assert_eq!(field.held(), 1);
         field.begin_frame();
-        assert_eq!(field.at(cell), Some(bands), "a measured cell lost its bands");
+        assert_eq!(
+            field.at(cell),
+            Some(bands),
+            "a measured cell lost its bands"
+        );
         assert_eq!(field.answered(), 1, "a hit was not counted");
         assert_eq!(field.unmeasured(), 0, "a hit was counted as a miss");
         assert_eq!(field.queued(), 0, "a current cell was queued again");
@@ -628,7 +656,11 @@ mod tests {
         // **A cell whose own chunk is not resident is not measured at all**, which is the rig's
         // fallback and not a zero.
         let far = SubvoxelPos::from(VoxelPos::new(4, 0, 40));
-        assert_eq!(field.measure(&trees, far), None, "a cell past the world measured");
+        assert_eq!(
+            field.measure(&trees, far),
+            None,
+            "a cell past the world measured"
+        );
     }
 
     /// **The field's coverage survives the sun's motion, a stale answer is counted, and the stale
@@ -687,13 +719,25 @@ mod tests {
         // **And the stale cells are the queue**, so the caller's next ask refreshes exactly what
         // the frame is drawing rather than the whole world.
         let queued = moved.wants(128);
-        assert_eq!(queued.len(), 64, "the stale cells were not queued for a re-march");
-        assert!(queued.iter().all(|cell| cells.contains(cell)), "the queue named a stranger");
+        assert_eq!(
+            queued.len(),
+            64,
+            "the stale cells were not queued for a re-march"
+        );
+        assert!(
+            queued.iter().all(|cell| cells.contains(cell)),
+            "the queue named a stranger"
+        );
 
         // **A different body is a different light.** At tick zero the Sun is down, so the field's
         // beam is the Moon's — not the Sun's by however many degrees — and every kept cell is
         // discarded rather than re-labelled.
-        let night = CellField::of(&world, 0, SkyInputs::default(), 0, Some(moved)).expect("a field");
-        assert_eq!(night.held(), 0, "the Sun's cells were kept for the Moon's beam");
+        let night =
+            CellField::of(&world, 0, SkyInputs::default(), 0, Some(moved)).expect("a field");
+        assert_eq!(
+            night.held(),
+            0,
+            "the Sun's cells were kept for the Moon's beam"
+        );
     }
 }

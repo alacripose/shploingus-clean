@@ -1,0 +1,23 @@
+{
+  "what": "light-horizon-coverage",
+  "why": "A chunk inside the fine cube that has not been stamped is refused, so the slot count is the frame's floor and the refused count is its leak.",
+  "package": "voxel-client",
+  "recipe": "shploingus, shipped world, eye pinned at 0.5,19.62,-95.5, SHPLOINGUS_PROBE_DEBUG=1, ten seconds",
+  "measured": "2026-10-26",
+  "commit": "6049414 + working tree",
+  "rows": [
+    { "name": "fine slots lit after 8 s", "value": 27, "of": 27, "must": "equal" },
+    { "name": "drawn chunks refused as unlit", "value": 0, "of": 605, "must": "equal" },
+    { "name": "chunks drawn", "value": 605, "must": "at least" },
+    { "name": "quads in the frame", "value": 60759, "must": "within 5%" },
+    { "name": "mesh bytes", "value": 193.9, "of": 256.0, "unit": "MB", "must": "at most" },
+    { "name": "trees held by the streamer after 8 s", "value": 371, "must": "at least" },
+    { "name": "bands in the light horizon", "value": 2, "must": "equal", "note": "fine 1 m / 96 m and coarse 8 m / 512 m; the ladder's 64 m band is not built, see docs/lod-ladder.md" }
+  ],
+  "unstable": [
+    {
+      "name": "fps",
+      "note": "92, 112, 94 fps then 64, 49, 38 fps on the same build with the same pinned camera. This machine swings by 2x under load, so fps is not a row. The out-of-app measurement is the frame-cost dossier, which reads 16.7 to 17.4 ms across separate harness runs."
+    }
+  ]
+}

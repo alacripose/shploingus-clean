@@ -22,9 +22,20 @@ use voxel_noise::Vec3;
 use voxel_shapers::{Config, WorldSpec};
 
 /// The two terms `npr::shade` adds, in the model's own units: `(sky, beam)`.
-fn split(inputs: &voxel_appearance::openpbr::OpenPbrInputs, normal: Vec3, view: Vec3, rig: &LightRig) -> (f64, f64) {
-    let sky_only = LightRig { lights: Vec::new(), ambient: rig.ambient };
-    let beam_only = LightRig { lights: rig.lights.clone(), ambient: LinearRgb::BLACK };
+fn split(
+    inputs: &voxel_appearance::openpbr::OpenPbrInputs,
+    normal: Vec3,
+    view: Vec3,
+    rig: &LightRig,
+) -> (f64, f64) {
+    let sky_only = LightRig {
+        lights: Vec::new(),
+        ambient: rig.ambient,
+    };
+    let beam_only = LightRig {
+        lights: rig.lights.clone(),
+        ambient: LinearRgb::BLACK,
+    };
     let shade = |r: &LightRig| {
         shade_cpu(inputs, normal, view, 0.0, r)
             .expect("a stated rig shades")
@@ -39,8 +50,7 @@ fn main() {
     let per_day = voxel_shapers::climate::TICKS_PER_DAY;
     let (x, z) = voxel_client::game::GAME_SPAWN_XZ;
     let registry = voxel_shapers::materials::registry().expect("the admitted registry");
-    let rock = inputs_for(&registry, voxel_shapers::materials::REGOLITH)
-        .expect("regolith derives");
+    let rock = inputs_for(&registry, voxel_shapers::materials::REGOLITH).expect("regolith derives");
 
     println!(
         "the world: seed 2468, a day is {per_day} ticks, spawn column ({x}, {z}), material regolith"
@@ -49,7 +59,15 @@ fn main() {
 
     println!(
         "{:>7}  {:>7}  {:>9}  {:>9}  {:>9}  {:>8}  {:>8}  {:>8}  {:>8}",
-        "tick", "alt deg", "peak W/m2", "sun W/m2", "zenith", "beam i", "ambient", "up: sky", "up: beam"
+        "tick",
+        "alt deg",
+        "peak W/m2",
+        "sun W/m2",
+        "zenith",
+        "beam i",
+        "ambient",
+        "up: sky",
+        "up: beam"
     );
     let up = Vec3::new(0.0, 1.0, 0.0);
     for step in 0..8 {

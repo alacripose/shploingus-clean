@@ -56,7 +56,10 @@ use voxel_work::{ChunkWindow, Streamer};
 
 /// The window this example streams, one chunk each way — the smallest that lets a ray leave the
 /// cell's own chunk, which is the half of the march a single tree cannot show.
-const WINDOW: ChunkWindow = ChunkWindow { radius_chunks: 1, vertical_chunks: 1 };
+const WINDOW: ChunkWindow = ChunkWindow {
+    radius_chunks: 1,
+    vertical_chunks: 1,
+};
 
 /// The streamer's ceiling for meshes and trees together (a window of 27 chunks).
 const CEILING_BYTES: usize = 256 * 1024 * 1024;
@@ -95,7 +98,14 @@ struct Terms {
 impl Terms {
     fn total(&self) -> [f64; 3] {
         let mut out = [0.0; 3];
-        for term in [self.ambient, self.beam, self.sky, self.rim, self.coat_and_spec, self.emission] {
+        for term in [
+            self.ambient,
+            self.beam,
+            self.sky,
+            self.rim,
+            self.coat_and_spec,
+            self.emission,
+        ] {
             for i in 0..3 {
                 out[i] += term[i];
             }
@@ -224,7 +234,10 @@ fn main() {
         "window: {} of {} chunks resident around {centre:?}",
         settled.resident, settled.wanted
     );
-    assert!(settled.resident > 0, "nothing is resident, so nothing can be measured");
+    assert!(
+        settled.resident > 0,
+        "nothing is resident, so nothing can be measured"
+    );
 
     // ---- the tick, the rig, and the grade the frame would use ------------------
     let inputs = SkyInputs::default();
@@ -315,7 +328,8 @@ fn main() {
     // **Two models of one Sun, which is why the beam's colour comes from the rig.** The solver's
     // visible bands and the rig's rgb are both irradiances over the same normaliser, and they are
     // not the same spectrum at the same scale — the number the direct triple is now the rig's for.
-    let visible = |slot: usize| field.light().beam_bands()[voxel_client::skylight::VISIBLE_BANDS[slot]];
+    let visible =
+        |slot: usize| field.light().beam_bands()[voxel_client::skylight::VISIBLE_BANDS[slot]];
     println!(
         "the solver's visible beam (blue, green, red) {:.1}, {:.1}, {:.1} W/m2 over a peak of \
          {:.1}; the rig's sun ({:.1}, {:.1}, {:.1})",
@@ -383,7 +397,11 @@ fn main() {
         eprintln!("REFUSED: the worker measured no cell, so there is no light budget to audit");
         std::process::exit(1);
     }
-    assert_eq!(got.len(), cells.len(), "the worker did not answer every cell");
+    assert_eq!(
+        got.len(),
+        cells.len(),
+        "the worker did not answer every cell"
+    );
 
     // ---- the two branches, term by term ---------------------------------------
     // **One geometry, two ways of shading it**: an up-facing surface seen from above. `ndotv` is
@@ -480,13 +498,16 @@ fn main() {
                 }
             }
             brightest_open = brightest_open.max(total);
-            sky_share = sky_share.max(
-                luminance_of(terms.sky) / luminance_of(terms.ambient).max(1e-30),
-            );
+            sky_share =
+                sky_share.max(luminance_of(terms.sky) / luminance_of(terms.ambient).max(1e-30));
         } else if delivered < 0.01 * rig_beam_luminance {
             brightest_shaded = brightest_shaded.max(total);
             if !shown_shaded {
-                report(&format!("first shaded cell at {:?} (field)", m.cell), &terms, bands);
+                report(
+                    &format!("first shaded cell at {:?} (field)", m.cell),
+                    &terms,
+                    bands,
+                );
                 report("  the same geometry on the rig", &rig_terms, [0.0; 6]);
                 shown_shaded = true;
             }
@@ -558,13 +579,19 @@ fn main() {
             "a measured clear corner draws {:.1} % {} the light the rig would give it \
              ({brightest_open:.5} against {rig_total:.5}) — the two branches are two suns",
             100.0 * against_rig.abs(),
-            if against_rig > 0.0 { "more than" } else { "less than" }
+            if against_rig > 0.0 {
+                "more than"
+            } else {
+                "less than"
+            }
         ));
     }
     // 4. Nothing the frame draws leaves the range the display transform occupies.
     let mapped_open = tone_map([brightest_open; 3]);
     if !mapped_open.iter().all(|v| (0.0..=1.0).contains(v)) {
-        failures.push(format!("a measured open cell maps outside [0, 1]: {mapped_open:?}"));
+        failures.push(format!(
+            "a measured open cell maps outside [0, 1]: {mapped_open:?}"
+        ));
     }
 
     if failures.is_empty() {

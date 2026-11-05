@@ -143,7 +143,10 @@ pub fn retint(paint: Paint) -> Paint {
             best = value;
         }
     }
-    Paint { rgb: best, alpha: paint.alpha }
+    Paint {
+        rgb: best,
+        alpha: paint.alpha,
+    }
 }
 
 /// **The schema applied to a frame's elements, with every rect left where it was drawn.**
@@ -216,7 +219,10 @@ pub fn paper_of(paper: voxel_package::cellframe::Paper) -> Paint {
         Paper::Chrome => Paint::opaque(HOLO_CHROME),
         Paper::Background => Paint::opaque(HOLO_BACKGROUND),
         Paper::Divider => Paint::opaque(HOLO_DIVIDER),
-        Paper::Transparent => Paint { rgb: HOLO_BACKGROUND, alpha: 0.0 },
+        Paper::Transparent => Paint {
+            rgb: HOLO_BACKGROUND,
+            alpha: 0.0,
+        },
     }
 }
 
@@ -253,7 +259,12 @@ pub fn frame(frame: &voxel_package::cellframe::Frame, origin: Rect) -> Vec<Eleme
         );
     }
     for run in &frame.runs {
-        grid.text(run.col as usize, run.row as usize, &run.text, ink_of(run.ink));
+        grid.text(
+            run.col as usize,
+            run.row as usize,
+            &run.text,
+            ink_of(run.ink),
+        );
     }
     grid.elements(origin)
 }
@@ -272,7 +283,17 @@ pub struct Cell {
 impl Cell {
     /// An empty cell: nothing written, nothing behind it.
     pub fn empty() -> Cell {
-        Cell { glyph: ' ', ink: Paint { rgb: HOLO_TEXT, alpha: 0.0 }, paper: Paint { rgb: HOLO_BACKGROUND, alpha: 0.0 } }
+        Cell {
+            glyph: ' ',
+            ink: Paint {
+                rgb: HOLO_TEXT,
+                alpha: 0.0,
+            },
+            paper: Paint {
+                rgb: HOLO_BACKGROUND,
+                alpha: 0.0,
+            },
+        }
     }
 
     /// Whether anything about this cell would draw.
@@ -293,7 +314,11 @@ impl Grid {
     /// `cols × rows` empty cells. A zero dimension is an empty grid, not a refusal: a pane the
     /// caller measured as nothing has nothing to paint.
     pub fn new(cols: usize, rows: usize) -> Grid {
-        Grid { cols, rows, cells: vec![Cell::empty(); cols * rows] }
+        Grid {
+            cols,
+            rows,
+            cells: vec![Cell::empty(); cols * rows],
+        }
     }
 
     /// The grid's width in cells.
@@ -325,7 +350,9 @@ impl Grid {
     /// Fill a run of cells with paper.
     pub fn fill(&mut self, col: usize, row: usize, len: usize, paper: Paint) {
         for offset in 0..len {
-            let Some(cell) = self.cell(col + offset, row).copied() else { break };
+            let Some(cell) = self.cell(col + offset, row).copied() else {
+                break;
+            };
             self.put(col + offset, row, Cell { paper, ..cell });
         }
     }
@@ -346,8 +373,18 @@ impl Grid {
             if cell >= self.cols {
                 break;
             }
-            let Some(existing) = self.cell(cell, row).copied() else { break };
-            self.put(cell, row, Cell { glyph, ink, ..existing });
+            let Some(existing) = self.cell(cell, row).copied() else {
+                break;
+            };
+            self.put(
+                cell,
+                row,
+                Cell {
+                    glyph,
+                    ink,
+                    ..existing
+                },
+            );
         }
     }
 
@@ -365,8 +402,15 @@ impl Grid {
         // a divider drawn after every surface would be painted over the window that occludes it.
         let mut occupied = vec![false; cols * rows];
         for element in elements {
-            let Element::Text { rect, text, align, .. } = element else { continue };
-            let Some((left, top, right, _)) = cell_bounds(*rect) else { continue };
+            let Element::Text {
+                rect, text, align, ..
+            } = element
+            else {
+                continue;
+            };
+            let Some((left, top, right, _)) = cell_bounds(*rect) else {
+                continue;
+            };
             let width = right.saturating_sub(left);
             let glyphs = fit_to(text, width).chars().count();
             // **The same start the drawing computes**, end alignment included: a mask that
@@ -389,7 +433,9 @@ impl Grid {
                     if let Some((left, top, right, bottom)) = cell_bounds(*rect) {
                         for row in top..bottom.min(rows) {
                             for col in left..right.min(cols) {
-                                let Some(cell) = grid.cell(col, row).copied() else { break };
+                                let Some(cell) = grid.cell(col, row).copied() else {
+                                    break;
+                                };
                                 // **Paper is opaque to the layer below it.** A surface is a
                                 // window's own body (or a panel's, or the bar's), and a window
                                 // beneath it is occluded rather than ghosted through: the
@@ -398,14 +444,30 @@ impl Grid {
                                 // which is the only thing the declared opacity is about. A
                                 // transparent surface clears nothing.
                                 let glyph = if paper.alpha > 0.0 { ' ' } else { cell.glyph };
-                                grid.put(col, row, Cell { glyph, paper, ..cell });
+                                grid.put(
+                                    col,
+                                    row,
+                                    Cell {
+                                        glyph,
+                                        paper,
+                                        ..cell
+                                    },
+                                );
                             }
                         }
                     }
                 }
-                Element::Text { rect, text, paint, align, .. } => {
+                Element::Text {
+                    rect,
+                    text,
+                    paint,
+                    align,
+                    ..
+                } => {
                     let ink = retint(*paint);
-                    let Some((left, top, right, _)) = cell_bounds(*rect) else { continue };
+                    let Some((left, top, right, _)) = cell_bounds(*rect) else {
+                        continue;
+                    };
                     let width = right.saturating_sub(left);
                     let fitted = fit_to(text, width);
                     let start = match align {
@@ -432,7 +494,9 @@ impl Grid {
         for row in 0..self.rows {
             let mut col = 0;
             while col < self.cols {
-                let Some(cell) = self.cell(col, row).copied() else { break };
+                let Some(cell) = self.cell(col, row).copied() else {
+                    break;
+                };
                 if cell.paper.alpha <= 0.0 {
                     col += 1;
                     continue;
@@ -453,7 +517,9 @@ impl Grid {
             }
             let mut col = 0;
             while col < self.cols {
-                let Some(cell) = self.cell(col, row).copied() else { break };
+                let Some(cell) = self.cell(col, row).copied() else {
+                    break;
+                };
                 if cell.glyph == ' ' || cell.ink.alpha <= 0.0 {
                     col += 1;
                     continue;
@@ -462,7 +528,9 @@ impl Grid {
                 let start = col;
                 let mut text = String::new();
                 while col < self.cols {
-                    let Some(next) = self.cell(col, row).copied() else { break };
+                    let Some(next) = self.cell(col, row).copied() else {
+                        break;
+                    };
                     if next.ink != ink || next.ink.alpha <= 0.0 {
                         break;
                     }
@@ -500,7 +568,11 @@ impl Grid {
 ///
 /// This is the current version's drawing; [`surface_at`] is the same act with the version named.
 pub fn surface(elements: &[Element], viewport: Rect) -> Vec<Element> {
-    let grid = Grid::of(elements, columns(viewport.width_dp), rows(viewport.height_dp));
+    let grid = Grid::of(
+        elements,
+        columns(viewport.width_dp),
+        rows(viewport.height_dp),
+    );
     grid.elements(viewport)
 }
 
@@ -660,7 +732,9 @@ fn fit_to(text: &str, width: usize) -> String {
 /// within one cell is **not drawn**, because a missing divider is a quieter defect than a line
 /// through a word.
 fn draw_rule(grid: &mut Grid, occupied: &[bool], rect: Rect, ink: Paint) {
-    let Some((left, top, right, _)) = cell_bounds(rect) else { return };
+    let Some((left, top, right, _)) = cell_bounds(rect) else {
+        return;
+    };
     let left = left.min(grid.cols);
     let right = right.min(grid.cols);
     if left >= right {
@@ -685,8 +759,18 @@ fn draw_rule(grid: &mut Grid, occupied: &[bool], rect: Rect, ink: Paint) {
             continue;
         }
         for col in left..right {
-            let Some(cell) = grid.cell(col, row).copied() else { break };
-            grid.put(col, row, Cell { glyph: '─', ink, ..cell });
+            let Some(cell) = grid.cell(col, row).copied() else {
+                break;
+            };
+            grid.put(
+                col,
+                row,
+                Cell {
+                    glyph: '─',
+                    ink,
+                    ..cell
+                },
+            );
         }
         return;
     }
@@ -726,8 +810,17 @@ mod tests {
 
     #[test]
     fn every_paint_lands_on_the_schema_and_keeps_its_alpha() {
-        let blue = Paint { rgb: Rgb::new(0x30, 0xB0, 0xE0), alpha: 0.5 };
-        assert_eq!(retint(blue), Paint { rgb: HOLO_BLUE, alpha: 0.5 });
+        let blue = Paint {
+            rgb: Rgb::new(0x30, 0xB0, 0xE0),
+            alpha: 0.5,
+        };
+        assert_eq!(
+            retint(blue),
+            Paint {
+                rgb: HOLO_BLUE,
+                alpha: 0.5
+            }
+        );
         assert_eq!(retint(paper(Rgb::new(0xFE, 0xFF, 0xFE))).rgb, HOLO_TEXT);
         assert_eq!(retint(paper(Rgb::new(0x30, 0x30, 0x30))).rgb, HOLO_DIVIDER);
         for value in HOLO {
@@ -738,8 +831,14 @@ mod tests {
     #[test]
     fn a_surface_becomes_whole_cells_and_a_rule_is_one_cell_high() {
         let elements = vec![
-            Element::Surface { rect: Rect::new(0.0, 0.0, 24.0, 16.0), paint: paper(HOLO_SURFACE) },
-            Element::Rule { rect: Rect::new(0.0, 16.0, 24.0, 1.0), paint: paper(HOLO_DIVIDER) },
+            Element::Surface {
+                rect: Rect::new(0.0, 0.0, 24.0, 16.0),
+                paint: paper(HOLO_SURFACE),
+            },
+            Element::Rule {
+                rect: Rect::new(0.0, 16.0, 24.0, 1.0),
+                paint: paper(HOLO_DIVIDER),
+            },
         ];
         let grid = Grid::of(&elements, 3, 2);
         assert_eq!(grid.cell(0, 0).expect("a cell").paper.rgb, HOLO_SURFACE);
@@ -751,8 +850,14 @@ mod tests {
             .iter()
             .filter(|element| matches!(element, Element::Surface { .. }))
             .collect();
-        assert_eq!(surfaces.len(), 1, "one row of one paper is one run: {out:#?}");
-        let Element::Surface { rect, .. } = surfaces[0] else { unreachable!() };
+        assert_eq!(
+            surfaces.len(),
+            1,
+            "one row of one paper is one run: {out:#?}"
+        );
+        let Element::Surface { rect, .. } = surfaces[0] else {
+            unreachable!()
+        };
         assert_eq!(rect.width_dp, 24.0);
         assert_eq!(rect.height_dp, CELL_H_DP);
     }
@@ -793,7 +898,10 @@ mod tests {
     #[test]
     fn the_same_elements_produce_the_same_cells() {
         let elements = vec![
-            Element::Surface { rect: Rect::new(0.0, 0.0, 24.0, 32.0), paint: paper(HOLO_CHROME) },
+            Element::Surface {
+                rect: Rect::new(0.0, 0.0, 24.0, 32.0),
+                paint: paper(HOLO_CHROME),
+            },
             Element::Text {
                 rect: Rect::new(8.0, 0.0, 16.0, 16.0),
                 text: "ok".to_string(),
@@ -851,9 +959,15 @@ mod tests {
             .collect();
         assert!(row.contains("Refusals"), "the title survives: {row:?}");
         let ruled: Vec<usize> = (0..3)
-            .filter(|row| (0..10).any(|col| grid.cell(col, *row).is_some_and(|cell| cell.glyph == '─')))
+            .filter(|row| {
+                (0..10).any(|col| grid.cell(col, *row).is_some_and(|cell| cell.glyph == '─'))
+            })
             .collect();
-        assert_eq!(ruled, vec![2], "the divider moved to the clear row below it");
+        assert_eq!(
+            ruled,
+            vec![2],
+            "the divider moved to the clear row below it"
+        );
     }
 
     #[test]
@@ -871,7 +985,10 @@ mod tests {
         };
         let over = Element::Surface {
             rect: Rect::new(16.0, 0.0, 32.0, 16.0),
-            paint: Paint { rgb: HOLO_SURFACE, alpha: 0.93 },
+            paint: Paint {
+                rgb: HOLO_SURFACE,
+                alpha: 0.93,
+            },
         };
         let grid = Grid::of(&[under, over], 10, 1);
         for col in 2..6 {
@@ -914,17 +1031,27 @@ mod tests {
             paint: paper(Rgb::new(0x1B, 0x19, 0x22)),
         }];
         let declared = a_frame();
-        let placed = [Placed { frame: &declared, rect: viewport() }];
+        let placed = [Placed {
+            frame: &declared,
+            rect: viewport(),
+        }];
         let old = raster(&elements, &placed, CellVersion::Elements.number())
             .expect("version 0 is this shell's own drawing");
-        assert_eq!(old, elements, "the old version did not draw what the caller composed");
+        assert_eq!(
+            old, elements,
+            "the old version did not draw what the caller composed"
+        );
         let new = raster(&elements, &placed, CellVersion::Holo.number())
             .expect("version 1 is this shell's own drawing");
         assert_ne!(
             new, elements,
             "the cell raster returned the composed elements, so the two versions are one drawing"
         );
-        assert_eq!(new, frame(&declared, viewport()), "version 1 is the frame's own cells");
+        assert_eq!(
+            new,
+            frame(&declared, viewport()),
+            "version 1 is the frame's own cells"
+        );
     }
 
     /// **A version this shell does not draw is refused by number, and the refusal lists the two it
@@ -935,12 +1062,24 @@ mod tests {
         let refusal = raster(&[], &[], 2).expect_err("version 2 is not this shell's");
         assert_eq!(
             refusal,
-            CellRefusal::VersionNotImplemented { asked: 2, implemented: [0, 1] }
+            CellRefusal::VersionNotImplemented {
+                asked: 2,
+                implemented: [0, 1]
+            }
         );
         let message = refusal.to_string();
-        assert!(message.contains("version 2"), "the asked number is missing: {message}");
-        assert!(message.contains("version 0"), "the old version is missing: {message}");
-        assert!(message.contains("version 1"), "the current version is missing: {message}");
+        assert!(
+            message.contains("version 2"),
+            "the asked number is missing: {message}"
+        );
+        assert!(
+            message.contains("version 0"),
+            "the old version is missing: {message}"
+        );
+        assert!(
+            message.contains("version 1"),
+            "the current version is missing: {message}"
+        );
         for version in CellVersion::IMPLEMENTED {
             assert_eq!(
                 CellVersion::of(version.number()),
@@ -959,7 +1098,10 @@ mod tests {
             .expect("the shell's declaration is one this build reads")
             .expect("the shell's package carries a declaration");
         assert_eq!(declaration.version, CellVersion::Holo);
-        assert_eq!(declaration.line, 2, "the `cells` line is line 2 of the file");
+        assert_eq!(
+            declaration.line, 2,
+            "the `cells` line is line 2 of the file"
+        );
         assert!(
             declaration.file.ends_with("alpha-shell/package.cells"),
             "{}",
@@ -1021,13 +1163,17 @@ mod tests {
                 text(0),
                 text(1),
                 text(2),
-                Element::Rule { rect: Rect::new(0.0, 24.0, 80.0, 1.0), paint: paper(HOLO_DIVIDER) },
+                Element::Rule {
+                    rect: Rect::new(0.0, 24.0, 80.0, 1.0),
+                    paint: paper(HOLO_DIVIDER),
+                },
             ],
             10,
             3,
         );
-        assert!(!(0..3).any(|row| (0..10)
-            .any(|col| grid.cell(col, row).is_some_and(|cell| cell.glyph == '─'))));
+        assert!(!(0..3).any(
+            |row| (0..10).any(|col| grid.cell(col, row).is_some_and(|cell| cell.glyph == '─'))
+        ));
     }
 
     /// **A frame draws its own cells and nothing else, and only where it was placed.**
@@ -1058,11 +1204,17 @@ mod tests {
         };
         let elements = vec![bar.clone(), body.clone(), text.clone()];
         let declared = a_frame();
-        let placed = [Placed { frame: &declared, rect: Rect::new(16.0, 32.0, 0.0, 0.0) }];
+        let placed = [Placed {
+            frame: &declared,
+            rect: Rect::new(16.0, 32.0, 0.0, 0.0),
+        }];
 
         let out = frames_in(&elements, &placed);
         assert_eq!(out.first(), Some(&bar), "the bar was snapped to cells");
-        assert!(out.contains(&bar), "the bar did not survive the raster unchanged");
+        assert!(
+            out.contains(&bar),
+            "the bar did not survive the raster unchanged"
+        );
         assert!(
             !out.contains(&body),
             "a surface inside the frame's footprint was passed through instead of drawn as cells"
@@ -1072,11 +1224,13 @@ mod tests {
             "the composed text survived inside the frame's footprint"
         );
         assert!(
-            out.iter().any(|element| matches!(element, Element::Text { text, .. } if text == "holo")),
+            out.iter()
+                .any(|element| matches!(element, Element::Text { text, .. } if text == "holo")),
             "the frame's run did not reach the element list"
         );
         assert!(
-            out.iter().all(|element| rect_of(element).y >= 32.0 || element == &bar),
+            out.iter()
+                .all(|element| rect_of(element).y >= 32.0 || element == &bar),
             "the frame drew above its own footprint"
         );
 

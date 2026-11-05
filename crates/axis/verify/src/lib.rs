@@ -50,11 +50,13 @@
 
 pub mod evidence;
 pub mod prose;
+pub mod ratchet;
 pub mod report;
 pub mod source;
 pub mod subject;
 
 pub use evidence::{Evidence, SourceReading};
+pub use ratchet::{ratchet, Act, Baseline, BaselineRow, Must, Ratchet};
 pub use prose::{scrub, Prose, DEFAULT_DOCUMENT};
 pub use report::{Decline, Report, PATCH};
 pub use source::{Source, SOURCES_ARE_TOTAL, SOURCE_COUNT};

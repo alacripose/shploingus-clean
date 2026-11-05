@@ -23,7 +23,7 @@
 
 use super::mount::{Mount, Status};
 use crate::debug::{Lane, LaneClass, LaneSet, Region};
-use voxel_ui::{bar_height_dp, title_bar_dp, Rect};
+use voxel_ui::{bar_height_dp, Rect};
 
 /// The surface the lanes are declared against: the viewport itself.
 ///
@@ -80,11 +80,15 @@ pub fn ui_lanes(mount: &Mount, shown: bool) -> LaneSet {
         if matches!(window.status, Status::Closed | Status::Minimized) {
             continue;
         }
-        let on_layer = shown || window.spec.pinnable;
+        // **The runtime pin state, not the declaration.** A window the player pinned draws
+        // while the shell is hidden; one they unpinned does not, whatever `pinnable` says.
+        let on_layer = shown || window.pinned;
         if !on_layer {
             continue;
         }
-        let Some(rect) = mount.rect_of(&window.spec.id) else { continue };
+        let Some(rect) = mount.rect_of(&window.spec.id) else {
+            continue;
+        };
         let title = mount.title_of(&window.spec.id);
         set.push(Lane::pixels(
             "window",
@@ -92,11 +96,13 @@ pub fn ui_lanes(mount: &Mount, shown: bool) -> LaneSet {
             title.clone(),
             rect,
         ));
+        // **The bar it actually draws**: a pinned window's minimal strip is 28 dp, and a lane
+        // claiming the declared 40 would outline a row the window does not have.
         set.push(Lane::pixels(
             "title-bar",
             LaneClass::Structure,
             title.clone(),
-            Rect::new(rect.x, rect.y, rect.width_dp, title_bar_dp()),
+            Rect::new(rect.x, rect.y, rect.width_dp, window.title_height()),
         ));
         // Each pane, because a split window's panes are the claim that the arrangement is data.
         for pane in window.arrangement.windows() {
@@ -131,7 +137,10 @@ pub fn ui_lanes(mount: &Mount, shown: bool) -> LaneSet {
 /// neither. The two roles come from the palette the shell already draws with, and **a palette that
 /// cannot name one is a refusal rather than a fallback colour** — a lane drawn in an invented ink
 /// would be readable and untrue.
-pub fn ui_lane_elements(set: &LaneSet, palette: &voxel_ui::Palette) -> voxel_ui::UiResult<Vec<voxel_ui::Element>> {
+pub fn ui_lane_elements(
+    set: &LaneSet,
+    palette: &voxel_ui::Palette,
+) -> voxel_ui::UiResult<Vec<voxel_ui::Element>> {
     let body = palette.get(voxel_ui::Role::Surface)?;
     let chrome = palette.get(voxel_ui::Role::Chrome)?;
     Ok(set.elements(|lane| match lane.class {
@@ -209,10 +218,7 @@ pub fn drawing(elements: &[voxel_ui::Element]) -> Drawing {
         if !hosted {
             reading.ink_with_no_host += 1;
             if reading.first_spill.is_none() {
-                reading.first_spill = Some((
-                    element.text().unwrap_or("a rule").to_string(),
-                    rect,
-                ));
+                reading.first_spill = Some((element.text().unwrap_or("a rule").to_string(), rect));
             }
         }
         let covered = elements[index + 1..].iter().any(|later| match later {
@@ -320,13 +326,23 @@ pin\tworld\n";
                 .iter()
                 .any(|lane| lane.id == "window" && lane.label == id)
         };
-        assert!(claims(&shown, "World"), "the pinned window is on the shell layer too");
-        assert!(claims(&hidden, "World"), "and stays when the shell is hidden");
+        assert!(
+            claims(&shown, "World"),
+            "the pinned window is on the shell layer too"
+        );
+        assert!(
+            claims(&hidden, "World"),
+            "and stays when the shell is hidden"
+        );
         assert!(claims(&shown, "Inventory"));
         assert!(
             !claims(&hidden, "Inventory"),
             "an unpinned window is not claimed while it is not drawn: {:?}",
-            hidden.lanes().iter().map(|l| l.label.clone()).collect::<Vec<_>>()
+            hidden
+                .lanes()
+                .iter()
+                .map(|l| l.label.clone())
+                .collect::<Vec<_>>()
         );
     }
 
@@ -336,8 +352,14 @@ pin\tworld\n";
         // overlay's version of a lie.
         let mount = mount();
         assert!(ui_lanes(&mount, true).lanes().iter().any(|l| l.id == "bar"));
-        assert!(!ui_lanes(&mount, false).lanes().iter().any(|l| l.id == "bar"));
-        assert!(!ui_lanes(&mount, false).lanes().iter().any(|l| l.id == "bar-cell"));
+        assert!(!ui_lanes(&mount, false)
+            .lanes()
+            .iter()
+            .any(|l| l.id == "bar"));
+        assert!(!ui_lanes(&mount, false)
+            .lanes()
+            .iter()
+            .any(|l| l.id == "bar-cell"));
     }
 
     #[test]
@@ -362,15 +384,20 @@ pin\tworld\n";
             })
             .collect();
         for control in &controls {
-            assert!(lanes.contains(control), "{control:?} is hit but not claimed");
-            assert!(mount.hit((control.x + control.width_dp / 2.0, control.y + control.height_dp / 2.0)));
+            assert!(
+                lanes.contains(control),
+                "{control:?} is hit but not claimed"
+            );
+            assert!(mount.hit((
+                control.x + control.width_dp / 2.0,
+                control.y + control.height_dp / 2.0
+            )));
             // **A dense-pointer target, not a touch one**: D-1 makes the ported controls
             // `POINTER_TARGET_DP` (40 dp); `min_target_dp` is the touch floor the shell's own
             // chrome took before the port, and holding a mouse-driven control to it would fail
             // a lane that is exactly the size the ruling gave it.
             assert!(
-                control.width_dp >= pointer_target_dp()
-                    && control.height_dp >= pointer_target_dp(),
+                control.width_dp >= pointer_target_dp() && control.height_dp >= pointer_target_dp(),
                 "a claimed control is also a pointer target: {control:?}"
             );
         }
@@ -408,10 +435,14 @@ pin\tworld\n";
         let labels: Vec<&str> = elements.iter().filter_map(|e| e.text()).collect();
         assert!(labels.iter().any(|l| l.contains("World")), "{labels:?}");
         assert!(
-            labels.iter().all(|l| l.contains("structure") || l.contains("affordance")),
+            labels
+                .iter()
+                .all(|l| l.contains("structure") || l.contains("affordance")),
             "a label names its class: {labels:?}"
         );
-        assert!(elements.iter().any(|e| matches!(e, voxel_ui::Element::Rule { .. })));
+        assert!(elements
+            .iter()
+            .any(|e| matches!(e, voxel_ui::Element::Rule { .. })));
     }
 
     #[test]
@@ -426,7 +457,9 @@ pin\tworld\n";
         let off = refusals
             .iter()
             .find(|r| matches!(r, LaneRefusal::OffSurface { .. }))
-            .expect("a window at x=400 in a 640 dp viewport with a 480 dp width is off the surface");
+            .expect(
+                "a window at x=400 in a 640 dp viewport with a 480 dp width is off the surface",
+            );
         assert!(off.to_string().contains("not inside"), "{off}");
     }
 
@@ -436,7 +469,11 @@ pin\tworld\n";
         // each is well inside it, and the assertion is that the *number* is the declared one.
         let mount = mount();
         let lanes = ui_lanes(&mount, true);
-        assert!(lanes.len() < crate::debug::lane_budget(LaneUnit::Pixels), "{}", lanes.len());
+        assert!(
+            lanes.len() < crate::debug::lane_budget(LaneUnit::Pixels),
+            "{}",
+            lanes.len()
+        );
         assert!(!lanes.of_class(LaneClass::Structure).is_empty());
         assert!(!lanes.of_class(LaneClass::Affordance).is_empty());
     }
@@ -449,7 +486,10 @@ pin\tworld\n";
         let mount = mount();
         let elements = ui_lane_elements(&ui_lanes(&mount, true), &Palette::declared())
             .expect("the palette names both surfaces");
-        assert!(!elements.is_empty(), "lanes draw over the shell's own surfaces");
+        assert!(
+            !elements.is_empty(),
+            "lanes draw over the shell's own surfaces"
+        );
         let hues: Vec<voxel_ui::Rgb> = LaneClass::ALL.iter().map(|class| class.hue()).collect();
         for element in &elements {
             let paint = match element {

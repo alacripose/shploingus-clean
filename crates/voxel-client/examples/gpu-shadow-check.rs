@@ -30,13 +30,15 @@
 use std::cell::RefCell;
 
 use voxel_appearance::npr::LightRig;
-use voxel_appearance::DetailLattice;
 use voxel_appearance::sky::SkyInputs;
+use voxel_appearance::DetailLattice;
 use voxel_client::camera::MAX_PITCH_RAD;
 use voxel_client::field::{CellField, SubvoxelPos};
 use voxel_client::game;
+use voxel_client::pattern::{
+    address_at, eye_footprint_m, pixel_angle_rad, Pattern, SUBVOXEL_CELL_M,
+};
 use voxel_client::shading::{self, GpuLight, GpuRig};
-use voxel_client::pattern::{address_at, eye_footprint_m, pixel_angle_rad, Pattern, SUBVOXEL_CELL_M};
 use voxel_client::{
     skylight, Camera, Frame, MaterialParams, Renderer, Scene, NEAR_RANGE_M, SHADOW_BIAS_M,
     SHADOW_LATTICE, SHADOW_RESOLUTION,
@@ -124,10 +126,17 @@ impl Probe {
         // **The shipped binary's range**, from its own constants. The renderer's default is the
         // seam test's 256 m, which would make the far cascade coarser than the frame this
         // mission names.
-        renderer.world_mut().set_shadow_range(shipped_shadow_range());
+        renderer
+            .world_mut()
+            .set_shadow_range(shipped_shadow_range());
         renderer.world_mut().set_shadows(shadows);
         let frame = renderer.render(scene, &camera).expect("the frame");
-        Self { frame, camera, width, height }
+        Self {
+            frame,
+            camera,
+            width,
+            height,
+        }
     }
 
     /// Where a world point lands, or `None` when it is behind the eye or outside the frame.
@@ -276,7 +285,10 @@ fn main() {
     let mut report = Vec::new();
     let near_texel = 2.0 * f64::from(NEAR_RANGE_M) / f64::from(SHADOW_RESOLUTION);
     let far_texel = 2.0 * f64::from(shipped_shadow_range()) / f64::from(SHADOW_RESOLUTION);
-    for (label, z, footprint_m) in [("near", NEAR_ROW_Z, near_texel), ("far", FAR_ROW_Z, far_texel)] {
+    for (label, z, footprint_m) in [
+        ("near", NEAR_ROW_Z, near_texel),
+        ("far", FAR_ROW_Z, far_texel),
+    ] {
         let (cpu, gpu, lit) = measure(&shadowed, z, sun);
         println!(
             "{label:4} row z {z:4.0} m: CPU shadow x {:+.2}..{:+.2} m; \
@@ -393,9 +405,8 @@ fn crossing(profile: &[f64], n: usize) -> Option<f64> {
     }
     let target = high - 0.5 * (high - low);
     // Oriented from the lit end, so the interpolation always runs down the drop.
-    let mut oriented: Vec<(f64, f64)> = (0..=n)
-        .map(|i| (i as f64 / n as f64, profile[i]))
-        .collect();
+    let mut oriented: Vec<(f64, f64)> =
+        (0..=n).map(|i| (i as f64 / n as f64, profile[i])).collect();
     if first < last {
         oriented.reverse();
     }
@@ -445,14 +456,10 @@ fn shipped_case() -> Result<(), String> {
     let workers = std::thread::available_parallelism()
         .map(|n| n.get().saturating_sub(1).max(1))
         .unwrap_or(1);
-    let mut streamer = voxel_work::Streamer::new(
-        source,
-        mesh_config,
-        workers,
-        game::GAME_CEILING_BYTES,
-    )
-    .and_then(|s| s.with_window(game::GAME_WINDOW))
-    .expect("the streamer");
+    let mut streamer =
+        voxel_work::Streamer::new(source, mesh_config, workers, game::GAME_CEILING_BYTES)
+            .and_then(|s| s.with_window(game::GAME_WINDOW))
+            .expect("the streamer");
     let spawn = game::spawn_eye(&game::World::shipped());
     let centre = ChunkPos::new(
         (spawn[0] / f64::from(CHUNK_SIDE)).floor() as i32,
@@ -467,9 +474,8 @@ fn shipped_case() -> Result<(), String> {
     let inputs = SkyInputs::default();
     let day = skylight::daylight_of(&spec, tick, inputs, epoch).expect("the shipped hour");
     let grade = day.grade;
-    let field = RefCell::new(
-        CellField::of(&spec, tick, inputs, epoch, None).expect("the game's field"),
-    );
+    let field =
+        RefCell::new(CellField::of(&spec, tick, inputs, epoch, None).expect("the game's field"));
     let luminance = |bands: [f32; 6]| {
         0.2126 * bands[0] as f64 + 0.7152 * bands[1] as f64 + 0.0722 * bands[2] as f64
     };
@@ -482,7 +488,8 @@ fn shipped_case() -> Result<(), String> {
         field.measure(&streamer, cell).map(|(bands, _)| bands)
     };
 
-    let displacement = voxel_shapers::materials::displacement_field().expect("a displacement field");
+    let displacement =
+        voxel_shapers::materials::displacement_field().expect("a displacement field");
     let refine = voxel_mesh::RefineConfig::new(4, 2).expect("the bin's refinement");
     let mut panel: Option<Panel> = None;
     let mut candidates = 0usize;
@@ -579,10 +586,7 @@ fn shipped_case() -> Result<(), String> {
 
     let centre_m = panel.point(0.5, 0.5);
     let height = (panel.lv / 1.2).max(3.0);
-    let mut camera = Camera::standard(
-        [centre_m[0], centre_m[1] + height, centre_m[2]],
-        2.0,
-    );
+    let mut camera = Camera::standard([centre_m[0], centre_m[1] + height, centre_m[2]], 2.0);
     camera.pitch_rad = -MAX_PITCH_RAD;
     let probe = Probe::new(&scene, &rig, &table, camera, true);
 
@@ -722,10 +726,9 @@ fn shipped_case() -> Result<(), String> {
             let area = lu * lv;
             // Open first, then large: a chunk-sized face under a canopy is not the ground the
             // strip is for, and the field is the same witness that says which face is lit.
-            if best
-                .as_ref()
-                .map_or(true, |(p, brightest)| (field, area) > (*brightest, p.lu * p.lv))
-            {
+            if best.as_ref().map_or(true, |(p, brightest)| {
+                (field, area) > (*brightest, p.lu * p.lv)
+            }) {
                 best = Some((
                     Panel {
                         origin: corners[0],
@@ -759,7 +762,11 @@ fn shipped_case() -> Result<(), String> {
     let span = face.lu.max(face.lv);
     let mut strip_camera = Camera::standard([face_centre[0], face_centre[1], face_centre[2]], 2.0);
     let camera_height = span / (2.0 * (0.5 * strip_camera.fov_y_rad).tan()) + 2.0;
-    strip_camera.position_m = [face_centre[0], face_centre[1] + camera_height, face_centre[2]];
+    strip_camera.position_m = [
+        face_centre[0],
+        face_centre[1] + camera_height,
+        face_centre[2],
+    ];
     strip_camera.pitch_rad = -MAX_PITCH_RAD;
     let strip_probe = Probe::new(&scene, &rig, &table, strip_camera, true);
 
@@ -830,7 +837,10 @@ fn shipped_case() -> Result<(), String> {
             "the shipped window's largest open land face at ({:.1}, {:.1}, {:.1}) is in shadow \
              at every one of its {} grid points; the CPU field never calls it open, so it is not \
              the open-ground witness",
-            face_centre[0], face_centre[1], face_centre[2], points.len()
+            face_centre[0],
+            face_centre[1],
+            face_centre[2],
+            points.len()
         ));
     }
     let mut strip: Vec<Strip> = Vec::new();
@@ -877,7 +887,11 @@ fn shipped_case() -> Result<(), String> {
             let d = sub(strip_camera.position_m, point);
             (d, length(d).max(1e-9))
         };
-        let view = Vec3::new(from_eye[0] / distance, from_eye[1] / distance, from_eye[2] / distance);
+        let view = Vec3::new(
+            from_eye[0] / distance,
+            from_eye[1] / distance,
+            from_eye[2] / distance,
+        );
         let inputs = match shading::inputs_for(&registry, face.material) {
             Ok(inputs) => inputs,
             Err(_) => continue,
@@ -887,9 +901,7 @@ fn shipped_case() -> Result<(), String> {
         // identity on an unpatterned material rather than a second branch.
         let facing = (point[1] - strip_camera.position_m[1]) / distance;
         let footprint = eye_footprint_m(distance, pixel_angle);
-        let Ok(deviation) =
-            pattern.at(face.material, point, footprint, surface)
-        else {
+        let Ok(deviation) = pattern.at(face.material, point, footprint, surface) else {
             continue;
         };
         let Ok(varied) = inputs.with_detail(deviation) else {
@@ -898,13 +910,9 @@ fn shipped_case() -> Result<(), String> {
         // The face's own open fraction, from the row the GPU shades: a face that is part hole
         // receives that much less sky, and the CPU is asked the same question.
         let open = f64::from(table[face.material.0 as usize].emission_rgb_open[3]);
-        let Ok((want, _)) = shading::shade_cpu(
-            &varied,
-            Vec3::new(0.0, 1.0, 0.0),
-            view,
-            open,
-            &exposed,
-        ) else {
+        let Ok((want, _)) =
+            shading::shade_cpu(&varied, Vec3::new(0.0, 1.0, 0.0), view, open, &exposed)
+        else {
             continue;
         };
         let expected = want.luminance();
@@ -927,7 +935,12 @@ fn shipped_case() -> Result<(), String> {
         return Err(format!(
             "the shipped strip on the {:.1} x {:.1} m face at ({:.1}, {:.1}, {:.1}) kept only {} \
              open point(s), fewer than the eight the strip needs",
-            face.lu, face.lv, face_centre[0], face_centre[1], face_centre[2], strip.len()
+            face.lu,
+            face.lv,
+            face_centre[0],
+            face_centre[1],
+            face_centre[2],
+            strip.len()
         ));
     }
     let mut worst = (f64::INFINITY, [0.0f64; 3], 0.0f64, 0.0f64);
@@ -966,7 +979,10 @@ fn shipped_case() -> Result<(), String> {
         strip.len(),
         worst.0,
         strip.iter().map(|s| s.rendered / s.expected).sum::<f64>() / strip.len() as f64,
-        strip.iter().map(|s| s.rendered / s.unshadowed).fold(f64::INFINITY, f64::min),
+        strip
+            .iter()
+            .map(|s| s.rendered / s.unshadowed)
+            .fold(f64::INFINITY, f64::min),
         strip.iter().map(|s| s.rendered / s.unshadowed).sum::<f64>() / strip.len() as f64,
         worst_map.0,
         strip.iter().map(|s| s.self_lit / s.unshadowed).sum::<f64>() / strip.len() as f64,
@@ -1003,12 +1019,7 @@ fn shipped_case() -> Result<(), String> {
              alone with the map on draws {:.4} of the same face with it off, under the {:.4} \
              floor — one dark tap in nine would cost {:.4} of the beam, so the map removed more \
              than a single sample's share",
-            worst_map.1[0],
-            worst_map.1[1],
-            worst_map.1[2],
-            worst_map.0,
-            worst_map.3,
-            worst_map.2
+            worst_map.1[0], worst_map.1[1], worst_map.1[2], worst_map.0, worst_map.3, worst_map.2
         ));
     }
     Ok(())

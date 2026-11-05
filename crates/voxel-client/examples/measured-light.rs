@@ -52,7 +52,10 @@ use voxel_work::{ChunkWindow, Streamer};
 /// able to leave the cell's own chunk and be charged by the next one — that is the half of the
 /// solver a single-chunk walk cannot show — and radius one puts eight neighbours around the centre
 /// chunk for it to cross into.
-const WINDOW: ChunkWindow = ChunkWindow { radius_chunks: 1, vertical_chunks: 1 };
+const WINDOW: ChunkWindow = ChunkWindow {
+    radius_chunks: 1,
+    vertical_chunks: 1,
+};
 
 /// The ceiling for the streamer's meshes and trees, in bytes. This example reads the trees, and the
 /// mesher's own output is charged to the same ceiling (`Frame::bytes`), so the number covers both —
@@ -92,11 +95,7 @@ fn main() {
     let settled = streamer.settle().expect("the window settles");
     println!(
         "window: radius {} chunks, {} vertical, centred on {:?} — {} of {} chunks resident",
-        WINDOW.radius_chunks,
-        WINDOW.vertical_chunks,
-        centre,
-        settled.resident,
-        settled.wanted
+        WINDOW.radius_chunks, WINDOW.vertical_chunks, centre, settled.resident, settled.wanted
     );
 
     let inputs = SkyInputs::default();
@@ -135,7 +134,10 @@ fn main() {
     let mut day_reference = CellField::of(&spec, day_tick, inputs, 0, None)
         .expect("the shipped atmosphere is described");
     let delivery = day_reference
-        .measure(&empty, VoxelPos::new(origin.x, origin.y + CHUNK_SIDE - 1, origin.z).into())
+        .measure(
+            &empty,
+            VoxelPos::new(origin.x, origin.y + CHUNK_SIDE - 1, origin.z).into(),
+        )
         .map(|(bands, _)| bands)
         .expect("an empty world always has a measurement");
     let delivered_direct = delivery[0] + delivery[1] + delivery[2];
@@ -163,8 +165,9 @@ fn main() {
         columns.mean_diffuse(),
     );
     if columns.enclosed == 0 {
-        failures.push("no cell in the centre chunk was enclosed by rock on all twenty-six sides"
-            .into());
+        failures.push(
+            "no cell in the centre chunk was enclosed by rock on all twenty-six sides".into(),
+        );
     }
     println!(
         "enclosed by rock on all twenty-six sides: {} of {} cell(s) read exactly zero in all six \
@@ -202,9 +205,7 @@ fn main() {
         // light went through a partly-filled neighbour, and 64 means it did not.
         for (cell, bands) in &columns.leaks {
             let fills: Vec<usize> = (-1..=1)
-                .flat_map(|dy| {
-                    (-1..=1).flat_map(move |dz| (-1..=1).map(move |dx| (dx, dy, dz)))
-                })
+                .flat_map(|dy| (-1..=1).flat_map(move |dz| (-1..=1).map(move |dx| (dx, dy, dz))))
                 .filter(|(dx, dy, dz)| !(*dx == 0 && *dy == 0 && *dz == 0))
                 .map(|(dx, dy, dz)| filled(&streamer, cell[0] + dx, cell[1] + dy, cell[2] + dz))
                 .collect();
@@ -225,7 +226,11 @@ fn main() {
             // appears in the short reach is the first chunk's own march; one that appears only in
             // the long reach is the **hop** between chunks, which is the half of the solver a
             // single-chunk tree cannot show.
-            let centre_m = [cell[0] as f64 + 0.5, cell[1] as f64 + 0.5, cell[2] as f64 + 0.5];
+            let centre_m = [
+                cell[0] as f64 + 0.5,
+                cell[1] as f64 + 0.5,
+                cell[2] as f64 + 0.5,
+            ];
             for reach in [1.5f64, REACH_M] {
                 match day_field.light().bands_across(&streamer, centre_m, reach) {
                     Some((bands, absent)) => eprintln!(
@@ -249,7 +254,13 @@ fn main() {
                     cell[2] as f64 + 0.5 - corner.z as f64,
                 ];
                 let mut walked = Vec::new();
-                for direction in [[0.0, 1.0, 0.0], [-1.0, 1.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, -1.0], [0.0, 1.0, 1.0]] {
+                for direction in [
+                    [0.0, 1.0, 0.0],
+                    [-1.0, 1.0, 0.0],
+                    [1.0, 1.0, 0.0],
+                    [0.0, 1.0, -1.0],
+                    [0.0, 1.0, 1.0],
+                ] {
                     walked.push(voxel_stream::light::transmittance_tree(
                         &matter, tree, from, direction, REACH_M,
                     ));
@@ -281,7 +292,8 @@ fn main() {
         day_field.adopted()
     );
     if day_field.answered() == 0 {
-        failures.push("the second pass over the same cells measured every one of them again".into());
+        failures
+            .push("the second pass over the same cells measured every one of them again".into());
     }
     // **And the cost is the worker's, not the frame's**: the frame reads a hash map, and the bytes
     // that used to be a per-frame budget are now an ask's worth of marches on another thread.
@@ -339,7 +351,10 @@ fn main() {
     let mut night_reference = CellField::of(&spec, night_tick, inputs, 0, None)
         .expect("the shipped atmosphere is described");
     let night_delivery = night_reference
-        .measure(&empty, VoxelPos::new(origin.x, origin.y + CHUNK_SIDE - 1, origin.z).into())
+        .measure(
+            &empty,
+            VoxelPos::new(origin.x, origin.y + CHUNK_SIDE - 1, origin.z).into(),
+        )
         .map(|(bands, _)| bands)
         .expect("an empty world always has a measurement");
     let moon_direct = (night_delivery[0] + night_delivery[1] + night_delivery[2]) as f64;
@@ -371,7 +386,8 @@ fn main() {
             night_columns.buried
         ));
     }
-    if night_delivery[0] + night_delivery[1] + night_delivery[2] > delivery[0] + delivery[1] + delivery[2]
+    if night_delivery[0] + night_delivery[1] + night_delivery[2]
+        > delivery[0] + delivery[1] + delivery[2]
     {
         failures.push("the Moon delivered more than the Sun at the same address".into());
     }
@@ -506,8 +522,8 @@ fn measure(field: &mut CellField, streamer: &Streamer, origin: VoxelPos) -> Colu
                 continue;
             }
             out.solid += 1;
-            let open = asked(field, streamer, VoxelPos::new(wx, surface + 1, wz))
-                .expect("the open cell");
+            let open =
+                asked(field, streamer, VoxelPos::new(wx, surface + 1, wz)).expect("the open cell");
             // The enclosed cell: the first voxel of the column, from the surface down, whose own
             // 3×3×3 neighbourhood is all matter. Its own cell is excluded from its own beam — that
             // is the march's first rule — so what has to block the light is the rock around it.

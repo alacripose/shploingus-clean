@@ -61,6 +61,7 @@ pub mod recipe;
 pub mod refusal;
 pub mod segment;
 pub mod star;
+pub mod task;
 
 pub use matrix::{Cell, Matrix};
 pub use reading::Reading;
@@ -68,6 +69,7 @@ pub use recipe::{Fix, Recipe, Site};
 pub use refusal::MatrixRefusal;
 pub use segment::{Segment, SEGMENT_COUNT};
 pub use star::{lit_star, Predicate, Star, FIVE_STAR_RULE, STAR_COUNT};
+pub use task::Task;
 
 #[cfg(test)]
 mod tests {

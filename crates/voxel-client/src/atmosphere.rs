@@ -36,9 +36,7 @@ use voxel_appearance::sky::SkyInputs;
 use voxel_shapers::WorldSpec;
 
 use crate::quad::BodyRecord;
-use crate::skylight::{
-    daylight_of, peak_sun_luminance, Daylight, SkyModel, WorldLight,
-};
+use crate::skylight::{daylight_of, peak_sun_luminance, Daylight, SkyModel, WorldLight};
 
 /// **One tick's atmosphere**, as the frame needs it: the inputs it was derived from, the rig, the
 /// field's solver, the sky the background is drawn against, and the bodies drawn in it.
@@ -78,9 +76,9 @@ impl Atmosphere {
         new_moon_tick: u64,
     ) -> Self {
         let daylight = daylight_of(spec, tick, inputs, new_moon_tick);
-        let light = daylight
-            .as_ref()
-            .and_then(|daylight| WorldLight::with_daylight(spec, tick, inputs, new_moon_tick, daylight));
+        let light = daylight.as_ref().and_then(|daylight| {
+            WorldLight::with_daylight(spec, tick, inputs, new_moon_tick, daylight)
+        });
         let sky = daylight
             .as_ref()
             .and_then(|daylight| sky_model_at(spec, daylight, inputs, tick, eye_m, new_moon_tick));
@@ -92,7 +90,15 @@ impl Atmosphere {
             }
             _ => Vec::new(),
         };
-        Atmosphere { tick, eye_m, inputs, daylight, light, sky, bodies }
+        Atmosphere {
+            tick,
+            eye_m,
+            inputs,
+            daylight,
+            light,
+            sky,
+            bodies,
+        }
     }
 
     /// Whether this answer is the derivation for `(tick, inputs, eye)` **to the bit**.
@@ -359,7 +365,10 @@ mod tests {
         let eye = [12.0, 40.5, -7.25];
         let inputs = sky_inputs_at(&spec, eye[0], eye[2], tick);
         let here = Atmosphere::of(&spec, tick, inputs, eye, 0);
-        assert!(here.daylight.is_some(), "a tick with an atmosphere to derive");
+        assert!(
+            here.daylight.is_some(),
+            "a tick with an atmosphere to derive"
+        );
 
         let mut ahead = AtmosphereAhead::new(spec, 0).expect("a thread to derive on");
         ahead.ask(tick, inputs, eye);
@@ -375,7 +384,11 @@ mod tests {
             assert!(Instant::now() < deadline, "the worker never answered");
             std::thread::sleep(Duration::from_millis(20));
         };
-        assert_eq!(fingerprint(&adopted), fingerprint(&here), "the worker's value is the frame's");
+        assert_eq!(
+            fingerprint(&adopted),
+            fingerprint(&here),
+            "the worker's value is the frame's"
+        );
 
         // And the same answer, for other arguments, is **not** adopted: the frame derives rather
         // than serving an atmosphere nobody asked for.
@@ -400,7 +413,9 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(
-            ahead.take(tick, inputs, [eye[0] + 1.0, eye[1], eye[2]]).is_none(),
+            ahead
+                .take(tick, inputs, [eye[0] + 1.0, eye[1], eye[2]])
+                .is_none(),
             "an answer for another eye is not this tick's"
         );
     }

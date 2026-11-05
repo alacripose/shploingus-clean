@@ -94,10 +94,8 @@ impl ShapedRuns {
             return;
         }
         let size_px = key.size_px();
-        let mut buffer = glyphon::Buffer::new(
-            font,
-            glyphon::Metrics::new(size_px, size_px * LINE_BOX),
-        );
+        let mut buffer =
+            glyphon::Buffer::new(font, glyphon::Metrics::new(size_px, size_px * LINE_BOX));
         buffer.set_size(
             Some(f32::from_bits(key.wrap_px)),
             // One line box, rounded up: a readout that wrapped would be a readout that acquired a
@@ -114,14 +112,16 @@ impl ShapedRuns {
             None,
         );
         buffer.shape_until_scroll(font, false);
-        self.shaped.insert(key.clone(), Shaped { buffer, used: true });
+        self.shaped
+            .insert(key.clone(), Shaped { buffer, used: true });
         self.misses += 1;
     }
 
     /// The shaped buffer for `key`. A key that was not [`Self::ensure`]d in this frame is a caller
     /// mistake rather than a state to draw around, so it is a panic and not a blank box.
     pub(crate) fn get(&self, key: &RunKey) -> &glyphon::Buffer {
-        &self.shaped
+        &self
+            .shaped
             .get(key)
             .expect("the run was placed this frame, so `ensure` shaped it")
             .buffer
@@ -207,13 +207,25 @@ mod tests {
         runs.begin();
         runs.ensure(&mut font, &kept);
         assert_eq!(runs.misses(), 0, "the kept run is still held");
-        assert_eq!(runs.len(), 2, "the dropped one is still held until the frame closes");
+        assert_eq!(
+            runs.len(),
+            2,
+            "the dropped one is still held until the frame closes"
+        );
         runs.settle();
-        assert_eq!(runs.len(), 1, "and the frame that did not ask for it releases it");
+        assert_eq!(
+            runs.len(),
+            1,
+            "and the frame that did not ask for it releases it"
+        );
 
         runs.begin();
         runs.ensure(&mut font, &gone);
-        assert_eq!(runs.misses(), 1, "a run that left and came back is shaped again");
+        assert_eq!(
+            runs.misses(),
+            1,
+            "a run that left and came back is shaped again"
+        );
     }
 
     #[test]

@@ -87,7 +87,12 @@ fn main() {
             material: ROCK,
         }],
         loops: Vec::new(),
-        stats: MeshStats { solid_voxels: 1, visible_faces: 1, quads: 1, loops: 0 },
+        stats: MeshStats {
+            solid_voxels: 1,
+            visible_faces: 1,
+            quads: 1,
+            loops: 0,
+        },
     };
     // **The shadow edge is at 0.5 m**, half way across the face, and it is a subvoxel edge: the
     // field stores it at 0.25 m and nothing in the light data is coarser than that.
@@ -140,8 +145,8 @@ fn main() {
     let registry = voxel_shapers::materials::registry().expect("the registry");
     let field_table = voxel_shapers::materials::shading_field().expect("the shading field");
     let materials = voxel_client::table(&registry, &field_table).expect("every material derives");
-    let gpu_rig = GpuRig::from_rig(&skylight::exposed_at(&daylight.rig, grade))
-        .expect("the rig fits");
+    let gpu_rig =
+        GpuRig::from_rig(&skylight::exposed_at(&daylight.rig, grade)).expect("the rig fits");
     let mut world = WorldPipeline::new(&device, &queue, FORMAT, &materials, &gpu_rig, samples)
         .expect("the world pipeline");
     let peak = skylight::peak_sun_luminance(&spec, inputs);
@@ -155,7 +160,11 @@ fn main() {
 
     let colour = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("colour"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -165,7 +174,11 @@ fn main() {
     });
     let depth = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: samples,
         dimension: wgpu::TextureDimension::D2,
@@ -185,7 +198,15 @@ fn main() {
     let mut render = |scene: &Scene, label: &'static str| -> Vec<u8> {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
-        world.draw(&mut encoder, &colour_view, &depth_view, None, scene, &camera, pixel_angle);
+        world.draw(
+            &mut encoder,
+            &colour_view,
+            &depth_view,
+            None,
+            scene,
+            &camera,
+            pixel_angle,
+        );
         queue.submit(Some(encoder.finish()));
         read_back(&device, &queue, &colour)
     };
@@ -237,7 +258,14 @@ fn main() {
 
     // ---- and the same measurement on the world the binary draws --------------------------
     shipped(
-        &mut world, &device, &queue, &colour, &colour_view, &depth_view, peak, inputs,
+        &mut world,
+        &device,
+        &queue,
+        &colour,
+        &colour_view,
+        &depth_view,
+        peak,
+        inputs,
     );
 }
 
@@ -527,8 +555,8 @@ fn shipped(
     };
     let clear = |_: [f64; 3]| Some(panel.full);
     let build = |lattice: u32,
-                     light: &dyn Fn([f64; 3]) -> Option<[f32; 6]>|
-                     -> (Scene, f64, usize, usize) {
+                 light: &dyn Fn([f64; 3]) -> Option<[f32; 6]>|
+     -> (Scene, f64, usize, usize) {
         let started = std::time::Instant::now();
         let mut resident = ResidentScene::new();
         resident.set_shadow_lattice(lattice);
@@ -548,7 +576,15 @@ fn shipped(
     let mut shoot = |scene: &Scene, label: &'static str| -> Vec<u8> {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
-        world.draw(&mut encoder, colour_view, depth_view, None, scene, &camera, pixel_angle);
+        world.draw(
+            &mut encoder,
+            colour_view,
+            depth_view,
+            None,
+            scene,
+            &camera,
+            pixel_angle,
+        );
         queue.submit(Some(encoder.finish()));
         read_back(device, queue, colour)
     };
@@ -601,7 +637,10 @@ fn shipped(
     };
     let fine_edge = panel_edge(&difference(&clear_pixels, &fine_pixels), &camera, panel);
     let coarse_edge = panel_edge(&difference(&clear_pixels, &coarse_pixels), &camera, panel);
-    for (label, edge) in [("shipped fine", &fine_edge), ("shipped coarse", &coarse_edge)] {
+    for (label, edge) in [
+        ("shipped fine", &fine_edge),
+        ("shipped coarse", &coarse_edge),
+    ] {
         println!(
             "{label}: the shadow's own footprint fades 90 % to 10 % over {:.1} px = {:.3} m \
              (the panel is {:.1} px across), across {:.0} level(s) of grey",
@@ -678,7 +717,6 @@ impl Panel {
             self.origin[2] + self.u[2] * s + self.v[2] * t,
         ]
     }
-
 }
 
 /// **The shoulder of the shadow on one panel, in pixels and in metres.** The difference image is
@@ -756,7 +794,6 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
-
 
 fn length(a: [f64; 3]) -> f64 {
     dot(a, a).sqrt()
@@ -851,11 +888,18 @@ fn shadow_edge(clear: &[u8], shadowed: &[u8]) -> Edge {
     // **The face's own footprint from the lit render**, not from the shadow: the shadow covers
     // only half of it at the fine lattice, and a face measured by its shadow would be measured
     // differently in the two frames.
-    let background = (lit[..32].iter().sum::<f64>() + lit[WIDTH as usize - 32..].iter().sum::<f64>())
-        / 64.0;
-    let face: Vec<usize> = (0..lit.len()).filter(|x| (lit[*x] - background).abs() > 3.0).collect();
+    let background =
+        (lit[..32].iter().sum::<f64>() + lit[WIDTH as usize - 32..].iter().sum::<f64>()) / 64.0;
+    let face: Vec<usize> = (0..lit.len())
+        .filter(|x| (lit[*x] - background).abs() > 3.0)
+        .collect();
     let (Some(first), Some(last)) = (face.first(), face.last()) else {
-        return Edge { width_px: 0.0, width_m: 0.0, face_px: 0.0, drop: 0.0 };
+        return Edge {
+            width_px: 0.0,
+            width_m: 0.0,
+            face_px: 0.0,
+            drop: 0.0,
+        };
     };
     let (first, last) = (*first, *last);
     let face_px = (last - first) as f64;
@@ -881,7 +925,12 @@ fn shadow_edge(clear: &[u8], shadowed: &[u8]) -> Edge {
     };
     let (ten, ninety) = (shoulder(0.1) as f64, shoulder(0.9) as f64);
     let width_px = (ten - ninety).abs();
-    Edge { width_px, width_m: (width_px / face_px).min(1.0), face_px, drop }
+    Edge {
+        width_px,
+        width_m: (width_px / face_px).min(1.0),
+        face_px,
+        drop,
+    }
 }
 
 fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
@@ -892,8 +941,9 @@ fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("readback") });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("readback"),
+    });
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture,
@@ -909,7 +959,11 @@ fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture
                 rows_per_image: Some(HEIGHT),
             },
         },
-        wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
@@ -918,7 +972,10 @@ fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture
         let _ = sender.send(result);
     });
     device
-        .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
         .expect("the readback poll");
     receiver.recv().expect("the map callback").expect("the map");
     let pixels: Vec<u8> = slice.get_mapped_range().expect("the mapped range").to_vec();

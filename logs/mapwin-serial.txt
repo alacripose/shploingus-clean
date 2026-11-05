@@ -1,0 +1,2 @@
+renderer (one test at a time): exit=0 265s — test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 634 filtered out; finished in 130.19s
+world (one test at a time): exit=0 11s — test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 644 filtered out; finished in 10.78s

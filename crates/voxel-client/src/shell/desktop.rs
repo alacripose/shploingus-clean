@@ -85,7 +85,11 @@ pub struct Desktop {
 impl Desktop {
     /// A desktop with no windows — the reference's own starting state (3479–3483).
     pub fn new() -> Self {
-        Desktop { windows: BTreeMap::new(), order: Vec::new(), focused: None }
+        Desktop {
+            windows: BTreeMap::new(),
+            order: Vec::new(),
+            focused: None,
+        }
     }
 
     /// The windows, back to front — the order the caller draws them in.
@@ -208,8 +212,7 @@ impl Desktop {
             .iter()
             .rev()
             .find(|id| {
-                self.is_drawn(id)
-                    && self.windows.get(*id).is_some_and(|w| w.rect.contains(at))
+                self.is_drawn(id) && self.windows.get(*id).is_some_and(|w| w.rect.contains(at))
             })
             .map(String::as_str)
     }
@@ -290,11 +293,19 @@ mod tests {
     fn removing_the_focused_window_focuses_the_topmost_one_still_drawn() {
         let mut desktop = desktop_with(&["a", "b", "c"]);
         desktop.minimize("c");
-        assert_eq!(desktop.focused(), None, "minimizing the focused window clears focus");
+        assert_eq!(
+            desktop.focused(),
+            None,
+            "minimizing the focused window clears focus"
+        );
         desktop.focus("b");
         let removed = desktop.remove("b").expect("the desktop held b");
         assert_eq!(removed.spec.id, "b");
-        assert_eq!(desktop.focused(), Some("a"), "c is minimized, so a is the top drawn");
+        assert_eq!(
+            desktop.focused(),
+            Some("a"),
+            "c is minimized, so a is the top drawn"
+        );
         assert_eq!(desktop.order(), &["a", "c"]);
     }
 
@@ -321,11 +332,15 @@ mod tests {
     fn toggle_maximize_runs_the_windows_own_arithmetic_and_focuses_it() {
         let mut desktop = desktop_with(&["a", "b"]);
         let desktop_rect = Rect::new(0.0, 0.0, 1920.0, 1080.0);
-        desktop.toggle_maximize("a", desktop_rect, 48.0).expect("maximizes");
+        desktop
+            .toggle_maximize("a", desktop_rect, 48.0)
+            .expect("maximizes");
         let window = desktop.get("a").expect("a is held");
         assert_eq!(window.status, Status::Maximized);
         assert_eq!(desktop.focused(), Some("a"));
-        desktop.toggle_maximize("a", desktop_rect, 48.0).expect("restores");
+        desktop
+            .toggle_maximize("a", desktop_rect, 48.0)
+            .expect("restores");
         assert_eq!(desktop.get("a").expect("a is held").status, Status::Normal);
     }
 
@@ -333,13 +348,19 @@ mod tests {
     fn a_press_resolves_the_topmost_window_and_the_background_clears_focus() {
         let mut desktop = desktop_with(&["a", "b"]);
         // Both windows sit at the same rect; the topmost (b) answers.
-        assert_eq!(desktop.press((200.0, 200.0)), DesktopPress::Window("b".to_string()));
+        assert_eq!(
+            desktop.press((200.0, 200.0)),
+            DesktopPress::Window("b".to_string())
+        );
         assert_eq!(desktop.press((2000.0, 2000.0)), DesktopPress::Background);
         desktop.clear_focus();
         assert_eq!(desktop.focused(), None);
         // A minimized window does not answer a press.
         desktop.minimize("b");
-        assert_eq!(desktop.press((200.0, 200.0)), DesktopPress::Window("a".to_string()));
+        assert_eq!(
+            desktop.press((200.0, 200.0)),
+            DesktopPress::Window("a".to_string())
+        );
     }
 
     #[test]

@@ -62,68 +62,74 @@ pub mod camera_overhaul;
 pub mod clock;
 pub mod cloud_cubes;
 pub mod cloud_field;
-pub mod quad;
 pub mod debug;
+pub mod far_terrain;
 pub mod field;
 pub mod fog_cubes;
 pub mod frame;
-pub mod horizon;
 pub mod game;
+pub mod horizon;
 pub mod hud;
+pub mod lod;
+pub mod map_survey;
+pub mod map_view;
 pub mod measure;
 pub mod motion;
+pub mod pattern;
+pub mod quad;
 pub mod renderer;
 pub mod scene;
-pub mod pattern;
-pub mod shell;
 pub mod shading;
 mod shaped;
-mod sun_shadow;
+pub mod shell;
 pub mod skylight;
 pub mod sun;
+mod sun_shadow;
+pub mod surface;
 pub mod work;
 pub mod world;
 
+pub use atmosphere::{Atmosphere, AtmosphereAhead};
 pub use camera::Camera;
 pub use camera_overhaul::CameraOverhaul;
 pub use clock::{Clock, MAX_CATCH_UP, TICK_HZ};
-pub use quad::QuadRecord;
 pub use cloud_cubes::{rung_cell_m, rung_for, CloudCubes, MAX_CELL_M, MIN_CELL_M, RUNGS};
 pub use cloud_field::{
     cloud_transmittance, density_of, extinction_per_m, optical_depth, CloudField, CloudMedium,
     CloudSun, CLOUD_BLOCK_SIDE, CLOUD_COLUMNS, CLOUD_SAMPLE_M, CLOUD_SPAN_M,
 };
+pub use far_terrain::{Census, CoarseCell, FarChunk, FarTerrain};
 pub use field::{CellField, ChunkTrees, SubvoxelPos, BEAM_STEP_DEG, REACH_M};
+pub use frame::{luminance, Frame};
+pub use game::{spawn_eye, GAME_CEILING_BYTES, GAME_PITCH_RAD, GAME_SEED, GAME_TICK, GAME_WINDOW};
 pub use horizon::{
     HorizonStream, FAR_MEASURED, FAR_SHARE, HORIZON_CELLS, HORIZON_CELL_M, HORIZON_FAR_CELLS,
     HORIZON_FAR_CELL_M, HORIZON_FAR_REACH_M, HORIZON_REACH_M, HORIZON_SKY_REACH_M,
     HORIZON_SUBVOXEL_M, HORIZON_SUBVOXEL_SIDE, SKY_RAYS,
 };
-pub use measure::{Ask, Measured, Measurer, CELLS_PER_ASK};
-pub use frame::{luminance, Frame};
-pub use game::{
-    spawn_eye, GAME_CEILING_BYTES, GAME_PITCH_RAD, GAME_SEED, GAME_TICK, GAME_WINDOW,
-};
-pub use atmosphere::{Atmosphere, AtmosphereAhead};
 pub use hud::{HudRenderer, HudState, BRIGHTEST_BACKDROP, DIGEST_CHARS};
+pub use lod::{cell_m as lod_cell_m, tier_of as lod_tier_of, TIERS as LOD_TIERS};
+pub use measure::{Ask, Measured, Measurer, CELLS_PER_ASK};
 pub use pattern::{
     address_at, eye_footprint_m, eye_phase, eye_voxel, footprint_distance_m, pixel_angle_rad,
     rung_level, rung_weights, Pattern, DETAIL_CELL_M, FAR_CELL_M, NEAR_CELL_M, RUNGS_M,
     SUBVOXEL_CELL_M,
 };
+pub use quad::QuadRecord;
 pub use renderer::{
     offscreen_device, offscreen_device_for, world_samples, Renderer, DEPTH_FORMAT, TARGET_FORMAT,
 };
 pub use scene::{
-    LightAt, ResidentScene, Residency, Scene, SceneBuild, SceneCache, SceneKey, Vertex,
+    LightAt, Residency, ResidentScene, Scene, SceneBuild, SceneCache, SceneKey, Vertex,
     SHADOW_LATTICE,
 };
-pub use sun_shadow::{NEAR_RANGE_M, SHADOW_BIAS_M, SHADOW_RESOLUTION};
-pub use work::{CornerUpload, FrameWork};
 pub use shading::{
     shade_cpu, table, world_lattice_uniform, GpuRig, MaterialParams, ShadingReport,
     MESH_DOES_NOT_CARRY_OPEN,
 };
+pub use sun_shadow::{NEAR_RANGE_M, SHADOW_BIAS_M, SHADOW_RESOLUTION};
+pub use surface::{SurfaceColumn, SurfaceLadder, SurfaceRing};
+pub use work::{CornerUpload, FrameWork};
 pub use world::{CornerTraffic, WorldPipeline};
 
 use voxel_model::{Refusal, RefusalSet};
@@ -183,7 +189,10 @@ impl std::fmt::Display for ClientError {
                 write!(f, "a {width}x{height} frame is not a frame")
             }
             ClientError::TooManyLights { given, holds } => {
-                write!(f, "the rig has {given} lights and the uniform holds {holds}")
+                write!(
+                    f,
+                    "the rig has {given} lights and the uniform holds {holds}"
+                )
             }
             ClientError::UnknownMaterial { id, rows } => {
                 write!(f, "material {id} is outside the {rows}-row table")

@@ -7,9 +7,8 @@
 //!
 //! Run with `cargo run -p voxel-model --example profile32-shapes`.
 
-use voxel_model::profile32::{Shaped, PROFILE_SIDE, STAGE_ONE};
+use voxel_model::profile32::{Axis, AxisCut, Cell, Shaped, PROFILE_SIDE, STAGE_ONE};
 use voxel_model::profile::Profile;
-use voxel_model::profile32::Axis;
 
 fn slice(body: &Shaped, z: u32) -> Vec<String> {
     (0..PROFILE_SIDE)
@@ -33,6 +32,29 @@ fn print_slice(title: &str, body: &Shaped) {
     }
 }
 
+fn cell_slice(cell: &Cell, w: u32) -> Vec<String> {
+    (0..PROFILE_SIDE)
+        .rev()
+        .map(|v| {
+            (0..PROFILE_SIDE)
+                .map(|u| match cell.cell(u, v, w) {
+                    c if c > 0.5 => '#',
+                    c if c > 0.0 => '+',
+                    _ => '.',
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn print_cell(title: &str, cell: &Cell) {
+    println!("\n{title}");
+    for row in cell_slice(cell, PROFILE_SIDE / 2) {
+        println!("  {row}");
+    }
+    println!("  volume: {:.6} of the block", cell.volume());
+}
+
 fn main() {
     let trunk = Shaped::of(Profile::Cylinder { radius: 0.28 }, Axis::Y);
     print_slice("a trunk at a full stage (56 cm across, 1/32 cells)", &trunk);
@@ -43,4 +65,18 @@ fn main() {
     crown.ridge = 0.2;
     crown.seed = 0x5EED;
     print_slice("a crown envelope: 90 % of it is air, and the same air every time", &crown);
+
+    // **The per-axis cell**: the same 1/32 denominator, with no axis of revolution.
+    // A terrain cell is a ramp, a cliff, or a corner, and each is stated as one cut per
+    // axis rather than bent into a profile.
+    let ramp = Cell::solid().with(Axis::Y, AxisCut::leaning(0.5, 1.0, [0.5, 0.25]));
+    print_cell(
+        "a cell with a leaning top: y = 0.5 + 0.5(x − 0.5) + 0.25(z − 0.5)",
+        &ramp,
+    );
+    let corner = Cell::solid()
+        .with(Axis::X, AxisCut::above(0.5))
+        .with(Axis::Y, AxisCut::above(0.5))
+        .with(Axis::Z, AxisCut::above(0.5));
+    print_cell("a corner: three axis cuts, one eighth of the block", &corner);
 }

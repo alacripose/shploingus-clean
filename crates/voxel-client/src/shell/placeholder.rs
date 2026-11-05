@@ -31,9 +31,8 @@
 //! the pane tree through `arrangement.rs` and the slot stops being empty.
 
 use voxel_ui::{
-    contrast_over_backdrop, min_gap_dp, pointer_target_dp, spacing_dp, text_size_dp,
-    title_size_dp, Align, Element, Ink, Palette, Paint, Rect, Role, UiResult, PLACEHOLDER_MARK,
-    WHITE,
+    contrast_over_backdrop, min_gap_dp, pointer_target_dp, spacing_dp, text_size_dp, title_size_dp,
+    Align, Element, Ink, Paint, Palette, Rect, Role, UiResult, PLACEHOLDER_MARK, WHITE,
 };
 
 /// The dash and gap of the slot's border, in dp. **A drawn detail of the reference's own
@@ -141,11 +140,17 @@ pub fn elements(
     let mut out = Vec::with_capacity(8 + 2 * offers.len());
     out.push(Element::Surface {
         rect: frame,
-        paint: Paint { rgb: surface, alpha: opacity },
+        paint: Paint {
+            rgb: surface,
+            alpha: opacity,
+        },
     });
     // The dashed border: runs of short rules along all four edges.
     for dash in dashed_edges(frame) {
-        out.push(Element::Rule { rect: dash, paint: Ink::Divider.paint() });
+        out.push(Element::Rule {
+            rect: dash,
+            paint: Ink::Divider.paint(),
+        });
     }
     out.push(Element::Text {
         rect: mark_rect(frame),
@@ -167,7 +172,10 @@ pub fn elements(
         let (_, label) = &offers[index];
         out.push(Element::Surface {
             rect: lane,
-            paint: Paint { rgb: button, alpha: opacity },
+            paint: Paint {
+                rgb: button,
+                alpha: opacity,
+            },
         });
         out.push(Element::Text {
             rect: Rect::new(
@@ -234,7 +242,10 @@ mod tests {
             .collect();
         assert!(texts.contains(&PLACEHOLDER_MARK));
         assert!(texts.contains(&"no declared window is free to place here"));
-        assert!(!texts.iter().any(|text| text.contains("launch one")), "no empty grid, no invitation");
+        assert!(
+            !texts.iter().any(|text| text.contains("launch one")),
+            "no empty grid, no invitation"
+        );
     }
 
     #[test]
@@ -248,7 +259,10 @@ mod tests {
         assert!(lanes[3].y > lanes[2].y);
         let centre = lanes[3].x + lanes[3].width_dp / 2.0;
         let frame_centre = frame.x + frame.width_dp / 2.0;
-        assert!((centre - frame_centre).abs() < 1e-9, "a short row is centred");
+        assert!(
+            (centre - frame_centre).abs() < 1e-9,
+            "a short row is centred"
+        );
     }
 
     #[test]
@@ -272,9 +286,15 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert!(rules.len() > 10, "a dashed border is many short rules, found {}", rules.len());
         assert!(
-            !rules.iter().any(|rule| rule.x == frame.x && rule.width_dp > DASH_DP + 1e-9),
+            rules.len() > 10,
+            "a dashed border is many short rules, found {}",
+            rules.len()
+        );
+        assert!(
+            !rules
+                .iter()
+                .any(|rule| rule.x == frame.x && rule.width_dp > DASH_DP + 1e-9),
             "no single rule spans an edge"
         );
     }

@@ -131,7 +131,14 @@ pub struct UploadSlice {
 impl CornerUpload {
     /// A fresh upload of a scene with `vertices` corners and `indices` indices.
     pub fn new(build: u64, vertices: usize, indices: usize) -> Self {
-        Self { build, vertices, indices, vertex_done: 0, index_done: 0, bytes_done: 0 }
+        Self {
+            build,
+            vertices,
+            indices,
+            vertex_done: 0,
+            index_done: 0,
+            bytes_done: 0,
+        }
     }
 
     pub fn vertices(&self) -> usize {
@@ -171,7 +178,9 @@ impl CornerUpload {
         // forever: a slice always makes progress, which is what keeps a class from starving.
         let vertex_from = self.vertex_done;
         let take_vertices = if vertex_from < self.vertices {
-            ((left / stride) as usize).min(self.vertices - vertex_from).max(1)
+            ((left / stride) as usize)
+                .min(self.vertices - vertex_from)
+                .max(1)
         } else {
             0
         };
@@ -193,7 +202,13 @@ impl CornerUpload {
         self.index_done = index_to;
         let bytes = take_vertices as u64 * stride + take_indices as u64 * 4;
         self.bytes_done += bytes;
-        UploadSlice { vertex_from, vertex_to, index_from, index_to, bytes }
+        UploadSlice {
+            vertex_from,
+            vertex_to,
+            index_from,
+            index_to,
+            bytes,
+        }
     }
 
     /// Bytes this upload has asked the frames to write so far.
@@ -245,7 +260,11 @@ mod tests {
         let mut frames = 0;
         while !upload.done() {
             let slice = upload.next(stride, work.upload());
-            assert!(slice.bytes <= work.upload(), "a frame sent {} B", slice.bytes);
+            assert!(
+                slice.bytes <= work.upload(),
+                "a frame sent {} B",
+                slice.bytes
+            );
             sent += slice.bytes;
             frames += 1;
             assert!(frames < 10_000, "the upload never finished");

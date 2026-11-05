@@ -54,11 +54,23 @@ pub fn wind_bearing_rad(spec: &WorldSpec, x: f64, z: f64) -> f64 {
     prevailing_bearing_rad(spec) + wobble
 }
 
-/// The terrain's horizontal gradient in metres per metre.
+/// The terrain's horizontal gradient in metres per metre, **read over a landform**.
+///
+/// **The baseline is the range's own wavelength** ([`terrain::range_wavelength_m`], 66.7 engine
+/// metres = 533 real metres at the world's 1/8 scale): the air climbs the range it meets, not the
+/// metre it stands on, and Smith & Barstad's upslope is the lift over the mountain, not the slope of
+/// a boulder. The old 2 m baseline sampled the ridged term's finest octaves — features four metres
+/// across, a sixteenth of the range — so the sign of `u · ∇h` flipped between neighbouring map
+/// cells and the rain shadow became a per-cell coin toss: measured on the default world, the
+/// upslope sign changed **39 %** of the time between cells 32 m apart and precipitation spanned
+/// **32 … 1 812 mm** in 900 m, which classified neighbouring cells as different biomes 26 % of the
+/// time. At the range's scale the same sheet is coherent (the class's own bands are wide enough to
+/// hold a landform), and the atlas's premise — climate sets the envelope, terrain redistributes it —
+/// survives the sampling.
 fn gradient(spec: &WorldSpec, x: f64, z: f64) -> (f64, f64) {
-    const H: f64 = 2.0;
-    let dx = (terrain::elevation_m(spec, x + H, z) - terrain::elevation_m(spec, x - H, z)) / (2.0 * H);
-    let dz = (terrain::elevation_m(spec, x, z + H) - terrain::elevation_m(spec, x, z - H)) / (2.0 * H);
+    let h = terrain::range_wavelength_m(spec);
+    let dx = (terrain::elevation_m(spec, x + h, z) - terrain::elevation_m(spec, x - h, z)) / (2.0 * h);
+    let dz = (terrain::elevation_m(spec, x, z + h) - terrain::elevation_m(spec, x, z - h)) / (2.0 * h);
     (dx, dz)
 }
 
@@ -701,13 +713,15 @@ mod tests {
         // A check of the sign convention, which an earlier revision had backwards:
         // stepping along the wind from a windward point must climb.
         //
-        // The agreement is checked as a **majority**, and the tolerance is stated
-        // rather than hidden: the shaper's gradient is a 2 m central difference
-        // while this probe steps 3 m one-sided, and the mountain term has a ~67 m
-        // wavelength, so a handful of high-curvature points legitimately disagree.
-        // Demanding unanimity would be demanding that two different finite
-        // differences agree exactly.
+        // **The probe steps over the shaper's own baseline** ([`terrain::range_wavelength_m`]), not
+        // over a distance of its own choosing: a probe that measured a different scale would be
+        // asking one finite difference to agree with another, and the 2 m baseline this replaced was
+        // exactly that — a 3 m one-sided probe agreed with it on the finest octaves and neither of
+        // them was the mountain the air climbs. The agreement is still checked as a **majority**: a
+        // central difference and a one-sided one over the same span disagree on high-curvature
+        // ground, and demanding unanimity would be demanding that they agree exactly.
         let s = spec();
+        let h = crate::terrain::range_wavelength_m(&s);
         let mut agree = 0;
         let mut total = 0;
         let mut x = -9000.0;
@@ -715,11 +729,11 @@ mod tests {
             let mut z = -9000.0;
             while z < 9000.0 {
                 let w = sample(&s, x, z, 0);
-                if w.upslope.abs() > 0.05 {
+                if w.upslope.abs() > 0.02 {
                     let bearing = w.wind_bearing_rad;
                     let (sx, sz) = (bearing.sin(), bearing.cos());
                     let here = crate::terrain::elevation_m(&s, x, z);
-                    let ahead = crate::terrain::elevation_m(&s, x + sx * 3.0, z + sz * 3.0);
+                    let ahead = crate::terrain::elevation_m(&s, x + sx * h, z + sz * h);
                     total += 1;
                     if (ahead - here > 0.0) == (w.upslope > 0.0) {
                         agree += 1;

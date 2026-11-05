@@ -48,7 +48,11 @@ use voxel_ui::{Element, Palette, Rect, UiResult};
 /// console is shell state, so it arrives as the [`Console`] the mount owns (BLD-0018). It is
 /// passed in rather than read from the frame because a view is built before the frame is
 /// drawn, and a console read at draw time would be a different console than the one written.
-pub fn views(state: &HudState<'_>, console: &Console, api: Option<super::api::ApiView>) -> ContentViews {
+pub fn views(
+    state: &HudState<'_>,
+    console: &Console,
+    api: Option<super::api::ApiView>,
+) -> ContentViews {
     ContentViews {
         world: hud::world_panel(state),
         streamer: hud::streamer_panel(state),
@@ -105,7 +109,8 @@ mod tests {
     /// height before it draws"*. So the caller measures the panel it hosts and states that
     /// geometry here, instead of a fixture hard-coding a rect the content guard would refuse.
     fn pin_recipe(height: usize) -> String {
-        format!("shploingus.recipe/3\n\
+        format!(
+            "shploingus.recipe/3\n\
 package\tpin-test\tv0\n\
 window\tworld\n\
 \ttitle\tWorld\n\
@@ -142,7 +147,8 @@ pin\tworld\n"
     fn mount() -> Mount {
         // Measure the panel this fixture hosts, then declare the geometry from it.
         let height = (title_bar_dp() + views().world.height_dp()).ceil() as usize;
-        let package = recipe::compile(pin_recipe(height).as_bytes()).expect("the pin recipe compiles");
+        let package =
+            recipe::compile(pin_recipe(height).as_bytes()).expect("the pin recipe compiles");
         let loaded = recipe::load(&package).expect("the pin package loads");
         let mut mount = Mount::new(&loaded).expect("the pin package mounts");
         mount.set_viewport(Rect::new(0.0, 0.0, 1280.0, 720.0));
@@ -169,7 +175,10 @@ pin\tworld\n"
     }
 
     fn titles(elements: &[Element]) -> Vec<&str> {
-        elements.iter().filter_map(|element| element.text()).collect()
+        elements
+            .iter()
+            .filter_map(|element| element.text())
+            .collect()
     }
 
     #[test]
@@ -192,7 +201,10 @@ pin\tworld\n"
         let hidden = frame(&mut mount, &Palette::declared(), viewport, &views())
             .expect("the pinned layer lays out");
         let hidden_titles = titles(&hidden);
-        assert!(hidden_titles.contains(&"World"), "the pinned window stays: {hidden_titles:?}");
+        assert!(
+            hidden_titles.contains(&"World"),
+            "the pinned window stays: {hidden_titles:?}"
+        );
         assert!(
             !hidden_titles.contains(&"Refusals"),
             "a window that is not pinned hides with the shell: {hidden_titles:?}"

@@ -70,6 +70,7 @@ What the packages are
 |---|---|
 | `alpha-shell/` | the shell's own arrangement — 16 windows, 6 tabs, the console bar entry, 3 pins. `crates/shploingus/build.rs` compiles its `package.shspec` and embeds the bytes, so the game's first display package is its own shell. |
 | `horizon-lod/` | the first package with a **layer**: the far ring drawn from the terrain rung's own record, so a planetary horizon is expressible by a package rather than by the streamer alone. |
+| `biomes/` | the classified biomes catalog — 16 climate envelopes, 19 types, 3 §15b overlays and 12 deferred rows. `voxel_shapers::biome_library` reads its rows, and the game mounts the folder at boot, so the world classifies from the file. No windows, layers, frames or cell declaration. |
 
 Reading a package without a GPU
 -------------------------------

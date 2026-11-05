@@ -1482,26 +1482,56 @@ pub fn least_opacity_keeping_the_ladder_legible(panel: Rgb, worst_backdrop: Rgb)
 
 /// A window control a title bar can carry. The order is the order the controls
 /// sit in the title bar, and it is the only order.
+///
+/// **The pin is first and it is the one control the layout policy does not gate.** Pin/unpin
+/// is runtime state — the shell's own answer to *does this window stay while the shell is
+/// hidden* — so every window that draws a bar offers it, and the declaration's
+/// `pinnable`/`pinned` rows decide only what is true when the package is mounted.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum GlyphAction {
+    Pin,
     Minimize,
     Maximize,
     Close,
 }
 
 impl GlyphAction {
-    pub const ALL: [GlyphAction; 3] = [
+    pub const ALL: [GlyphAction; 4] = [
+        GlyphAction::Pin,
         GlyphAction::Minimize,
         GlyphAction::Maximize,
         GlyphAction::Close,
     ];
 
+    /// Whether the declaration gates this control. The other three are `LayoutPolicy` permits;
+    /// the pin is offered by every bar.
+    pub const fn is_declared(self) -> bool {
+        !matches!(self, GlyphAction::Pin)
+    }
+
     pub const fn name(self) -> &'static str {
         match self {
+            GlyphAction::Pin => "pin",
             GlyphAction::Minimize => "minimize",
             GlyphAction::Maximize => "maximize",
             GlyphAction::Close => "close",
         }
+    }
+}
+
+/// **The pin mark is its own state**: a filled head when the window is pinned, a hollow one
+/// when it is not. A toggle that drew the same mark in both states would state nothing about
+/// the window it sits on, and the bar has no title in its minimal form to say it instead.
+pub const PINNED_MARK: &str = "\u{25CF}";
+/// The hollow pin, drawn while the window floats.
+pub const UNPINNED_MARK: &str = "\u{25CB}";
+
+/// The mark for one pin state.
+pub const fn pin_mark(pinned: bool) -> &'static str {
+    if pinned {
+        PINNED_MARK
+    } else {
+        UNPINNED_MARK
     }
 }
 
@@ -1528,7 +1558,15 @@ pub struct Glyph {
 /// Every control mark, in title-bar order. A control the layout policy does not
 /// permit is **absent**, never drawn disabled (HIG: absence is preferred over a
 /// control that looks like a grant).
-pub const GLYPHS: [Glyph; 3] = [
+///
+/// The pin's row is its **unpinned** mark; a pinned window draws [`PINNED_MARK`] through
+/// [`pin_mark`], because the state is the window's and this table is static.
+pub const GLYPHS: [Glyph; 4] = [
+    Glyph {
+        action: GlyphAction::Pin,
+        text: UNPINNED_MARK,
+        source: "this tree: the pin mark is a 24 dp circle, filled while the window is pinned",
+    },
     Glyph {
         action: GlyphAction::Minimize,
         text: "\u{2013}",

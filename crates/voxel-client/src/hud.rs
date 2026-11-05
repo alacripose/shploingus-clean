@@ -55,8 +55,8 @@
 //! see `tests::the_shell_chrome_is_legible_over_the_worst_backdrop`. A HUD that
 //! exists only inside an event loop is a HUD nobody can check.
 
-use crate::shaped::{RunKey, ShapedRuns, LINE_BOX};
 use crate::shading;
+use crate::shaped::{RunKey, ShapedRuns, LINE_BOX};
 use crate::ClientError;
 use voxel_model::{Digest, Refusal};
 use voxel_ui::{radius_dp, Align, Element, Paint, Panel, Readout, Rect, Role, WHITE};
@@ -134,8 +134,6 @@ pub struct HudState<'a> {
     pub shading: shading::ShadingReport,
 }
 
-
-
 /// How much of a digest the HUD shows. Sixteen hex characters is 64 bits of a
 /// 256-bit digest: enough to see that two runs differ. The readout ends in `…`
 /// because it is a prefix, and pretending sixteen characters is the digest would
@@ -165,7 +163,12 @@ pub fn world_panel(state: &HudState<'_>) -> Panel {
             ),
             Readout::measured(
                 "chunks",
-                format!("{} / {} ({:.0}%)", f.resident, f.wanted, f.progress() * 100.0),
+                format!(
+                    "{} / {} ({:.0}%)",
+                    f.resident,
+                    f.wanted,
+                    f.progress() * 100.0
+                ),
             ),
             Readout::measured("quads drawn", format!("{}", state.quads)),
             // The body's own state, which a position alone cannot express. A player
@@ -174,7 +177,11 @@ pub fn world_panel(state: &HudState<'_>) -> Panel {
                 "body",
                 format!(
                     "{}, {:+.2} m/s",
-                    if state.grounded { "on the ground" } else { "airborne" },
+                    if state.grounded {
+                        "on the ground"
+                    } else {
+                        "airborne"
+                    },
                     state.vertical_m_s
                 ),
             ),
@@ -184,11 +191,8 @@ pub fn world_panel(state: &HudState<'_>) -> Panel {
             ),
             match state.fps {
                 Some(fps) => Readout::measured("frame rate", format!("{fps:.0} fps")),
-                None => Readout::absent(
-                    "frame rate",
-                    "no reporting interval has completed yet",
-                )
-                .expect("the note is not blank"),
+                None => Readout::absent("frame rate", "no reporting interval has completed yet")
+                    .expect("the note is not blank"),
             },
             Readout::measured("adapter", state.adapter.to_string()),
         ],
@@ -204,7 +208,10 @@ pub fn streamer_panel(state: &HudState<'_>) -> Panel {
         Role::Chrome,
         "Streamer",
         vec![
-            Readout::measured("mesh", format!("{:.1} / {:.1} MB", mb(f.bytes), mb(f.ceiling))),
+            Readout::measured(
+                "mesh",
+                format!("{:.1} / {:.1} MB", mb(f.bytes), mb(f.ceiling)),
+            ),
             Readout::measured("worker scratch", format!("{:.1} MB", mb(f.scratch_bytes))),
             Readout::measured("in flight", format!("{}", f.in_flight)),
             // The one number that has to stay at zero for "bounded" to be a
@@ -531,7 +538,11 @@ impl HudRenderer {
         strokes: &[Stroke],
     ) -> Result<(), ClientError> {
         let (width, height) = (extent_px.0.max(1), extent_px.1.max(1));
-        let scale = if scale.is_finite() && scale > 0.0 { scale } else { 1.0 };
+        let scale = if scale.is_finite() && scale > 0.0 {
+            scale
+        } else {
+            1.0
+        };
         let resized = (width, height) != (self.width, self.height);
         self.width = width;
         self.height = height;
@@ -678,7 +689,9 @@ impl HudRenderer {
                     areas,
                     &mut self.swash_cache,
                 )
-                .map_err(|e| ClientError::TextRender { detail: e.to_string() })?;
+                .map_err(|e| ClientError::TextRender {
+                    detail: e.to_string(),
+                })?;
             band.renderer = Some(renderer);
             renderer += 1;
         }
@@ -701,7 +714,14 @@ impl HudRenderer {
         placed: &mut Vec<Placed>,
         scale: f32,
     ) -> Option<usize> {
-        let Element::Text { rect, text, paint, size_dp, align } = element else {
+        let Element::Text {
+            rect,
+            text,
+            paint,
+            size_dp,
+            align,
+        } = element
+        else {
             return None;
         };
         let size_px = (*size_dp as f32) * scale;
@@ -716,7 +736,6 @@ impl HudRenderer {
         });
         Some(placed.len() - 1)
     }
-
 
     /// Draw the prepared HUD into `target`, on top of whatever is already there.
     ///
@@ -747,7 +766,8 @@ impl HudRenderer {
                 pass.draw(band.rects.clone(), 0..1);
             }
             if let Some(renderer) = band.renderer {
-                if let Err(e) = self.texts[renderer].render(&self.atlas, &self.viewport, &mut pass) {
+                if let Err(e) = self.texts[renderer].render(&self.atlas, &self.viewport, &mut pass)
+                {
                     // Nothing to draw on, but an event loop must not die inside a render pass. The
                     // panic-free path is to draw what is there and say so.
                     eprintln!("shploingus: the HUD's text pass failed: {e}");
@@ -785,7 +805,11 @@ fn text_areas<'a>(
             let run = &placed[index];
             let buffer = runs.get(&run.key);
             let (rect, paint, align, size_px) = (run.rect, run.paint, run.align, run.size_px);
-            let line_w = buffer.layout_runs().next().map(|run| run.line_w).unwrap_or(0.0);
+            let line_w = buffer
+                .layout_runs()
+                .next()
+                .map(|run| run.line_w)
+                .unwrap_or(0.0);
             let left = match align {
                 Align::Start => (rect.x as f32) * scale,
                 Align::End => ((rect.x + rect.width_dp) as f32) * scale - line_w,
@@ -837,8 +861,14 @@ fn same_partition(left: &[Band], right: &[Band]) -> bool {
 /// so the shader's rounded-rect coverage becomes a stadium cap. A degenerate segment (no length,
 /// or no width) writes nothing: there is no mark to make.
 fn push_segment(bytes: &mut Vec<u8>, stroke: &Stroke, scale: f32, width: u32, height: u32) {
-    let [ax, ay] = [stroke.from_dp[0] as f32 * scale, stroke.from_dp[1] as f32 * scale];
-    let [bx, by] = [stroke.to_dp[0] as f32 * scale, stroke.to_dp[1] as f32 * scale];
+    let [ax, ay] = [
+        stroke.from_dp[0] as f32 * scale,
+        stroke.from_dp[1] as f32 * scale,
+    ];
+    let [bx, by] = [
+        stroke.to_dp[0] as f32 * scale,
+        stroke.to_dp[1] as f32 * scale,
+    ];
     let (dx, dy) = (bx - ax, by - ay);
     let length = (dx * dx + dy * dy).sqrt();
     let half_width = (stroke.width_dp as f32) * scale / 2.0;
@@ -853,7 +883,12 @@ fn push_segment(bytes: &mut Vec<u8>, stroke: &Stroke, scale: f32, width: u32, he
     let half = [length / 2.0, half_width];
     let [r, g, b] = stroke.paint.rgb.linear();
     let colour = [r as f32, g as f32, b as f32, stroke.paint.alpha as f32];
-    let clip = |px: f32, py: f32| [px / width as f32 * 2.0 - 1.0, 1.0 - py / height as f32 * 2.0];
+    let clip = |px: f32, py: f32| {
+        [
+            px / width as f32 * 2.0 - 1.0,
+            1.0 - py / height as f32 * 2.0,
+        ]
+    };
     // (offset along the segment, offset across it) → position, in the segment's own frame.
     let corners = [
         (-half[0], -half[1]),
@@ -901,7 +936,12 @@ fn push_rect(
     let colour = [r as f32, g as f32, b as f32, paint.alpha as f32];
     let radius = (radius_dp as f32) * scale;
     let half = [w / 2.0, h / 2.0];
-    let clip = |px: f32, py: f32| [px / width as f32 * 2.0 - 1.0, 1.0 - py / height as f32 * 2.0];
+    let clip = |px: f32, py: f32| {
+        [
+            px / width as f32 * 2.0 - 1.0,
+            1.0 - py / height as f32 * 2.0,
+        ]
+    };
 
     let corners = [
         (x, y, -half[0], -half[1]),
@@ -962,7 +1002,10 @@ mod tests {
             tick: 0,
             digest: Digest::of(b"the resident world"),
             refusal,
-            shading: shading::ShadingReport { materials: 7, with_base_colour: 0 },
+            shading: shading::ShadingReport {
+                materials: 7,
+                with_base_colour: 0,
+            },
         }
     }
 
@@ -975,7 +1018,10 @@ mod tests {
             from_dp: [0.0, 0.0],
             to_dp: [10.0, 0.0],
             width_dp: 2.0,
-            paint: Paint { rgb: WHITE, alpha: 1.0 },
+            paint: Paint {
+                rgb: WHITE,
+                alpha: 1.0,
+            },
         };
         let mut bytes = Vec::new();
         push_segment(&mut bytes, &stroke, 1.0, 100, 100);
@@ -984,17 +1030,25 @@ mod tests {
             .as_chunks::<4>()
             .0
             .iter()
-            .map(|b| f32::from_bits(
-                b[0] as u32
-                    | ((b[1] as u32) << 8)
-                    | ((b[2] as u32) << 16)
-                    | ((b[3] as u32) << 24),
-            ))
+            .map(|b| {
+                f32::from_bits(
+                    b[0] as u32
+                        | ((b[1] as u32) << 8)
+                        | ((b[2] as u32) << 16)
+                        | ((b[3] as u32) << 24),
+                )
+            })
             .collect();
         let at = |vertex: usize, field: usize| floats[vertex * SOLID_FLOATS + field];
         // Position: the quad's ends are the segment's ends, so x spans 0..10 dp.
-        assert!((at(0, 0) + 1.0).abs() < 1e-5, "the first corner is at x = 0 dp");
-        assert!((at(2, 0) + 0.8).abs() < 1e-5, "and the far side at x = 10 dp");
+        assert!(
+            (at(0, 0) + 1.0).abs() < 1e-5,
+            "the first corner is at x = 0 dp"
+        );
+        assert!(
+            (at(2, 0) + 0.8).abs() < 1e-5,
+            "and the far side at x = 10 dp"
+        );
         // The local frame: ±5 dp along the segment, ±1 dp across it.
         assert_eq!(at(0, 6), -5.0);
         assert_eq!(at(1, 6), 5.0);
@@ -1008,7 +1062,11 @@ mod tests {
         let mut none = Vec::new();
         push_segment(
             &mut none,
-            &Stroke { from_dp: [3.0, 3.0], to_dp: [3.0, 3.0], ..stroke },
+            &Stroke {
+                from_dp: [3.0, 3.0],
+                to_dp: [3.0, 3.0],
+                ..stroke
+            },
             1.0,
             100,
             100,
@@ -1021,12 +1079,19 @@ mod tests {
         let f = frame(605);
         let mut quiet = state(&f, None);
         // The world shades, so there is genuinely nothing to say.
-        quiet.shading = shading::ShadingReport { materials: 7, with_base_colour: 7 };
+        quiet.shading = shading::ShadingReport {
+            materials: 7,
+            with_base_colour: 7,
+        };
         let none = refusal_panel(&quiet);
         assert!(none.is_empty(), "an empty view is empty, and says so");
         assert!(none.validate().is_empty());
         assert!(none.note.is_some());
-        assert!(none.note.as_deref().unwrap().contains("Nothing has been refused"));
+        assert!(none
+            .note
+            .as_deref()
+            .unwrap()
+            .contains("Nothing has been refused"));
 
         let refusal = Refusal::owned(voxel_model::RefusalKind::UnknownComponent, "no such shaper");
         let some = refusal_panel(&state(&f, Some(&refusal)));
@@ -1065,7 +1130,10 @@ mod tests {
         // worth reporting, and a sentence about a black world would be wrong.
         let f = frame(605);
         let mut st = state(&f, None);
-        st.shading = shading::ShadingReport { materials: 7, with_base_colour: 3 };
+        st.shading = shading::ShadingReport {
+            materials: 7,
+            with_base_colour: 3,
+        };
         let panel = refusal_panel(&st);
         assert_eq!(panel.rows.len(), 1);
         assert_eq!(panel.rows[0].value, "3 of 7");
@@ -1086,7 +1154,11 @@ mod tests {
 
         let full = frame(605);
         let panel = determinism_panel(&state(&full, None));
-        let row = panel.rows.iter().find(|r| r.label == "resident digest").unwrap();
+        let row = panel
+            .rows
+            .iter()
+            .find(|r| r.label == "resident digest")
+            .unwrap();
         let hex = Digest::of(b"the resident world").to_hex();
         assert_eq!(row.value, format!("{}…", &hex[..DIGEST_CHARS]));
         assert_ne!(row.value, hex, "the readout says it is a prefix");
@@ -1109,7 +1181,10 @@ mod tests {
         let row = 48.0;
         let rule = 1.0;
         let rows = panel.rows.len() as f64;
-        assert_eq!(panel.height_dp(), 2.0 * spacing + row + rule + rows * row + (rows - 1.0) * rule);
+        assert_eq!(
+            panel.height_dp(),
+            2.0 * spacing + row + rule + rows * row + (rows - 1.0) * rule
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1132,7 +1207,11 @@ mod tests {
     fn target(device: &wgpu::Device, width: u32, height: u32) -> Target {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("hud target"),
-            size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -1150,7 +1229,14 @@ mod tests {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        Target { texture, view, readback, width, height, padded_row_bytes }
+        Target {
+            texture,
+            view,
+            readback,
+            width,
+            height,
+            padded_row_bytes,
+        }
     }
 
     fn read_back(device: &wgpu::Device, target: &Target) -> Vec<[u8; 4]> {
@@ -1160,9 +1246,15 @@ mod tests {
             let _ = sender.send(result);
         });
         device
-            .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+            .poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            })
             .expect("poll");
-        receiver.recv().expect("the map callback runs").expect("the map succeeds");
+        receiver
+            .recv()
+            .expect("the map callback runs")
+            .expect("the map succeeds");
         let data = slice.get_mapped_range().expect("the range is mapped");
         let stride = target.padded_row_bytes as usize;
         let mut out = Vec::with_capacity((target.width * target.height) as usize);
@@ -1205,8 +1297,7 @@ mod tests {
         let mut mount = {
             let package = voxel_package::recipe::compile(MEASURE_RECIPE.as_bytes())
                 .expect("the measure recipe compiles");
-            let loaded = voxel_package::recipe::load(&package)
-                .expect("the measure package loads");
+            let loaded = voxel_package::recipe::load(&package).expect("the measure package loads");
             let mut mount = crate::shell::Mount::new(&loaded).expect("the measure package mounts");
             mount.set_viewport(Rect::new(0.0, 0.0, width as f64, height as f64));
             mount
@@ -1232,7 +1323,10 @@ mod tests {
             hud_renderer.shaped_runs(),
             elements.len()
         );
-        assert!(hud_renderer.prepared_vertices > 0, "the shell's chrome is rects");
+        assert!(
+            hud_renderer.prepared_vertices > 0,
+            "the shell's chrome is rects"
+        );
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("hud test"),
@@ -1272,13 +1366,21 @@ mod tests {
                     rows_per_image: Some(height),
                 },
             },
-            wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
         );
         queue.submit(Some(encoder.finish()));
         let pixels = read_back(&device, &target);
 
         // A pixel outside every panel is untouched white.
-        assert_eq!(at(&pixels, width, width - 2, height / 2), WHITE, "the world shows through");
+        assert_eq!(
+            at(&pixels, width, width - 2, height / 2),
+            WHITE,
+            "the world shows through"
+        );
 
         // The bar's own colour: the most common colour inside the strip, which is
         // the surface every tab's glyph sits on.
@@ -1297,20 +1399,28 @@ mod tests {
             .expect("chrome is declared")
             .blend_over(WHITE, panel_opacity());
         println!("panel drawn: {surface:?}, designed: {expected:?}");
-        for (drawn, want) in [(surface.r, expected.r), (surface.g, expected.g), (surface.b, expected.b)]
-        {
+        for (drawn, want) in [
+            (surface.r, expected.r),
+            (surface.g, expected.g),
+            (surface.b, expected.b),
+        ] {
             assert!(
                 (drawn as i32 - want as i32).abs() <= 2,
                 "the drawn panel is {surface:?} and the design says {expected:?}"
             );
         }
-        assert!(surface.luminance() < 0.5, "the panel must darken the white world: {surface:?}");
+        assert!(
+            surface.luminance() < 0.5,
+            "the panel must darken the white world: {surface:?}"
+        );
 
         // The measurement the design system's floor is about: the **brightest**
         // glyph pixel inside the panel, against the panel it sits on.
-        let brightest = inside.iter().copied().max_by(|a, b| {
-            a.luminance().partial_cmp(&b.luminance()).expect("finite")
-        }).expect("non-empty");
+        let brightest = inside
+            .iter()
+            .copied()
+            .max_by(|a, b| a.luminance().partial_cmp(&b.luminance()).expect("finite"))
+            .expect("non-empty");
         let contrast = brightest.contrast(surface);
         println!("brightest glyph pixel: {brightest:?}, contrast {contrast:.2}:1");
         assert!(
@@ -1322,7 +1432,11 @@ mod tests {
         let distinct: std::collections::BTreeSet<[u8; 3]> =
             inside.iter().map(|c| [c.r, c.g, c.b]).collect();
         println!("{} distinct colours inside the panel", distinct.len());
-        assert!(distinct.len() > 8, "only {} colours — is any text being drawn?", distinct.len());
+        assert!(
+            distinct.len() > 8,
+            "only {} colours — is any text being drawn?",
+            distinct.len()
+        );
     }
 
     /// The smallest package that can measure the shell's chrome: one pinned window

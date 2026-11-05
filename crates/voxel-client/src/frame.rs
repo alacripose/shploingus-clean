@@ -79,7 +79,11 @@ impl Frame {
     /// A frame of pure sky measures nothing and says so: `response` then refuses,
     /// because a shading response taken over zero samples is not a measurement.
     pub fn geometry_luminances(&self) -> Vec<f64> {
-        self.pixels.iter().filter(|p| Self::is_geometry(**p)).map(|p| luminance(*p)).collect()
+        self.pixels
+            .iter()
+            .filter(|p| Self::is_geometry(**p))
+            .map(|p| luminance(*p))
+            .collect()
     }
 
     /// How many pixels are sky and how many are geometry. **They sum to the frame.**
@@ -87,7 +91,11 @@ impl Frame {
     /// The invariant worth asserting is that a rendered frame leaves nothing undrawn,
     /// which is what the sky pass exists to guarantee.
     pub fn split(&self) -> (usize, usize) {
-        let geometry = self.pixels.iter().filter(|p| Self::is_geometry(**p)).count();
+        let geometry = self
+            .pixels
+            .iter()
+            .filter(|p| Self::is_geometry(**p))
+            .count();
         (self.pixels.len() - geometry, geometry)
     }
 
@@ -153,7 +161,16 @@ mod tests {
 
     #[test]
     fn indexing_is_row_major_from_the_top_left_and_out_of_range_is_none() {
-        let f = Frame { width: 2, height: 2, pixels: vec![[1.0,0.0,0.0,1.0],[0.0,1.0,0.0,1.0],[0.0,0.0,1.0,1.0],[0.5,0.5,0.5,1.0]] };
+        let f = Frame {
+            width: 2,
+            height: 2,
+            pixels: vec![
+                [1.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.5, 0.5, 0.5, 1.0],
+            ],
+        };
         assert_eq!(f.pixel(0, 0).unwrap()[0], 1.0);
         assert_eq!(f.pixel(1, 0).unwrap()[1], 1.0);
         assert_eq!(f.pixel(0, 1).unwrap()[2], 1.0);

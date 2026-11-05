@@ -61,7 +61,13 @@ struct Point {
     surface: voxel_shapers::materials::SurfacePattern,
 }
 
-fn sample(pattern: &Pattern, point: &Point, eye: [f64; 3], pixel_angle: f64, retired: bool) -> (f64, f64) {
+fn sample(
+    pattern: &Pattern,
+    point: &Point,
+    eye: [f64; 3],
+    pixel_angle: f64,
+    retired: bool,
+) -> (f64, f64) {
     let rel = [
         point.p[0] - eye[0],
         point.p[1] - eye[1],
@@ -84,7 +90,10 @@ fn sample(pattern: &Pattern, point: &Point, eye: [f64; 3], pixel_angle: f64, ret
         .expect("a finite sample");
     // The pattern is a tint and a one-sided roughness move; the tint is the visible one, and the two
     // are summed so a change in either counts.
-    (d.roughness_delta + d.reflectance_delta.abs(), d.reflectance_delta)
+    (
+        d.roughness_delta + d.reflectance_delta.abs(),
+        d.reflectance_delta,
+    )
 }
 
 #[derive(Default)]

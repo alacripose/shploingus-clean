@@ -142,7 +142,9 @@ impl WindowId {
     pub fn new(id: impl Into<String>) -> UiResult<Self> {
         let id = id.into();
         if id.trim().is_empty() {
-            return Err(UiRefusal::EmptyViewWithoutNote { what: "a window id" });
+            return Err(UiRefusal::EmptyViewWithoutNote {
+                what: "a window id",
+            });
         }
         Ok(WindowId(id))
     }
@@ -214,7 +216,9 @@ pub struct Arrangement {
 impl Arrangement {
     /// An arrangement holding exactly one window.
     pub fn of(window: WindowId) -> Self {
-        Arrangement { root: Node::Pane(window) }
+        Arrangement {
+            root: Node::Pane(window),
+        }
     }
 
     pub fn root(&self) -> &Node {
@@ -379,10 +383,14 @@ impl Arrangement {
             });
         }
         let Some(target) = node_at_mut(&mut self.root, path) else {
-            return Err(UiRefusal::UnknownSlot { slot: path.to_vec() });
+            return Err(UiRefusal::UnknownSlot {
+                slot: path.to_vec(),
+            });
         };
         if !matches!(target, Node::Slot) {
-            return Err(UiRefusal::UnknownSlot { slot: path.to_vec() });
+            return Err(UiRefusal::UnknownSlot {
+                slot: path.to_vec(),
+            });
         }
         *target = Node::Pane(window);
         Ok(())
@@ -398,7 +406,9 @@ impl Arrangement {
     /// The reference re-parents the pane out of its splitter and leaves the window standing; so
     /// the arrangement is one window again and the caller decides where it lives.
     pub fn undock(&self, target: &WindowId) -> Option<Arrangement> {
-        self.windows().contains(target).then(|| Arrangement::of(target.clone()))
+        self.windows()
+            .contains(target)
+            .then(|| Arrangement::of(target.clone()))
     }
 
     /// `close(pane)` — remove one pane, **collapsing one-child splitters back up, recursively**.
@@ -438,7 +448,11 @@ impl Arrangement {
             },
         };
         out.root = collapse(out.root);
-        debug_assert_eq!(out.panes(), self.panes() - 1, "closing a pane removes exactly that pane");
+        debug_assert_eq!(
+            out.panes(),
+            self.panes() - 1,
+            "closing a pane removes exactly that pane"
+        );
         Some(out)
     }
 
@@ -522,19 +536,31 @@ impl Arrangement {
         delta_dp: f64,
     ) -> UiResult<()> {
         if !span.is_finite() {
-            return Err(UiRefusal::NonFiniteValue { what: "a splitter's span", value: span });
+            return Err(UiRefusal::NonFiniteValue {
+                what: "a splitter's span",
+                value: span,
+            });
         }
         if !delta_dp.is_finite() {
-            return Err(UiRefusal::NonFiniteValue { what: "a seam drag", value: delta_dp });
+            return Err(UiRefusal::NonFiniteValue {
+                what: "a seam drag",
+                value: delta_dp,
+            });
         }
         if !from.0.is_finite() || !from.1.is_finite() {
-            return Err(UiRefusal::NonFiniteValue { what: "a seam's start share", value: from.0 as f64 });
+            return Err(UiRefusal::NonFiniteValue {
+                what: "a seam's start share",
+                value: from.0 as f64,
+            });
         }
         // **The splitter count is read before the mutable walk**, so the refusal can name how
         // many there were without a second borrow of the tree the walk is holding.
         let splitters = self.shares().len();
-        let (orientation, children) = nth_split_mut(&mut self.root, splitter)
-            .ok_or(UiRefusal::UnknownSeam { seam: splitter, seams: splitters })?;
+        let (orientation, children) =
+            nth_split_mut(&mut self.root, splitter).ok_or(UiRefusal::UnknownSeam {
+                seam: splitter,
+                seams: splitters,
+            })?;
         if boundary + 1 >= children.len() {
             return Err(UiRefusal::UnknownSeam {
                 seam: boundary,
@@ -584,7 +610,10 @@ fn nth_split_from<'a>(
 ) -> Option<(Orientation, &'a mut Vec<(f32, Node)>)> {
     match node {
         Node::Pane(_) | Node::Slot => None,
-        Node::Split { orientation, children } => {
+        Node::Split {
+            orientation,
+            children,
+        } => {
             if *remaining == 0 {
                 return Some((*orientation, children));
             }
@@ -733,7 +762,10 @@ fn split_root(
 ) -> (Node, PaneRef) {
     let new_node = new_node(new_window);
     match node {
-        Node::Split { orientation: root, children } if *root == orientation => {
+        Node::Split {
+            orientation: root,
+            children,
+        } if *root == orientation => {
             // Case 2 — same orientation: **insert**, and re-divide the whole root.
             let mut next = children.clone();
             let at = match side {
@@ -742,7 +774,10 @@ fn split_root(
             };
             next.insert(at, (1.0, new_node));
             (
-                Node::Split { orientation, children: with_equal_shares(next) },
+                Node::Split {
+                    orientation,
+                    children: with_equal_shares(next),
+                },
                 new_ref(path, at, new_window),
             )
         }
@@ -772,7 +807,13 @@ fn split_root(
                     (vec![(1.0, other.clone()), (1.0, new_node)], 1)
                 }
             };
-            (Node::Split { orientation, children }, new_ref(path, at, new_window))
+            (
+                Node::Split {
+                    orientation,
+                    children,
+                },
+                new_ref(path, at, new_window),
+            )
         }
     }
 }
@@ -803,7 +844,11 @@ fn split_beside(
     new_window: Option<&WindowId>,
     path: &mut Vec<usize>,
 ) -> Option<(Node, PaneRef)> {
-    let Node::Split { orientation: parent, children } = node else {
+    let Node::Split {
+        orientation: parent,
+        children,
+    } = node
+    else {
         // A bare pane or a slot cannot hold a window: there is no parent to split beside.
         return None;
     };
@@ -835,7 +880,13 @@ fn split_beside(
         let (next, created) = found?;
         let mut rebuilt = children.clone();
         rebuilt[index] = (*share, next);
-        return Some((Node::Split { orientation: *parent, children: rebuilt }, created));
+        return Some((
+            Node::Split {
+                orientation: *parent,
+                children: rebuilt,
+            },
+            created,
+        ));
     }
     None
 }
@@ -854,7 +905,11 @@ fn split_beside_slot(
     path: &mut Vec<usize>,
 ) -> Option<(Node, PaneRef)> {
     let (first, rest) = slot.split_first()?;
-    let Node::Split { orientation: parent, children } = node else {
+    let Node::Split {
+        orientation: parent,
+        children,
+    } = node
+    else {
         return None;
     };
     let (share, child) = children.get(*first)?;
@@ -879,7 +934,13 @@ fn split_beside_slot(
     let (next, created) = found?;
     let mut rebuilt = children.clone();
     rebuilt[*first] = (*share, next);
-    Some((Node::Split { orientation: *parent, children: rebuilt }, created))
+    Some((
+        Node::Split {
+            orientation: *parent,
+            children: rebuilt,
+        },
+        created,
+    ))
 }
 
 /// **The pane the new split creates**, from the caller's request: `Some` a window id, `None` an
@@ -928,7 +989,10 @@ fn split_in_children(
         };
         next.insert(at, (1.0, new_node));
         (
-            Node::Split { orientation: parent, children: with_equal_shares(next) },
+            Node::Split {
+                orientation: parent,
+                children: with_equal_shares(next),
+            },
             new_ref(path, at, new_window),
         )
     } else {
@@ -954,7 +1018,10 @@ fn split_in_children(
         slot.push(index);
         slot.push(at);
         (
-            Node::Split { orientation: parent, children: rebuilt },
+            Node::Split {
+                orientation: parent,
+                children: rebuilt,
+            },
             match new_window {
                 Some(id) => PaneRef::Window(id.clone()),
                 None => PaneRef::Slot(slot),
@@ -978,7 +1045,10 @@ fn remove_pane(node: &Node, target: &WindowId) -> Node {
         Node::Pane(id) => Node::Pane(id.clone()),
         // **A slot is not the target**: a window's id is never a slot's, so the walk leaves it.
         Node::Slot => Node::Slot,
-        Node::Split { orientation, children } => Node::Split {
+        Node::Split {
+            orientation,
+            children,
+        } => Node::Split {
             orientation: *orientation,
             children: children
                 .iter()
@@ -995,18 +1065,23 @@ fn remove_slot(node: &Node, path: &[usize]) -> Node {
     match path.split_first() {
         None => Node::Pane(WindowId(String::new())),
         Some((first, rest)) => match node {
-            Node::Split { orientation, children } => Node::Split {
+            Node::Split {
+                orientation,
+                children,
+            } => Node::Split {
                 orientation: *orientation,
                 children: children
                     .iter()
                     .enumerate()
                     .map(|(index, (share, child))| {
-                        (*share,
-                         if index == *first {
-                             remove_slot(child, rest)
-                         } else {
-                             child.clone()
-                         })
+                        (
+                            *share,
+                            if index == *first {
+                                remove_slot(child, rest)
+                            } else {
+                                child.clone()
+                            },
+                        )
                     })
                     .collect(),
             },
@@ -1021,9 +1096,9 @@ fn node_at<'a>(node: &'a Node, path: &[usize]) -> Option<&'a Node> {
     match path.split_first() {
         None => Some(node),
         Some((first, rest)) => match node {
-            Node::Split { children, .. } => {
-                children.get(*first).and_then(|(_, child)| node_at(child, rest))
-            }
+            Node::Split { children, .. } => children
+                .get(*first)
+                .and_then(|(_, child)| node_at(child, rest)),
             _ => None,
         },
     }
@@ -1048,7 +1123,10 @@ fn node_at_mut<'a>(node: &'a mut Node, path: &[usize]) -> Option<&'a mut Node> {
 /// recurses into the parent, and a single-level version leaves the chain behind.
 fn collapse(node: Node) -> Node {
     match node {
-        Node::Split { orientation, children } => {
+        Node::Split {
+            orientation,
+            children,
+        } => {
             let children: Vec<(f32, Node)> = children
                 .into_iter()
                 .map(|(share, child)| (share, collapse(child)))
@@ -1065,7 +1143,10 @@ fn collapse(node: Node) -> Node {
             match children.len() {
                 0 => Node::Pane(WindowId(String::new())),
                 1 => children.into_iter().next().expect("one child").1,
-                _ => Node::Split { orientation, children },
+                _ => Node::Split {
+                    orientation,
+                    children,
+                },
             }
         }
         pane => pane,
@@ -1080,7 +1161,10 @@ fn is_hole(node: &Node) -> bool {
 fn check_floor_node(node: &Node, span: u32) -> UiResult<()> {
     let children = match node {
         Node::Pane(_) | Node::Slot => return Ok(()),
-        Node::Split { orientation, children } => (orientation, children),
+        Node::Split {
+            orientation,
+            children,
+        } => (orientation, children),
     };
     let (orientation, children) = children;
     let count = children.len() as u32;
@@ -1142,11 +1226,20 @@ mod tests {
             .expect("splits");
         assert_eq!(arrangement.panes(), 2);
         match arrangement.root() {
-            Node::Split { orientation, children } => {
+            Node::Split {
+                orientation,
+                children,
+            } => {
                 assert_eq!(*orientation, Orientation::Horizontal);
                 assert_eq!(children.len(), 2);
-                assert!(holds(&children[0].1, &id("alpha")), "the old pane keeps its side");
-                assert!(holds(&children[1].1, &id("beta")), "the new pane arrives after");
+                assert!(
+                    holds(&children[0].1, &id("alpha")),
+                    "the old pane keeps its side"
+                );
+                assert!(
+                    holds(&children[1].1, &id("beta")),
+                    "the new pane arrives after"
+                );
             }
             other => panic!("the root did not become a splitter: {other:?}"),
         }
@@ -1157,14 +1250,21 @@ mod tests {
     #[test]
     fn a_matching_orientation_inserts_and_re_divides() {
         let mut arrangement = Arrangement::of(id("alpha"));
-        arrangement.split(None, Orientation::Horizontal, Side::After, id("beta")).expect("splits");
-        arrangement.split(None, Orientation::Horizontal, Side::After, id("gamma")).expect("splits");
+        arrangement
+            .split(None, Orientation::Horizontal, Side::After, id("beta"))
+            .expect("splits");
+        arrangement
+            .split(None, Orientation::Horizontal, Side::After, id("gamma"))
+            .expect("splits");
         assert_eq!(arrangement.panes(), 3);
         match arrangement.root() {
             Node::Split { children, .. } => {
                 assert_eq!(children.len(), 3, "inserted, not wrapped");
                 for (share, _) in children {
-                    assert!((share - 1.0 / 3.0).abs() < 1e-6, "re-divided equally, got {share}");
+                    assert!(
+                        (share - 1.0 / 3.0).abs() < 1e-6,
+                        "re-divided equally, got {share}"
+                    );
                 }
             }
             other => panic!("the root stopped being a splitter: {other:?}"),
@@ -1180,8 +1280,12 @@ mod tests {
     #[test]
     fn a_wrap_preserves_the_outer_splits_shares() {
         let mut arrangement = Arrangement::of(id("alpha"));
-        arrangement.split(None, Orientation::Horizontal, Side::After, id("beta")).expect("splits");
-        arrangement.split(None, Orientation::Horizontal, Side::After, id("gamma")).expect("splits");
+        arrangement
+            .split(None, Orientation::Horizontal, Side::After, id("beta"))
+            .expect("splits");
+        arrangement
+            .split(None, Orientation::Horizontal, Side::After, id("gamma"))
+            .expect("splits");
         let outer_before: Vec<f32> = match arrangement.root() {
             Node::Split { children, .. } => children.iter().map(|(s, _)| *s).collect(),
             other => panic!("not a splitter: {other:?}"),
@@ -1189,7 +1293,12 @@ mod tests {
 
         // **Split `gamma` vertically** — opposing the horizontal root, so this is a wrap.
         arrangement
-            .split(Some(&id("gamma")), Orientation::Vertical, Side::After, id("delta"))
+            .split(
+                Some(&id("gamma")),
+                Orientation::Vertical,
+                Side::After,
+                id("delta"),
+            )
             .expect("splits");
 
         let outer_after: Vec<f32> = match arrangement.root() {
@@ -1210,15 +1319,26 @@ mod tests {
     #[test]
     fn closing_collapses_one_child_splitters_all_the_way_up() {
         let mut arrangement = Arrangement::of(id("alpha"));
-        arrangement.split(None, Orientation::Horizontal, Side::After, id("beta")).expect("splits");
         arrangement
-            .split(Some(&id("beta")), Orientation::Vertical, Side::After, id("gamma"))
+            .split(None, Orientation::Horizontal, Side::After, id("beta"))
+            .expect("splits");
+        arrangement
+            .split(
+                Some(&id("beta")),
+                Orientation::Vertical,
+                Side::After,
+                id("gamma"),
+            )
             .expect("splits");
 
         let after = arrangement
             .close(&PaneRef::Window(id("gamma")))
             .expect("two panes remain");
-        assert_eq!(after.panes(), 2, "alpha and beta both survive closing gamma");
+        assert_eq!(
+            after.panes(),
+            2,
+            "alpha and beta both survive closing gamma"
+        );
         assert!(
             !contains_split(after.root()),
             "**no one-child splitter survives a close** — the collapse is recursive, and this \
@@ -1243,15 +1363,30 @@ mod tests {
     #[test]
     fn the_floor_accumulates_through_nesting() {
         let mut arrangement = Arrangement::of(id("alpha"));
-        arrangement.split(None, Orientation::Horizontal, Side::After, id("beta")).expect("splits");
         arrangement
-            .split(Some(&id("beta")), Orientation::Vertical, Side::After, id("gamma"))
+            .split(None, Orientation::Horizontal, Side::After, id("beta"))
             .expect("splits");
         arrangement
-            .split(Some(&id("gamma")), Orientation::Horizontal, Side::After, id("delta"))
+            .split(
+                Some(&id("beta")),
+                Orientation::Vertical,
+                Side::After,
+                id("gamma"),
+            )
+            .expect("splits");
+        arrangement
+            .split(
+                Some(&id("gamma")),
+                Orientation::Horizontal,
+                Side::After,
+                id("delta"),
+            )
             .expect("splits");
 
-        assert!(arrangement.check_floor(1000).is_ok(), "1000 px clears three levels");
+        assert!(
+            arrangement.check_floor(1000).is_ok(),
+            "1000 px clears three levels"
+        );
         assert!(
             arrangement.check_floor(200).is_err(),
             "**200 px cannot give four panes 40 each**, and the refusal names the arithmetic \
@@ -1265,15 +1400,29 @@ mod tests {
     #[test]
     fn a_same_orientation_parent_inserts_beside_the_target() {
         let mut arrangement = Arrangement::of(id("alpha"));
-        arrangement.split(None, Orientation::Horizontal, Side::After, id("beta")).expect("splits");
         arrangement
-            .split(Some(&id("alpha")), Orientation::Horizontal, Side::After, id("gamma"))
+            .split(None, Orientation::Horizontal, Side::After, id("beta"))
+            .expect("splits");
+        arrangement
+            .split(
+                Some(&id("alpha")),
+                Orientation::Horizontal,
+                Side::After,
+                id("gamma"),
+            )
             .expect("splits");
         match arrangement.root() {
             Node::Split { children, .. } => {
-                assert_eq!(children.len(), 3, "three panes in one row, got {children:?}");
+                assert_eq!(
+                    children.len(),
+                    3,
+                    "three panes in one row, got {children:?}"
+                );
                 assert!(holds(&children[0].1, &id("alpha")));
-                assert!(holds(&children[1].1, &id("gamma")), "the new pane sits beside its target");
+                assert!(
+                    holds(&children[1].1, &id("gamma")),
+                    "the new pane sits beside its target"
+                );
                 assert!(holds(&children[2].1, &id("beta")));
             }
             other => panic!("the root stopped being a splitter: {other:?}"),
@@ -1286,32 +1435,58 @@ mod tests {
     #[test]
     fn a_deeper_target_is_lifted_out_of_its_own_parent_not_the_whole_subtree() {
         let mut arrangement = Arrangement::of(id("alpha"));
-        arrangement.split(None, Orientation::Horizontal, Side::After, id("charlie")).expect("splits");
         arrangement
-            .split(Some(&id("alpha")), Orientation::Vertical, Side::After, id("beta"))
+            .split(None, Orientation::Horizontal, Side::After, id("charlie"))
+            .expect("splits");
+        arrangement
+            .split(
+                Some(&id("alpha")),
+                Orientation::Vertical,
+                Side::After,
+                id("beta"),
+            )
             .expect("wraps alpha");
         // Now H[V[alpha, beta], charlie]; split alpha horizontally, which its parent (V) opposes.
         arrangement
-            .split(Some(&id("alpha")), Orientation::Horizontal, Side::After, id("delta"))
+            .split(
+                Some(&id("alpha")),
+                Orientation::Horizontal,
+                Side::After,
+                id("delta"),
+            )
             .expect("splits");
         assert_eq!(arrangement.panes(), 4);
         match arrangement.root() {
-            Node::Split { orientation, children } if *orientation == Orientation::Horizontal => {
+            Node::Split {
+                orientation,
+                children,
+            } if *orientation == Orientation::Horizontal => {
                 assert_eq!(children.len(), 2, "the outer split still has two children");
                 match &children[0].1 {
-                    Node::Split { orientation, children } if *orientation == Orientation::Vertical => {
-                        assert_eq!(children.len(), 2, "the vertical slot still holds two children");
+                    Node::Split {
+                        orientation,
+                        children,
+                    } if *orientation == Orientation::Vertical => {
+                        assert_eq!(
+                            children.len(),
+                            2,
+                            "the vertical slot still holds two children"
+                        );
                         match &children[0].1 {
-                            Node::Split { orientation, children }
-                                if *orientation == Orientation::Horizontal =>
-                            {
+                            Node::Split {
+                                orientation,
+                                children,
+                            } if *orientation == Orientation::Horizontal => {
                                 assert_eq!(children.len(), 2);
                                 assert!(holds(&children[0].1, &id("alpha")));
                                 assert!(holds(&children[1].1, &id("delta")));
                             }
                             other => panic!("alpha and delta were not wrapped together: {other:?}"),
                         }
-                        assert!(holds(&children[1].1, &id("beta")), "beta stays in the vertical slot");
+                        assert!(
+                            holds(&children[1].1, &id("beta")),
+                            "beta stays in the vertical slot"
+                        );
                     }
                     other => panic!("the vertical sub-splitter disappeared: {other:?}"),
                 }
@@ -1326,9 +1501,16 @@ mod tests {
     #[test]
     fn an_insert_before_lands_at_the_targets_own_index() {
         let mut arrangement = Arrangement::of(id("alpha"));
-        arrangement.split(None, Orientation::Horizontal, Side::After, id("beta")).expect("splits");
         arrangement
-            .split(Some(&id("beta")), Orientation::Horizontal, Side::Before, id("gamma"))
+            .split(None, Orientation::Horizontal, Side::After, id("beta"))
+            .expect("splits");
+        arrangement
+            .split(
+                Some(&id("beta")),
+                Orientation::Horizontal,
+                Side::Before,
+                id("gamma"),
+            )
             .expect("splits");
         match arrangement.root() {
             Node::Split { children, .. } => {
@@ -1385,7 +1567,10 @@ mod tests {
         assert!((p[1] - 0.25).abs() < 1e-6, "got {:?}", shares[0]);
         // **The total is preserved**, which is what keeps the outer tree's shares untouched.
         let total: f32 = shares[0].iter().sum();
-        assert!((total - 2.0).abs() < 1e-6, "the splitter's total moved: {total}");
+        assert!(
+            (total - 2.0).abs() < 1e-6,
+            "the splitter's total moved: {total}"
+        );
         // The same drag applied from the start pair, back at the origin, restores the halves
         // exactly — the property a compounding drag would lose.
         arrangement
@@ -1409,7 +1594,10 @@ mod tests {
             .drag_seam(0, 0, 100.0, (1.0, 1.0), -80.0)
             .expect("clamped, not refused");
         let p = proportions(&arrangement.shares()[0]);
-        assert!((p[0] - 0.4).abs() < 1e-6, "the seam stopped at the floor: {p:?}");
+        assert!(
+            (p[0] - 0.4).abs() < 1e-6,
+            "the seam stopped at the floor: {p:?}"
+        );
         assert!((p[1] - 0.6).abs() < 1e-6, "{p:?}");
         // A pair whose combined extent is under 2 × 40 cannot be dragged at all — the layout
         // can draw it (its floor check is the average) and the drag refuses with the numbers.
@@ -1421,7 +1609,15 @@ mod tests {
             .drag_seam(0, 0, 70.0, (1.0, 1.0), 1.0)
             .expect_err("35 + 35 dp cannot give both children 40");
         assert!(
-            matches!(refused, UiRefusal::PaneBelowFloor { span: 70, count: 2, floor: 40, .. }),
+            matches!(
+                refused,
+                UiRefusal::PaneBelowFloor {
+                    span: 70,
+                    count: 2,
+                    floor: 40,
+                    ..
+                }
+            ),
             "the refusal carries the pair's own arithmetic: {refused}"
         );
     }
@@ -1438,11 +1634,17 @@ mod tests {
         let err = arrangement
             .drag_seam(7, 0, 400.0, (1.0, 1.0), 0.0)
             .expect_err("there is no eighth splitter");
-        assert!(matches!(err, UiRefusal::UnknownSeam { seam: 7, .. }), "{err}");
+        assert!(
+            matches!(err, UiRefusal::UnknownSeam { seam: 7, .. }),
+            "{err}"
+        );
         let err = arrangement
             .drag_seam(0, 4, 400.0, (1.0, 1.0), 0.0)
             .expect_err("a two-child splitter has one boundary");
-        assert!(matches!(err, UiRefusal::UnknownSeam { seam: 4, .. }), "{err}");
+        assert!(
+            matches!(err, UiRefusal::UnknownSeam { seam: 4, .. }),
+            "{err}"
+        );
         // And nothing moved on the way to either refusal.
         assert_eq!(arrangement.shares(), vec![vec![1.0, 1.0]]);
     }
@@ -1456,7 +1658,12 @@ mod tests {
             .split(None, Orientation::Horizontal, Side::After, id("charlie"))
             .expect("splits");
         arrangement
-            .split(Some(&id("alpha")), Orientation::Vertical, Side::After, id("beta"))
+            .split(
+                Some(&id("alpha")),
+                Orientation::Vertical,
+                Side::After,
+                id("beta"),
+            )
             .expect("wraps alpha");
         // H[V[alpha, beta], charlie]: splitter 0 is the outer H, splitter 1 the nested V.
         assert_eq!(arrangement.shares().len(), 2);
@@ -1465,8 +1672,15 @@ mod tests {
             .drag_seam(1, 0, 200.0, (1.0, 1.0), 50.0)
             .expect("the nested splitter's seam");
         let p = proportions(&arrangement.shares()[1]);
-        assert!((p[0] - 0.75).abs() < 1e-6, "the nested splitter moved: {p:?}");
-        assert_eq!(arrangement.shares()[0], outer, "the outer splitter's shares are untouched");
+        assert!(
+            (p[0] - 0.75).abs() < 1e-6,
+            "the nested splitter moved: {p:?}"
+        );
+        assert_eq!(
+            arrangement.shares()[0],
+            outer,
+            "the outer splitter's shares are untouched"
+        );
     }
 
     /// **A slot split creates the reference's unnamed pane** — `WindowPane(app=None)`, the
@@ -1478,7 +1692,11 @@ mod tests {
         let slot = arrangement
             .split_slot(None, Orientation::Horizontal, Side::After)
             .expect("splits");
-        assert_eq!(slot, PaneRef::Slot(vec![1]), "the new pane is the root's second child");
+        assert_eq!(
+            slot,
+            PaneRef::Slot(vec![1]),
+            "the new pane is the root's second child"
+        );
         assert_eq!(arrangement.panes(), 2, "a slot is a pane");
         assert_eq!(
             arrangement.windows(),
@@ -1486,7 +1704,10 @@ mod tests {
             "a slot holds no window"
         );
         assert!(arrangement.slot_at(&[1]).is_some());
-        assert!(arrangement.check_floor(80).is_ok(), "two 40 dp panes fit in 80");
+        assert!(
+            arrangement.check_floor(80).is_ok(),
+            "two 40 dp panes fit in 80"
+        );
     }
 
     /// **A slot is addressed by its path**, and the path is the tree's: a nested split's slot is
@@ -1513,9 +1734,16 @@ mod tests {
         assert_eq!(arrangement.panes(), 4);
         // **A path the tree does not hold is refused by name**, not resolved to a neighbour.
         let refused = arrangement
-            .split_slot(Some(&PaneRef::Slot(vec![9])), Orientation::Horizontal, Side::After)
+            .split_slot(
+                Some(&PaneRef::Slot(vec![9])),
+                Orientation::Horizontal,
+                Side::After,
+            )
             .expect_err("there is no tenth child");
-        assert!(matches!(refused, UiRefusal::UnknownSlot { .. }), "{refused}");
+        assert!(
+            matches!(refused, UiRefusal::UnknownSlot { .. }),
+            "{refused}"
+        );
     }
 
     /// **Filling a slot is `set_app`** (2697–2711): the slot stops being empty and holds the
@@ -1526,7 +1754,9 @@ mod tests {
         arrangement
             .split_slot(None, Orientation::Horizontal, Side::After)
             .expect("splits");
-        arrangement.fill(&[1], id("beta")).expect("the slot takes the window");
+        arrangement
+            .fill(&[1], id("beta"))
+            .expect("the slot takes the window");
         assert!(arrangement.windows().contains(&id("beta")));
         assert!(arrangement.slot_at(&[1]).is_none(), "the slot is gone");
         // A different window cannot fill the pane that is no longer a slot either — the path
@@ -1534,12 +1764,18 @@ mod tests {
         let refused = arrangement
             .fill(&[1], id("gamma"))
             .expect_err("the path is not a slot");
-        assert!(matches!(refused, UiRefusal::UnknownSlot { .. }), "{refused}");
+        assert!(
+            matches!(refused, UiRefusal::UnknownSlot { .. }),
+            "{refused}"
+        );
         // Filling the same window twice is the duplicate case, which the tree checks first.
         let refused = arrangement
             .fill(&[1], id("beta"))
             .expect_err("beta is already in the tree");
-        assert!(matches!(refused, UiRefusal::DuplicateWindow { .. }), "{refused}");
+        assert!(
+            matches!(refused, UiRefusal::DuplicateWindow { .. }),
+            "{refused}"
+        );
         // A window the tree already holds cannot be placed anywhere in it.
         let mut other = Arrangement::of(id("alpha"));
         other
@@ -1548,7 +1784,10 @@ mod tests {
         let refused = other
             .fill(&[1], id("alpha"))
             .expect_err("alpha is already in the tree");
-        assert!(matches!(refused, UiRefusal::DuplicateWindow { .. }), "{refused}");
+        assert!(
+            matches!(refused, UiRefusal::DuplicateWindow { .. }),
+            "{refused}"
+        );
     }
 
     /// **A slot is a pane for `close`**: closing the window pane of a window-and-slot leaves
@@ -1573,15 +1812,26 @@ mod tests {
             "the last pane closing closes the window"
         );
         // A pane the tree does not hold is the reference's own no-op, not a refusal.
-        assert_eq!(arrangement.close(&PaneRef::Window(id("zz"))), Some(arrangement.clone()));
+        assert_eq!(
+            arrangement.close(&PaneRef::Window(id("zz"))),
+            Some(arrangement.clone())
+        );
     }
 
     #[test]
     fn undock_leaves_the_window_free_floating() {
         let mut arrangement = Arrangement::of(id("alpha"));
-        arrangement.split(None, Orientation::Horizontal, Side::After, id("beta")).expect("splits");
-        let floating = arrangement.undock(&id("beta")).expect("beta is in the arrangement");
-        assert_eq!(floating.panes(), 1, "H-7.24: a window may ignore the grid entirely");
+        arrangement
+            .split(None, Orientation::Horizontal, Side::After, id("beta"))
+            .expect("splits");
+        let floating = arrangement
+            .undock(&id("beta"))
+            .expect("beta is in the arrangement");
+        assert_eq!(
+            floating.panes(),
+            1,
+            "H-7.24: a window may ignore the grid entirely"
+        );
         assert!(floating.windows().contains(&id("beta")));
     }
 

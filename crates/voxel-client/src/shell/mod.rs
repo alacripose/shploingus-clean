@@ -33,6 +33,9 @@ pub mod debug;
 pub mod desktop;
 pub mod drop;
 pub mod hud;
+// The map window: one owner for its state, its rects, its verbs and its drawing. `mount` steers it
+// — the pointer routes to it and the layer asks it for its content — and keeps no copy of any of it.
+pub mod map_window;
 pub mod mount;
 pub mod notifications;
 pub mod pane;
@@ -41,7 +44,9 @@ pub mod splitter;
 pub mod taskbar;
 pub mod theme;
 pub mod titlebar;
+pub mod webview;
 pub mod window;
+pub mod xml;
 
 pub use api::ApiView;
 pub use mount::{BarEntry, Button, ContentViews, Mount, Status, WheelDelta};

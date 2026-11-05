@@ -156,45 +156,12 @@ pub enum BiomeClass {
 /// ticked exactly as they were, and the instantaneous samples are untouched for every
 /// consumer that wants *this tick*.
 pub fn biome_for(temperature_c: f64, precipitation_mm: f64) -> Biome {
-    // Cold is cold regardless of rain: below freezing most of the year, only the
-    // driest and the hardest formations survive.
-    if temperature_c < -5.0 {
-        return if precipitation_mm < 250.0 {
-            Biome::PolarDesert
-        } else {
-            Biome::Tundra
-        };
-    }
-    if temperature_c < 3.0 {
-        return if precipitation_mm < 250.0 {
-            Biome::Tundra
-        } else {
-            Biome::BorealForest
-        };
-    }
-    if temperature_c < 12.0 {
-        return match precipitation_mm {
-            p if p < 200.0 => Biome::Tundra,
-            p if p < 450.0 => Biome::Grassland,
-            p if p < 900.0 => Biome::CoolTemperateForest,
-            _ => Biome::BorealForest,
-        };
-    }
-    if temperature_c < 20.0 {
-        return match precipitation_mm {
-            p if p < 180.0 => Biome::Desert,
-            p if p < 400.0 => Biome::Grassland,
-            p if p < 750.0 => Biome::SubtropicalScrub,
-            _ => Biome::TemperateForest,
-        };
-    }
-    // Warm.
-    match precipitation_mm {
-        p if p < 150.0 => Biome::Desert,
-        p if p < 350.0 => Biome::SubtropicalScrub,
-        p if p < 800.0 => Biome::TropicalDryForest,
-        _ => Biome::TropicalRainforest,
-    }
+    // **The arms are the mounted package's**, not this function's: [`crate::biome_library::library`]
+    // holds them with the atlas's own label, system and structure on each arm, and this reader
+    // exists so that every caller of the formation keeps its signature. Cold is cold regardless of
+    // rain — below freezing most of the year only the driest and the hardest formations survive —
+    // and that is the first arm of the package rather than a branch here.
+    crate::biome_library::climate_biome(temperature_c, precipitation_mm)
 }
 
 /// Ticks in one twelfth of a world year — **read from the climate module's own clock**,

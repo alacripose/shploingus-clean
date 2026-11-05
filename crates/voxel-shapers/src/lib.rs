@@ -44,6 +44,7 @@
 //! | [`caves`] | Ford & Williams 2007 (karst) |
 //! | [`substrate`] | Heimsath, Dietrich, Nishiizumi & Finkel 1997 |
 //! | [`ecology`] | Holdridge 1947; Reynolds 1987 (boids); `earth_biomes_subbiomes_terrain.pdf`, `earth_biomes_subbiomes_continentalness_mountains.pdf` |
+//! | [`biome_library`] | the same two atlases, as the `display-packages/biomes` catalog: their §5 systems, §15 catalog and §15b overlays, with the envelope bands Holdridge gives |
 //! | [`habitat`] | `earth_biomes_subbiomes_terrain.pdf`; `earth_biomes_subbiomes_continentalness_mountains.pdf` (§3, §15, §16) |
 //! | [`delta`] | Shields 1936; Hjulström 1935; Gilbert 1885; Slingerland & Smith 2004 |
 //! | [`transition`] | Shepard 1968 |
@@ -65,6 +66,7 @@
 #![warn(missing_docs)]
 
 pub mod atmosphere;
+pub mod biome_library;
 pub mod caves;
 pub mod chunk_fields;
 pub mod climate;

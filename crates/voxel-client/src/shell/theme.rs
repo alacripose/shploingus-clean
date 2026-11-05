@@ -261,7 +261,9 @@ impl Theme {
     /// is deliberately not folded into the refusal: a debt and a ruling are different facts.
     pub fn resolve(field: Field, palette: &voxel_ui::Palette) -> UiResult<Option<voxel_ui::Paint>> {
         match Self::coverage(field) {
-            FieldSource::Role(role) => palette.get(role).map(|rgb| Some(voxel_ui::Paint::opaque(rgb))),
+            FieldSource::Role(role) => palette
+                .get(role)
+                .map(|rgb| Some(voxel_ui::Paint::opaque(rgb))),
             FieldSource::Elevated(role, level) => palette
                 .get(role)?
                 .elevated(level)
@@ -346,7 +348,10 @@ mod tests {
         // `resolve` answers `Ok(None)` — not a refusal, because nothing is owed.
         assert_eq!(Theme::coverage(Field::Desktop), FieldSource::World);
         let palette = Palette::declared();
-        assert_eq!(Theme::resolve(Field::Desktop, &palette).expect("not a refusal"), None);
+        assert_eq!(
+            Theme::resolve(Field::Desktop, &palette).expect("not a refusal"),
+            None
+        );
     }
 
     #[test]
@@ -368,9 +373,18 @@ mod tests {
                 .rgb
         };
         // The taskbar is chrome; a panel is the alternative surface; a window is the body.
-        assert_eq!(value(Field::Taskbar), palette.get(Role::Chrome).expect("chrome"));
-        assert_eq!(value(Field::Panel), palette.get(Role::SurfaceAlt).expect("surfaceAlt"));
-        assert_eq!(value(Field::Window), palette.get(Role::Surface).expect("surface"));
+        assert_eq!(
+            value(Field::Taskbar),
+            palette.get(Role::Chrome).expect("chrome")
+        );
+        assert_eq!(
+            value(Field::Panel),
+            palette.get(Role::SurfaceAlt).expect("surfaceAlt")
+        );
+        assert_eq!(
+            value(Field::Window),
+            palette.get(Role::Surface).expect("surface")
+        );
         // Hover and pressed are the interaction language: one and two elevation steps.
         let resting = value(Field::Button);
         assert_eq!(
@@ -391,7 +405,11 @@ mod tests {
     #[test]
     fn the_five_reference_themes_are_carried_as_candidates_and_not_admitted() {
         assert_eq!(Theme::REFERENCE_NAMES.len(), 5);
-        assert_eq!(Theme::REFERENCE_NAMES[3], "Dark", "the one the record admits is in the list");
+        assert_eq!(
+            Theme::REFERENCE_NAMES[3],
+            "Dark",
+            "the one the record admits is in the list"
+        );
         // `voxel-ui`'s `Theme` is the one palette, and this module does not add a second.
         assert_eq!(voxel_ui::Theme::ONLY, voxel_ui::Theme::Dark);
     }

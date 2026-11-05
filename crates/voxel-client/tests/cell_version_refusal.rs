@@ -79,7 +79,10 @@ fn composed(mount: &mut shell::Mount) -> Vec<Element> {
         tick: 9_259,
         digest: Digest::of(b"the resident world"),
         refusal: None,
-        shading: voxel_client::shading::ShadingReport { materials: 7, with_base_colour: 7 },
+        shading: voxel_client::shading::ShadingReport {
+            materials: 7,
+            with_base_colour: 7,
+        },
     };
     let views = hud::views(&state, mount.console(), mount.api_view().cloned());
     let viewport = mount.viewport();
@@ -88,8 +91,12 @@ fn composed(mount: &mut shell::Mount) -> Vec<Element> {
 
 /// **The frame's one raster act at the version the mount holds** — the call the app's draw makes.
 fn drawn(mount: &shell::Mount, elements: &[Element]) -> Vec<Element> {
-    cells::raster(elements, &mount.frame_space(), mount.cell_version().number())
-        .expect("the version in force is one this shell draws")
+    cells::raster(
+        elements,
+        &mount.frame_space(),
+        mount.cell_version().number(),
+    )
+    .expect("the version in force is one this shell draws")
 }
 
 /// A directory a package is copied into **after boot** — the arrival is a real folder on disk, not
@@ -104,7 +111,9 @@ fn staging(name: &str) -> PathBuf {
 /// Copy one fixture display package into `into`: its recipe and its declaration, together, because
 /// a display package is the folder and the declaration is part of it.
 fn arrive(fixture: &str, into: &Path) {
-    let source = workspace().join("crates/voxel-client/tests/fixtures").join(fixture);
+    let source = workspace()
+        .join("crates/voxel-client/tests/fixtures")
+        .join(fixture);
     for file in ["package.shspec", "package.cells"] {
         std::fs::copy(source.join(file), into.join(file)).expect("the package arrives");
     }
@@ -154,7 +163,10 @@ fn an_old_declaration_is_refused_by_name_and_the_version_in_force_keeps_drawing(
     let why = mount
         .load_package(&old_declaration.join("package.shspec"))
         .expect_err("a package whose declaration is not read is not mounted");
-    assert_eq!(why, message, "the mount's refusal is not the declaration's sentence");
+    assert_eq!(
+        why, message,
+        "the mount's refusal is not the declaration's sentence"
+    );
     assert_eq!(
         mount.cell_version(),
         cells::CellVersion::Holo,
@@ -179,14 +191,20 @@ fn an_old_declaration_is_refused_by_name_and_the_version_in_force_keeps_drawing(
     );
 
     let elements = composed(&mut mount);
-    assert!(!elements.is_empty(), "the frame composed no elements at all");
+    assert!(
+        !elements.is_empty(),
+        "the frame composed no elements at all"
+    );
     let drawn = drawn(&mount, &elements);
     assert_eq!(
         drawn,
         cells::frames_in(&elements, &mount.frame_space()),
         "the version in force is not the raster"
     );
-    assert_ne!(drawn, elements, "the raster handed the composed elements back");
+    assert_ne!(
+        drawn, elements,
+        "the raster handed the composed elements back"
+    );
 
     // 5. **And the old drawing is a declaration away**: the same frame, version 0, unchanged.
     let old_folder = workspace().join("crates/voxel-client/tests/fixtures/old-drawing");
@@ -211,13 +229,21 @@ fn an_old_declaration_is_refused_by_name_and_the_version_in_force_keeps_drawing(
 /// by file and line, and **nothing on screen may move** — not the arrangement, not the version, and
 /// therefore not one raster run of the frame: the drawing already on screen keeps drawing.
 #[test]
-fn a_display_package_that_arrives_after_boot_selects_its_drawing_and_a_refused_one_changes_nothing() {
+fn a_display_package_that_arrives_after_boot_selects_its_drawing_and_a_refused_one_changes_nothing()
+{
     let mut mount = mounted_shell();
-    assert_eq!(mount.cell_version(), cells::CellVersion::Holo, "the boot package declares Holo");
+    assert_eq!(
+        mount.cell_version(),
+        cells::CellVersion::Holo,
+        "the boot package declares Holo"
+    );
     let boot = composed(&mut mount);
     let boot_drawing = drawn(&mount, &boot);
     assert_eq!(boot_drawing, cells::frames_in(&boot, &mount.frame_space()));
-    assert_ne!(boot_drawing, boot, "the boot drawing is the composed elements");
+    assert_ne!(
+        boot_drawing, boot,
+        "the boot drawing is the composed elements"
+    );
 
     // ---- the package arrives, after boot ----------------------------------
     let arriving = staging("arriving");
@@ -234,7 +260,10 @@ fn a_display_package_that_arrives_after_boot_selects_its_drawing_and_a_refused_o
         cells::CellVersion::Elements,
         "the arriving package's `cells 0` did not select the old drawing"
     );
-    let windows: Vec<&str> = mount.windows().map(|window| window.spec.id.as_str()).collect();
+    let windows: Vec<&str> = mount
+        .windows()
+        .map(|window| window.spec.id.as_str())
+        .collect();
     assert_eq!(
         windows,
         vec!["console"],
@@ -242,7 +271,10 @@ fn a_display_package_that_arrives_after_boot_selects_its_drawing_and_a_refused_o
     );
 
     let arrived = composed(&mut mount);
-    assert!(!arrived.is_empty(), "the arriving arrangement composed no elements");
+    assert!(
+        !arrived.is_empty(),
+        "the arriving arrangement composed no elements"
+    );
     let arrived_drawing = drawn(&mount, &arrived);
     assert_eq!(
         arrived_drawing, arrived,
@@ -281,10 +313,20 @@ fn a_display_package_that_arrives_after_boot_selects_its_drawing_and_a_refused_o
         cells::CellVersion::Elements,
         "the refused package took the drawing in force"
     );
-    let still: Vec<&str> = mount.windows().map(|window| window.spec.id.as_str()).collect();
-    assert_eq!(still, vec!["console"], "the refused package took the arrangement");
+    let still: Vec<&str> = mount
+        .windows()
+        .map(|window| window.spec.id.as_str())
+        .collect();
+    assert_eq!(
+        still,
+        vec!["console"],
+        "the refused package took the arrangement"
+    );
     let after = composed(&mut mount);
-    assert_eq!(after, arrived, "the refused package changed the frame on screen");
+    assert_eq!(
+        after, arrived,
+        "the refused package changed the frame on screen"
+    );
     assert_eq!(
         drawn(&mount, &after),
         arrived_drawing,

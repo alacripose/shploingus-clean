@@ -3227,6 +3227,7 @@ dependencies = [
 name = "voxel-axis-verify"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "voxel-axis-claim",
  "voxel-axis-coverage",
  "voxel-axis-ladder",

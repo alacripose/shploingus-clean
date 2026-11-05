@@ -1,0 +1,25 @@
+{
+  "what": "map-frame-coverage",
+  "why": "Every map view draws the same 54 × 17 measured disc; a view that loses full-ink cells is a view that stopped answering its feature, and a blank view is visible here as a count of zero.",
+  "package": "voxel-package",
+  "recipe": "voxel-mapframe --check, seed 9418646105956113635, tick 3/8 day, 32 m per cell, 128 m centring rings to 12.3 km",
+  "measured": "2026-10-26",
+  "commit": "6049414 + working tree",
+  "rows": [
+    { "name": "world views declared", "value": 7, "must": "equal" },
+    { "name": "cells in one view", "value": 918, "of": 918, "must": "equal" },
+    { "name": "default view selected cells", "value": 918, "of": 918, "must": "equal" },
+    { "name": "ocean view selected cells", "value": 578, "of": 918, "must": "equal" },
+    { "name": "mountain view selected cells", "value": 49, "of": 918, "must": "equal" },
+    { "name": "forest view selected cells", "value": 89, "of": 918, "must": "equal" },
+    { "name": "grassland view selected cells", "value": 86, "of": 918, "must": "equal" },
+    { "name": "desert view selected cells", "value": 42, "of": 918, "must": "equal" },
+    { "name": "tundra view selected cells", "value": 204, "of": 918, "must": "equal" }
+  ],
+  "unstable": [
+    {
+      "name": "tropical rainforest cells within 12.3 km",
+      "note": "Zero at this seed and tick, so no rainforest view is declared: a view that selects none of 918 cells is a blank selection, not a map. The zero is a measurement of this world, not a threshold that a later pass may quietly lower."
+    }
+  ]
+}

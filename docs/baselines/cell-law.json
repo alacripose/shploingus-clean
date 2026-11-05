@@ -1,0 +1,23 @@
+{
+  "what": "profile32-cell-volume",
+  "why": "A per-axis cell's occupancy is the product of its cuts' coverages at 32 divisions an axis; these volumes are the law's witnesses, so a shaper's share cannot be an assertion dressed as a measurement.",
+  "package": "voxel-model",
+  "recipe": "cargo run -p voxel-model --example profile32-shapes; Cell::volume over the 32^3 grid",
+  "measured": "2026-10-26",
+  "commit": "6049414 + working tree",
+  "rows": [
+    { "name": "profile cells per axis", "value": 32, "must": "equal" },
+    { "name": "profile cells per block", "value": 32768, "must": "equal" },
+    { "name": "solid block volume", "value": 1.0, "must": "equal" },
+    { "name": "plane through the block's centre", "value": 0.5, "must": "equal" },
+    { "name": "one-cell skin volume", "value": 0.03125, "must": "equal" },
+    { "name": "leaning top volume", "value": 0.5, "must": "equal" },
+    { "name": "three-cut corner volume", "value": 0.125, "must": "equal" }
+  ],
+  "unstable": [
+    {
+      "name": "cell volume in a drawn frame",
+      "note": "Not measured: no drawn face reads Cell yet. The mesh carrier and the shading.wgsl arm are owed, so there is no frame cost to put here and no image to compare."
+    }
+  ]
+}

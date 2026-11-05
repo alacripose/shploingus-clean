@@ -122,7 +122,10 @@ pub struct ClockFormat {
 
 impl ClockFormat {
     /// The reference's own defaults: `clock_24hr: True`, `show_date: False` (3741–3745).
-    pub const REFERENCE: Self = Self { twenty_four_hour: true, show_date: false };
+    pub const REFERENCE: Self = Self {
+        twenty_four_hour: true,
+        show_date: false,
+    };
 
     /// How many lines the clock draws — the reference's `MM/dd/yyyy\nHH:mm` is two (3661).
     pub fn lines(self) -> usize {
@@ -157,7 +160,11 @@ pub fn clock_text(format: ClockFormat, time: &str, date: Option<&str>) -> String
 pub fn entries(running: &[Running]) -> Vec<BarEntry> {
     running
         .iter()
-        .map(|entry| BarEntry { id: entry.id.clone(), tab: false, label: entry.label.clone() })
+        .map(|entry| BarEntry {
+            id: entry.id.clone(),
+            tab: false,
+            label: entry.label.clone(),
+        })
         .collect()
 }
 
@@ -233,15 +240,27 @@ mod tests {
 
     #[test]
     fn the_clock_s_format_is_the_reference_s_two_settings() {
-        assert_eq!(ClockFormat::default(), ClockFormat { twenty_four_hour: false, show_date: false });
+        assert_eq!(
+            ClockFormat::default(),
+            ClockFormat {
+                twenty_four_hour: false,
+                show_date: false
+            }
+        );
         let reference = ClockFormat::REFERENCE;
         assert!(reference.twenty_four_hour);
         assert!(!reference.show_date);
         assert_eq!(reference.lines(), 1);
-        let dated = ClockFormat { twenty_four_hour: true, show_date: true };
+        let dated = ClockFormat {
+            twenty_four_hour: true,
+            show_date: true,
+        };
         assert_eq!(dated.lines(), 2);
         assert_eq!(clock_text(reference, "09:41", Some("10/03/2026")), "09:41");
-        assert_eq!(clock_text(dated, "09:41", Some("10/03/2026")), "10/03/2026\n09:41");
+        assert_eq!(
+            clock_text(dated, "09:41", Some("10/03/2026")),
+            "10/03/2026\n09:41"
+        );
         // A date line with no date string draws the time alone rather than a blank line.
         assert_eq!(clock_text(dated, "09:41", None), "09:41");
         assert_eq!(clock_text(dated, "09:41", Some("  ")), "09:41");
@@ -253,7 +272,10 @@ mod tests {
         let list = running([&a], Some("a"), |id| vec![id.to_string()]);
         let entries = entries(&list);
         assert_eq!(entries.len(), 1);
-        assert!(!entries[0].tab, "a running entry names a window; a tab sorts declared ones");
+        assert!(
+            !entries[0].tab,
+            "a running entry names a window; a tab sorts declared ones"
+        );
         assert_eq!(entries[0].label, "a");
     }
 }

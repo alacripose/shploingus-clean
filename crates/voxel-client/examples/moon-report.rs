@@ -27,9 +27,14 @@ fn main() {
     let sun = voxel_shapers::sky::solar_position(&spec, tick);
     let moon = voxel_shapers::sky::moon_position(&spec, tick, 0);
     println!("tick {tick}");
-    println!("  sun  alt {:7.2}  az {:6.1}", sun.altitude_deg, sun.azimuth_deg);
-    println!("  moon alt {:7.2}  az {:6.1}  elongation {:.1}  phase {:.3}",
-        moon.altitude_deg, moon.azimuth_deg, moon.elongation_deg, moon.phase_fraction);
+    println!(
+        "  sun  alt {:7.2}  az {:6.1}",
+        sun.altitude_deg, sun.azimuth_deg
+    );
+    println!(
+        "  moon alt {:7.2}  az {:6.1}  elongation {:.1}  phase {:.3}",
+        moon.altitude_deg, moon.azimuth_deg, moon.elongation_deg, moon.phase_fraction
+    );
 
     let to_body = voxel_shapers::sky::direction_of(moon.altitude_deg, moon.azimuth_deg);
     let to_sun = voxel_shapers::sky::direction_of(sun.altitude_deg, sun.azimuth_deg);
@@ -40,7 +45,11 @@ fn main() {
     let mut lit_faces = 0;
     for (i, a) in axes.iter().enumerate() {
         let facing_eye = a[0] * to_body[0] + a[1] * to_body[1] + a[2] * to_body[2];
-        let n = if facing_eye < 0.0 { [-a[0], -a[1], -a[2]] } else { *a };
+        let n = if facing_eye < 0.0 {
+            [-a[0], -a[1], -a[2]]
+        } else {
+            *a
+        };
         let inc = (n[0] * to_sun[0] + n[1] * to_sun[1] + n[2] * to_sun[2]).max(0.0);
         if facing_eye < 0.0 && inc > 0.0 {
             lit_faces += 1;
@@ -71,5 +80,7 @@ fn main() {
     let inc = (n[0] * to_sun[0] + n[1] * to_sun[1] + n[2] * to_sun[2]).max(0.0);
     best = best.max(inc);
     let verdict = if inc > 0.0 { "LIT" } else { "BLACK" };
-    println!("  entry face (axis {dominant}) incidence {inc:.3}  -> the whole visible face is {verdict}");
+    println!(
+        "  entry face (axis {dominant}) incidence {inc:.3}  -> the whole visible face is {verdict}"
+    );
 }

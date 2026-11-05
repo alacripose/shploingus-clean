@@ -17,7 +17,7 @@
 //! witness in that binary, that ratio moved from **1.1×** to **5.6×** and failed; in this binary the
 //! GPU work is the only thing on the machine and both checks mean what they say.
 
-use voxel_client::hud::{HudState, HudRenderer};
+use voxel_client::hud::{HudRenderer, HudState};
 use voxel_client::shell;
 use voxel_model::Digest;
 use voxel_ui::{Element, Palette, Rect};
@@ -38,7 +38,11 @@ struct Target {
 fn target(device: &wgpu::Device) -> Target {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("settled frame"),
-        size: wgpu::Extent3d { width: W, height: H, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: W,
+            height: H,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -47,15 +51,20 @@ fn target(device: &wgpu::Device) -> Target {
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let padded_row_bytes = (W * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
-        * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+    let padded_row_bytes =
+        (W * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
     let readback = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("settled frame readback"),
         size: u64::from(padded_row_bytes) * u64::from(H),
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    Target { texture, view, readback, padded_row_bytes }
+    Target {
+        texture,
+        view,
+        readback,
+        padded_row_bytes,
+    }
 }
 
 /// Draw what `hud` holds into `target` over black, and read the pixels back.
@@ -65,8 +74,9 @@ fn shot(
     hud: &mut HudRenderer,
     target: &Target,
 ) -> Vec<[u8; 4]> {
-    let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("shot") });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("shot"),
+    });
     {
         let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("backdrop"),
@@ -101,7 +111,11 @@ fn shot(
                 rows_per_image: Some(H),
             },
         },
-        wgpu::Extent3d { width: W, height: H, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: W,
+            height: H,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
 
@@ -111,9 +125,15 @@ fn shot(
         let _ = sender.send(result);
     });
     device
-        .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
         .expect("poll");
-    receiver.recv().expect("the map callback runs").expect("the map succeeds");
+    receiver
+        .recv()
+        .expect("the map callback runs")
+        .expect("the map succeeds");
     let data = slice.get_mapped_range().expect("the range is mapped");
     let stride = target.padded_row_bytes as usize;
     let mut out = Vec::with_capacity((W * H) as usize);
@@ -153,7 +173,10 @@ fn elements(mount: &mut shell::Mount) -> Vec<Element> {
         tick: 9_432,
         digest: Digest::of(b"the resident world"),
         refusal: None,
-        shading: voxel_client::shading::ShadingReport { materials: 7, with_base_colour: 7 },
+        shading: voxel_client::shading::ShadingReport {
+            materials: 7,
+            with_base_colour: 7,
+        },
     };
     let views = shell::hud::views(&state, mount.console(), mount.api_view().cloned());
     shell::hud::frame(mount, &Palette::declared(), mount.viewport(), &views)
@@ -171,8 +194,12 @@ fn a_settled_frame_draws_the_same_pixels_as_the_frame_it_repeats() {
     let target = target(&device);
 
     let mut hud = HudRenderer::new(&device, &queue, FORMAT);
-    hud.prepare(&device, &queue, (W, H), 1.0, &frame, &[]).expect("the shell prepares");
-    let runs = frame.iter().filter(|element| element.text().is_some()).count();
+    hud.prepare(&device, &queue, (W, H), 1.0, &frame, &[])
+        .expect("the shell prepares");
+    let runs = frame
+        .iter()
+        .filter(|element| element.text().is_some())
+        .count();
     assert!(runs > 10, "the shell's own frame is text: {runs} runs");
     let shaped = hud.shaped_runs();
     println!("the shell's frame: {shaped} shape(s) for {runs} run(s)");
@@ -182,11 +209,19 @@ fn a_settled_frame_draws_the_same_pixels_as_the_frame_it_repeats() {
     );
     let first = shot(&device, &queue, &mut hud, &target);
 
-    hud.prepare(&device, &queue, (W, H), 1.0, &frame, &[]).expect("the repeat prepares");
-    assert_eq!(hud.settled_frames(), 1, "a frame that says the same thing is recognised");
+    hud.prepare(&device, &queue, (W, H), 1.0, &frame, &[])
+        .expect("the repeat prepares");
+    assert_eq!(
+        hud.settled_frames(),
+        1,
+        "a frame that says the same thing is recognised"
+    );
     assert_eq!(hud.shaped_runs(), 0, "and it shapes nothing");
     let repeated = shot(&device, &queue, &mut hud, &target);
-    assert_eq!(repeated, first, "a settled frame is the same picture, pixel for pixel");
+    assert_eq!(
+        repeated, first,
+        "a settled frame is the same picture, pixel for pixel"
+    );
 
     // One counter moves, which is the frame the game actually draws.
     // The streamer window's mesh readout, which moves every frame of a live run.
@@ -201,8 +236,12 @@ fn a_settled_frame_draws_the_same_pixels_as_the_frame_it_repeats() {
             }
         }
     }
-    assert!(touched, "the shell's streamer window reports its mesh against the ceiling");
-    hud.prepare(&device, &queue, (W, H), 1.0, &changed, &[]).expect("the changed frame prepares");
+    assert!(
+        touched,
+        "the shell's streamer window reports its mesh against the ceiling"
+    );
+    hud.prepare(&device, &queue, (W, H), 1.0, &changed, &[])
+        .expect("the changed frame prepares");
     assert_eq!(hud.shaped_runs(), 1, "one run was shaped, not every run");
     let incremental = shot(&device, &queue, &mut hud, &target);
 
@@ -215,5 +254,8 @@ fn a_settled_frame_draws_the_same_pixels_as_the_frame_it_repeats() {
         incremental, scratch,
         "reused bands and a from-scratch prepare drew the same pixels"
     );
-    assert_ne!(incremental, first, "and the changed run changed the picture");
+    assert_ne!(
+        incremental, first,
+        "and the changed run changed the picture"
+    );
 }

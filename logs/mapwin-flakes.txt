@@ -1,0 +1,4 @@
+renderer::tests::the_sun_is_drawn_as_the_cuboid_the_model_says: exit=0 2s — test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 655 filtered out; finished in 1.01s
+world::tests::a_patched_record_buffer_draws_the_frame_an_encoded_one_draws: exit=0 2s — test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 655 filtered out; finished in 1.49s
+world::tests::a_resident_scene_lands_whole_in_a_pipeline_that_has_just_allocated_its_records: exit=0 2s — test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 655 filtered out; finished in 1.52s
+world::tests::a_scene_arriving_allocates_no_corner_buffer: exit=0 2s — test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 655 filtered out; finished in 1.27s

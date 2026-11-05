@@ -44,11 +44,11 @@
 //!
 //! The images land in `target/material-cube/`, one PPM per layer per cube.
 
+use voxel_appearance::npr::LightRig;
 use voxel_client::camera::Camera;
 use voxel_client::renderer::Renderer;
 use voxel_client::scene::Scene;
 use voxel_client::shading::{self, GpuRig};
-use voxel_appearance::npr::LightRig;
 use voxel_mesh::{Mesh, MeshStats, Quad, RefineConfig};
 use voxel_model::{ChunkPos, DisplacementField, Face, MaterialId, Profile};
 
@@ -100,7 +100,10 @@ fn main() {
         .expect("a pillar's cap is inside its own block and is declarable");
     let config = RefineConfig::new(4, 4096).expect("4 samples per block is inside the level");
     let refined = Scene::build([&a_cube()], [0.0; 3], Some(&cut), Some(&config));
-    assert_eq!(refined.bent_quads, 1, "the law reached the roof and no other face");
+    assert_eq!(
+        refined.bent_quads, 1,
+        "the law reached the roof and no other face"
+    );
     assert!(
         !refined.vertices.is_empty(),
         "a bent quad is carried as corners, not as a record"
@@ -157,7 +160,11 @@ fn a_cube() -> Mesh {
         .into_iter()
         .map(|face| Quad {
             face,
-            slice: if face.is_positive() { BLOCK_SUBVOXELS } else { 0 },
+            slice: if face.is_positive() {
+                BLOCK_SUBVOXELS
+            } else {
+                0
+            },
             uv: [0, 0],
             extent: [BLOCK_SUBVOXELS, BLOCK_SUBVOXELS],
             material: ROCK,

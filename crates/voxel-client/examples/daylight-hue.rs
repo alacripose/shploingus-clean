@@ -35,7 +35,11 @@ use voxel_shapers::{Config, WorldSpec};
 /// band (it was 0.2086 while the window ran to 0.75 µm and caught the red edge).**
 /// Read beside `r/g`: 1.50 then, 1.07 now, and the `r/g` column below shows what
 /// the shipped daylight does to that material over a year.
-const GRASS: LinearRgb = LinearRgb { r: 0.1492, g: 0.1393, b: 0.0654 };
+const GRASS: LinearRgb = LinearRgb {
+    r: 0.1492,
+    g: 0.1393,
+    b: 0.0654,
+};
 
 /// The shipped time of day: `GAME_TICK = TICKS_PER_DAY * 3 / 8`.
 const TOD: u64 = TICKS_PER_DAY * 3 / 8;
@@ -60,8 +64,18 @@ fn main() {
     println!();
     println!(
         "{:>9} {:>7} {:>7} {:>7} | {:>7} {:>7} {:>7} {:>6} | {:>7} {:>7} {:>7} | {:>7}",
-        "tick", "day", "alt", "beam", "sun r", "sun g", "sun b", "r/g", "amb r", "amb g",
-        "amb b", "lit r/g"
+        "tick",
+        "day",
+        "alt",
+        "beam",
+        "sun r",
+        "sun g",
+        "sun b",
+        "r/g",
+        "amb r",
+        "amb g",
+        "amb b",
+        "lit r/g"
     );
 
     // A year in twelve steps, each at the shipped time of day.
@@ -80,7 +94,11 @@ fn main() {
             .lights
             .first()
             .map(|l| l.colour)
-            .unwrap_or(LinearRgb { r: 0.0, g: 0.0, b: 0.0 });
+            .unwrap_or(LinearRgb {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+            });
         let ambient = daylight.rig.ambient;
         // Arithmetic on the two printed factors: albedo × (beam + ambient), lambert 1.
         let lit = LinearRgb {
@@ -108,9 +126,7 @@ fn main() {
         );
     }
     println!();
-    println!(
-        "the sun's chromaticity is red-dominant (r/g > 1) on {warm} of {rows} sampled days"
-    );
+    println!("the sun's chromaticity is red-dominant (r/g > 1) on {warm} of {rows} sampled days");
     println!(
         "**Read the two r/g columns apart.** The albedo's {:.3} is the material and the \
          atmosphere cannot change it; the lit column is what the two factors do together.",

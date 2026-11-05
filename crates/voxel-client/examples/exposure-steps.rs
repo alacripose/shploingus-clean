@@ -68,7 +68,9 @@ fn main() {
     // The onset layer is a function of `(x, z, tick)`: the rain moves over a standing player,
     // so this axis can step with no movement at all. It is measured first because if the
     // temporal steps are as large as the spatial ones then walking is not the cause.
-    println!("== standing still at the origin, one update per {CADENCE_TICKS} ticks, over a day ==");
+    println!(
+        "== standing still at the origin, one update per {CADENCE_TICKS} ticks, over a day =="
+    );
     let mut time_series = Vec::new();
     for k in 0..(per_day / CADENCE_TICKS) {
         let tick = start + k * CADENCE_TICKS;
@@ -146,8 +148,14 @@ fn main() {
 
     // ---- across space: the player walks, the tick stands still --------------------
     println!("\n== walking east at a fixed tick, one update per step of ground covered ==");
-    println!("   (the step the player gets is walk speed x {:.1} s of real time)\n", seconds(CADENCE_TICKS));
-    println!("  {:>6}  {:>11}  {:>12}  {:>12}  {:>12}", "step m", "max dturb", "% of mean", "max dintens", "max dambient");
+    println!(
+        "   (the step the player gets is walk speed x {:.1} s of real time)\n",
+        seconds(CADENCE_TICKS)
+    );
+    println!(
+        "  {:>6}  {:>11}  {:>12}  {:>12}  {:>12}",
+        "step m", "max dturb", "% of mean", "max dintens", "max dambient"
+    );
     for step_m in [0.25f64, 0.5, 0.86, 1.5, 3.0, 6.0, 12.0] {
         let mut series = Vec::new();
         let mut x = 0.0f64;
@@ -186,7 +194,16 @@ fn main() {
     let (dt, dt_rel) = worst(&series, |r| r.turbidity);
     let (di, di_rel) = worst(&series, |r| r.sun_intensity);
     let (da, da_rel) = worst(&series, |r| r.ambient);
-    println!("  worst step in turbidity:      {dt:>9.4}  ({:>6.1}%)", dt_rel * 100.0);
-    println!("  worst step in sun intensity:  {di:>9.6}  ({:>6.1}%)", di_rel * 100.0);
-    println!("  worst step in ambient:        {da:>9.6}  ({:>6.1}%)", da_rel * 100.0);
+    println!(
+        "  worst step in turbidity:      {dt:>9.4}  ({:>6.1}%)",
+        dt_rel * 100.0
+    );
+    println!(
+        "  worst step in sun intensity:  {di:>9.6}  ({:>6.1}%)",
+        di_rel * 100.0
+    );
+    println!(
+        "  worst step in ambient:        {da:>9.6}  ({:>6.1}%)",
+        da_rel * 100.0
+    );
 }

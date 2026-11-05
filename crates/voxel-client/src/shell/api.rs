@@ -317,14 +317,20 @@ mod tests {
         assert_eq!(rows[0].label, "document");
         assert_eq!(rows[0].value, voxel_package::apidoc::TITLE);
         assert!(
-            rows.iter().position(|row| row.label == "section") < rows.iter().position(|row| row.value.contains("- windows: 2")),
+            rows.iter().position(|row| row.label == "section")
+                < rows
+                    .iter()
+                    .position(|row| row.value.contains("- windows: 2")),
             "the outline leads and the body trails: {rows:?}"
         );
         assert!(
-            rows.iter().any(|row| row.label == "section" && row.value == "Asked for"),
+            rows.iter()
+                .any(|row| row.label == "section" && row.value == "Asked for"),
             "the renderer's heading is kept verbatim: {rows:?}"
         );
-        assert!(rows.iter().any(|row| row.label == "section" && row.value == "Declares"));
+        assert!(rows
+            .iter()
+            .any(|row| row.label == "section" && row.value == "Declares"));
         assert!(
             rows.iter().any(|row| row.value.contains("- windows: 2")),
             "the renderer's lines are not rewritten: {rows:?}"
@@ -345,18 +351,32 @@ mod tests {
             "the star row is the matrix's own glyphs: {}",
             row.value
         );
-        assert!(row.value.contains("silver"), "the computed tier: {}", row.value);
+        assert!(
+            row.value.contains("silver"),
+            "the computed tier: {}",
+            row.value
+        );
         assert!(row.value.contains("BLD-0187"), "the ticket: {}", row.value);
-        assert_eq!(view.matrix.cell(Segment::Shell, AxisKind::EvidenceGrade).unwrap().tier(), Some(CertificationTier::Silver));
+        assert_eq!(
+            view.matrix
+                .cell(Segment::Shell, AxisKind::EvidenceGrade)
+                .unwrap()
+                .tier(),
+            Some(CertificationTier::Silver)
+        );
     }
 
     #[test]
     fn an_unchecked_cell_is_named_and_its_refusal_is_carried() {
         let view = ApiView::of(document(), vec![populated_cell(), unchecked_cell()]);
-        assert!(!view.is_verified(), "a cell with no witness is not verified");
+        assert!(
+            !view.is_verified(),
+            "a cell with no witness is not verified"
+        );
         let rows = view.rows();
         assert!(
-            rows.iter().any(|row| row.label == "unchecked" && row.value == "world/grade"),
+            rows.iter()
+                .any(|row| row.label == "unchecked" && row.value == "world/grade"),
             "the unchecked cell is named as such: {rows:?}"
         );
         let refusal = view
@@ -369,8 +389,8 @@ mod tests {
             voxel_model::refusal::RefusalKind::UncalibratedOracle
         );
         assert!(
-            rows.iter().any(|row| row.label == refusal.kind().name()
-                && row.value.contains("unchecked")),
+            rows.iter()
+                .any(|row| row.label == refusal.kind().name() && row.value.contains("unchecked")),
             "the refusal is a row rather than a count: {rows:?}"
         );
         assert!(view.tail().contains("2 cell(s)"), "{}", view.tail());
@@ -388,7 +408,13 @@ mod tests {
             view.refusals
         );
         // Seven segments, one cell: six absences, and the pane is not blank for them.
-        assert!(view.rows().iter().filter(|row| row.label == "uncovered_axis").count() >= 6);
+        assert!(
+            view.rows()
+                .iter()
+                .filter(|row| row.label == "uncovered_axis")
+                .count()
+                >= 6
+        );
     }
 
     #[test]
@@ -421,7 +447,10 @@ mod tests {
         // **The spine survives and the prose does not** — the order `rows` documents, and the
         // api-viewer window's own 358 dp pane holds the title and two headings with room to spare.
         assert!(
-            panel.rows.iter().any(|row| row.label == "document" && row.value == voxel_package::apidoc::TITLE),
+            panel
+                .rows
+                .iter()
+                .any(|row| row.label == "document" && row.value == voxel_package::apidoc::TITLE),
             "the title is never dropped: {:?}",
             panel.rows
         );

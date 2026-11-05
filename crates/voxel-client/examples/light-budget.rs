@@ -19,8 +19,8 @@ use std::cell::RefCell;
 
 use voxel_client::Scene;
 use voxel_mesh::{Chunk, MeshConfig, Mesher};
-use voxel_stream::WorldSource;
 use voxel_shapers::{Config, WorldSpec};
+use voxel_stream::WorldSource;
 
 fn main() {
     let source = WorldSource::new(WorldSpec::new(2468, Config::default()));
@@ -101,5 +101,8 @@ fn main() {
         }
     }
     println!("corner(s) whose own cell was never asked for: {missing}");
-    assert_eq!(missing, 0, "the scene and the field are on two different grains");
+    assert_eq!(
+        missing, 0,
+        "the scene and the field are on two different grains"
+    );
 }

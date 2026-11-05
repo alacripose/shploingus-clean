@@ -1,9 +1,15 @@
 # The 1/32 profile: the surface law a tree is drawn with
 
-**Status: designed and sampled, not yet drawn.** `voxel_model::profile32` exists, is
-addressable and is tested. Nothing in the renderer reads it yet, and no tree is built
-from it: this document is the constraint that pass builds against, and it says plainly
-which half is code and which half is owed.
+**Status: the law is implemented and sampled; the renderer carrier is still owed.**
+`voxel_model::profile32` holds **two** records at the same 1/32 denominator — `Shaped`,
+a body of revolution, and `Cell`, the per-axis cell a terrain shaper samples. Both are
+addressable and tested. No tree is built from `Shaped` yet and no drawn face reads
+`Cell` yet: the carrier is the next unit, and this document says plainly which half is
+code and which half is owed.
+
+**The column is not a 3D shape here.** A column-shaped record belongs only to the 2D
+cell renderer (the shell's cell raster and its map window). The world is cubic: a block
+is a cuboid, and its interior is addressed at 1/32 per axis by `Cell`.
 
 ## The gap this fills
 
@@ -89,6 +95,45 @@ inside them: a bent normal on a cube is an *approximation* ("fake wrapping"), wh
 At the resolution where a trunk is 12 cells across, that difference is the difference
 between a pipe and a pizza box.
 
+## The per-axis cell: three cuts, one denominator
+
+A tree organ is a surface of revolution; a terrain cell is not. A ramp's top leans in
+both horizontal axes, a cliff has a side, and a corner is three planes at once. Bending
+`Shaped` into those shapes would be a profile pretending to be something it is not, so
+the per-axis case has its own record:
+
+```text
+Cell { cuts: [Option<AxisCut>; 3] }
+AxisCut { at, inside, lean: [f64; 2] }
+```
+
+`AxisCut` is **one plane per axis**, evaluated at the sample's own position:
+
+```text
+plane(p) = at + lean[0]·(p[i] − ½) + lean[1]·(p[j] − ½)
+inside   = clamp((inside · (p[axis] − plane)) / (1/32 · |∇|) + ½, 0, 1)
+```
+
+`lean` is the point-based gradient: a 45° ramp on a Y cut has a lean of `1` along the
+axis it rises along, and the anti-aliasing width is measured **perpendicular to the
+plane**, so a leaning cut still crosses exactly one 1/32 cell. The cell is the
+intersection of its cuts — `coverage` is the product — and `Cell::normal` returns the
+normal of the cut the point is nearest to. At a corner that choice is stated rather
+than blended: the lowest axis wins, because an averaged normal would be a fourth
+surface nobody declared.
+
+The measured witness is `Cell::volume`, the mean coverage over the 32³ grid. A plane at
+half the block is `0.5`; one profile cell from the top is `0.03125`; three half-spaces
+are `0.125`. It is a witness and not a frame cost — the grid is never walked per frame,
+exactly as a profile is never stored. The witnesses are rows in
+`docs/baselines/cell-law.json`, so they are re-run rather than quoted.
+
+This is the format the terrain shapers that were refused for want of a per-axis law
+were missing; **no drawn face reads it yet**, because the carrier below is still owed.
+A `Cell` says *which part of this cuboid*, at the same denominator a fluid's fill uses;
+it does not make a column, and it does not change the stored 4×4×4 shape that movement
+and collision read.
+
 ## Growth: one integer, and a blend
 
 `stage` is developmental progress, not time. It is 1/1024ths so a species can declare a
@@ -149,6 +194,8 @@ resolution — and it is the one place this design budgets a rebuild.
 ## What this refuses
 
 * **A stored 32³ grid.** 4 KiB a block for a shape a law answers in four multiplies.
+* **A column in the 3D world.** The column record is the 2D cell renderer's; a block
+  is a cuboid, and `Cell` is its interior at 1/32.
 * **A second ladder.** `FILL_SIDE` is the resolution; no new `PROFILE_LEVELS` table.
 * **A growth tick in the renderer.** Stage is data, and who advances it is the being's
   business, not the frame's.
@@ -162,10 +209,13 @@ resolution — and it is the one place this design budgets a rebuild.
 1. **The mesh carrier.** `Mesh` has `origin` (a body's own corner) and 1 m quads. A
    profiled block needs to carry a `Shaped` record per profiled voxel — the smallest
    form is a parallel array in the chunk's own upload, indexed by voxel — so the
-   fragment shader can displace and normal-bend inside a block it already draws.
+   fragment shader can displace and normal-bend inside a block it already draws. The
+   **cell carrier** is the same slot for `Cell`: a per-voxel record the fragment reads
+   instead of a flat top. Neither carrier exists yet.
 2. **The shader arm.** `shading.wgsl` evaluates the record: radial coverage, the flute,
-   the axial taper, the exact normal. This is the pass that makes the trunk round, and
-   it is a fragment cost, not a geometry cost.
+   the axial taper, the exact normal — and, for a `Cell`, its three cuts and limiting
+   plane. This is the pass that makes the trunk round and the cell a ramp instead of a
+   staircase at 1/32, and it is a fragment cost, not a geometry cost.
 3. **The organ graph and the species slice stacks**, from GAIA §5.6–5.7, in
    `voxel-shapers`, so the records are produced rather than hand-authored.
 4. **The light's opinion of a body.** The horizon march and the shadow map still see

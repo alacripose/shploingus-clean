@@ -337,7 +337,11 @@ pub struct Motion {
 impl Motion {
     /// A body standing on `feet`, at rest.
     pub fn standing(feet: [f64; 3]) -> Self {
-        Motion { feet, velocity: [0.0; 3], grounded: true }
+        Motion {
+            feet,
+            velocity: [0.0; 3],
+            grounded: true,
+        }
     }
 }
 
@@ -350,7 +354,11 @@ pub fn eye(feet: [f64; 3]) -> [f64; 3] {
 
 /// The eye for a pose: [`EYE_HEIGHT`] standing, [`SNEAK_EYE_HEIGHT`] sneaking.
 pub fn eye_for(feet: [f64; 3], sneaking: bool) -> [f64; 3] {
-    let height = if sneaking { SNEAK_EYE_HEIGHT } else { EYE_HEIGHT };
+    let height = if sneaking {
+        SNEAK_EYE_HEIGHT
+    } else {
+        EYE_HEIGHT
+    };
     [feet[0], feet[1] + height, feet[2]]
 }
 
@@ -434,8 +442,16 @@ impl Player {
         // The **pose's height is interpolated too**, so a crouch eases over a step
         // rather than snapping the drawn eye down 0.35 m in one frame. The physics
         // eye is still the step's own pose; this is the drawn one.
-        let from = if self.previous_sneaking { SNEAK_EYE_HEIGHT } else { EYE_HEIGHT };
-        let to = if self.sneaking { SNEAK_EYE_HEIGHT } else { EYE_HEIGHT };
+        let from = if self.previous_sneaking {
+            SNEAK_EYE_HEIGHT
+        } else {
+            EYE_HEIGHT
+        };
+        let to = if self.sneaking {
+            SNEAK_EYE_HEIGHT
+        } else {
+            EYE_HEIGHT
+        };
         [feet[0], feet[1] + from + (to - from) * alpha, feet[2]]
     }
 
@@ -484,7 +500,13 @@ pub fn step(m: &mut Motion, wish: &Wish, yaw_rad: f64, world: &impl Solidity) {
     }
 
     let sharking = SHARKING_ENABLED
-        && disc_in_water(world, m.feet[0], m.feet[2], m.feet[1], m.feet[1] + BODY_HEIGHT)
+        && disc_in_water(
+            world,
+            m.feet[0],
+            m.feet[2],
+            m.feet[1],
+            m.feet[1] + BODY_HEIGHT,
+        )
         && wish.jump
         && ceiling_over(world, m.feet[0], m.feet[2], m.feet[1] + BODY_HEIGHT).is_none()
         && horizontal_speed(m.velocity) >= SHARK_MIN_SPEED;
@@ -542,7 +564,10 @@ fn wish_direction(wish: &Wish, yaw_rad: f64) -> (f64, f64) {
     let forward = wish.forward * scale;
     let strafe = wish.strafe * scale;
     let (sin_yaw, cos_yaw) = yaw_rad.sin_cos();
-    (forward * sin_yaw + strafe * cos_yaw, forward * cos_yaw - strafe * sin_yaw)
+    (
+        forward * sin_yaw + strafe * cos_yaw,
+        forward * cos_yaw - strafe * sin_yaw,
+    )
 }
 
 /// The speed the wish is asking for, in m/s.
@@ -639,7 +664,11 @@ fn apply_soft_cap(m: &mut Motion, base_speed: f64, speed: f64) {
 
 /// The reference's hard cap, applied when a jump was **not** a trimp.
 fn apply_hard_cap(m: &mut Motion, base_speed: f64) {
-    let cap = if UNCAPPED_BUNNYHOP { f64::INFINITY } else { base_speed * HARD_CAP_THRESHOLD };
+    let cap = if UNCAPPED_BUNNYHOP {
+        f64::INFINITY
+    } else {
+        base_speed * HARD_CAP_THRESHOLD
+    };
     let speed = horizontal_speed(m.velocity);
     if speed > cap && cap != 0.0 {
         let multiplier = cap / speed;
@@ -764,7 +793,13 @@ fn move_horizontal(m: &mut Motion, axis: usize, amount: f64, world: &impl Solidi
     // the body to the top of the ledge outright, is a teleport.
     let mut raised = flat;
     raised[1] = feet[1] + STEP_UP;
-    if !disc_hits(world, raised[0], raised[2], raised[1], raised[1] + BODY_HEIGHT) {
+    if !disc_hits(
+        world,
+        raised[0],
+        raised[2],
+        raised[1],
+        raised[1] + BODY_HEIGHT,
+    ) {
         m.feet = raised;
         m.grounded = false;
         m.velocity[1] = 0.0;
@@ -986,7 +1021,10 @@ mod tests {
         m
     }
 
-    const FORWARD: Wish = Wish { forward: 1.0, ..Wish::STILL };
+    const FORWARD: Wish = Wish {
+        forward: 1.0,
+        ..Wish::STILL
+    };
 
     /// **The step is the world clock's tick**, so the player can never move at a rate
     /// the world does not run on.
@@ -1057,7 +1095,13 @@ mod tests {
         let world = Floor { top: Cell::new(0) };
         let m = walk(&Wish::STILL, 300, &world);
         assert!(
-            !disc_hits(&world, m.feet[0], m.feet[2], m.feet[1], m.feet[1] + BODY_HEIGHT),
+            !disc_hits(
+                &world,
+                m.feet[0],
+                m.feet[2],
+                m.feet[1],
+                m.feet[1] + BODY_HEIGHT
+            ),
             "the body came to rest inside the world at {:?}",
             m.feet
         );
@@ -1069,7 +1113,12 @@ mod tests {
         let m = walk(&FORWARD, 600, &world);
         // The cylinder's skin stops one radius short of the wall's face at x 5.
         let limit = 5.0 - BODY_RADIUS;
-        assert!(m.feet[0] <= limit + 1e-9, "reached x {} past {}", m.feet[0], limit);
+        assert!(
+            m.feet[0] <= limit + 1e-9,
+            "reached x {} past {}",
+            m.feet[0],
+            limit
+        );
     }
 
     #[test]
@@ -1115,7 +1164,14 @@ mod tests {
         // the speed still missing, so the seek lands *on* the wish speed rather than
         // near it — the old file's drag/accel pair settled at `a / k` and this one
         // deliberately does not have that coupling.
-        let sprinted = walk(&Wish { sprint: true, ..FORWARD }, 300, &world);
+        let sprinted = walk(
+            &Wish {
+                sprint: true,
+                ..FORWARD
+            },
+            300,
+            &world,
+        );
         let sprint_speed = horizontal_speed(sprinted.velocity);
         assert!(
             (sprint_speed - WALK_SPEED * SPRINT_MULTIPLIER).abs() < 1e-12,
@@ -1148,7 +1204,11 @@ mod tests {
     #[test]
     fn a_diagonal_walk_is_not_faster_than_a_straight_one() {
         let world = Floor { top: Cell::new(0) };
-        let diagonal = Wish { forward: 1.0, strafe: 1.0, ..Wish::STILL };
+        let diagonal = Wish {
+            forward: 1.0,
+            strafe: 1.0,
+            ..Wish::STILL
+        };
         let a = walk(&FORWARD, 600, &world);
         let b = walk(&diagonal, 600, &world);
         let speed = horizontal_speed;
@@ -1166,14 +1226,22 @@ mod tests {
         let world = Floor { top: Cell::new(0) };
         let m = walk(&FORWARD, 300, &world);
         assert!(m.feet[2] > 1.0, "did not walk forward: {:?}", m.feet);
-        assert!((m.feet[0] - 0.5).abs() < 1e-9, "drifted sideways: {:?}", m.feet);
+        assert!(
+            (m.feet[0] - 0.5).abs() < 1e-9,
+            "drifted sideways: {:?}",
+            m.feet
+        );
 
         // A quarter turn walks +X instead.
         let mut turned = Motion::standing([0.5, 1.0, 0.5]);
         for _ in 0..300 {
             step(&mut turned, &FORWARD, std::f64::consts::FRAC_PI_2, &world);
         }
-        assert!(turned.feet[0] > 1.0, "did not walk right: {:?}", turned.feet);
+        assert!(
+            turned.feet[0] > 1.0,
+            "did not walk right: {:?}",
+            turned.feet
+        );
         // Not `1e-9`: `cos(PI/2)` is 6.1e-17, not zero, so a quarter turn carries a
         // residue of forward intent. The claim under test is that the walk is
         // *transverse*, so the tolerance is set against the motion it is
@@ -1191,7 +1259,14 @@ mod tests {
     #[test]
     fn sneaking_walks_at_the_references_sneak_speed() {
         let world = Floor { top: Cell::new(0) };
-        let m = walk(&Wish { sneak: true, ..FORWARD }, 300, &world);
+        let m = walk(
+            &Wish {
+                sneak: true,
+                ..FORWARD
+            },
+            300,
+            &world,
+        );
         let speed = horizontal_speed(m.velocity);
         assert!(
             (speed - SNEAK_SPEED).abs() < 1e-12,
@@ -1208,7 +1283,15 @@ mod tests {
         let world = Floor { top: Cell::new(0) };
         let mut m = Motion::standing([0.5, 1.0, 0.5]);
         let ground = m.feet[1];
-        step(&mut m, &Wish { jump: true, ..Wish::STILL }, 0.0, &world);
+        step(
+            &mut m,
+            &Wish {
+                jump: true,
+                ..Wish::STILL
+            },
+            0.0,
+            &world,
+        );
         let mut apex = m.feet[1];
         let mut steps_total = 1usize;
         let mut steps_rising = 1usize;
@@ -1249,7 +1332,10 @@ mod tests {
     #[test]
     fn holding_the_jump_key_re_launches_on_every_landing() {
         let world = Floor { top: Cell::new(0) };
-        let held = Wish { jump: true, ..Wish::STILL };
+        let held = Wish {
+            jump: true,
+            ..Wish::STILL
+        };
         let mut p = Player::new([0.5, 1.0, 0.5]);
         let mut launches = 0usize;
         for _ in 0..600 {
@@ -1271,14 +1357,30 @@ mod tests {
     #[test]
     fn a_held_jump_skips_the_ground_friction_a_released_one_keeps() {
         let world = Floor { top: Cell::new(0) };
-        let mut held = Motion { feet: [0.5, 1.0, 0.5], velocity: [0.0, 0.0, 8.0], grounded: true };
-        step(&mut held, &Wish { jump: true, ..FORWARD }, 0.0, &world);
+        let mut held = Motion {
+            feet: [0.5, 1.0, 0.5],
+            velocity: [0.0, 0.0, 8.0],
+            grounded: true,
+        };
+        step(
+            &mut held,
+            &Wish {
+                jump: true,
+                ..FORWARD
+            },
+            0.0,
+            &world,
+        );
         assert!(
             (horizontal_speed(held.velocity) - 8.0).abs() < 1e-12,
             "a held jump cost {} m/s of speed",
             8.0 - horizontal_speed(held.velocity)
         );
-        let mut released = Motion { feet: [0.5, 1.0, 0.5], velocity: [0.0, 0.0, 8.0], grounded: true };
+        let mut released = Motion {
+            feet: [0.5, 1.0, 0.5],
+            velocity: [0.0, 0.0, 8.0],
+            grounded: true,
+        };
         step(&mut released, &FORWARD, 0.0, &world);
         assert!(
             (horizontal_speed(released.velocity) - 8.0 * SLIPPERINESS).abs() < 1e-12,
@@ -1300,7 +1402,12 @@ mod tests {
             velocity: [0.0, 0.0, sprint_speed],
             grounded: true,
         };
-        let wish = Wish { forward: 1.0, sprint: true, jump: true, ..Wish::STILL };
+        let wish = Wish {
+            forward: 1.0,
+            sprint: true,
+            jump: true,
+            ..Wish::STILL
+        };
         step(&mut m, &wish, 0.0, &world);
         assert!(
             (horizontal_speed(m.velocity) - sprint_speed).abs() < 1e-12,
@@ -1321,12 +1428,22 @@ mod tests {
         assert!(trimping, "the user's ruling: rat king trimping stays on");
         let world = Floor { top: Cell::new(0) };
         let speed = 8.0;
-        let wish = Wish { forward: 1.0, sneak: true, jump: true, ..Wish::STILL };
-        let mut m = Motion { feet: [0.5, 1.0, 0.5], velocity: [0.0, 0.0, speed], grounded: true };
+        let wish = Wish {
+            forward: 1.0,
+            sneak: true,
+            jump: true,
+            ..Wish::STILL
+        };
+        let mut m = Motion {
+            feet: [0.5, 1.0, 0.5],
+            velocity: [0.0, 0.0, speed],
+            grounded: true,
+        };
         step(&mut m, &wish, 0.0, &world);
         let bonus = (speed / WALK_SPEED * 0.5).min(1.0);
         let expected_horizontal = speed / TRIMP_MULTIPLIER;
-        let expected_vertical = (bonus * speed * TRIMP_MULTIPLIER + GRAVITY_PER_TICK) * AIR_RESISTANCE;
+        let expected_vertical =
+            (bonus * speed * TRIMP_MULTIPLIER + GRAVITY_PER_TICK) * AIR_RESISTANCE;
         assert!(
             (horizontal_speed(m.velocity) - expected_horizontal).abs() < 1e-12,
             "horizontal {} m/s, expected {expected_horizontal}",
@@ -1340,14 +1457,31 @@ mod tests {
         assert!(m.velocity[1] > JUMP_SPEED, "a trimp must beat a plain jump");
 
         // Not sneaking: the same jump is a plain jump, no speed traded.
-        let mut plain = Motion { feet: [0.5, 1.0, 0.5], velocity: [0.0, 0.0, speed], grounded: true };
-        step(&mut plain, &Wish { forward: 1.0, jump: true, ..Wish::STILL }, 0.0, &world);
+        let mut plain = Motion {
+            feet: [0.5, 1.0, 0.5],
+            velocity: [0.0, 0.0, speed],
+            grounded: true,
+        };
+        step(
+            &mut plain,
+            &Wish {
+                forward: 1.0,
+                jump: true,
+                ..Wish::STILL
+            },
+            0.0,
+            &world,
+        );
         assert!((horizontal_speed(plain.velocity) - speed).abs() < 1e-12);
         let plain_vertical = (JUMP_SPEED + GRAVITY_PER_TICK) * AIR_RESISTANCE;
         assert!((plain.velocity[1] - plain_vertical).abs() < 1e-12);
 
         // Sneaking but *under* the base speed: no excess to trade.
-        let mut slow = Motion { feet: [0.5, 1.0, 0.5], velocity: [0.0, 0.0, 4.0], grounded: true };
+        let mut slow = Motion {
+            feet: [0.5, 1.0, 0.5],
+            velocity: [0.0, 0.0, 4.0],
+            grounded: true,
+        };
         step(&mut slow, &wish, 0.0, &world);
         assert!((slow.velocity[1] - plain_vertical).abs() < 1e-12);
         assert!((horizontal_speed(slow.velocity) - 4.0).abs() < 1e-12);
@@ -1358,8 +1492,14 @@ mod tests {
     /// and nothing decays it in the air, which is why air speed persists.
     #[test]
     fn the_air_acceleration_caps_the_projection_and_never_decays() {
-        let world = Floor { top: Cell::new(-64) };
-        let mut m = Motion { feet: [0.5, 40.0, 0.5], velocity: [0.0; 3], grounded: false };
+        let world = Floor {
+            top: Cell::new(-64),
+        };
+        let mut m = Motion {
+            feet: [0.5, 40.0, 0.5],
+            velocity: [0.0; 3],
+            grounded: false,
+        };
         step(&mut m, &FORWARD, 0.0, &world);
         assert!(
             (horizontal_speed(m.velocity) - MAX_AIR_ACCELERATION).abs() < 1e-12,
@@ -1381,10 +1521,29 @@ mod tests {
     /// without the key falls through it.
     #[test]
     fn sharking_holds_a_held_jump_at_the_surface_and_never_sinks() {
-        let world = Sea { floor_top: 0, water: (1, 1) };
-        let mut shark = Motion { feet: [0.5, 1.0, 0.5], velocity: [0.0, 0.0, 4.0], grounded: false };
-        step(&mut shark, &Wish { forward: 1.0, jump: true, ..Wish::STILL }, 0.0, &world);
-        assert_eq!(shark.velocity[1], 0.0, "the shark's vertical must be clamped to zero");
+        let world = Sea {
+            floor_top: 0,
+            water: (1, 1),
+        };
+        let mut shark = Motion {
+            feet: [0.5, 1.0, 0.5],
+            velocity: [0.0, 0.0, 4.0],
+            grounded: false,
+        };
+        step(
+            &mut shark,
+            &Wish {
+                forward: 1.0,
+                jump: true,
+                ..Wish::STILL
+            },
+            0.0,
+            &world,
+        );
+        assert_eq!(
+            shark.velocity[1], 0.0,
+            "the shark's vertical must be clamped to zero"
+        );
         assert!(
             (horizontal_speed(shark.velocity) - 4.0 * SHARKING_FRICTION).abs() < 1e-12,
             "shark friction gave {} m/s",
@@ -1397,7 +1556,11 @@ mod tests {
         );
         assert!(shark.velocity[2] > 0.0, "the shark stopped moving forward");
 
-        let mut sinking = Motion { feet: [0.5, 1.0, 0.5], velocity: [0.0, 0.0, 4.0], grounded: false };
+        let mut sinking = Motion {
+            feet: [0.5, 1.0, 0.5],
+            velocity: [0.0, 0.0, 4.0],
+            grounded: false,
+        };
         step(&mut sinking, &FORWARD, 0.0, &world);
         assert!(sinking.velocity[1] < 0.0, "a released jump did not sink");
     }
@@ -1407,9 +1570,24 @@ mod tests {
     /// after the step is the reference's own arithmetic.
     #[test]
     fn a_held_jump_falling_into_water_keeps_eighty_percent_of_its_fall() {
-        let world = Sea { floor_top: 0, water: (1, 1) };
-        let mut m = Motion { feet: [0.5, 2.3, 0.5], velocity: [0.0, -10.0, 0.0], grounded: false };
-        step(&mut m, &Wish { jump: true, ..Wish::STILL }, 0.0, &world);
+        let world = Sea {
+            floor_top: 0,
+            water: (1, 1),
+        };
+        let mut m = Motion {
+            feet: [0.5, 2.3, 0.5],
+            velocity: [0.0, -10.0, 0.0],
+            grounded: false,
+        };
+        step(
+            &mut m,
+            &Wish {
+                jump: true,
+                ..Wish::STILL
+            },
+            0.0,
+            &world,
+        );
         let expected = (-10.0 * SHARKING_SURFACE_TENSION + GRAVITY_PER_TICK) * AIR_RESISTANCE;
         let without = (-10.0 + GRAVITY_PER_TICK) * AIR_RESISTANCE;
         assert!(
@@ -1428,7 +1606,11 @@ mod tests {
         let quake_figure = SOFT_CAP_THRESHOLD * WALK_SPEED;
         assert!(uncapped, "the reference's default, and this port keeps it");
         assert!(quake_figure > 2_000.0, "the soft cap is a Quake figure");
-        let mut m = Motion { feet: [0.5, 1.0, 0.5], velocity: [500.0, 0.0, 500.0], grounded: true };
+        let mut m = Motion {
+            feet: [0.5, 1.0, 0.5],
+            velocity: [500.0, 0.0, 500.0],
+            grounded: true,
+        };
         let before = m.velocity;
         let over_the_cap = horizontal_speed(m.velocity);
         apply_soft_cap(&mut m, WALK_SPEED, over_the_cap);
@@ -1448,7 +1630,11 @@ mod tests {
     fn the_interpolated_eye_stays_between_the_last_two_steps() {
         let world = Floor { top: Cell::new(0) };
         let mut p = Player::new([0.5, 1.0, 0.5]);
-        assert_eq!(p.interpolated_eye(), p.eye(), "before any step, the eye is the spawn's");
+        assert_eq!(
+            p.interpolated_eye(),
+            p.eye(),
+            "before any step, the eye is the spawn's"
+        );
         p.advance(&FORWARD, 0.0, PLAYER_STEP * 0.5, &world);
         // The first half-step fired a step, and the drawn eye is on the state before
         // it — the lag the interpolation pays for smoothness.
@@ -1468,7 +1654,12 @@ mod tests {
         }
         // And under a spread of frame times, the drawn eye never leaves the segment
         // between the two steps.
-        for (i, dt) in [0.013, 0.021, 0.007, 0.05, 0.041].iter().cycle().take(200).enumerate() {
+        for (i, dt) in [0.013, 0.021, 0.007, 0.05, 0.041]
+            .iter()
+            .cycle()
+            .take(200)
+            .enumerate()
+        {
             p.advance(&FORWARD, 0.0, *dt, &world);
             let drawn = p.interpolated_eye();
             for (axis, value) in drawn.iter().enumerate() {
@@ -1540,12 +1731,19 @@ mod tests {
         // *not* solid — and that is not sharked here, because the wish has no jump.
         // The body must sink through the water and stand on the floor, not float on
         // the water and not fall through the floor.
-        let world = Sea { floor_top: 13, water: (14, 15) };
+        let world = Sea {
+            floor_top: 13,
+            water: (14, 15),
+        };
         let mut m = Motion::standing([0.5, 16.83, -95.5]);
         for _ in 0..600 {
             step(&mut m, &Wish::STILL, 0.0, &world);
         }
-        assert!((m.feet[1] - 14.0).abs() < 1e-9, "came to rest at {}", m.feet[1]);
+        assert!(
+            (m.feet[1] - 14.0).abs() < 1e-9,
+            "came to rest at {}",
+            m.feet[1]
+        );
         assert!(m.grounded);
         // And the head is under the 16 m waterline, which is the fact that made the
         // seed worth changing: this is a submerged spawn, not a dry one.
@@ -1571,7 +1769,11 @@ mod tests {
         );
         let world = Floor { top: Cell::new(0) };
         let m = walk(&FORWARD, 600, &world);
-        assert!(m.feet[2] > 1.0, "flat ground should not be climbed: {:?}", m.feet);
+        assert!(
+            m.feet[2] > 1.0,
+            "flat ground should not be climbed: {:?}",
+            m.feet
+        );
         assert!(
             (m.feet[1] - 1.0).abs() < 1e-9,
             "a flat floor must not raise the body: {}",
@@ -1610,7 +1812,11 @@ mod tests {
             let gap = 2.0 - jumping.motion.feet[2];
             let wish = if !pressed && (0.8..=1.4).contains(&gap) {
                 pressed = true;
-                Wish { forward: 1.0, jump: true, ..Wish::STILL }
+                Wish {
+                    forward: 1.0,
+                    jump: true,
+                    ..Wish::STILL
+                }
             } else {
                 FORWARD
             };
@@ -1653,8 +1859,15 @@ mod tests {
         let world = Floor { top: Cell::new(0) };
         let mut p = Player::new([0.5, 1.0, 0.5]);
         p.advance(&FORWARD, 0.0, PLAYER_STEP, &world);
-        assert_eq!(p.eye()[1], 1.0 + EYE_HEIGHT, "the standing eye moved before any crouch");
-        let crouch = Wish { sneak: true, ..FORWARD };
+        assert_eq!(
+            p.eye()[1],
+            1.0 + EYE_HEIGHT,
+            "the standing eye moved before any crouch"
+        );
+        let crouch = Wish {
+            sneak: true,
+            ..FORWARD
+        };
         p.advance(&crouch, 0.0, PLAYER_STEP, &world);
         assert_eq!(p.motion.feet[1], 1.0, "the body must not move for a crouch");
         assert_eq!(
@@ -1670,7 +1883,10 @@ mod tests {
         );
         // And releasing the key stands it back up.
         p.advance(&FORWARD, 0.0, PLAYER_STEP, &world);
-        assert_eq!(p.eye()[1], 1.0 + EYE_HEIGHT, "the eye did not stand back up");
+        assert_eq!(
+            p.eye()[1],
+            1.0 + EYE_HEIGHT,
+            "the eye did not stand back up"
+        );
     }
 }
-

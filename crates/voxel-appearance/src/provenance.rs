@@ -79,6 +79,18 @@ pub const WATER_F0: f64 = normal_incidence_reflectance(WATER_IOR);
 /// The normal-incidence reflectance of a clear coat, from [`COAT_IOR`]: about `4 %`.
 pub const COAT_F0: f64 = normal_incidence_reflectance(COAT_IOR);
 
+/// **How much of the light that lands on the terrain comes back**: the material table's mean base
+/// reflectance, `0.430` over the 76 rows that carry a base colour, printed by
+/// `light-at-a-pixel`.
+///
+/// This is the second bounce's only number. The frame's ambient is single-scattered sky: a face
+/// with no sky in the three rays the horizon marches reads a share of `0.0` and is lit by nothing,
+/// however bright the day, because `0.0` times any radiance is `0.0`. The light that a wall hides
+/// has not left the world — it landed on that wall — so a face walled off receives the sky the
+/// *occluder* sees, at the occluder's own reflectance. Measured over the table rather than chosen,
+/// because a number picked for the look is a number no later edit can be held to.
+pub const BOUNCE_REFLECTANCE: f64 = 0.43;
+
 /// The luminance weights of **Rec. 709** (ITU-R BT.709). Named, because
 /// [`.2126 .7152 .0722`](LUMINANCE_RED) is a standard and not a preference —
 /// a different triple would give a different band count for the same picture.

@@ -49,9 +49,11 @@ use std::collections::BTreeMap;
 use voxel_package::recipe::{Content, Loaded, WindowSpec};
 use voxel_ui::{
     bar_entry_width_dp, bar_height_dp, contrast_over_backdrop, max_elevation, min_target_dp,
-    row_height_dp, spacing_dp, Align, Corner, Element, GlyphAction, Ink, Paint,
-    Palette, Panel, Readout, Rect, Role, UiRefusal, UiResult,
+    row_height_dp, spacing_dp, Align, Corner, Element, GlyphAction, Ink, Paint, Palette, Panel,
+    Readout, Rect, Role, UiRefusal, UiResult,
 };
+
+use crate::map_view::MapCamera;
 
 use super::cells::{CellVersion, Placed};
 use super::console::{Command, Console, Key, KeyOutcome, Level, Record, Verb};
@@ -206,9 +208,13 @@ impl ContentViews {
 /// rect — a second arithmetic here would place a control where it is not drawn, which is the
 /// class of defect the control lanes exist to prevent. `SHELL-PORT.md` §5's whole point: the
 /// port's composite **is** the shell's arithmetic now, not a parallel one.
-pub fn window_body(spec: &WindowSpec, rect: Rect) -> Rect {
-    window::composite(spec, rect).content
+pub fn window_body(window: &Window, rect: Rect) -> Rect {
+    window.content_at(rect)
 }
+
+// The map window's own two heights — the toolbar's strip and one row of the control gutter — are
+// [`super::map_window`]'s, with every rectangle they measure. Nothing in the shell names them: the
+// only thing that had to was the forwarding this file used to carry.
 
 /// **The rect a pane's content occupies** — the pane less its header, when the window draws
 /// headers at all ([`super::window::PortalWindow::draws_pane_headers`]).
@@ -235,13 +241,8 @@ pub fn pane_content_rect(window: &super::window::PortalWindow, pane: Rect) -> Re
 /// gives each pane less room than this; the content loop bounds the panel to the pane it is
 /// actually drawn in, which is the number that has to hold on screen.
 pub fn pane_of(spec: &WindowSpec) -> f64 {
-    let declared = Rect::new(
-        0.0,
-        0.0,
-        spec.geometry[2] as f64,
-        spec.geometry[3] as f64,
-    );
-    window_body(spec, declared).height_dp
+    let declared = Rect::new(0.0, 0.0, spec.geometry[2] as f64, spec.geometry[3] as f64);
+    window::composite(spec, declared, false).content.height_dp
 }
 
 /// **The chrome a declared window draws above the content its pane holds** — the border on both
@@ -254,7 +255,7 @@ pub fn pane_of(spec: &WindowSpec) -> f64 {
 /// drawing's own ([`window::BORDER_DP`], [`window::title_height`]), and
 /// `the_sizing_rule_is_the_drawing_s_own_arithmetic` pins the sum against the composite.
 pub fn chrome_height_dp(spec: &WindowSpec) -> f64 {
-    2.0 * window::BORDER_DP + window::title_height(spec)
+    2.0 * window::BORDER_DP + window::title_height(spec, false)
 }
 
 /// The console window's body: **the console's own records** (BLD-0018).
@@ -316,12 +317,19 @@ pub fn console_panel(console: &Console, available_dp: f64) -> Panel {
         rows.push(Readout::measured("record", line.clone()));
     }
     let total = console.len() + console.dropped();
-    bounded_panel("console", "Console", header, &mut rows, available_dp, |held| {
-        format!(
-            "{held} older record(s) are held and not drawn; the pane holds {available_dp} dp. \
+    bounded_panel(
+        "console",
+        "Console",
+        header,
+        &mut rows,
+        available_dp,
+        |held| {
+            format!(
+                "{held} older record(s) are held and not drawn; the pane holds {available_dp} dp. \
              {total} record(s) in all"
-        )
-    })
+            )
+        },
+    )
 }
 
 /// **The notifications window's body: the persistent records, copied from the store they are in.**
@@ -372,15 +380,24 @@ pub fn notifications_panel(console: &Console, available_dp: f64) -> Panel {
                 "no persistent records: refusals and anything needing a human appear here and \
                  stay; transient results are toasts",
             )
-            .unwrap_or_else(|_| Panel::new("notifications", Role::Chrome, "Notifications", Vec::new()));
+            .unwrap_or_else(|_| {
+                Panel::new("notifications", Role::Chrome, "Notifications", Vec::new())
+            });
     }
     let total = console.len() + console.dropped();
-    bounded_panel("notifications", "Notifications", header, &mut rows, available_dp, |held| {
-        format!(
+    bounded_panel(
+        "notifications",
+        "Notifications",
+        header,
+        &mut rows,
+        available_dp,
+        |held| {
+            format!(
             "{held} older notification(s) are held and not drawn; the pane holds {available_dp} \
              dp. {total} record(s) in the store"
         )
-    })
+        },
+    )
 }
 
 /// **Drop rows from the front until the panel fits the pane, and say how many were held back.**
@@ -490,7 +507,10 @@ pub fn console_min_width_dp() -> f64 {
 /// narrowest console is made of.
 fn console_lane_floors() -> (f64, f64) {
     let min = min_target_dp();
-    (152.0_f64.max(min) + 64.0_f64.max(min) + 64.0_f64.max(min) + 112.0_f64.max(min), 4.0 * spacing_dp())
+    (
+        152.0_f64.max(min) + 64.0_f64.max(min) + 64.0_f64.max(min) + 112.0_f64.max(min),
+        4.0 * spacing_dp(),
+    )
 }
 
 /// **Where the console's controls are, from the pane rect alone.**
@@ -524,10 +544,18 @@ pub fn console_lanes(pane: Rect) -> Vec<(ConsoleLane, Rect)> {
     let run_w = 64.0_f64.max(min);
     let prompt_w = 32.0;
     let edit_w = (pane.width_dp - prompt_w - run_w - 2.0 * spacing_dp()).max(min);
-    out.push((ConsoleLane::Command, Rect::new(pane.x + prompt_w, command_y, edit_w, row)));
+    out.push((
+        ConsoleLane::Command,
+        Rect::new(pane.x + prompt_w, command_y, edit_w, row),
+    ));
     out.push((
         ConsoleLane::Run,
-        Rect::new(pane.x + prompt_w + edit_w + spacing_dp(), command_y, run_w, row),
+        Rect::new(
+            pane.x + prompt_w + edit_w + spacing_dp(),
+            command_y,
+            run_w,
+            row,
+        ),
     ));
     out
 }
@@ -566,7 +594,11 @@ pub fn console_regions(pane: Rect, content: Content) -> ConsoleRegions {
             )),
         }
     } else {
-        ConsoleRegions { toolbar: None, output: pane, command: None }
+        ConsoleRegions {
+            toolbar: None,
+            output: pane,
+            command: None,
+        }
     }
 }
 
@@ -628,7 +660,13 @@ pub fn console_window(
     } else {
         (scroll, start, shown, end)
     };
-    ConsoleWindow { scroll, start, shown, older: start, newer: total - end }
+    ConsoleWindow {
+        scroll,
+        start,
+        shown,
+        older: start,
+        newer: total - end,
+    }
 }
 
 /// **The console window's body: the reference's three regions, top to bottom.**
@@ -695,20 +733,31 @@ pub fn console_body(
             pane_dp: pane.height_dp,
         });
     }
-    let ConsoleRegions { toolbar, output, command } = console_regions(pane, content);
+    let ConsoleRegions {
+        toolbar,
+        output,
+        command,
+    } = console_regions(pane, content);
 
     // The output surface. It is the window's own body role, so the records sit on the surface
     // the package declared rather than on a second one chosen here.
     out.push(Element::Surface {
         rect: output,
-        paint: Paint { rgb: surface, alpha: opacity },
+        paint: Paint {
+            rgb: surface,
+            alpha: opacity,
+        },
     });
     let backdrop = surface.blend_over(BRIGHTEST, opacity);
 
     // The records. The console shows its visible window (filter, query and the autoscroll
     // freeze); the log shows the whole event record, because that is what a log is.
     let held_by_freeze = if is_console { console.held_back() } else { 0 };
-    let records = if is_log { console.all() } else { console.visible() };
+    let records = if is_log {
+        console.all()
+    } else {
+        console.visible()
+    };
     // **The window this pane draws** — the subject's end, the freeze, the scrollback and the
     // note's row, resolved by the same function the wheel clamps with, so the gesture and the
     // frame cannot disagree about where the view can go.
@@ -740,11 +789,20 @@ pub fn console_body(
     let mut y = output.y;
     for record in records.iter().skip(window.start).take(window.shown) {
         let (badge, rest) = record.line_parts();
-        let ink = if record.level.is_persistent() { Ink::Full } else { Ink::Secondary };
+        let ink = if record.level.is_persistent() {
+            Ink::Full
+        } else {
+            Ink::Secondary
+        };
         contrast_over_backdrop(ink.composited_over(backdrop), backdrop)?;
         let badge_w = 72.0;
         out.push(Element::Text {
-            rect: Rect::new(output.x + spacing_dp(), y + (row - text_size) / 2.0, badge_w, text_size),
+            rect: Rect::new(
+                output.x + spacing_dp(),
+                y + (row - text_size) / 2.0,
+                badge_w,
+                text_size,
+            ),
             text: badge,
             paint: ink.paint(),
             size_dp: text_size,
@@ -803,7 +861,10 @@ pub fn console_body(
     for region in [toolbar, command].into_iter().flatten() {
         out.push(Element::Surface {
             rect: region,
-            paint: Paint { rgb: chrome, alpha: opacity },
+            paint: Paint {
+                rgb: chrome,
+                alpha: opacity,
+            },
         });
         out.push(Element::Rule {
             rect: Rect::new(region.x, region.y, region.width_dp, 1.0),
@@ -836,7 +897,10 @@ pub fn console_body(
             if hovered {
                 out.push(Element::Surface {
                     rect: lane_rect,
-                    paint: Paint { rgb: chrome.elevated(1)?, alpha: opacity },
+                    paint: Paint {
+                        rgb: chrome.elevated(1)?,
+                        alpha: opacity,
+                    },
                 });
             }
             let label = match lane {
@@ -1050,6 +1114,31 @@ pub struct Mount {
     /// [`Mount::frame_space`], so content the compiler composed is only ever cells when a graded
     /// frame claims it.
     frames: Vec<voxel_package::cellframe::Declared>,
+    /// **The artifacts the mounted package's frames came from**, keyed by package-relative path.
+    ///
+    /// A `.shspec` re-adopted from `packages/` is the shell prototype and carries no `frames/`
+    /// folder of its own, so adopting it used to wipe every graded frame and the map window fell
+    /// back to its declaration panel. A spec that still names a frame row now inherits that row's
+    /// artifact from here; a row the spec stopped naming is dropped, and a new row with no
+    /// artifact is refused by the grader rather than drawn from a stale file.
+    frame_artifacts: BTreeMap<String, Vec<u8>>,
+    /// **The world feature the map window is showing**, chosen by the console's `plan` verb.
+    ///
+    /// A package declares one frame per view of a window, all addressed to the same content
+    /// space, and this token selects among them. `None` is the package's default view, which is
+    /// the frame whose `feature` is `all`. It is a selection and not a filter: the frames are all
+    /// graded by [`Mount::new`], and switching views never re-reads the package.
+    frame_feature: Option<String>,
+    /// **The map window, under one owner** ([`super::map_window::MapWindow`]): its camera and
+    /// whether it has been placed, its survey, its selected cell, the cell under the pointer, and
+    /// the rects it draws and picks in.
+    ///
+    /// Public because it is one window's whole state and the app owns the loop that drives it: the
+    /// frame's observation, the pointer's gestures, the verbs, the toolbar's facts. Calls that
+    /// depend on the shell around the window — where it is, whether it is pinned, what its frame
+    /// declares — take a [`super::map_window::MapChrome`] from [`Mount::map_chrome`]; the rest take
+    /// nothing. The mount keeps no copy of any of it.
+    pub map: super::map_window::MapWindow,
 }
 
 impl Mount {
@@ -1095,6 +1184,9 @@ impl Mount {
             api: None,
             cells: CellVersion::Holo,
             frames,
+            frame_artifacts: loaded.artifacts.clone(),
+            frame_feature: None,
+            map: super::map_window::MapWindow::new(),
         };
         mount.adopt(&loaded.recipe)?;
         Ok(mount)
@@ -1115,6 +1207,11 @@ impl Mount {
     /// ([`Mount::reload`] checks the console window survives it); this function does the adopting.
     fn adopt(&mut self, recipe: &voxel_package::recipe::Recipe) -> UiResult<()> {
         let mut windows = BTreeMap::new();
+        // **The declaration seeds the pin state, and the seed is read once.** From here on the
+        // state is the player's: `Mount::toggle_pin` is the only writer, and every layer, lane
+        // and title bar reads the window's own `pinned` field.
+        let declared_pins: std::collections::BTreeSet<&str> =
+            recipe.pinned.iter().map(String::as_str).collect();
         for spec in &recipe.windows {
             // The theme role is validated at mount time, not at draw time, so a package that
             // cannot be themed fails where it is admitted rather than frame by frame.
@@ -1135,6 +1232,7 @@ impl Mount {
                     previous: None,
                     arrangement: Arrangement::of(own),
                     host: None,
+                    pinned: declared_pins.contains(spec.id.as_str()),
                 },
             );
         }
@@ -1144,11 +1242,19 @@ impl Mount {
         let mut bar = Vec::new();
         for id in &recipe.tabs {
             let window = windows.get(id).expect("the recipe validates its tab rows");
-            bar.push(BarEntry { id: id.clone(), tab: true, label: window.spec.title.clone() });
+            bar.push(BarEntry {
+                id: id.clone(),
+                tab: true,
+                label: window.spec.title.clone(),
+            });
         }
         for id in &recipe.bar {
             let window = windows.get(id).expect("the recipe validates its bar rows");
-            bar.push(BarEntry { id: id.clone(), tab: false, label: window.spec.title.clone() });
+            bar.push(BarEntry {
+                id: id.clone(),
+                tab: false,
+                label: window.spec.title.clone(),
+            });
         }
 
         self.windows = windows;
@@ -1200,9 +1306,18 @@ impl Mount {
     /// same act — so the declaration belongs to mounting, and this function is the half that
     /// arranges the windows once that act has admitted the package.
     pub fn reload(&mut self, loaded: &Loaded) -> Result<(), String> {
-        let declared: Vec<&str> =
-            loaded.recipe.windows.iter().map(|window| window.id.as_str()).collect();
-        if !loaded.recipe.windows.iter().any(|window| window.id == CONSOLE_WINDOW) {
+        let declared: Vec<&str> = loaded
+            .recipe
+            .windows
+            .iter()
+            .map(|window| window.id.as_str())
+            .collect();
+        if !loaded
+            .recipe
+            .windows
+            .iter()
+            .any(|window| window.id == CONSOLE_WINDOW)
+        {
             return Err(format!(
                 "the package declares {} window(s) ({}) and none of them is {CONSOLE_WINDOW:?}, so \
                  adopting it would take the command line off the screen. Not reloaded; the \
@@ -1211,7 +1326,8 @@ impl Mount {
                 declared.join(", ")
             ));
         }
-        self.adopt(&loaded.recipe).map_err(|refusal| refusal.to_string())
+        self.adopt(&loaded.recipe)
+            .map_err(|refusal| refusal.to_string())
     }
 
     // -----------------------------------------------------------------------
@@ -1338,7 +1454,10 @@ impl Mount {
         let ramp = (tick.saturating_sub(toast.shown_at) + 1).min(entry) as f64 / entry as f64;
         out.push(Element::Surface {
             rect,
-            paint: Paint { rgb: chrome.elevated(max_elevation())?, alpha: opacity * ramp },
+            paint: Paint {
+                rgb: chrome.elevated(max_elevation())?,
+                alpha: opacity * ramp,
+            },
         });
         let backdrop = chrome.blend_over(BRIGHTEST, opacity);
         contrast_over_backdrop(Ink::Full.composited_over(backdrop), backdrop)?;
@@ -1467,7 +1586,8 @@ impl Mount {
         // **A disagreement is preserved, not synthesized** (C-84.3), so each one is on its own
         // line with both answers beside it rather than being counted and dropped.
         for row in &two.divergence_rows {
-            self.console.log(Level::Warn, "gate", format!("disagreement: {row}"), tick);
+            self.console
+                .log(Level::Warn, "gate", format!("disagreement: {row}"), tick);
         }
         Ok(())
     }
@@ -1546,11 +1666,16 @@ impl Mount {
             }
         };
         let Some(ticket) = read.board.tickets().last() else {
-            self.refuse_cmd(Verb::File, "the record grew but the board has no ticket on it", tick);
+            self.refuse_cmd(
+                Verb::File,
+                "the record grew but the board has no ticket on it",
+                tick,
+            );
             return;
         };
         let (id, objective) = (ticket.id.as_str().to_string(), ticket.objective.clone());
-        self.console.log(Level::Event, "file", format!("{id} filed"), tick);
+        self.console
+            .log(Level::Event, "file", format!("{id} filed"), tick);
         self.console.log(Level::Event, "file", objective, tick);
 
         // And the solution: **the ticket compiled, the package was emitted, and the shell is
@@ -1584,23 +1709,20 @@ impl Mount {
         let mut chain = read.chain;
         let (package, receipt) =
             match voxel_package::compiler::emit(&mut chain, ticket, Some(&grant)) {
-            Ok(emitted) => emitted,
-            Err(refusals) => {
-                for refusal in refusals.all() {
-                    self.refuse_cmd(Verb::File, refusal.detail().to_string(), tick);
+                Ok(emitted) => emitted,
+                Err(refusals) => {
+                    for refusal in refusals.all() {
+                        self.refuse_cmd(Verb::File, refusal.detail().to_string(), tick);
+                    }
+                    return;
                 }
-                return;
-            }
-        };
+            };
         // **The name is derived from the content identity** (`filing::package_file_name`), so a
         // recompile of this ticket writes a *new* package rather than colliding with the one an
         // earlier compiler produced. A record is never overwritten and never deleted: the older
         // package stays on disk as the record of what the older compiler produced.
-        let path = voxel_package::filing::package_path(
-            &workspace,
-            &receipt.name,
-            &receipt.package_digest,
-        );
+        let path =
+            voxel_package::filing::package_path(&workspace, &receipt.name, &receipt.package_digest);
         if let Err(refusals) = voxel_package::filing::file(&path, &package) {
             for refusal in refusals.all() {
                 self.refuse_cmd(Verb::File, refusal.detail().to_string(), tick);
@@ -1693,7 +1815,8 @@ impl Mount {
                 match voxel_axis_artifact::Package::of(&tree, &id, report.cells()) {
                     Ok(mut package) => {
                         for line in package.lines() {
-                            self.console.log(Level::Event, "package", line.render(), tick);
+                            self.console
+                                .log(Level::Event, "package", line.render(), tick);
                         }
                         self.console.log(
                             Level::Event,
@@ -2015,8 +2138,12 @@ impl Mount {
         let before: Vec<String> = self.windows.keys().cloned().collect();
         match self.load_package(&path) {
             Ok(loaded) => {
-                let mounted: Vec<&str> =
-                    loaded.recipe.windows.iter().map(|w| w.id.as_str()).collect();
+                let mounted: Vec<&str> = loaded
+                    .recipe
+                    .windows
+                    .iter()
+                    .map(|w| w.id.as_str())
+                    .collect();
                 self.console.log(
                     Level::Event,
                     "file",
@@ -2099,7 +2226,10 @@ impl Mount {
     /// the agent's feet, and a record whose bytes were rewritten is a record the agent verified
     /// against a different file. Returns `(handed, skipped, refused)` so a caller reports numbers
     /// rather than that something happened.
-    pub fn hand_the_boards_tickets_to_the_agent(&mut self, tick: Option<u64>) -> (usize, usize, usize) {
+    pub fn hand_the_boards_tickets_to_the_agent(
+        &mut self,
+        tick: Option<u64>,
+    ) -> (usize, usize, usize) {
         let Some(workspace) = self.console.workspace().map(std::path::Path::to_path_buf) else {
             return (0, 0, 0);
         };
@@ -2171,9 +2301,7 @@ impl Mount {
                 match std::fs::read(&path) {
                     Ok(bytes) => match voxel_package::recipe::load(&bytes) {
                         // **Read back through the loader**, the reader every package loads through.
-                        Ok(_) => {
-                            already = Some((path, voxel_model::identity::Digest::of(&bytes)))
-                        }
+                        Ok(_) => already = Some((path, voxel_model::identity::Digest::of(&bytes))),
                         Err(refusals) => self.console.log(
                             Level::Warn,
                             "inbox",
@@ -2236,13 +2364,7 @@ impl Mount {
             // told the measurement, not a hope: `recipe::load` framed the package, and `emit`
             // verified the round trip before it returned.
             let notified = voxel_model::laya::relative_to(&workspace, &path).and_then(|relative| {
-                voxel_model::laya::notify_the_agent_of(
-                    &workspace,
-                    &id,
-                    &relative,
-                    &digest,
-                    true,
-                )
+                voxel_model::laya::notify_the_agent_of(&workspace, &id, &relative, &digest, true)
             });
             match notified {
                 Ok(record) => {
@@ -2376,18 +2498,18 @@ impl Mount {
     /// build and the live-reload watch make, so a prototype this loader admits is one the build
     /// admits. A `.shpkg` is already framed and is read as it is. A folder with no
     /// `package.cells` is a declared absence: the package mounts and the version in force stays.
-    pub fn load_package(&mut self, path: &std::path::Path) -> Result<voxel_package::recipe::Loaded, String> {
+    pub fn load_package(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<voxel_package::recipe::Loaded, String> {
         let bytes = std::fs::read(path)
             .map_err(|found| format!("{} cannot be read ({found})", path.display()))?;
         let folder = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
             .unwrap_or_else(|| std::path::Path::new("."));
-        let framed = if path.extension().map(|ext| ext == "shspec").unwrap_or(false) {
-            let artifacts = voxel_package::recipe::artifacts_in(folder).map_err(|why| {
-                format!("{}: {why}", path.display())
-            })?;
-            voxel_package::recipe::compile_with_artifacts(&bytes, &artifacts).map_err(|refusals| {
+        let compile = |source: &[u8], artifacts: &BTreeMap<String, Vec<u8>>| {
+            voxel_package::recipe::compile_with_artifacts(source, artifacts).map_err(|refusals| {
                 format!(
                     "{} was refused: {}",
                     path.display(),
@@ -2398,11 +2520,26 @@ impl Mount {
                         .collect::<Vec<_>>()
                         .join("; ")
                 )
-            })?
-        } else {
-            bytes
+            })
         };
-        let loaded = voxel_package::recipe::load(&framed).map_err(|refusals| {
+        // **A `.shspec` is source, and its folder may not carry the package's artifacts.** The
+        // shell prototype at `packages/alpha-shell.shspec` is the display package's recipe with
+        // no `frames/` beside it; adopting it as a package with no frames used to take the map
+        // window's cells away on the first live-reload tick. The rows the spec still names are
+        // the join: an artifact already graded for that row is the same frame, and a row the
+        // spec dropped drops its frame with it.
+        let mut artifacts = match path.extension().map(|ext| ext == "shspec").unwrap_or(false) {
+            true => Some(
+                voxel_package::recipe::artifacts_in(folder)
+                    .map_err(|why| format!("{}: {why}", path.display()))?,
+            ),
+            false => None,
+        };
+        let mut framed = match &artifacts {
+            Some(found) => compile(&bytes, found)?,
+            None => bytes.clone(),
+        };
+        let mut loaded = voxel_package::recipe::load(&framed).map_err(|refusals| {
             format!(
                 "{} does not frame a package: {}",
                 path.display(),
@@ -2414,6 +2551,39 @@ impl Mount {
                     .join("; ")
             )
         })?;
+        if let Some(found) = artifacts.as_mut() {
+            let mut merged = found.clone();
+            for (name, artifact) in &self.frame_artifacts {
+                let Some(id) = name
+                    .strip_prefix("frames/")
+                    .and_then(|rest| rest.split('.').next())
+                else {
+                    continue;
+                };
+                if merged.contains_key(name) {
+                    continue;
+                }
+                if loaded.recipe.rows.iter().any(|row| row.id == id) {
+                    merged.insert(name.clone(), artifact.clone());
+                }
+            }
+            if merged != *found {
+                framed = compile(&bytes, &merged)?;
+                loaded = voxel_package::recipe::load(&framed).map_err(|refusals| {
+                    format!(
+                        "{} does not frame a package: {}",
+                        path.display(),
+                        refusals
+                            .all()
+                            .iter()
+                            .map(|refusal| refusal.detail().to_string())
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    )
+                })?;
+                *found = merged;
+            }
+        }
         // **Before the arrangement is adopted**, so a declaration this build does not read cannot
         // take the screen: the refusal is the package's, and the shell is left exactly as it was.
         let declaration = super::cells::declare(folder).map_err(|refusal| refusal.to_string())?;
@@ -2421,26 +2591,39 @@ impl Mount {
         // grammar refuses, the recipe cannot name, the window cannot host, or the record cannot
         // explain is the package's refusal, and the shell keeps the frames and the arrangement it
         // already had.
-        let graded =
-            voxel_package::cellframe::read_artifacts(&loaded.artifacts, &loaded.recipe).map_err(
-                |found| {
-            format!(
-                "{}: {}",
-                path.display(),
-                found
-                    .all()
-                    .iter()
-                    .map(|refusal| refusal.detail().to_string())
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            )
-        })?;
+        let graded = voxel_package::cellframe::read_artifacts(&loaded.artifacts, &loaded.recipe)
+            .map_err(|found| {
+                format!(
+                    "{}: {}",
+                    path.display(),
+                    found
+                        .all()
+                        .iter()
+                        .map(|refusal| refusal.detail().to_string())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                )
+            })?;
         self.reload(&loaded)
             .map_err(|why| format!("{} was refused: {why}", path.display()))?;
         if let Some(declaration) = declaration {
             self.cells = declaration.version;
         }
         self.frames = graded.frames;
+        self.frame_artifacts = match artifacts {
+            Some(found) => found,
+            None => loaded.artifacts.clone(),
+        };
+        // A selection is a token, not a frame, so it survives a reload only while the new
+        // package still declares a frame for it. A view that went away is the default view.
+        if self.frame_feature.as_ref().is_some_and(|selected| {
+            !self
+                .frames
+                .iter()
+                .any(|entry| entry.frame.feature.as_deref() == Some(selected.as_str()))
+        }) {
+            self.frame_feature = None;
+        }
         Ok(loaded)
     }
 
@@ -2567,6 +2750,30 @@ impl Mount {
         self.focused.as_deref() == Some(CONSOLE_WINDOW)
     }
 
+    /// Whether the map window holds focus, and therefore whether the keyboard's map keys are its.
+    ///
+    /// **The focused window owns the keyboard**, and the map is the second window to claim a share
+    /// of it: while it holds focus the movement keys move *it* ([`super::map_window::MapWindow`]) and
+    /// not the player. A press on its body focuses it ([`Mount::focus_map`]).
+    pub fn map_has_focus(&self) -> bool {
+        self.focused.as_deref() == Some("map-plan")
+    }
+
+    /// **Give the map window the keyboard**, for the press that lands on its body: the pan it starts
+    /// and the keys it takes are the same gesture.
+    pub fn focus_map(&mut self) {
+        self.focus("map-plan");
+    }
+
+    /// **Nothing holds the keyboard**: the pointer went back to the world, so the keys went with it.
+    ///
+    /// Without this a window keeps the keys after the person has plainly left it — a press that
+    /// reached the ground is the clearest statement of that — and a held movement key would go on
+    /// moving the map instead.
+    pub fn blur(&mut self) {
+        self.focused = None;
+    }
+
     /// One key, routed to the console **only while the console window holds focus**.
     ///
     /// The shell has no key bindings of its own yet, so an unfocused key is `Ignored` rather
@@ -2636,9 +2843,7 @@ impl Mount {
                     .map(|window| {
                         format!(
                             "{}\t{:?}\t{}",
-                            window.spec.id,
-                            window.status,
-                            window.spec.title
+                            window.spec.id, window.status, window.spec.title
                         )
                     })
                     .collect();
@@ -2655,29 +2860,37 @@ impl Mount {
                     said(self, format!("dropped\t{}", self.console.dropped()));
                 }
             }
-            Verb::Launch => self.with_window(*verb, id, tick, |mount, id| {
-                match mount.open(id) {
-                    Ok(()) => mount.console.log(Level::Event, "launch", format!("opened {id}"), tick),
-                    Err(refusal) => {
-                        mount.console.log(Level::Warn, "launch", refusal.to_string(), tick)
-                    }
-                }
+            Verb::Launch => self.with_window(*verb, id, tick, |mount, id| match mount.open(id) {
+                Ok(()) => mount
+                    .console
+                    .log(Level::Event, "launch", format!("opened {id}"), tick),
+                Err(refusal) => mount
+                    .console
+                    .log(Level::Warn, "launch", refusal.to_string(), tick),
             }),
             Verb::Focus => self.with_window(*verb, id, tick, |mount, id| {
                 mount.focus(id);
-                mount.console.log(Level::Event, "focus", format!("focused {id}"), tick);
+                mount
+                    .console
+                    .log(Level::Event, "focus", format!("focused {id}"), tick);
             }),
             Verb::Close => self.with_window(*verb, id, tick, |mount, id| {
                 mount.close(id);
-                mount.console.log(Level::Event, "close", format!("closed {id}"), tick);
+                mount
+                    .console
+                    .log(Level::Event, "close", format!("closed {id}"), tick);
             }),
             Verb::Min => self.with_window(*verb, id, tick, |mount, id| {
                 mount.minimize(id);
-                mount.console.log(Level::Event, "min", format!("minimized {id}"), tick);
+                mount
+                    .console
+                    .log(Level::Event, "min", format!("minimized {id}"), tick);
             }),
             Verb::Max => self.with_window(*verb, id, tick, |mount, id| {
                 mount.toggle_maximize(id);
-                mount.console.log(Level::Event, "max", format!("toggled {id}"), tick);
+                mount
+                    .console
+                    .log(Level::Event, "max", format!("toggled {id}"), tick);
             }),
             // Refused by name, each with the thing that is missing rather than a shrug.
             Verb::Split => self.refuse_cmd(
@@ -2685,16 +2898,20 @@ impl Mount {
                 "split needs a drop point, and a command line has no cursor to drop at",
                 tick,
             ),
-            Verb::Undock => self.with_window(*verb, id, tick, |mount, id| {
-                match mount.undock(id, id) {
-                    Ok(()) => mount
-                        .console
-                        .log(Level::Event, "undock", format!("undocked {id}"), tick),
-                    Err(refusal) => mount
-                        .console
-                        .log(Level::Warn, "undock", refusal.to_string(), tick),
-                }
-            }),
+            Verb::Undock => {
+                self.with_window(*verb, id, tick, |mount, id| match mount.undock(id, id) {
+                    Ok(()) => {
+                        mount
+                            .console
+                            .log(Level::Event, "undock", format!("undocked {id}"), tick)
+                    }
+                    Err(refusal) => {
+                        mount
+                            .console
+                            .log(Level::Warn, "undock", refusal.to_string(), tick)
+                    }
+                })
+            }
             Verb::Theme => self.refuse_cmd(
                 *verb,
                 "theme needs a scheme this tree has not declared; the palette is \
@@ -2713,19 +2930,21 @@ impl Mount {
                 tick,
             ),
             Verb::File => self.file(args, tick),
-            Verb::Approvals
-            | Verb::Approve
-            | Verb::Reject
-            | Verb::Blockers
-            | Verb::Mode
-            | Verb::Plan => {
-                self.refuse_cmd(
+            // **`plan <feature>` selects the map's world view.** The verb already existed in
+            // the reference's surface with exactly this name and one argument; what was missing
+            // was a window whose content is a view of the world. It takes no second argument:
+            // the token *is* the selection, and the frames are already graded.
+            Verb::Plan => match self.select_feature(arg(0).unwrap_or_default()) {
+                Ok(feature) => said(self, format!("map view {feature}")),
+                Err(why) => self.refuse_cmd(*verb, why, tick),
+            },
+            Verb::Approvals | Verb::Approve | Verb::Reject | Verb::Blockers | Verb::Mode => self
+                .refuse_cmd(
                     *verb,
                     "this verb governs a record surface the shell does not hold; filing a ticket \
                      is not one of the twenty verbs the reference console implements",
                     tick,
-                )
-            }
+                ),
         }
     }
 
@@ -2763,7 +2982,8 @@ impl Mount {
 
     /// A refusal, on the record, at `WARN`, naming the verb and the reason.
     fn refuse_cmd(&mut self, verb: Verb, why: impl std::fmt::Display, tick: Option<u64>) {
-        self.console.log(Level::Warn, verb.name(), why.to_string(), tick);
+        self.console
+            .log(Level::Warn, verb.name(), why.to_string(), tick);
     }
 
     // -----------------------------------------------------------------------
@@ -2904,9 +3124,7 @@ impl Mount {
             .collect();
         self.windows
             .values()
-            .filter(|candidate| {
-                !held.contains(&candidate.spec.id) && candidate.spec.id != id
-            })
+            .filter(|candidate| !held.contains(&candidate.spec.id) && candidate.spec.id != id)
             .map(|candidate| (candidate.spec.id.clone(), candidate.spec.title.clone()))
             .collect()
     }
@@ -2920,8 +3138,7 @@ impl Mount {
         let layout = window.layout_at(rect).ok()?;
         let pane = layout.pane_at(at)?;
         let pane_rect = layout.pane_rect(pane)?;
-        let undock_shown =
-            window.arrangement.panes() > 1 && matches!(pane, PaneRef::Window(_));
+        let undock_shown = window.arrangement.panes() > 1 && matches!(pane, PaneRef::Window(_));
         match super::pane::press(pane_rect, undock_shown, at) {
             super::pane::PanePress::Action(mark) => Some(mark),
             _ => None,
@@ -2995,7 +3212,7 @@ impl Mount {
                     return None;
                 }
                 let rect = self.rect_of(id)?;
-                Some(window_body(&window.spec, rect))
+                Some(window_body(window, rect))
             })
             .collect()
     }
@@ -3013,8 +3230,23 @@ impl Mount {
     /// The list is ordered by the frame's own `order`, so two frames over one another draw in the
     /// order their package declared.
     pub fn frame_space(&self) -> Vec<Placed<'_>> {
+        self.placed_frames()
+            .into_iter()
+            // **A window whose live content the mount drew does not also raster its declared
+            // cells.** The frame's grid is the *fallback* picture — the same view drawn as
+            // characters for a host with no GPU surface — and the map window's content is drawn by
+            // the layer now ([`Mount::map_elements`]). Leaving it in this list would replace the
+            // live ground with the declared one wherever their rects meet, which is what let a
+            // static picture read through the map.
+            .filter(|placed| !(placed.frame.window == "map-plan" && self.map.observed()))
+            .collect()
+    }
+
+    /// **Every graded frame the mount may draw, placed in its window's content space** — the
+    /// unfiltered list [`Mount::frame_space`] is a reading of.
+    fn placed_frames(&self) -> Vec<Placed<'_>> {
         let mut placed = Vec::new();
-        for entry in &self.frames {
+        for entry in self.visible_frames() {
             let Some(window) = self.windows.get(entry.frame.window.as_str()) else {
                 continue;
             };
@@ -3024,25 +3256,277 @@ impl Mount {
             let Some(rect) = self.rect_of(&entry.frame.window) else {
                 continue;
             };
-            let content = window_body(&window.spec, rect);
+            let content = window_body(window, rect);
             let width = f64::from(entry.frame.cols) * super::cells::CELL_W_DP;
             let height = f64::from(entry.frame.rows) * super::cells::CELL_H_DP;
             if width > content.width_dp || height > content.height_dp {
                 continue;
             }
-            placed.push(Placed { frame: &entry.frame, rect: content });
+            placed.push(Placed {
+                frame: &entry.frame,
+                rect: content,
+            });
         }
         placed.sort_by_key(|entry| entry.frame.order);
         placed
     }
 
+    /// **The map window's content container** — where its frame and its controls live.
+    ///
+    /// The frame's own placement is the authority when one is graded: it is the space the cell
+    /// format was allowed to address. A package with no frame still has a map window, so the
+    /// window's body is the fallback — the controls are not a privilege of the GPU package.
+    fn map_content(&self) -> Option<Rect> {
+        if let Some(placed) = self
+            .placed_frames()
+            .into_iter()
+            .find(|placed| placed.frame.window == "map-plan")
+        {
+            return Some(placed.rect);
+        }
+        let window = self.windows.get("map-plan")?;
+        if matches!(window.status, Status::Closed | Status::Minimized) {
+            return None;
+        }
+        let rect = self.rect_of("map-plan")?;
+        Some(window_body(window, rect))
+    }
+
+    /// **The one place the map window is told about the shell around it**: the content container it
+    /// is drawn in, the viewport to fall back to, whether its chrome is shown, the frame's own
+    /// declaration of the map, and the two feature tokens (the showing frame's, and the token the
+    /// shell's view selection implies).
+    ///
+    /// This is the one thing the window cannot know about itself — where the shell put it, whether
+    /// the player pinned it, what the package's frame declares — and handing it over once per call is
+    /// what lets the window own everything else. Every call into the map window that depends on the
+    /// shell takes one of these, so the rects the pointer resolves against are the rects the picture
+    /// is drawn in. The window's own account is [`super::map_window`].
+    ///
+    /// **A pinned map is a minimap**: the window is HUD chrome the player keeps in view, so the
+    /// readout strip and the button column would be most of a small panel and none of the picture.
+    /// `chrome` goes false and the ground takes the whole content container; unpinning brings it back.
+    pub fn map_chrome(&self) -> super::map_window::MapChrome {
+        let frame = self.frame_of("map-plan");
+        super::map_window::MapChrome {
+            content: self.map_content(),
+            viewport: self.viewport,
+            chrome: !self.is_pinned("map-plan"),
+            decl: frame
+                .and_then(|frame| frame.map.as_ref())
+                .map(super::map_window::MapDecl::of),
+            feature: frame.and_then(|frame| frame.feature.clone()),
+            selected: match &self.frame_feature {
+                Some(feature) => format!("plan {feature}"),
+                None => "plan all".to_string(),
+            },
+        }
+    }
+
+    /// **The map window's own content, drawn where the window is.**
+    ///
+    /// This is the whole of *the map composes through the shell*: the survey's ground, its marks,
+    /// the readout toolbar and the control gutter are one window's content, emitted inside the
+    /// layer's own order ([`Mount::window_elements`]) rather than stitched into the frame by the
+    /// caller after the cell raster. A window drawn after the map covers the map; a window drawn
+    /// before it is covered by the map; and **nothing here leaves the window's content container**,
+    /// which is the space the package declared for it.
+    ///
+    /// The window draws none of it by itself: [`super::map_window::MapWindow`] answers the ground,
+    /// the toolbar and the gutter, and this composes them and keeps the shell's own refusals — one
+    /// message per part, so a toolbar that cannot lay out does not read as a gutter that did.
+    ///
+    /// A window with no survey yet draws no ground: the frame's declared cells are the fallback
+    /// picture, and they are still in [`Mount::frame_space`] for the raster to draw.
+    fn map_elements(&mut self, palette: &Palette, out: &mut Vec<Element>) {
+        let chrome = self.map_chrome();
+        out.extend(self.map.ground_elements(&chrome));
+        // **The toolbar and the gutter are the window's content too**, so a control is never
+        // painted over by the map and a refusal is the shell's own rather than a caller's.
+        match self.map.toolbar_elements(palette, &chrome) {
+            Ok(elements) => out.extend(elements),
+            Err(detail) => self
+                .refusals
+                .push(format!("the map toolbar refused to lay out: {detail}")),
+        }
+        match self.map.controls_elements(palette, &chrome) {
+            Ok(elements) => out.extend(elements),
+            Err(detail) => self
+                .refusals
+                .push(format!("the map controls refused to lay out: {detail}")),
+        }
+    }
+
+    /// **Run one control's action**, which is the same vocabulary the console's `plan` verb speaks.
+    ///
+    /// Two owners, because there are two kinds of action. The window's own verbs — the camera's, and
+    /// the movement its keys run — are [`super::map_window::MapWindow`]'s, and the window answers
+    /// `None` for anything else. A **view** is the package's: the frames [`Mount::select_feature`]
+    /// walks, so a button saying `plan ocean` and the console's `plan ocean` end in the same
+    /// selection.
+    ///
+    /// **A one-word action is a view; a phrase that is not one of the verbs above is not a control
+    /// at all.** The console's `plan` verb passes a bare token, and the gutter's buttons say
+    /// `plan <token>`, so both of those select a view. But a *typo in a verb* — `zoom wheee` — used
+    /// to be answered as though it had named a world view ("not a world feature this package
+    /// draws"), which is a refusal to the wrong question: no view was asked for. A phrase that names
+    /// no action is refused as one.
+    pub fn map_action(&mut self, action: &str) -> Result<String, String> {
+        let chrome = self.map_chrome();
+        if let Some(answer) = self.map.action(action, &chrome) {
+            return answer;
+        }
+        match action.split_once(char::is_whitespace) {
+            None => self.select_feature(action),
+            Some(_) => match action.strip_prefix("plan ") {
+                Some(token) => self.select_feature(token),
+                None => Err(format!("{action:?} is not a map action")),
+            },
+        }
+    }
+
     /// The graded frame addressed to `window`, if the mounted package declared one — the question a
     /// test and a panel ask, without reaching into the frame's cells.
+    ///
+    /// **It is the frame the window is showing**, not merely the first one the package declares:
+    /// after `plan ocean` the map window answers with its ocean frame.
     pub fn frame_of(&self, window: &str) -> Option<&voxel_package::cellframe::Frame> {
-        self.frames
-            .iter()
+        self.visible_frames()
+            .into_iter()
             .find(|entry| entry.frame.window == window)
             .map(|entry| &entry.frame)
+    }
+
+    /// **The views this package's frames declare**, in declaration order (`all` first).
+    ///
+    /// The tokens are the `feature` key's own vocabulary, so this is the list `plan` accepts
+    /// rather than a second spelling of it. Duplicates are folded: two frames may show the same
+    /// feature from different centres, and the window still offers one choice.
+    pub fn frame_features(&self) -> Vec<String> {
+        let mut features: Vec<String> = Vec::new();
+        for entry in &self.frames {
+            let Some(feature) = &entry.frame.feature else {
+                continue;
+            };
+            if !features.contains(feature) {
+                features.push(feature.clone());
+            }
+        }
+        features
+    }
+
+    /// **Select the map's world view** by the token a frame declares.
+    ///
+    /// `all` (and `clear`) return the package's default view; `next` and `prev` cycle the views
+    /// that are not the default, which is how a keyboard and the two gutter buttons browse
+    /// without knowing the tokens. Any other word must be exactly one of
+    /// [`Mount::frame_features`], because a near-miss silently drawing the default would be a
+    /// selection that did not select.
+    pub fn select_feature(&mut self, selection: &str) -> Result<String, String> {
+        let features = self.frame_features();
+        if features.is_empty() {
+            return Err(
+                "this package declares no frame with a world feature, so there is no map view to \
+                 select"
+                    .to_string(),
+            );
+        }
+        let views: Vec<&String> = features
+            .iter()
+            .filter(|feature| feature.as_str() != "all")
+            .collect();
+        match selection.trim() {
+            "" => Err(format!(
+                "plan needs a feature; this package declares {}",
+                features.join(", ")
+            )),
+            "all" | "clear" => {
+                self.frame_feature = None;
+                Ok("all".to_string())
+            }
+            "next" | "prev" => {
+                if views.is_empty() {
+                    return Err(format!(
+                        "this package declares only the default view ({}); there is nothing to \
+                         cycle to",
+                        features.join(", ")
+                    ));
+                }
+                let back = selection.trim() == "prev";
+                let at = match self
+                    .frame_feature
+                    .as_ref()
+                    .and_then(|current| views.iter().position(|view| *view == current))
+                {
+                    Some(seen) if back => (seen + views.len() - 1) % views.len(),
+                    Some(seen) => (seen + 1) % views.len(),
+                    // **From no selection, `next` is the first view and `prev` is the last**, so
+                    // both buttons move the moment they are pressed.
+                    None if back => views.len() - 1,
+                    None => 0,
+                };
+                let next = views[at].to_string();
+                self.frame_feature = Some(next.clone());
+                Ok(next)
+            }
+            // **`prev` is the same arm as `next` above**, walked the other way (`back`). An older
+            // copy of it sat here unreachable, which the compiler said out loud; one arm per verb.
+            wanted => match features.iter().find(|feature| feature.as_str() == wanted) {
+                Some(feature) if feature == "all" => {
+                    self.frame_feature = None;
+                    Ok("all".to_string())
+                }
+                Some(feature) => {
+                    self.frame_feature = Some(feature.clone());
+                    Ok(feature.clone())
+                }
+                None => Err(format!(
+                    "{wanted:?} is not a world feature this package draws; the views are {}",
+                    features.join(", ")
+                )),
+            },
+        }
+    }
+
+    /// **The frames that draw right now** — one view per window, in `order`.
+    ///
+    /// With no selection, a window shows its `all` frame, or its lowest-order feature frame if
+    /// it declares no default. With a selection, only frames carrying that token draw (plus any
+    /// frame that declares no feature at all, which is not part of the map's vocabulary). The
+    /// choice is made per window, so a package may show a selected view in one window and an
+    /// unrelated frame in another without the two stealing each other's cells.
+    fn visible_frames(&self) -> Vec<&voxel_package::cellframe::Declared> {
+        let mut chosen: BTreeMap<&str, &voxel_package::cellframe::Declared> = BTreeMap::new();
+        for entry in &self.frames {
+            if let (Some(selected), Some(feature)) = (&self.frame_feature, &entry.frame.feature) {
+                if feature != selected {
+                    continue;
+                }
+            }
+            let window = entry.frame.window.as_str();
+            match chosen.get(window) {
+                None => {
+                    chosen.insert(window, entry);
+                }
+                Some(current) => {
+                    let replace = match (
+                        current.frame.feature.as_deref(),
+                        entry.frame.feature.as_deref(),
+                    ) {
+                        // The default view wins over any other when nothing is selected.
+                        (Some("all"), _) => false,
+                        (_, Some("all")) if self.frame_feature.is_none() => true,
+                        _ => entry.frame.order < current.frame.order,
+                    };
+                    if replace {
+                        chosen.insert(window, entry);
+                    }
+                }
+            }
+        }
+        let mut visible: Vec<&voxel_package::cellframe::Declared> = chosen.into_values().collect();
+        visible.sort_by_key(|entry| entry.frame.order);
+        visible
     }
 
     /// **The stack, in one place** — the order a layer draws its windows, back to front.
@@ -3054,16 +3538,31 @@ impl Mount {
     /// is visibly on top.
     fn draw_order(&self, layer: Layer) -> Vec<&str> {
         let pinned = |id: &String| {
-            self.windows.get(id.as_str()).is_some_and(|window| window.spec.pinnable)
+            self.windows
+                .get(id.as_str())
+                .is_some_and(|window| window.pinned)
         };
         match layer {
-            Layer::Pinned => {
-                self.ordered.iter().filter(|id| pinned(id)).map(String::as_str).collect()
-            }
+            Layer::Pinned => self
+                .ordered
+                .iter()
+                .filter(|id| pinned(id))
+                .map(String::as_str)
+                .collect(),
             Layer::Shell => {
                 let mut out: Vec<&str> = Vec::with_capacity(self.ordered.len());
-                out.extend(self.ordered.iter().filter(|id| !pinned(id)).map(String::as_str));
-                out.extend(self.ordered.iter().filter(|id| pinned(id)).map(String::as_str));
+                out.extend(
+                    self.ordered
+                        .iter()
+                        .filter(|id| !pinned(id))
+                        .map(String::as_str),
+                );
+                out.extend(
+                    self.ordered
+                        .iter()
+                        .filter(|id| pinned(id))
+                        .map(String::as_str),
+                );
                 out
             }
         }
@@ -3084,7 +3583,11 @@ impl Mount {
         let mut out = Vec::new();
         self.refusals.clear();
         // Owned for the loop: each window's paint borrows `self` mutably.
-        let open: Vec<String> = self.draw_order(layer).into_iter().map(str::to_string).collect();
+        let open: Vec<String> = self
+            .draw_order(layer)
+            .into_iter()
+            .map(str::to_string)
+            .collect();
         for id in &open {
             if let Err(refusal) = self.window_elements(id, palette, views, &mut out) {
                 self.refusals.push(refusal.to_string());
@@ -3132,11 +3635,15 @@ impl Mount {
 
     /// Open a window, or bring it to the front if it is already open.
     pub fn open(&mut self, id: &str) -> UiResult<()> {
-        let error = || UiRefusal::UnknownWindow { window: id.to_string() };
+        let error = || UiRefusal::UnknownWindow {
+            window: id.to_string(),
+        };
         let window = self.windows.get_mut(id).ok_or_else(error)?;
         if window.host.is_some() {
             // A docked window is a pane of another; opening it would put it in two places.
-            return Err(UiRefusal::DuplicateWindow { window: id.to_string() });
+            return Err(UiRefusal::DuplicateWindow {
+                window: id.to_string(),
+            });
         }
         window.status = match window.status {
             Status::Maximized => Status::Maximized,
@@ -3172,6 +3679,42 @@ impl Mount {
         if self.focused.as_deref() == Some(id) {
             self.focused = self.ordered.last().cloned();
         }
+    }
+
+    /// **Pin a window, or unpin it** — the one writer of the state the layers read.
+    ///
+    /// The declaration's `pin` rows seeded it when the package was mounted
+    /// (`Mount::adopt`); this is what the pin glyph on the title bar runs, and it is
+    /// `PortalWindow::toggle_pin` plus the two things the *layer* decides: a pinned window
+    /// takes the focus (the player just said where their attention is) and it keeps its place
+    /// in the draw order, because the order is the layer's own sort rather than the toggle's.
+    ///
+    /// Answers the new state, or `None` when there is no such window. **A pinned window keeps
+    /// drawing while the shell is hidden** — that is the whole of H-9.8 — and an unpinned one
+    /// leaves the pinned layer at the next frame.
+    pub fn toggle_pin(&mut self, id: &str) -> Option<bool> {
+        let pinned = self.windows.get_mut(id)?.toggle_pin();
+        // A closed window stays closed: pinning decides the *layer*, and opening is the bar's
+        // or the menu's act. A drawn window's pin glyph is therefore the whole of this path.
+        self.focus(id);
+        Some(pinned)
+    }
+
+    /// **Whether a window is pinned**, as the shell now holds it. `false` for a window that is
+    /// not in the package, which is the same answer as a floating one for a caller asking what
+    /// to draw.
+    pub fn is_pinned(&self, id: &str) -> bool {
+        self.windows.get(id).is_some_and(|window| window.pinned)
+    }
+
+    /// The pinned windows, in draw order — the layer's membership, for a reader that has to
+    /// name it (the debug lanes, a test, the console).
+    pub fn pinned_windows(&self) -> Vec<&str> {
+        self.ordered
+            .iter()
+            .filter(|id| self.is_pinned(id))
+            .map(String::as_str)
+            .collect()
     }
 
     /// Maximize a window, or restore it if it already is. The restored rect is the one the
@@ -3234,17 +3777,23 @@ impl Mount {
     /// Undock a pane into a standalone window, where it was last drawn.
     pub fn undock(&mut self, host: &str, pane: &str) -> UiResult<()> {
         if pane == host {
-            return Err(UiRefusal::UnknownWindow { window: pane.to_string() });
+            return Err(UiRefusal::UnknownWindow {
+                window: pane.to_string(),
+            });
         }
         let pane_id = WindowId::new(pane)?;
         let viewport = self.viewport;
         let Some(host_window) = self.windows.get_mut(host) else {
-            return Err(UiRefusal::UnknownWindow { window: host.to_string() });
+            return Err(UiRefusal::UnknownWindow {
+                window: host.to_string(),
+            });
         };
         let arrangement = host_window
             .arrangement
             .close(&PaneRef::Window(pane_id.clone()))
-            .ok_or(UiRefusal::UnknownWindow { window: pane.to_string() })?;
+            .ok_or(UiRefusal::UnknownWindow {
+                window: pane.to_string(),
+            })?;
         // Where the pane was, before the close collapses it out of the tree.
         let host_rect = if host_window.status == Status::Maximized {
             Rect::new(
@@ -3286,18 +3835,23 @@ impl Mount {
         // (`SHELL-PORT.md` §5). The zone rule is the port's (`drop::zone_at`).
         let target = {
             let Some(window) = self.windows.get(host) else {
-                return Err(UiRefusal::UnknownWindow { window: host.to_string() });
+                return Err(UiRefusal::UnknownWindow {
+                    window: host.to_string(),
+                });
             };
             if window.host.is_some() {
-                return Err(UiRefusal::UnknownWindow { window: host.to_string() });
+                return Err(UiRefusal::UnknownWindow {
+                    window: host.to_string(),
+                });
             }
-            let rect = self
-                .rect_of(host)
-                .ok_or(UiRefusal::UnknownWindow { window: host.to_string() })?;
+            let rect = self.rect_of(host).ok_or(UiRefusal::UnknownWindow {
+                window: host.to_string(),
+            })?;
             let layout = window.layout_at(rect)?;
-            let title_height = window::title_height(&window.spec);
-            drop::zone_at(rect, title_height, &layout, at)
-                .ok_or(UiRefusal::UnknownWindow { window: host.to_string() })?
+            let title_height = window.title_height();
+            drop::zone_at(rect, title_height, &layout, at).ok_or(UiRefusal::UnknownWindow {
+                window: host.to_string(),
+            })?
         };
         self.dock_target(host, dragged, &target)
     }
@@ -3309,10 +3863,14 @@ impl Mount {
         let dragged_id = WindowId::new(dragged)?;
         {
             let Some(window) = self.windows.get(dragged) else {
-                return Err(UiRefusal::UnknownWindow { window: dragged.to_string() });
+                return Err(UiRefusal::UnknownWindow {
+                    window: dragged.to_string(),
+                });
             };
             if window.host.is_some() || window.arrangement.panes() > 1 {
-                return Err(UiRefusal::DuplicateWindow { window: dragged.to_string() });
+                return Err(UiRefusal::DuplicateWindow {
+                    window: dragged.to_string(),
+                });
             }
         }
         if !self
@@ -3320,11 +3878,15 @@ impl Mount {
             .get(host)
             .is_some_and(|window| window.host.is_none())
         {
-            return Err(UiRefusal::UnknownWindow { window: host.to_string() });
+            return Err(UiRefusal::UnknownWindow {
+                window: host.to_string(),
+            });
         }
         {
             let Some(host_window) = self.windows.get_mut(host) else {
-                return Err(UiRefusal::UnknownWindow { window: host.to_string() });
+                return Err(UiRefusal::UnknownWindow {
+                    window: host.to_string(),
+                });
             };
             host_window.dock(&[dragged_id], target.pane.as_ref(), target.zone)?;
         }
@@ -3375,8 +3937,14 @@ impl Mount {
         side: Side,
     ) -> UiResult<PaneRef> {
         let created = match self.windows.get_mut(host) {
-            Some(window) => window.arrangement.split_slot(target.as_ref(), orientation, side)?,
-            None => return Err(UiRefusal::UnknownWindow { window: host.to_string() }),
+            Some(window) => window
+                .arrangement
+                .split_slot(target.as_ref(), orientation, side)?,
+            None => {
+                return Err(UiRefusal::UnknownWindow {
+                    window: host.to_string(),
+                })
+            }
         };
         // **The lanes go with the split**: the reference hides them in `split()` (2909), because
         // the press that acted on one has been answered.
@@ -3500,12 +4068,20 @@ impl Mount {
     /// The topmost floating window under a point, with the rect it is drawn at. The order is
     /// `ordered`'s, which is back to front, so the last window holding the point is the one the
     /// click resolves to — and it is the only one (a click through a window is a mis-click).
-    fn topmost_window(&self, at: (f64, f64)) -> Option<(String, Rect)> {
-        self.draw_order(Layer::Shell).into_iter().rev().find_map(|id| {
-            self.rect_of(id)
-                .filter(|rect| rect.contains(at))
-                .map(|rect| (id.to_string(), rect))
-        })
+    ///
+    /// **The shell layer's order**, which is the layer a click is delivered on while the shell
+    /// is shown. Public because the answer is the shell's own — a caller that wants to know
+    /// what a press at a point would reach (an instrument, a debug overlay, a capture) must not
+    /// resolve the order a second time.
+    pub fn topmost_window(&self, at: (f64, f64)) -> Option<(String, Rect)> {
+        self.draw_order(Layer::Shell)
+            .into_iter()
+            .rev()
+            .find_map(|id| {
+                self.rect_of(id)
+                    .filter(|rect| rect.contains(at))
+                    .map(|rect| (id.to_string(), rect))
+            })
     }
 
     /// **The view the frame drew for a window, as a value** — the same construction
@@ -3553,7 +4129,7 @@ impl Mount {
                 let window = self.windows.get(id)?;
                 let rect = self.rect_of(id)?;
                 let layout = window.layout_at(rect).ok()?;
-                let title_height = window::title_height(&window.spec);
+                let title_height = window.title_height();
                 Some((id.to_string(), rect, title_height, layout))
             })
             .collect();
@@ -3696,28 +4272,17 @@ impl Mount {
         if let Some(tab) = self.menu.clone() {
             if let Some(entry) = self.bar.iter().position(|entry| entry.id == tab) {
                 let rows = self.menu_rows(entry, self.viewport);
-                if let Some((id, _)) = rows
-                    .iter()
-                    .skip(1)
-                    .find(|(_, rect)| rect.contains(at))
-                {
+                if let Some((id, _)) = rows.iter().skip(1).find(|(_, rect)| rect.contains(at)) {
                     let id = id.clone();
                     self.menu = None;
                     let _ = self.open(&id);
                     return;
                 }
-                let over_menu = rows
-                    .first()
-                    .is_some_and(|(_, first)| {
-                        let last = rows.last().expect("a menu has at least its header").1;
-                        Rect::new(
-                            first.x,
-                            first.y,
-                            first.width_dp,
-                            last.bottom() - first.y,
-                        )
+                let over_menu = rows.first().is_some_and(|(_, first)| {
+                    let last = rows.last().expect("a menu has at least its header").1;
+                    Rect::new(first.x, first.y, first.width_dp, last.bottom() - first.y)
                         .contains(at)
-                    });
+                });
                 if !over_menu {
                     self.menu = None;
                 }
@@ -3731,11 +4296,25 @@ impl Mount {
                 continue;
             }
             if tab {
-                self.menu = if self.menu.as_deref() == Some(id.as_str()) { None } else { Some(id) };
+                self.menu = if self.menu.as_deref() == Some(id.as_str()) {
+                    None
+                } else {
+                    Some(id)
+                };
             } else {
                 let _ = self.open(&id);
             }
             return;
+        }
+
+        // **The map's controls, before the window's own press routing.** They live in the map
+        // window's gutter, and a button that fell through to the title bar or the drag would be
+        // a control that only looked pressable.
+        if button == Button::Left {
+            if let Some(action) = self.map.control_at(&self.map_chrome(), at) {
+                let _ = self.map_action(&action);
+                return;
+            }
         }
 
         // The windows, front to back. The topmost window under the pointer handles the click,
@@ -3775,9 +4354,15 @@ impl Mount {
             Some(window) => window.press_at(rect, &view, at, double),
             None => WindowPress::None,
         };
-        let maximized = self.windows.get(&id).is_some_and(|w| w.status == Status::Maximized);
+        let maximized = self
+            .windows
+            .get(&id)
+            .is_some_and(|w| w.status == Status::Maximized);
         match verdict {
             WindowPress::Control(action) => match action {
+                GlyphAction::Pin => {
+                    self.toggle_pin(&id);
+                }
                 GlyphAction::Close => self.close(&id),
                 GlyphAction::Minimize => self.minimize(&id),
                 GlyphAction::Maximize => self.toggle_maximize(&id),
@@ -3828,11 +4413,12 @@ impl Mount {
                 self.focus(&id);
                 let from = self.windows.get(&id).and_then(|window| {
                     let shares = window.arrangement.shares();
-                    shares
-                        .get(seam.splitter)
-                        .and_then(|children| {
-                            Some((*children.get(seam.boundary)?, *children.get(seam.boundary + 1)?))
-                        })
+                    shares.get(seam.splitter).and_then(|children| {
+                        Some((
+                            *children.get(seam.boundary)?,
+                            *children.get(seam.boundary + 1)?,
+                        ))
+                    })
                 });
                 if let Some(from) = from {
                     self.seam = Some(window::SeamDrag::start(&id, &seam, from, at));
@@ -4027,36 +4613,51 @@ impl Mount {
     /// not the port's), and it places that content against **the layout the port returned**, so
     /// the chrome and the content cannot disagree about a rect (§5).
     fn window_elements(
-        &self,
+        &mut self,
         id: &str,
         palette: &Palette,
         views: &ContentViews,
         out: &mut Vec<Element>,
     ) -> UiResult<()> {
-        let Some(window) = self.windows.get(id) else {
-            return Ok(());
+        // **The chrome, and the borrow ends with it.** A map window's content is drawn by this
+        // mount — its survey is a field of it — so the window is read out here and the rest of
+        // this function can reach `self` mutably. The port's chrome is drawn at the rect this
+        // frame draws the window at — the same rect the pointer resolves against
+        // ([`Mount::rect_of`]). The titles and the empty-slot offers are the registry's: a pane
+        // here holds a window, and a pane the registry cannot title draws the reference's
+        // placeholder. **One construction with the pointer**: this view is
+        // [`Mount::window_view`], so what is drawn and what is hit-tested are one value.
+        let (opacity, spec, layout) = {
+            let Some(window) = self.windows.get(id) else {
+                return Ok(());
+            };
+            if window.status == Status::Minimized || window.status == Status::Closed {
+                return Ok(());
+            }
+            let Some(rect) = self.rect_of(id) else {
+                return Ok(());
+            };
+            let opacity = (window.spec.opacity as f64 / 1000.0).clamp(0.0, 1.0);
+            let titles = self.pane_title_map(id);
+            let view = self.window_view(id);
+            // **A pane whose window the registry does not hold is not in this map**, and that is
+            // the port's empty-slot reading: `titles` absent means the placeholder draws. Every
+            // pane id in this tree's model names a window, so the map is complete for a shipped
+            // arrangement — and a pane the registry has lost draws the reference's slot rather
+            // than a blank.
+            let layout = window.elements_at(rect, &view, palette, &titles, out)?;
+            (opacity, window.spec.clone(), layout)
         };
-        if window.status == Status::Minimized || window.status == Status::Closed {
-            return Ok(());
-        }
-        let Some(rect) = self.rect_of(id) else {
-            return Ok(());
-        };
-        let opacity = (window.spec.opacity as f64 / 1000.0).clamp(0.0, 1.0);
 
-        // The port's chrome, at the rect this frame draws the window at — the same rect the
-        // pointer resolves against ([`Mount::rect_of`]). The titles and the empty-slot offers
-        // are the registry's: a pane here holds a window, and a pane the registry cannot title
-        // draws the reference's placeholder. **One construction with the pointer**: this view
-        // is [`Mount::window_view`], so what is drawn and what is hit-tested are one value.
-        let titles = self.pane_title_map(id);
-        let view = self.window_view(id);
-        // **A pane whose window the registry does not hold is not in this map**, and that is
-        // the port's empty-slot reading: `titles` absent means the placeholder draws. Every
-        // pane id in this tree's model names a window, so the map is complete for a shipped
-        // arrangement — and a pane the registry has lost draws the reference's slot rather than
-        // a blank.
-        let layout = window.elements_at(rect, &view, palette, &titles, out)?;
+        // **A map window's content is the map's own**, drawn here, inside the layer's order: the
+        // survey's ground, its marks, the readout toolbar and the control gutter. This is the
+        // whole of *the map composes through the shell* — a window drawn after the map covers it,
+        // a window drawn before it is covered by it, and nothing leaves the window's content
+        // container. A window with no survey yet draws no ground; the frame's declared cells are
+        // the fallback picture and they are still in [`Mount::frame_space`] for the raster.
+        if spec.content == Content::MapPlan {
+            self.map_elements(palette, out);
+        }
 
         // The content, against the layout the chrome drew. **A slot has no content to draw**
         // here: its body is the placeholder, which the port's own door drew
@@ -4078,7 +4679,10 @@ impl Mount {
             // below**, so its content begins at the pane's top: that is the row the package
             // reserved for the body, and starting 40 dp lower is what ran the declared
             // geometry off the bottom of the screen.
-            let pane_rect = pane_content_rect(window, pane_rect);
+            let pane_rect = match self.windows.get(id) {
+                Some(window) => pane_content_rect(window, pane_rect),
+                None => pane_rect,
+            };
             if let Some(pane_window) = self.windows.get(&pane_id) {
                 let content = pane_window.spec.content;
                 if matches!(content, Content::Console | Content::Log) {
@@ -4106,9 +4710,22 @@ impl Mount {
                     }
                 }
             }
+            // **A map window with a graded frame has no declaration panel behind it.** The
+            // frame is its content; the rows that used to say `map-plan / world / 480×440`
+            // beside a 56-cell picture were the fallback showing through the part of the pane
+            // the frame did not cover. The map's own content — ground, marks, toolbar and
+            // controls — was drawn above, where the window is, and never here.
+            if self
+                .windows
+                .get(&pane_id)
+                .is_some_and(|window| window.spec.content == Content::MapPlan)
+                && self.frame_of(&pane_id).is_some()
+            {
+                continue;
+            }
             let panel = match self.windows.get(&pane_id) {
                 Some(pane_window) => views.panel_for(&pane_window.spec),
-                None => declared_content_panel(&window.spec),
+                None => declared_content_panel(&spec),
             };
             // **Bounded to the pane it is about to be drawn in.** A window at the size its
             // package declared was already sized to its view; a pane the operator made by docking
@@ -4163,7 +4780,10 @@ impl Mount {
         let opacity = voxel_ui::panel_opacity();
         out.push(Element::Surface {
             rect: bar,
-            paint: Paint { rgb: chrome, alpha: opacity },
+            paint: Paint {
+                rgb: chrome,
+                alpha: opacity,
+            },
         });
         out.push(Element::Rule {
             rect: Rect::new(0.0, height, viewport.width_dp, 1.0),
@@ -4175,7 +4795,11 @@ impl Mount {
         for (entry, (id, tab, rect)) in self.bar.iter().zip(rects) {
             let is_open = self.menu.as_deref() == Some(entry.id.as_str());
             let focused = self.focused.as_deref() == Some(entry.id.as_str());
-            let ink = if is_open || focused { Ink::Full } else { Ink::Secondary };
+            let ink = if is_open || focused {
+                Ink::Full
+            } else {
+                Ink::Secondary
+            };
             contrast_over_backdrop(ink.composited_over(backdrop), backdrop)?;
             out.push(Element::Text {
                 rect: Rect::new(
@@ -4225,7 +4849,10 @@ impl Mount {
             .unwrap_or(0.0);
         out.push(Element::Surface {
             rect: Rect::new(first.x, first.y, first.width_dp, height),
-            paint: Paint { rgb: surface, alpha: opacity },
+            paint: Paint {
+                rgb: surface,
+                alpha: opacity,
+            },
         });
 
         // The menu's title row: the tab's own label, in the secondary ink — it names the sort,
@@ -4325,7 +4952,7 @@ impl Mount {
         let Some(window) = self.windows.get(id) else {
             return Vec::new();
         };
-        super::titlebar::control_lanes(rect, &window.spec)
+        super::titlebar::control_lanes(rect, &window.spec, window.bar_style())
     }
 
     /// The menu's rows, in draw order: a **header** naming the sort, then one row per offered
@@ -4356,7 +4983,10 @@ impl Mount {
         let shift = (bar_height_dp() + height - viewport.height_dp).max(0.0);
         rows.into_iter()
             .map(|(id, rect)| {
-                (id, Rect::new(rect.x, rect.y - shift, rect.width_dp, rect.height_dp))
+                (
+                    id,
+                    Rect::new(rect.x, rect.y - shift, rect.width_dp, rect.height_dp),
+                )
             })
             .collect()
     }
@@ -4433,7 +5063,7 @@ window\tworld\n\
 \tcontent\tworld-view\n\
 \tlane\tworld\n\
 \textent\tsquare-pixels\n\
-\tgeometry\t16 48 336 360\n\
+\tgeometry\t928 48 336 360\n\
 \tmin-size\t240 192\n\
 \topacity\t930\n\
 \televation\t0\n\
@@ -4551,7 +5181,9 @@ window\tapi-viewer\n\
         assert_eq!(loaded.artifacts, artifacts);
 
         let mut mount = Mount::new(&loaded).expect("the shipped frame grades and mounts");
-        let frame = mount.frame_of("map-plan").expect("the map-plan frame is mounted");
+        let frame = mount
+            .frame_of("map-plan")
+            .expect("the map-plan frame is mounted");
         assert_eq!(frame.id, "MAP-0001");
         mount.open("map-plan").expect("the map window opens");
         assert!(
@@ -4561,6 +5193,812 @@ window\tapi-viewer\n\
                 .any(|placed| placed.frame.id == "MAP-0001"),
             "the shipped frame is placed in its window's content space"
         );
+    }
+
+    #[test]
+    fn a_spec_that_names_the_same_frames_inherits_them_when_its_folder_has_no_frames() {
+        let folder = workspace().join("display-packages/alpha-shell");
+        let source = std::fs::read(folder.join("package.shspec")).expect("the package source");
+        let artifacts = recipe::artifacts_in(&folder).expect("the folder's frames");
+        let package = recipe::compile_with_artifacts(&source, &artifacts)
+            .expect("the package compiles with its frames");
+        let loaded = recipe::load(&package).expect("the packaged frames load");
+        let mut mount = Mount::new(&loaded).expect("the shipped frames grade and mount");
+
+        // **The shell prototype's shape**: the same recipe in a folder with no `frames/`.
+        // This is `packages/alpha-shell.shspec`, which the live-reload watch adopts.
+        let scratch =
+            std::env::temp_dir().join(format!("shploingus-spec-inherits-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).expect("a scratch folder");
+        std::fs::write(scratch.join("package.shspec"), &source).expect("the spec copy");
+        mount
+            .load_package(&scratch.join("package.shspec"))
+            .expect("a spec that names the same frames inherits their artifacts");
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert_eq!(
+            mount
+                .frame_of("map-plan")
+                .expect("the map frame survived the reload")
+                .id,
+            "MAP-0001",
+            "the spec reload dropped the frames its rows still name"
+        );
+        mount.open("map-plan").expect("the map window opens");
+        assert_eq!(
+            mount.frame_space().len(),
+            1,
+            "the map window draws no cell frame after the spec reload"
+        );
+    }
+
+    #[test]
+    fn the_map_window_selects_a_declared_world_feature_and_refuses_a_view_it_does_not_draw() {
+        let folder = workspace().join("display-packages/alpha-shell");
+        let source = std::fs::read(folder.join("package.shspec")).expect("the package source");
+        let artifacts = recipe::artifacts_in(&folder).expect("the folder's frames");
+        let package = recipe::compile_with_artifacts(&source, &artifacts)
+            .expect("the package compiles with its frames");
+        let loaded = recipe::load(&package).expect("the packaged frames load");
+        let mut mount = Mount::new(&loaded).expect("the shipped frames grade and mount");
+        mount.open("map-plan").expect("the map window opens");
+
+        // The default view is the one that claims every cell.
+        let features = mount.frame_features();
+        assert!(
+            features.contains(&"all".to_string()),
+            "the package declares no default view: {features:?}"
+        );
+        assert!(
+            features.len() > 2,
+            "the map does not offer a selection of world features: {features:?}"
+        );
+        assert_eq!(
+            mount
+                .frame_of("map-plan")
+                .expect("the default frame")
+                .feature
+                .as_deref(),
+            Some("all")
+        );
+
+        // A selection through the console verb, not a private setter: `plan ocean` is the command
+        // a player types, and the window answers with the ocean frame.
+        assert!(
+            features.iter().any(|feature| feature == "ocean"),
+            "the package has no ocean view"
+        );
+        mount.run(
+            &Command {
+                verb: Verb::Plan,
+                args: vec!["ocean".to_string()],
+            },
+            None,
+        );
+        let ocean = mount.frame_of("map-plan").expect("the ocean frame");
+        assert_eq!(ocean.feature.as_deref(), Some("ocean"));
+        assert_ne!(ocean.id, "MAP-0001", "the selection kept the default frame");
+        assert_eq!(
+            mount.frame_space().len(),
+            1,
+            "one selection, one frame placed"
+        );
+        assert_eq!(mount.frame_space()[0].frame.id, ocean.id);
+
+        // **Both gutter arrows move.** `prev` from `ocean` is the last declared view (not the
+        // default and not a no-op), and `next` returns to `ocean`.
+        let back = mount.select_feature("prev").expect("the previous view");
+        assert_ne!(back, "ocean", "prev must move off the selected view");
+        assert_ne!(
+            back, "all",
+            "prev cycles the declared views, not the default"
+        );
+        assert_eq!(
+            mount.select_feature("next").expect("forward again"),
+            "ocean"
+        );
+
+        // Cycling moves to another declared view; `all` returns the default.
+        let cycled = mount.select_feature("next").expect("the next view");
+        assert_ne!(cycled, "ocean");
+        assert_eq!(mount.select_feature("all").expect("the default"), "all");
+        assert_eq!(
+            mount.frame_of("map-plan").expect("the default frame").id,
+            "MAP-0001"
+        );
+
+        // An undeclared view is refused by name and changes nothing.
+        assert!(mount.select_feature("volcano").is_err());
+        assert_eq!(
+            mount.frame_of("map-plan").expect("the default frame").id,
+            "MAP-0001"
+        );
+    }
+
+    #[test]
+    fn the_map_controls_draw_and_the_pointer_resolves_the_button_under_it() {
+        let folder = workspace().join("display-packages/alpha-shell");
+        let source = std::fs::read(folder.join("package.shspec")).expect("the package source");
+        let artifacts = recipe::artifacts_in(&folder).expect("the folder's frames");
+        let package = recipe::compile_with_artifacts(&source, &artifacts).expect("compiles");
+        let loaded = recipe::load(&package).expect("loads");
+        let mut mount = Mount::new(&loaded).expect("mounts");
+        mount.open("map-plan").expect("the map window opens");
+
+        let palette = Palette::declared();
+        let toolbar = mount
+            .map
+            .toolbar_elements(&palette, &mount.map_chrome())
+            .expect("the toolbar draws");
+        assert!(
+            toolbar
+                .iter()
+                .any(|element| element.text() == Some("WORLD MAP")),
+            "the toolbar carries the map's title"
+        );
+        assert!(
+            toolbar.iter().any(|element| element.text() == Some("all")),
+            "the toolbar reads the view the window is showing"
+        );
+        let toolbar_rect = mount
+            .map
+            .toolbar_rect(&mount.map_chrome())
+            .expect("a toolbar rect");
+        let terrain_rect = mount
+            .map
+            .view_rect(&mount.map_chrome())
+            .expect("a terrain rect");
+        let controls_rect = mount
+            .map
+            .controls_rect(&mount.map_chrome())
+            .expect("a controls rect");
+        assert!(
+            toolbar_rect.bottom() <= terrain_rect.y,
+            "the toolbar is above the terrain"
+        );
+        assert!(
+            toolbar_rect.bottom() <= controls_rect.y,
+            "the toolbar is above the controls"
+        );
+        assert!(
+            terrain_rect.right() <= controls_rect.x,
+            "the map does not paint the gutter"
+        );
+
+        let elements = mount
+            .map
+            .controls_elements(&palette, &mount.map_chrome())
+            .expect("the controls draw");
+        assert!(!elements.is_empty(), "the map window's gutter drew nothing");
+        let rendered = mount
+            .map
+            .controls(&mount.map_chrome())
+            .expect("the controls render");
+        let ocean = rendered
+            .buttons
+            .iter()
+            .find(|button| button.action == "plan ocean")
+            .expect("the ocean control");
+        let at = (
+            ocean.rect.x + ocean.rect.width_dp / 2.0,
+            ocean.rect.y + ocean.rect.height_dp / 2.0,
+        );
+        assert_eq!(
+            mount.map.control_at(&mount.map_chrome(), at).as_deref(),
+            Some("plan ocean")
+        );
+        assert_eq!(
+            mount.map.control_at(&mount.map_chrome(), (0.0, 0.0)),
+            None,
+            "a point outside the gutter is no control"
+        );
+
+        mount.minimize("map-plan");
+        assert_eq!(
+            mount.map.controls_elements(&palette, &mount.map_chrome()),
+            Ok(Vec::new()),
+            "a closed map is an empty list, not a refusal"
+        );
+    }
+
+    /// **A ground the map can read with no world in it**: one chunk of one declared height, an
+    /// order above the laws' own relief, so a sample that answers it is unmistakably the streamer's
+    /// own voxels rather than the field underneath them.
+    struct Sheet {
+        top_m: f32,
+        revision: u64,
+    }
+
+    impl crate::map_survey::MapGround for Sheet {
+        fn chunk_surface(&self, chunk: [i32; 2]) -> Option<crate::map_survey::ChunkSurface> {
+            (chunk == [0, 0]).then(|| crate::map_survey::ChunkSurface::sheet(self.top_m))
+        }
+
+        fn ground_revision(&self) -> u64 {
+            self.revision
+        }
+    }
+
+    /// The world the map's observation reads: the laws, and a ground the test hands it.
+    fn map_spec() -> voxel_shapers::WorldSpec {
+        voxel_shapers::WorldSpec::new(crate::game::GAME_SEED, voxel_shapers::Config::default())
+    }
+
+    /// The ground an element list painted, in square device pixels.
+    fn painted(elements: &[Element]) -> f64 {
+        elements
+            .iter()
+            .map(|element| match element {
+                Element::Surface { rect, .. } => rect.width_dp * rect.height_dp,
+                _ => 0.0,
+            })
+            .sum()
+    }
+
+    /// Mount the display package with the map window open at `w × h`.
+    fn map_mount(w: f64, h: f64) -> Mount {
+        let folder = workspace().join("display-packages/alpha-shell");
+        let source = std::fs::read(folder.join("package.shspec")).expect("the package source");
+        let artifacts = recipe::artifacts_in(&folder).expect("the folder's frames");
+        let package = recipe::compile_with_artifacts(&source, &artifacts).expect("compiles");
+        let loaded = recipe::load(&package).expect("loads");
+        let mut mount = Mount::new(&loaded).expect("mounts");
+        mount.set_viewport(Rect::new(0.0, 0.0, w, h));
+        mount.open("map-plan").expect("the map window opens");
+        mount
+    }
+
+    /// **The map is the world's own surface, and it composes in the shell's own layer.**
+    ///
+    /// One observation reads the ground the map may draw; the body then fills its rectangle at a
+    /// true world scale at two clearly different window sizes, the whole of it inside the window's
+    /// content container, and the frame's declared cells are withdrawn — so the picture in the
+    /// window is the map's and not a static fallback reading through it.
+    #[test]
+    fn the_map_composes_in_the_shells_layer_from_the_worlds_own_voxels() {
+        let mut mount = map_mount(1280.0, 720.0);
+        let spec = map_spec();
+        let ground = Sheet {
+            top_m: 200.0,
+            revision: 1,
+        };
+        // **One observation is the whole interface to the world.** The camera is placed on the
+        // column the frame declares, the survey is what the body and the camera can see, and the
+        // streamer's own voxels are written over the laws' field: the mount keeps the survey, and
+        // the caller passes no terrain and no key.
+        let observation = mount.map.observe(
+            crate::map_survey::MapWorld {
+                ground: Some(&ground),
+                spec: &spec,
+                tick: 0,
+            },
+            Some([16.0, 16.0, 90.0]),
+            1.0,
+            &mount.map_chrome(),
+        );
+        assert!(observation.law, "the laws are sampled for the plan");
+        assert!(observation.ground, "and the world's own surface over them");
+        assert!(
+            observation.from_chunks > 0,
+            "the sheet answered: {observation:?}"
+        );
+        let declaration = mount
+            .frame_of("map-plan")
+            .and_then(|frame| frame.map.clone())
+            .expect("the frame declares a map");
+        assert_eq!(
+            mount.map.camera().centre_m,
+            declaration.centre_xz,
+            "the window opened on the column the frame declares"
+        );
+        assert_eq!(
+            mount.map.camera().pitch_deg,
+            declaration.pitch_deg.abs(),
+            "at the tilt the frame declares"
+        );
+
+        // **Inside the residency the height is the world's own voxels; outside it the law's field.**
+        let (inside, outside, outside_law) = {
+            let terrain = mount.map.terrain().expect("a survey");
+            let column = |xz: [f64; 2]| {
+                let (fx, fy) = terrain.cell_of(xz);
+                (fx.round() as i32, fy.round() as i32)
+            };
+            // Well inside the survey and well outside the one resident chunk: a third of the
+            // window's span from the middle, twenty samples clear of the sheet's own edge.
+            let outside = column([
+                terrain.centre_xz[0] + terrain.cell_m * 20.0,
+                terrain.centre_xz[1] + terrain.cell_m * 20.0,
+            ]);
+            let law = {
+                let [x, z] = terrain.sample_xz(outside);
+                voxel_shapers::terrain::elevation_m(&spec, x, z)
+            };
+            (column([16.0, 16.0]), outside, law)
+        };
+        let terrain = mount.map.terrain().expect("a survey");
+        assert_eq!(
+            terrain.height(inside),
+            Some(200.0),
+            "the world's own voxels, not the law"
+        );
+        let law_from_the_field = terrain.height(outside).expect("the field grounds");
+        assert!(
+            (law_from_the_field - outside_law).abs() < 1e-4,
+            "beyond the residency the survey is the law's field: cell {outside:?} reads \
+             {law_from_the_field} against {outside_law}"
+        );
+
+        // **The picture is the map's, composed where the window is.** The elements the mount draws
+        // for the layer are the ground, the marker, the toolbar and the gutter — and every one of
+        // them is inside the window's content container, which is the space the package declared.
+        let palette = Palette::declared();
+        let mut content = Vec::new();
+        mount.map_elements(&palette, &mut content);
+        let body = mount
+            .map
+            .view_rect(&mount.map_chrome())
+            .expect("a map body");
+        let container = mount.map_content().expect("the window's content container");
+        assert!(
+            painted(&content) >= body.width_dp * body.height_dp * 0.98,
+            "the body is painted, not dead bands: {} of {}",
+            painted(&content),
+            body.width_dp * body.height_dp
+        );
+        assert_eq!(
+            content
+                .iter()
+                .filter(|element| element.text() == Some("@"))
+                .count(),
+            1,
+            "one player marker"
+        );
+        assert!(
+            content.iter().any(|element| element.text() == Some("▶")),
+            "the arrow is east"
+        );
+        for element in &content {
+            let rect = element.rect();
+            assert!(
+                rect.x >= container.x - 0.51
+                    && rect.y >= container.y - 0.51
+                    && rect.right() <= container.right() + 0.51
+                    && rect.bottom() <= container.bottom() + 0.51,
+                "an element left the map window's content: {rect:?} outside {container:?}"
+            );
+        }
+
+        // **And the frame's declared cells are withdrawn once the map is live**, so the static
+        // fallback picture cannot read through the survey — the failure this structure exists for.
+        assert!(
+            !mount
+                .frame_space()
+                .iter()
+                .any(|placed| placed.frame.window == "map-plan"),
+            "the declared cell frame is the fallback, not a second map"
+        );
+
+        // **The same world at the same scale at two clearly different sizes.** The camera is the
+        // one value, so a wider window asks for more ground rather than stretching what it had,
+        // and the picture still covers the body it is drawn in.
+        for (width, height) in [(1280.0, 720.0), (1920.0, 1080.0)] {
+            mount.set_viewport(Rect::new(0.0, 0.0, width, height));
+            mount.open("map-plan").expect("the map window opens");
+            let scale = mount.map.camera().pixels_per_m;
+            mount.map.observe(
+                crate::map_survey::MapWorld {
+                    ground: Some(&ground),
+                    spec: &spec,
+                    tick: 0,
+                },
+                Some([16.0, 16.0, 90.0]),
+                1.0,
+                &mount.map_chrome(),
+            );
+            assert_eq!(
+                mount.map.camera().pixels_per_m,
+                scale,
+                "{width}×{height} changed the world scale"
+            );
+            let body = mount
+                .map
+                .view_rect(&mount.map_chrome())
+                .expect("a map body");
+            let plan = mount.map.camera().survey(body, declaration.cell_m);
+            assert!(
+                plan.columns as f64 * plan.sample_m >= body.width_dp / scale,
+                "{width}×{height}: the survey stopped short of the body"
+            );
+            let mut content = Vec::new();
+            mount.map_elements(&palette, &mut content);
+            assert!(
+                painted(&content) >= body.width_dp * body.height_dp * 0.98,
+                "{width}×{height} leaves dead bands: {} of {}",
+                painted(&content),
+                body.width_dp * body.height_dp
+            );
+        }
+    }
+
+    /// **A control's action is its own vocabulary, and a phrase that is not one says so.** A typo in
+    /// a verb — `zoom wheee` — used to be refused as a *world view*: "not a world feature this
+    /// package draws". That is the right refusal to the wrong question (no view was asked for), and
+    /// the live run printed it, which is how it was found.
+    #[test]
+    fn an_unknown_map_action_is_refused_as_an_action_and_an_unknown_view_as_a_view() {
+        let mut mount = map_mount(1280.0, 720.0);
+        assert_eq!(
+            mount.map_action("zoom wheee"),
+            Err("\"zoom wheee\" is not a map action".to_string())
+        );
+        // **The two spellings of a view both select one**: the gutter's `plan <token>` and the bare
+        // token the console's `plan` verb passes. A token the package does not draw is refused with
+        // the views it does draw, so the two refusals cannot be confused.
+        for action in ["plan nowhere", "nowhere"] {
+            let refusal = mount.map_action(action).expect_err("there is no such view");
+            assert!(
+                refusal.contains("is not a world feature this package draws"),
+                "{action}: {refusal}"
+            );
+        }
+        assert!(mount.map_action("zoom out").is_ok());
+        assert!(mount.map_action("plan ocean").is_ok());
+    }
+
+    #[test]
+    fn the_map_body_draws_the_player_and_a_click_selects_the_cell_under_it() {
+        let mut mount = map_mount(1280.0, 720.0);
+        let spec = map_spec();
+        let ground = Sheet {
+            top_m: 200.0,
+            revision: 1,
+        };
+        mount.map.observe(
+            crate::map_survey::MapWorld {
+                ground: Some(&ground),
+                spec: &spec,
+                tick: 0,
+            },
+            Some([16.0, 16.0, 90.0]),
+            1.0,
+            &mount.map_chrome(),
+        );
+        let rect = mount
+            .map
+            .view_rect(&mount.map_chrome())
+            .expect("a map body");
+
+        // **A press and release without travel selects the cell under it.** The camera is the
+        // mount's, and the pick goes through it — one projection for the picture and the pointer.
+        // The point is the centre of the survey's own middle cell, projected by that camera.
+        let at = {
+            let terrain = mount.map.terrain().expect("a survey");
+            let middle = (terrain.columns as i32 / 2, terrain.rows as i32 / 2);
+            let [x, height, z] = terrain.world_xyz(middle).expect("the middle grounds");
+            let projected = mount.map.camera().project(rect, [x, height, z]);
+            (projected[0], projected[1])
+        };
+        assert!(
+            mount.map.press(at, &mount.map_chrome()),
+            "the press is the map's"
+        );
+        assert!(mount.map.release(at, &mount.map_chrome()));
+        let (cell, cursor) = {
+            let terrain = mount.map.terrain().expect("a survey");
+            let cell = terrain
+                .cell_at_pointer(rect, at, &mount.map.camera())
+                .expect("a cell under the pointer");
+            (cell, terrain.world_xyz(cell))
+        };
+        assert_eq!(
+            mount.map.selection(),
+            Some(mount.map.terrain().expect("a survey").world_of(cell))
+        );
+        assert_eq!(
+            mount
+                .map
+                .facts(&mount.map_chrome())
+                .expect("the toolbar's facts")
+                .cursor,
+            cursor,
+            "the toolbar reads the cell the pointer landed on"
+        );
+        let mut content = Vec::new();
+        mount.map_elements(&Palette::declared(), &mut content);
+        assert!(
+            content.iter().any(|element| element.text() == Some("◇")),
+            "the selected cell is marked"
+        );
+
+        // The same press and release clears it: the window can set and clear its selection.
+        assert!(mount.map.press(at, &mount.map_chrome()));
+        assert!(mount.map.release(at, &mount.map_chrome()));
+        assert_eq!(mount.map.selection(), None);
+
+        // **A drag pans the camera and selects nothing**, at the same scale: the survey and the
+        // camera are two things, and a pan is the camera's.
+        let before = mount.map.camera();
+        let scale = before.pixels_per_m;
+        assert!(mount.map.press(at, &mount.map_chrome()));
+        assert!(mount.map.drag((at.0 + 60.0, at.1), &mount.map_chrome()));
+        assert!(mount.map.release((at.0 + 60.0, at.1), &mount.map_chrome()));
+        let after = mount.map.camera();
+        assert!(
+            after.centre_m[0] < before.centre_m[0],
+            "the drag brought the world with it"
+        );
+        assert_eq!(after.pixels_per_m, scale, "panning does not zoom");
+        assert_eq!(mount.map.selection(), None, "a drag is not a selection");
+
+        // **The wheel zooms about the pointer**, and the toolbar's zoom reads the camera.
+        let anchor = (rect.x + rect.width_dp / 2.0, rect.y + rect.height_dp / 2.0);
+        assert!(mount.map.wheel(anchor, 1.0, &mount.map_chrome()));
+        assert!(mount.map.camera().pixels_per_m > scale);
+        assert!(mount.map_action("zoom reset").is_ok());
+        assert_eq!(
+            mount.map.camera().pixels_per_m,
+            MapCamera::default().pixels_per_m
+        );
+
+        // A point off the body is no cell, and clears the cursor rather than keeping it stale.
+        assert!(!mount.map.hover((0.0, 0.0), &mount.map_chrome()));
+        assert_eq!(mount.map.cursor_cell(), None);
+    }
+
+    /// **The map is a viewer.** It moves and is looked at; it declares no control that edits the
+    /// world, because the terrain's own modification is the shapers' over the world's cadence tick;
+    /// and **a move is the drag it names**, one screen step's worth, so a key and a hand cannot mean
+    /// two different directions. A pinned map is a minimap and draws none of it.
+    #[test]
+    fn the_map_moves_like_its_drag_and_declares_no_control_that_edits_the_world() {
+        let mut mount = map_mount(1280.0, 720.0);
+        let spec = map_spec();
+        let ground = Sheet {
+            top_m: 200.0,
+            revision: 1,
+        };
+        mount.map.observe(
+            crate::map_survey::MapWorld {
+                ground: Some(&ground),
+                spec: &spec,
+                tick: 0,
+            },
+            Some([16.0, 16.0, 90.0]),
+            1.0,
+            &mount.map_chrome(),
+        );
+        // **Nothing the map draws edits the world.** The document's own list is walked, so a control
+        // added tomorrow is held to the same contract: a view to draw, a zoom, a turn, a recentre, a
+        // place — and the terrain's modification stays the shapers' over the cadence tick.
+        let document = crate::shell::xml::Document::parse(crate::shell::webview::MAP_CONTROLS)
+            .expect("the controls document parses");
+        fn declared_actions(node: &crate::shell::xml::Node, out: &mut Vec<String>) {
+            if node.name == "button" {
+                if let Some(action) = node.attr("action") {
+                    out.push(action.to_string());
+                }
+            }
+            for child in &node.children {
+                declared_actions(child, out);
+            }
+        }
+        let mut declared = Vec::new();
+        declared_actions(&document.root, &mut declared);
+        assert!(
+            declared.len() > 10,
+            "the controls document is not the one this test means to hold: {} buttons",
+            declared.len()
+        );
+        for action in &declared {
+            assert!(
+                !matches!(
+                    action.as_str(),
+                    "raise"
+                        | "lower"
+                        | "mark"
+                        | "clear"
+                        | "apply"
+                        | "brush wider"
+                        | "brush narrower"
+                        | "brush +"
+                        | "brush -"
+                ),
+                "{action} is drawn on the map and edits the world"
+            );
+        }
+        // The toolbar's facts, likewise: no `<fact>` names a hammer or a lift.
+        let toolbar = crate::shell::xml::Document::parse(crate::shell::webview::MAP_TOOLBAR)
+            .expect("the toolbar parses");
+        fn declared_fields(node: &crate::shell::xml::Node, out: &mut Vec<String>) {
+            if let Some(field) = node.attr("field") {
+                out.push(field.to_string());
+            }
+            for child in &node.children {
+                declared_fields(child, out);
+            }
+        }
+        let mut fields = Vec::new();
+        declared_fields(&toolbar.root, &mut fields);
+        assert!(
+            fields.iter().any(|field| field == "cursor"),
+            "the toolbar is not the one this test means to hold: {fields:?}"
+        );
+        for editing in ["hammer", "brush", "lift"] {
+            assert!(
+                !fields.iter().any(|field| field == editing),
+                "the toolbar reads {editing:?}: {fields:?}"
+            );
+        }
+
+        // **A move is the drag it names**: `move right` slides the ground left the way a pointer
+        // dragging it left does, `move up` slides it down, and either is one screen step — the one
+        // place the direction is written down.
+        let body = mount.map.view_rect(&mount.map_chrome()).expect("a body");
+        let mut dragged = mount.map.camera();
+        dragged.pan_by_screen(-crate::shell::map_window::MAP_MOVE_STEP_DP, 0.0, body);
+        assert!(mount.map_action("move right").is_ok());
+        assert_eq!(
+            mount.map.camera().centre_m,
+            dragged.centre_m,
+            "move right is not the drag left"
+        );
+        let mut dragged = mount.map.camera();
+        dragged.pan_by_screen(0.0, crate::shell::map_window::MAP_MOVE_STEP_DP, body);
+        assert!(mount.map_action("move up").is_ok());
+        assert_eq!(
+            mount.map.camera().centre_m,
+            dragged.centre_m,
+            "move up is not the drag down"
+        );
+        // **One step is a screen distance, not a world one**, so the same key carries less ground
+        // the closer the map is: the same gesture at every scale.
+        let centre_x = |mount: &Mount| mount.map.camera().centre_m[0];
+        let before_step = centre_x(&mount);
+        assert!(mount.map_action("move right").is_ok());
+        let plain_step = (centre_x(&mount) - before_step).abs();
+        assert!(plain_step > 0.0, "the view did not move");
+        assert!(mount.map_action("zoom in").is_ok());
+        let before_step = centre_x(&mount);
+        assert!(mount.map_action("move right").is_ok());
+        let closer_step = (centre_x(&mount) - before_step).abs();
+        assert!(
+            closer_step < plain_step,
+            "one key moved {closer_step} m at the closer zoom and {plain_step} m at the wider one"
+        );
+        assert!(mount.map_action("zoom reset").is_ok());
+
+        // **Every control the document declares is reachable**, which is *not* the same claim as
+        // "every control is drawn at once": the column is taller than the map window this package
+        // declares, so the wheel over the gutter scrolls it (see [`Mount::map_wheel`]). A block the
+        // column pushed past the bottom edge would be a control that does not exist.
+        let gutter = mount
+            .map
+            .controls_rect(&mount.map_chrome())
+            .expect("a gutter");
+        let rendered = mount
+            .map
+            .controls(&mount.map_chrome())
+            .expect("the controls lay out");
+        let mut reached: Vec<String> = rendered
+            .buttons
+            .iter()
+            .map(|button| button.action.clone())
+            .collect();
+        for button in &rendered.buttons {
+            assert!(
+                gutter.contains((button.rect.x, button.rect.y))
+                    && gutter.contains((button.rect.right(), button.rect.bottom())),
+                "{} is drawn past the gutter's own edge: {:?}",
+                button.action,
+                button.rect
+            );
+        }
+        // **The wheel over the gutter scrolls it, a row at a time, to the document's own end** —
+        // 64 steps is past any column this document can hold, so the loop is bounded by the clamp
+        // rather than by a number nobody maintains.
+        let over_gutter = (gutter.x + gutter.width_dp * 0.5, gutter.y + 8.0);
+        let mut steps = 0;
+        while mount.map.controls_scroll() < mount.map.controls_scroll_max(&mount.map_chrome())
+            && steps < 64
+        {
+            assert!(
+                mount.map.wheel(over_gutter, 1.0, &mount.map_chrome()),
+                "a wheel over the gutter is the gutter's"
+            );
+            let pass = mount
+                .map
+                .controls(&mount.map_chrome())
+                .expect("the controls still lay out");
+            for button in &pass.buttons {
+                assert!(
+                    gutter.contains((button.rect.x, button.rect.y))
+                        && gutter.contains((button.rect.right(), button.rect.bottom())),
+                    "{} is drawn outside the gutter at scroll {}",
+                    button.action,
+                    mount.map.controls_scroll()
+                );
+                reached.push(button.action.clone());
+            }
+            steps += 1;
+        }
+        assert_eq!(
+            mount.map.controls_scroll(),
+            mount.map.controls_scroll_max(&mount.map_chrome()),
+            "the gutter did not reach its own end: {steps} step(s)"
+        );
+        for action in &declared {
+            assert!(
+                reached.contains(action),
+                "{action} is declared and never drawn, at any scroll of the gutter"
+            );
+        }
+        // **And a wheel over the ground is still the camera's**, not the gutter's: the two regions
+        // of one window answer the same gesture differently because they are different things.
+        let body = mount.map.view_rect(&mount.map_chrome()).expect("a body");
+        let scale_before = mount.map.camera().pixels_per_m;
+        assert!(mount
+            .map
+            .wheel((body.x + 8.0, body.y + 8.0), 1.0, &mount.map_chrome()));
+        assert_ne!(
+            mount.map.camera().pixels_per_m,
+            scale_before,
+            "the ground did not zoom"
+        );
+        // Scrolling back up returns the head of the document, so the wheel is a view and not a
+        // one-way door.
+        assert!(mount.map.wheel(over_gutter, -64.0, &mount.map_chrome()));
+        assert_eq!(
+            mount.map.controls_scroll(),
+            0.0,
+            "the gutter did not come back"
+        );
+
+        // **The pointer's cell**, which is what the toolbar's cursor fact reads: a hover sets it.
+        let at = (body.x + body.width_dp * 0.5, body.y + body.height_dp * 0.6);
+        assert!(mount.map.hover(at, &mount.map_chrome()));
+        let cell = mount.map.cursor_cell().expect("a cell under the pointer");
+        let world = mount.map.terrain().expect("a survey").world_xyz(cell);
+        assert_eq!(
+            mount
+                .map
+                .facts(&mount.map_chrome())
+                .expect("the toolbar's facts")
+                .cursor,
+            world,
+            "the toolbar reads the cell the pointer is over"
+        );
+
+        // **A pinned map is a minimap**: no toolbar, no gutter, and the ground takes the whole
+        // content container.
+        assert_eq!(mount.toggle_pin("map-plan"), Some(true));
+        assert!(mount.map.toolbar_rect(&mount.map_chrome()).is_none());
+        assert!(mount.map.controls_rect(&mount.map_chrome()).is_none());
+        assert!(mount
+            .map
+            .toolbar_elements(&Palette::declared(), &mount.map_chrome())
+            .unwrap()
+            .is_empty());
+        let pinned = mount
+            .map
+            .view_rect(&mount.map_chrome())
+            .expect("the pinned body");
+        assert!(
+            pinned.width_dp > body.width_dp,
+            "the ground did not take the gutter's width: {pinned:?} against {body:?}"
+        );
+        // Unpinning brings the chrome back — the same one question, answered once.
+        assert_eq!(mount.toggle_pin("map-plan"), Some(false));
+        assert!(mount.map.toolbar_rect(&mount.map_chrome()).is_some());
+
+        // **A window that is not on screen has nothing to move over**, and says so rather than
+        // answering with a centre the picture is not at.
+        mount.close("map-plan");
+        assert!(mount
+            .map_action("move up")
+            .unwrap_err()
+            .contains("not placed"));
     }
 
     #[test]
@@ -4625,23 +6063,239 @@ window\tapi-viewer\n\
         let mut mount = mount();
         mount.open("inventory").expect("declared");
         mount.open("tools").expect("declared");
+        // **Pinned by the player, not by the declaration.** `inventory` is declared
+        // `pinnable` and is not on the package's `pin` rows, so it floats until the pin glyph
+        // says otherwise — the distinction the static spec test could not make.
+        assert_eq!(mount.toggle_pin("inventory"), Some(true));
+        mount.open("tools").expect("declared");
         let order = mount.draw_order(Layer::Shell);
-        let pinned = order.iter().position(|id| *id == "inventory").expect("open");
+        let pinned = order
+            .iter()
+            .position(|id| *id == "inventory")
+            .expect("open");
         let floating = order.iter().position(|id| *id == "tools").expect("open");
         assert!(
             pinned > floating,
             "tools was focused last and still draws under the pinned window: {order:?}"
         );
         assert!(
-            !mount.draw_order(Layer::Pinned).iter().any(|id| *id == "tools"),
+            !mount
+                .draw_order(Layer::Pinned)
+                .iter()
+                .any(|id| *id == "tools"),
             "the pinned layer is the pinned windows and nothing else"
         );
         // The two overlap at (200, 220); the pinned window is the one on top, so it is the one
         // the pointer resolves.
         assert_eq!(
-            mount.topmost_window((200.0, 220.0)).map(|(id, _)| id).as_deref(),
+            mount
+                .topmost_window((200.0, 220.0))
+                .map(|(id, _)| id)
+                .as_deref(),
             Some("inventory")
         );
+        // And the state is the window's: unpinning takes it off the layer again.
+        assert_eq!(mount.toggle_pin("inventory"), Some(false));
+        assert!(!mount.pinned_windows().contains(&"inventory"));
+    }
+
+    /// **The declaration seeds the pin state; it does not stay the answer.** `world` is on the
+    /// test package's `pin` row and `inventory` is merely `pinnable`, so the two differ at
+    /// mount and the difference is the runtime field rather than the spec bit.
+    #[test]
+    fn the_declared_pins_seed_the_runtime_state_and_pinnable_alone_does_not() {
+        let mount = mount();
+        assert!(mount.is_pinned("world"), "the package pins it");
+        assert!(
+            !mount.is_pinned("inventory"),
+            "pinnable is a permission, not a state"
+        );
+        assert_eq!(mount.pinned_windows(), vec!["world"]);
+    }
+
+    /// **The pin glyph is a button like any other**, and pressing the lane the frame draws is
+    /// the whole of the state change: the window's bar becomes the minimal strip, its name
+    /// leaves the frame, and it moves to the pinned layer. Pressing it again puts it back.
+    #[test]
+    fn the_pin_glyph_toggles_the_layer_and_the_minimal_bar_through_one_press() {
+        let mut mount = mount();
+        mount.open("inventory").expect("declared");
+        let rect = mount.rect_of("inventory").expect("open");
+        let lane = |mount: &Mount| {
+            mount
+                .control_lanes("inventory", rect)
+                .into_iter()
+                .find(|(action, _)| *action == GlyphAction::Pin)
+                .map(|(_, lane)| lane)
+                .expect("every bar carries the pin")
+        };
+        let declared_bar = mount.window("inventory").expect("held").title_height();
+        assert_eq!(
+            declared_bar,
+            voxel_ui::pointer_target_dp(),
+            "a floating window draws the declared bar"
+        );
+
+        // The press the frame's own lane resolves to.
+        let pin = lane(&mount);
+        mount.pointer_pressed(
+            Button::Left,
+            (pin.x + pin.width_dp / 2.0, pin.y + pin.height_dp / 2.0),
+        );
+
+        assert!(mount.is_pinned("inventory"), "the glyph pinned the window");
+        let pinned = mount.window("inventory").expect("held");
+        assert_eq!(
+            pinned.bar_style().form,
+            super::super::titlebar::BarForm::Minimal,
+            "the pinned window draws the minimal bar"
+        );
+        assert_eq!(
+            pinned.title_height(),
+            super::super::titlebar::BarStyle::minimal().height_dp,
+            "which is the form's own height"
+        );
+        // **The name is gone from the drawing**, and the body starts where the strip ends.
+        let window = mount.window("inventory").expect("held");
+        let bar = super::super::titlebar::elements(
+            &window.spec,
+            rect,
+            "Inventory",
+            true,
+            &Palette::declared(),
+            window.bar_style(),
+        )
+        .expect("the minimal bar draws");
+        assert!(
+            !bar.iter().any(
+                |element| matches!(element, Element::Text { text, .. } if text == "Inventory")
+            ),
+            "a pinned window's minimal bar does not draw its name"
+        );
+        assert_eq!(
+            window.title_slot().map(|bar| bar.height_dp),
+            Some(window.title_height()),
+            "the bar's slot is the bar drawn"
+        );
+        // The pinned layer is the windows that stay while the shell is hidden; the layer is
+        // drawn only then, and membership is the fact this test can check.
+        assert!(mount.draw_order(Layer::Pinned).contains(&"inventory"));
+        assert!(mount.pinned_windows().contains(&"inventory"));
+
+        // And the same lane, in the minimal bar, puts it back.
+        let lane = lane(&mount);
+        mount.pointer_pressed(
+            Button::Left,
+            (lane.x + lane.width_dp / 2.0, lane.y + lane.height_dp / 2.0),
+        );
+        assert!(!mount.is_pinned("inventory"));
+        assert_eq!(
+            mount.window("inventory").expect("held").title_height(),
+            declared_bar
+        );
+    }
+
+    /// **A pinned map is its own minimap**: the readout toolbar and the control gutter go and
+    /// the ground takes the whole content container — all four edges of it, which is the same
+    /// rule the map keeps at every window size.
+    #[test]
+    fn pinning_the_map_slides_its_chrome_away_and_the_body_takes_the_room() {
+        // **The shipped package**, because the map window and its frames are its declaration
+        // rather than the fixture's — a minimap test over a package with no map proves nothing.
+        let recipe_src = include_str!("../../../../packages/alpha-shell.shspec");
+        let package = recipe::compile(recipe_src.as_bytes()).expect("the shipped package compiles");
+        let loaded = recipe::load(&package).expect("the shipped package loads");
+        let mut mount = Mount::new(&loaded).expect("the shipped package mounts");
+        mount.set_viewport(Rect::new(0.0, 0.0, 1280.0, 720.0));
+        mount.open("map-plan").expect("declared");
+        let full = mount
+            .map
+            .view_rect(&mount.map_chrome())
+            .expect("the map has a body");
+        let content = mount.map_content().expect("the map has content");
+        assert!(mount.map_chrome().chrome);
+        assert!(mount.map.toolbar_rect(&mount.map_chrome()).is_some());
+        assert!(mount.map.controls_rect(&mount.map_chrome()).is_some());
+        assert!(
+            full.height_dp < content.height_dp,
+            "the toolbar takes a row"
+        );
+
+        assert_eq!(mount.toggle_pin("map-plan"), Some(true));
+        assert!(!mount.map_chrome().chrome, "a pinned map is a minimap");
+        assert_eq!(mount.map.toolbar_rect(&mount.map_chrome()), None);
+        assert_eq!(mount.map.controls_rect(&mount.map_chrome()), None);
+        let minimap = mount
+            .map
+            .view_rect(&mount.map_chrome())
+            .expect("the body is still there");
+        assert_eq!(
+            minimap, content,
+            "the ground takes the whole content container"
+        );
+        assert_eq!(minimap.x, content.x);
+        assert_eq!(minimap.y, content.y);
+        assert_eq!(minimap.right(), content.right());
+        assert_eq!(minimap.bottom(), content.bottom());
+        // The controls' document is not laid out either, so no lane can answer a click that
+        // the frame does not draw.
+        assert!(mount.map.controls(&mount.map_chrome()).is_none());
+
+        assert_eq!(mount.toggle_pin("map-plan"), Some(false));
+        assert_eq!(
+            mount.map.view_rect(&mount.map_chrome()),
+            Some(full),
+            "unpinning brings the chrome back"
+        );
+    }
+
+    /// **The bar's own form, read through the drawing rather than through the style**: a
+    /// floating window names itself in its bar and a pinned window does not, and both are the
+    /// same call the frame makes.
+    #[test]
+    fn the_docs_window_draws_its_name_in_the_bar_and_a_pinned_one_does_not() {
+        use super::super::titlebar::BarForm;
+        let recipe_src = include_str!("../../../../packages/alpha-shell.shspec");
+        let package = recipe::compile(recipe_src.as_bytes()).expect("the shipped package compiles");
+        let loaded = recipe::load(&package).expect("the shipped package loads");
+        let mut mount = Mount::new(&loaded).expect("the shipped package mounts");
+        mount.set_viewport(Rect::new(0.0, 0.0, 1280.0, 720.0));
+        mount.open("docs").expect("declared");
+        let views = views();
+        let names_in_bar = |mount: &mut Mount| {
+            let bar = mount
+                .window("docs")
+                .expect("held")
+                .title_slot()
+                .expect("a bar");
+            let elements = mount
+                .shell_elements(
+                    &Palette::declared(),
+                    Rect::new(0.0, 0.0, 1280.0, 720.0),
+                    &views,
+                )
+                .expect("the shell lays out");
+            elements
+                .iter()
+                .filter(|element| match element {
+                    Element::Text { rect, text, .. } => {
+                        text == "Docs" && rect.y >= bar.y && rect.bottom() <= bar.bottom()
+                    }
+                    _ => false,
+                })
+                .count()
+        };
+        assert_eq!(
+            names_in_bar(&mut mount),
+            1,
+            "a floating window names itself in its bar"
+        );
+        assert_eq!(mount.toggle_pin("docs"), Some(true));
+        assert_eq!(
+            mount.window("docs").expect("held").bar_style().form,
+            BarForm::Minimal
+        );
+        assert_eq!(names_in_bar(&mut mount), 0, "the minimal bar draws no name");
     }
 
     /// A package for the console and its log — H-7.17's two windows, and nothing else.
@@ -4678,7 +6332,8 @@ window\tlog\n\
 
     /// The console package, mounted, with the console and its log both open.
     fn console_mount() -> Mount {
-        let package = recipe::compile(CONSOLE_RECIPE.as_bytes()).expect("the console recipe compiles");
+        let package =
+            recipe::compile(CONSOLE_RECIPE.as_bytes()).expect("the console recipe compiles");
         let loaded = recipe::load(&package).expect("the console package loads");
         let mut mount = Mount::new(&loaded).expect("the console package mounts");
         mount.set_viewport(Rect::new(0.0, 0.0, 1280.0, 720.0));
@@ -4700,7 +6355,7 @@ window\tlog\n\
         let rect = mount.rect_of("console").expect("the console is open");
         let window = mount.window("console").expect("the console is held");
         // **The drawing's own call**, so a lane fixture cannot disagree with the drawn control.
-        pane_content_rect(window, window_body(&window.spec, rect))
+        pane_content_rect(window, window_body(window, rect))
     }
 
     /// Every text the shell draws for this mount, through the same entry point the bin uses.
@@ -4733,10 +6388,12 @@ window\tlog\n\
 
     /// The toast's timer rule's width, or `None` when nothing is drawn.
     fn toast_timer_width(mount: &Mount) -> Option<f64> {
-        toast_elements(mount).iter().find_map(|element| match element {
-            Element::Rule { rect, .. } => Some(rect.width_dp),
-            _ => None,
-        })
+        toast_elements(mount)
+            .iter()
+            .find_map(|element| match element {
+                Element::Rule { rect, .. } => Some(rect.width_dp),
+                _ => None,
+            })
     }
 
     /// Every surface the shell layer draws, with its paint — the same entry point the bin uses.
@@ -4758,7 +6415,12 @@ window\tlog\n\
     #[test]
     fn a_transient_record_goes_on_screen_as_a_toast_and_its_timer_runs_down() {
         let mut mount = console_mount();
-        mount.announce(Level::Event, "world", "placed regolith at (1, 2, 3)", Some(0));
+        mount.announce(
+            Level::Event,
+            "world",
+            "placed regolith at (1, 2, 3)",
+            Some(0),
+        );
         assert!(
             mount.toasts.current().is_none(),
             "nothing is on screen until the frame advances the queue"
@@ -4775,7 +6437,10 @@ window\tlog\n\
         assert_eq!(full, width, "the timer starts at the whole width");
         mount.set_tick(toast_ticks() / 2);
         let half = toast_timer_width(&mount).expect("the timer is drawn");
-        assert!(half < full && half > 0.0, "the timer runs down: {full} -> {half}");
+        assert!(
+            half < full && half > 0.0,
+            "the timer runs down: {full} -> {half}"
+        );
         mount.set_tick(toast_ticks());
         assert!(
             mount.toasts.current().is_none(),
@@ -4794,7 +6459,11 @@ window\tlog\n\
             "a refusal is never a toast that scrolls away (C-64.2)"
         );
         assert!(
-            mount.console().lines().iter().any(|line| line.contains("cannot go there")),
+            mount
+                .console()
+                .lines()
+                .iter()
+                .any(|line| line.contains("cannot go there")),
             "and it is still a record on the console: {:?}",
             mount.console().lines()
         );
@@ -4806,7 +6475,11 @@ window\tlog\n\
             "a record with no tick cannot be timed, so it is not raised"
         );
         assert!(
-            mount.console().lines().iter().any(|line| line.contains("placed regolith")),
+            mount
+                .console()
+                .lines()
+                .iter()
+                .any(|line| line.contains("placed regolith")),
             "and it is not lost either"
         );
     }
@@ -4831,7 +6504,12 @@ window\tlog\n\
     #[test]
     fn the_notifications_window_reads_the_persistent_records_and_not_the_console_s_view() {
         let mut console = Console::new();
-        console.log(Level::Info, "world", "placed regolith at (1, 2, 3)", Some(1));
+        console.log(
+            Level::Info,
+            "world",
+            "placed regolith at (1, 2, 3)",
+            Some(1),
+        );
         console.log(Level::Warn, "world", "sedimentary cannot go there", Some(2));
         // The console window's own view control: it must not change what the notifications
         // window says, because both read one store (UI-SPEC §7).
@@ -4847,14 +6525,22 @@ window\tlog\n\
             !texts.iter().any(|text| text.contains("placed regolith")),
             "a transient result is a toast, not a notification: {texts:?}"
         );
-        assert!(panel.validate().is_empty(), "the panel is legal: {:?}", panel.validate());
+        assert!(
+            panel.validate().is_empty(),
+            "the panel is legal: {:?}",
+            panel.validate()
+        );
     }
 
     #[test]
     fn an_empty_notifications_window_says_why_it_is_empty() {
         let panel = notifications_panel(&Console::new(), 358.0);
         assert!(
-            panel.note.as_deref().unwrap_or("").contains("no persistent records"),
+            panel
+                .note
+                .as_deref()
+                .unwrap_or("")
+                .contains("no persistent records"),
             "an empty view says which emptiness it is (MD1's empty-view rule): {:?}",
             panel.note
         );
@@ -4866,7 +6552,13 @@ window\tlog\n\
         // Everything fits: there is nowhere to scroll and nothing is held.
         let window = console_window(5, 0, 0, 10, 100);
         assert_eq!(
-            (window.scroll, window.start, window.shown, window.older, window.newer),
+            (
+                window.scroll,
+                window.start,
+                window.shown,
+                window.older,
+                window.newer
+            ),
             (0, 0, 5, 0, 0)
         );
         // Thirty records in ten rows: one row is the note's, so nine are drawn and twenty-one
@@ -4876,7 +6568,10 @@ window\tlog\n\
         // Scrolled to the top: the window stops at the first record instead of scrolling past
         // it, and the clamp is what a caller stores back.
         let top = console_window(30, 0, 0, 10, 1000);
-        assert_eq!((top.scroll, top.start, top.shown, top.newer), (21, 0, 9, 21));
+        assert_eq!(
+            (top.scroll, top.start, top.shown, top.newer),
+            (21, 0, 9, 21)
+        );
         // A freeze holds rows *below* the window: the tail stops at the frozen end.
         let frozen = console_window(30, 5, 0, 10, 0);
         assert_eq!((frozen.start, frozen.shown, frozen.newer), (16, 9, 5));
@@ -4913,7 +6608,10 @@ window\tlog\n\
         // A step back scrolls *and freezes* — the gesture is the Auto-Scroll control's own
         // meaning, and one reported line is WHEEL_ROWS_PER_LINE rows.
         mount.wheel(at, WheelDelta::Lines(1.0));
-        assert!(!mount.console().autoscroll(), "the gesture asked for a reading");
+        assert!(
+            !mount.console().autoscroll(),
+            "the gesture asked for a reading"
+        );
         assert_eq!(mount.scroll.get("console").copied(), Some(3));
         let texts = drawn_texts(&mut mount);
         assert!(
@@ -4934,7 +6632,10 @@ window\tlog\n\
         // A step forward returns to the tail and does not resume following by itself.
         mount.wheel(at, WheelDelta::Lines(-1.0));
         assert_eq!(mount.scroll.get("console").copied(), Some(0));
-        assert!(!mount.console().autoscroll(), "the control is how the tail is resumed");
+        assert!(
+            !mount.console().autoscroll(),
+            "the control is how the tail is resumed"
+        );
         assert!(
             drawn_texts(&mut mount)
                 .iter()
@@ -4957,8 +6658,13 @@ window\tlog\n\
             mount.log(Level::Info, "TEST", format!("line {index:02}"), Some(index));
         }
         let log = mount.rect_of("log").expect("the log is open");
-        let log_spec = mount.window("log").expect("the log is held").spec.clone();
-        let at = lane_center(console_regions(window_body(&log_spec, log), Content::Log).output);
+        let at = lane_center(
+            console_regions(
+                window_body(mount.window("log").expect("the log is held"), log),
+                Content::Log,
+            )
+            .output,
+        );
         mount.wheel(at, WheelDelta::Lines(1.0));
         assert_eq!(mount.scroll.get("log").copied(), Some(3));
         assert_eq!(
@@ -5036,14 +6742,20 @@ window\tlog\n\
 
         // The search box takes the keyboard; a query filters and never executes.
         mount.pointer_pressed(Button::Left, lane_center(lane(ConsoleLane::Search)));
-        assert_eq!(mount.console().field(), crate::shell::console::Field::Search);
+        assert_eq!(
+            mount.console().field(),
+            crate::shell::console::Field::Search
+        );
         for character in "files".chars() {
             mount.key_pressed(Key::Char(character), None);
         }
         assert_eq!(mount.console().search(), "files");
         // Enter puts the keyboard back on the command rather than submitting the query.
         mount.key_pressed(Key::Enter, None);
-        assert_eq!(mount.console().field(), crate::shell::console::Field::Command);
+        assert_eq!(
+            mount.console().field(),
+            crate::shell::console::Field::Command
+        );
         mount.console.clear_search();
 
         // The command line types a verb and Run executes it.
@@ -5052,7 +6764,11 @@ window\tlog\n\
         }
         mount.pointer_pressed(Button::Left, lane_center(lane(ConsoleLane::Run)));
         assert!(
-            mount.console().lines().iter().any(|line| line.contains("hallo")),
+            mount
+                .console()
+                .lines()
+                .iter()
+                .any(|line| line.contains("hallo")),
             "run executed the command line: {:?}",
             mount.console().lines()
         );
@@ -5110,7 +6826,11 @@ window\tlog\n\
         // **Exactly the badge, not any text containing it** — the filter lane's own label
         // ("Warnings [WARN]") contains a badge by construction and is not a record.
         let badges = |wanted: &str| texts.iter().filter(|text| text.trim() == wanted).count();
-        assert_eq!(badges("[WARN]"), 2, "both the console and the log show the warn");
+        assert_eq!(
+            badges("[WARN]"),
+            2,
+            "both the console and the log show the warn"
+        );
         assert_eq!(
             badges("[INFO]"),
             1,
@@ -5127,7 +6847,8 @@ window\tlog\n\
         assert!(!mount.bar()[2].tab, "the console is on the bar, not a tab");
         // Every entry is a target, and one wide enough for its label at the declared width.
         for (_, _, rect) in mount.bar_rects(mount.viewport()) {
-            rect.check_target("a bar entry").expect("the bar's entries are targets");
+            rect.check_target("a bar entry")
+                .expect("the bar's entries are targets");
         }
     }
 
@@ -5140,7 +6861,8 @@ window\tlog\n\
         // The menu's rows are targets too.
         let viewport = mount.viewport();
         for (_, rect) in mount.menu_rows(0, viewport) {
-            rect.check_target("a menu row").expect("a menu row is a target");
+            rect.check_target("a menu row")
+                .expect("a menu row is a target");
         }
         // Clicking a row opens the window it names — and the rows are draws of `offers`,
         // so the row for `tools` is the one after the tab's own window.
@@ -5152,7 +6874,10 @@ window\tlog\n\
             .clone();
         mount.pointer_pressed(Button::Left, (row.x + 4.0, row.y + 4.0));
         assert_eq!(mount.open_menu(), None, "a row click closes the menu");
-        assert_eq!(mount.window("tools").map(|w| w.status), Some(Status::Normal));
+        assert_eq!(
+            mount.window("tools").map(|w| w.status),
+            Some(Status::Normal)
+        );
         assert_eq!(mount.focused(), Some("tools"));
     }
 
@@ -5166,21 +6891,36 @@ window\tlog\n\
             .expect("the console is on the bar");
         mount.pointer_pressed(Button::Left, (console.2.x + 4.0, console.2.y + 4.0));
         assert_eq!(mount.open_menu(), None);
-        assert_eq!(mount.window("console").map(|w| w.status), Some(Status::Normal));
+        assert_eq!(
+            mount.window("console").map(|w| w.status),
+            Some(Status::Normal)
+        );
     }
 
     #[test]
     fn an_unpermitted_control_is_absent_rather_than_drawn_disabled() {
         let mount = mount();
         let inventory = mount.window("inventory").expect("declared");
-        assert_eq!(inventory.controls().len(), 3, "minimize, maximize, close are declared");
+        assert_eq!(
+            inventory.controls(),
+            vec![
+                GlyphAction::Pin,
+                GlyphAction::Minimize,
+                GlyphAction::Maximize,
+                GlyphAction::Close
+            ],
+            "the three the policy declares, and the pin every bar carries"
+        );
         let trees = mount.window("trees").expect("declared");
-        assert_eq!(trees.controls(), vec![GlyphAction::Close]);
-        // And the lanes really are the permitted ones: one lane, the trailing one.
-        let rect = mount.rect_of("trees").expect("a standalone window has a rect");
+        // Trees declares `close` only: the pin is still there, and nothing else is.
+        assert_eq!(trees.controls(), vec![GlyphAction::Pin, GlyphAction::Close]);
+        let rect = mount
+            .rect_of("trees")
+            .expect("a standalone window has a rect");
         let lanes = mount.control_lanes("trees", rect);
-        assert_eq!(lanes.len(), 1);
-        assert_eq!(lanes[0].0, GlyphAction::Close);
+        assert_eq!(lanes.len(), 2);
+        assert_eq!(lanes[0].0, GlyphAction::Pin);
+        assert_eq!(lanes[1].0, GlyphAction::Close);
         // **The lane is a dense-pointer target, not a touch one**: D-1 makes the ported
         // controls `POINTER_TARGET_DP` (40 dp), so `check_target`'s 48 dp touch floor is the
         // wrong bar for them — the declared dense floor is the bar.
@@ -5198,10 +6938,20 @@ window\tlog\n\
         mount.open("inventory").expect("declared");
         mount.open("trees").expect("declared");
         let rect = mount.rect_of("trees").expect("trees is standalone");
-        let (_, lane) = mount.control_lanes("trees", rect)[0];
+        let (_, lane) = mount
+            .control_lanes("trees", rect)
+            .into_iter()
+            .find(|(action, _)| *action == GlyphAction::Close)
+            .expect("close is declared");
         mount.pointer_pressed(Button::Left, (lane.x + 4.0, lane.y + 4.0));
-        assert_eq!(mount.window("trees").map(|w| w.status), Some(Status::Closed));
-        assert_eq!(mount.window("inventory").map(|w| w.status), Some(Status::Normal));
+        assert_eq!(
+            mount.window("trees").map(|w| w.status),
+            Some(Status::Closed)
+        );
+        assert_eq!(
+            mount.window("inventory").map(|w| w.status),
+            Some(Status::Normal)
+        );
     }
 
     #[test]
@@ -5211,19 +6961,34 @@ window\tlog\n\
         mount.open("trees").expect("declared");
         let host = mount.rect_of("inventory").expect("standalone");
         mount
-            .dock("inventory", "trees", (host.x + 10.0, host.y + title_bar_dp() + 40.0))
+            .dock(
+                "inventory",
+                "trees",
+                (host.x + 10.0, host.y + title_bar_dp() + 40.0),
+            )
             .expect("the drop splits the host");
         assert_eq!(
-            mount.window("trees").and_then(|w| w.host.as_ref()).map(WindowId::as_str),
+            mount
+                .window("trees")
+                .and_then(|w| w.host.as_ref())
+                .map(WindowId::as_str),
             Some("inventory")
         );
         // The drop landed in the upper half, so the dragged window takes the leading pane and
         // the title says so in tree order.
         assert_eq!(mount.title_of("inventory"), "Trees / Inventory");
-        assert_eq!(mount.rect_of("trees"), None, "a docked window has no rect of its own");
+        assert_eq!(
+            mount.rect_of("trees"),
+            None,
+            "a docked window has no rect of its own"
+        );
         // And undocking gives it a rect back, where its pane was.
-        let pane = mount.pane_rect("inventory", "trees").expect("the pane is laid out");
-        mount.undock("inventory", "trees").expect("the pane undocks");
+        let pane = mount
+            .pane_rect("inventory", "trees")
+            .expect("the pane is laid out");
+        mount
+            .undock("inventory", "trees")
+            .expect("the pane undocks");
         assert_eq!(mount.window("trees").and_then(|w| w.host.as_ref()), None);
         assert_eq!(mount.window("trees").map(|w| w.rect), Some(pane));
     }
@@ -5235,12 +7000,25 @@ window\tlog\n\
         mount.open("trees").expect("declared");
         let host = mount.rect_of("inventory").expect("standalone");
         mount
-            .dock("inventory", "trees", (host.x + 10.0, host.y + title_bar_dp() + 40.0))
+            .dock(
+                "inventory",
+                "trees",
+                (host.x + 10.0, host.y + title_bar_dp() + 40.0),
+            )
             .expect("the drop splits the host");
         mount.close("inventory");
-        assert_eq!(mount.window("inventory").map(|w| w.status), Some(Status::Closed));
-        assert_eq!(mount.window("trees").map(|w| w.status), Some(Status::Normal));
-        assert!(mount.rect_of("trees").is_some(), "a released pane floats again");
+        assert_eq!(
+            mount.window("inventory").map(|w| w.status),
+            Some(Status::Closed)
+        );
+        assert_eq!(
+            mount.window("trees").map(|w| w.status),
+            Some(Status::Normal)
+        );
+        assert!(
+            mount.rect_of("trees").is_some(),
+            "a released pane floats again"
+        );
     }
 
     #[test]
@@ -5256,7 +7034,10 @@ window\tlog\n\
         mount.pointer_pressed(Button::Left, bar);
         assert!(mount.drag.is_some(), "the bar starts a drag");
         let target = mount.rect_of("trees").expect("trees is open");
-        let at = (target.x + target.width_dp / 2.0, target.y + target.height_dp / 2.0);
+        let at = (
+            target.x + target.width_dp / 2.0,
+            target.y + target.height_dp / 2.0,
+        );
         mount.pointer_moved(at);
         let (shown, preview) = mount
             .drop_preview()
@@ -5264,7 +7045,11 @@ window\tlog\n\
             .expect("the drag shows the landing");
         assert_eq!(shown, "trees");
         assert_eq!(
-            preview.pane.as_ref().and_then(PaneRef::window).map(WindowId::as_str),
+            preview
+                .pane
+                .as_ref()
+                .and_then(PaneRef::window)
+                .map(WindowId::as_str),
             Some("trees"),
             "the pane under the point is the target"
         );
@@ -5305,7 +7090,10 @@ window\tlog\n\
         let bar = (rect.x + rect.width_dp / 2.0, rect.y + 20.0);
         // One click is a press: focus and a drag, never a maximize.
         mount.pointer_pressed(Button::Left, bar);
-        assert_eq!(mount.window("inventory").map(|w| w.status), Some(Status::Normal));
+        assert_eq!(
+            mount.window("inventory").map(|w| w.status),
+            Some(Status::Normal)
+        );
         // The second click arrives as a double-click (the bin's count), and the port's
         // `press_at(double)` answers the bar with its maximize verdict.
         mount.pointer_double_clicked(Button::Left, bar);
@@ -5343,7 +7131,9 @@ window\tlog\n\
                 (host.right() - 10.0, host.y + title_bar_dp() + 40.0),
             )
             .expect("the drop splits the host");
-        let pane = mount.pane_rect("inventory", "trees").expect("the pane is laid out");
+        let pane = mount
+            .pane_rect("inventory", "trees")
+            .expect("the pane is laid out");
         let (_, lane) = super::super::pane::action_lanes(pane, true)
             .into_iter()
             .find(|(mark, _)| *mark == voxel_ui::PaneMark::Close)
@@ -5352,8 +7142,14 @@ window\tlog\n\
             Button::Left,
             (lane.x + lane.width_dp / 2.0, lane.y + lane.height_dp / 2.0),
         );
-        assert_eq!(mount.window("trees").map(|w| w.status), Some(Status::Closed));
-        assert_eq!(mount.window("inventory").map(|w| w.status), Some(Status::Normal));
+        assert_eq!(
+            mount.window("trees").map(|w| w.status),
+            Some(Status::Closed)
+        );
+        assert_eq!(
+            mount.window("inventory").map(|w| w.status),
+            Some(Status::Normal)
+        );
         assert_eq!(
             mount.window("inventory").map(|w| w.arrangement.panes()),
             Some(1),
@@ -5370,19 +7166,26 @@ window\tlog\n\
         let mut mount = mount();
         mount.open("inventory").expect("declared");
         let rect = mount.rect_of("inventory").expect("standalone");
-        let content = window_body(&mount.window("inventory").expect("the window").spec, rect);
+        let content = window_body(mount.window("inventory").expect("the window"), rect);
         // The left lane, at the content's mid-height, 8 dp in from the edge (D-1's 40 dp lane).
         let at = (rect.x + 20.0, content.y + content.height_dp / 2.0);
         mount.pointer_pressed(Button::Left, at);
         let window = mount.window("inventory").expect("the window");
         assert_eq!(window.arrangement.panes(), 2, "the split created a pane");
-        assert_eq!(window.arrangement.windows().len(), 1, "the new pane holds no window");
+        assert_eq!(
+            window.arrangement.windows().len(),
+            1,
+            "the new pane holds no window"
+        );
         let layout = window.layout_at(rect).expect("lays out");
         assert!(
             layout.panes.iter().any(|(_, pane)| pane.window().is_none()),
             "one of the two panes is the empty slot"
         );
-        assert!(mount.triggers.is_none(), "the lanes hide after the split (2909)");
+        assert!(
+            mount.triggers.is_none(),
+            "the lanes hide after the split (2909)"
+        );
         // **A left-edge split puts the new pane before the old one** (the reference's `"left"`
         // is its `"before"`), so the slot is the first name in the composed title.
         assert_eq!(
@@ -5404,8 +7207,11 @@ window\tlog\n\
             panic!("the package declares windows besides inventory");
         };
         let rect = mount.rect_of("inventory").expect("standalone");
-        let content = window_body(&mount.window("inventory").expect("the window").spec, rect);
-        mount.pointer_pressed(Button::Left, (rect.x + 20.0, content.y + content.height_dp / 2.0));
+        let content = window_body(mount.window("inventory").expect("the window"), rect);
+        mount.pointer_pressed(
+            Button::Left,
+            (rect.x + 20.0, content.y + content.height_dp / 2.0),
+        );
         let layout = mount
             .window("inventory")
             .expect("the window")
@@ -5430,7 +7236,10 @@ window\tlog\n\
             (lane.x + lane.width_dp / 2.0, lane.y + lane.height_dp / 2.0),
         );
         assert!(
-            !mount.empty_slot_offers("inventory").iter().any(|(id, _)| id == &offered),
+            !mount
+                .empty_slot_offers("inventory")
+                .iter()
+                .any(|(id, _)| id == &offered),
             "the offered window is no longer offered"
         );
         assert_eq!(
@@ -5460,7 +7269,11 @@ window\tlog\n\
         mount.open("trees").expect("declared");
         let host = mount.rect_of("inventory").expect("standalone");
         mount
-            .dock("inventory", "trees", (host.x + 10.0, host.y + title_bar_dp() + 40.0))
+            .dock(
+                "inventory",
+                "trees",
+                (host.x + 10.0, host.y + title_bar_dp() + 40.0),
+            )
             .expect("the drop splits the host");
         let layout = mount
             .windows
@@ -5546,7 +7359,11 @@ window\tlog\n\
         // here. (A left-edge drop would split the width and leave the height whole; both are
         // the port's own rule, `drop::zone_at`.)
         mount
-            .dock("inventory", "trees", (host.x + host.width_dp / 2.0, host.y + 20.0))
+            .dock(
+                "inventory",
+                "trees",
+                (host.x + host.width_dp / 2.0, host.y + 20.0),
+            )
             .expect("the drop splits the host");
         let window = mount.windows.get_mut("inventory").expect("the host");
         // The port's composite charges a 1 dp border and a 40 dp title bar, so 108 dp of window
@@ -5620,7 +7437,10 @@ window\tlog\n\
             tick: 0,
             digest: voxel_model::Digest::of(b"the resident world"),
             refusal: Some(&refusal),
-            shading: crate::shading::ShadingReport { materials: 7, with_base_colour: 0 },
+            shading: crate::shading::ShadingReport {
+                materials: 7,
+                with_base_colour: 0,
+            },
         };
         let views = ContentViews {
             world: crate::hud::world_panel(&state),
@@ -5632,7 +7452,9 @@ window\tlog\n\
         };
         let mut short: Vec<String> = Vec::new();
         for id in mount.windows.keys() {
-            let Some(window) = mount.windows.get(id) else { continue };
+            let Some(window) = mount.windows.get(id) else {
+                continue;
+            };
             // **The log is held to its own drawing, not to a panel measurement.** It draws
             // through `console_body` — the reference's three regions with no controls — and
             // `views.panel_for` would measure it against `declared_content_panel`, which is not
@@ -5647,7 +7469,7 @@ window\tlog\n\
                     window.spec.geometry[2] as f64,
                     window.spec.geometry[3] as f64,
                 );
-                let pane = super::super::pane::body(window_body(&window.spec, declared));
+                let pane = super::super::pane::body(window_body(window, declared));
                 let mut out = Vec::new();
                 if let Err(refusal) = console_body(
                     console,
@@ -5674,7 +7496,10 @@ window\tlog\n\
                 ));
             }
         }
-        assert!(short.is_empty(), "the package declares windows too short for their views: {short:?}");
+        assert!(
+            short.is_empty(),
+            "the package declares windows too short for their views: {short:?}"
+        );
     }
 
     /// **A pane the operator made by docking draws its content, bounded to the pane.**
@@ -5696,7 +7521,10 @@ window\tlog\n\
             voxel_model::RefusalKind::UnknownComponent,
             "no such shaper",
         );
-        let frame = voxel_work::Frame { wanted: 605, ..Default::default() };
+        let frame = voxel_work::Frame {
+            wanted: 605,
+            ..Default::default()
+        };
         let state = crate::hud::HudState {
             frame: &frame,
             adapter: "NVIDIA GeForce RTX 2070 SUPER (Vulkan)",
@@ -5711,7 +7539,10 @@ window\tlog\n\
             tick: 0,
             digest: voxel_model::Digest::of(b"the resident world"),
             refusal: Some(&refusal),
-            shading: crate::shading::ShadingReport { materials: 7, with_base_colour: 0 },
+            shading: crate::shading::ShadingReport {
+                materials: 7,
+                with_base_colour: 0,
+            },
         };
         let views = ContentViews {
             world: crate::hud::world_panel(&state),
@@ -5727,14 +7558,21 @@ window\tlog\n\
         // A top-edge drop: the split divides the height, so each pane is half as tall as the
         // host was — and the world's declared pane does not fit in half of it.
         mount
-            .dock("inventory", "world", (host.x + host.width_dp / 2.0, host.y + 20.0))
+            .dock(
+                "inventory",
+                "world",
+                (host.x + host.width_dp / 2.0, host.y + 20.0),
+            )
             .expect("the drop splits the host");
         let elements = mount
             .shell_elements(&Palette::declared(), mount.viewport(), &views)
             .expect("a docked window draws");
         assert!(mount.refusals().is_empty(), "{:?}", mount.refusals());
         let texts: Vec<&str> = elements.iter().filter_map(|e| e.text()).collect();
-        assert!(texts.contains(&"World"), "the docked pane's title is drawn: {texts:?}");
+        assert!(
+            texts.contains(&"World"),
+            "the docked pane's title is drawn: {texts:?}"
+        );
         assert!(texts.contains(&"Inventory / crafting"), "{texts:?}");
         assert!(
             texts.iter().any(|text| text.contains("held and not drawn")),
@@ -5749,13 +7587,8 @@ window\tlog\n\
         // disagree, every window sized by the rule refuses to draw.
         let mount = mount();
         for spec in mount.windows.values().map(|window| &window.spec) {
-            let declared = Rect::new(
-                0.0,
-                0.0,
-                spec.geometry[2] as f64,
-                spec.geometry[3] as f64,
-            );
-            let pane = window_body(spec, declared).height_dp;
+            let declared = Rect::new(0.0, 0.0, spec.geometry[2] as f64, spec.geometry[3] as f64);
+            let pane = window::composite(spec, declared, false).content.height_dp;
             assert!(
                 (declared.height_dp - pane - chrome_height_dp(spec)).abs() < 0.5,
                 "{}: {} dp of chrome against the composite's {} dp",
@@ -5810,7 +7643,11 @@ window\tlog\n\
         assert!(titles.contains(&"Trees"), "{titles:?}");
         assert!(titles.contains(&"World"), "{titles:?}");
         assert_eq!(mount.refusals().len(), 1, "{:?}", mount.refusals());
-        assert!(mount.refusals()[0].contains("console"), "{:?}", mount.refusals());
+        assert!(
+            mount.refusals()[0].contains("console"),
+            "{:?}",
+            mount.refusals()
+        );
     }
 
     #[test]
@@ -5820,16 +7657,29 @@ window\tlog\n\
             .shell_elements(&Palette::declared(), mount.viewport(), &views())
             .expect("the shell lays out");
         // The bar is drawn, and the pinned world window's title is on screen.
-        let texts: Vec<&str> = elements.iter().filter_map(|element| element.text()).collect();
+        let texts: Vec<&str> = elements
+            .iter()
+            .filter_map(|element| element.text())
+            .collect();
         assert!(texts.contains(&"World"), "{texts:?}");
-        assert!(texts.contains(&"Inventory"), "the bar's tabs are drawn: {texts:?}");
+        assert!(
+            texts.contains(&"Inventory"),
+            "the bar's tabs are drawn: {texts:?}"
+        );
         // Every surface is one of the admitted roles, at the declared panel opacity or the
         // window's own — and none of them is invented here.
         let palette = Palette::declared();
-        let admitted = [palette.get(Role::Chrome).unwrap(), palette.get(Role::Surface).unwrap(), palette.get(Role::SurfaceAlt).unwrap()];
+        let admitted = [
+            palette.get(Role::Chrome).unwrap(),
+            palette.get(Role::Surface).unwrap(),
+            palette.get(Role::SurfaceAlt).unwrap(),
+        ];
         for element in &elements {
             if let Element::Surface { paint, .. } = element {
-                assert!(admitted.contains(&paint.rgb), "an unadmitted surface was painted: {paint:?}");
+                assert!(
+                    admitted.contains(&paint.rgb),
+                    "an unadmitted surface was painted: {paint:?}"
+                );
             }
         }
     }
@@ -5840,12 +7690,22 @@ window\tlog\n\
         mount.open("inventory").expect("declared");
         let before = mount.rect_of("inventory").expect("standalone");
         mount.toggle_maximize("inventory");
-        let maximized = mount.rect_of("inventory").expect("maximized still has a rect");
-        assert_eq!(maximized.y, bar_height_dp(), "a maximized window starts under the bar");
+        let maximized = mount
+            .rect_of("inventory")
+            .expect("maximized still has a rect");
+        assert_eq!(
+            maximized.y,
+            bar_height_dp(),
+            "a maximized window starts under the bar"
+        );
         assert_eq!(maximized.width_dp, mount.viewport().width_dp);
         assert_ne!(maximized, before);
         mount.toggle_maximize("inventory");
-        assert_eq!(mount.rect_of("inventory"), Some(before), "restore goes back, not to the declaration");
+        assert_eq!(
+            mount.rect_of("inventory"),
+            Some(before),
+            "restore goes back, not to the declaration"
+        );
     }
 
     #[test]
@@ -5871,7 +7731,12 @@ window\tlog\n\
         // working exactly as written, on a content kind that did have a view.
         let mut mount = mount();
         mount.open("console").expect("declared");
-        mount.log(Level::Warn, "shell", "a report the window must show", Some(7));
+        mount.log(
+            Level::Warn,
+            "shell",
+            "a report the window must show",
+            Some(7),
+        );
 
         let spec = mount.window("console").expect("declared").spec.clone();
         let mut base = views();
@@ -5903,9 +7768,15 @@ window\tlog\n\
         // The pane the console window actually declares, not a number that flatters the panel.
         let spec = mount.window(CONSOLE_WINDOW).expect("declared").spec.clone();
         let panel = console_panel(mount.console(), pane_of(&spec));
-        assert!(!panel.is_empty(), "an empty console still says how many records it holds");
         assert!(
-            panel.rows.iter().any(|row| row.label == "records" && row.value == "0"),
+            !panel.is_empty(),
+            "an empty console still says how many records it holds"
+        );
+        assert!(
+            panel
+                .rows
+                .iter()
+                .any(|row| row.label == "records" && row.value == "0"),
             "{panel:?}"
         );
         assert!(
@@ -5935,20 +7806,36 @@ window\tlog\n\
             "a full console fits the pane it is drawn in: {} dp in {pane} dp",
             panel.height_dp()
         );
-        let drawn = panel.rows.iter().filter(|row| row.label == "record").count();
-        assert!(drawn < 400, "so it cannot have drawn them all: {drawn} of 400");
-        let note = panel.note.as_deref().expect("a bounded console states what it is not drawing");
+        let drawn = panel
+            .rows
+            .iter()
+            .filter(|row| row.label == "record")
+            .count();
+        assert!(
+            drawn < 400,
+            "so it cannot have drawn them all: {drawn} of 400"
+        );
+        let note = panel
+            .note
+            .as_deref()
+            .expect("a bounded console states what it is not drawing");
         assert!(note.contains("not drawn"), "{note}");
         // **The newest survive.** A log whose head is kept and whose tail is cut reads as a log
         // that ended, which is the opposite of what happened.
         assert!(
-            panel.rows.iter().any(|row| row.value.contains("record 399")),
+            panel
+                .rows
+                .iter()
+                .any(|row| row.value.contains("record 399")),
             "the newest record is on the panel: {panel:?}"
         );
         // And the header rows are never the ones dropped, or a bounded console could not say
         // how much it was hiding.
         assert!(
-            panel.rows.iter().any(|row| row.label == "records" && row.value == "400"),
+            panel
+                .rows
+                .iter()
+                .any(|row| row.label == "records" && row.value == "400"),
             "{panel:?}"
         );
     }
@@ -6031,12 +7918,16 @@ window\tlog\n\
         // And the console said so on the surface, at the moment it happened, twice: the record,
         // and the rows the package carries.
         assert!(
-            said(&mount).iter().any(|line| line.contains("the agent's inbox")),
+            said(&mount)
+                .iter()
+                .any(|line| line.contains("the agent's inbox")),
             "{:?}",
             said(&mount)
         );
         assert!(
-            said(&mount).iter().any(|line| line.contains("row(s) of work")),
+            said(&mount)
+                .iter()
+                .any(|line| line.contains("row(s) of work")),
             "{:?}",
             said(&mount)
         );
@@ -6081,11 +7972,18 @@ window\tlog\n\
             said(&mount)
         );
         let record = voxel_model::laya::agent_inbox_dir(&workspace).join("recipe-BLD-0001.musli");
-        assert!(record.exists(), "and the record is named for the ticket: {record:?}");
+        assert!(
+            record.exists(),
+            "and the record is named for the ticket: {record:?}"
+        );
 
         // **The second pass hands over nothing**, because the agent already owes this one.
         let (handed, skipped, refused) = mount.hand_the_boards_tickets_to_the_agent(Some(8));
-        assert_eq!((handed, skipped, refused), (0, 1, 0), "a handed-over filing is skipped");
+        assert_eq!(
+            (handed, skipped, refused),
+            (0, 1, 0),
+            "a handed-over filing is skipped"
+        );
         // And the record is still the one the first pass wrote, byte for byte: an idempotent pass
         // that rewrote the artifact would be the defect it exists to avoid.
         let before = std::fs::read(&record).expect("the record reads");
@@ -6137,8 +8035,8 @@ window\tlog\n\
             "c-2026-10-01",
         )
         .expect("a namespace");
-        let before = std::fs::read(voxel_package::filing::chain_path(&workspace))
-            .expect("the chain reads");
+        let before =
+            std::fs::read(voxel_package::filing::chain_path(&workspace)).expect("the chain reads");
         voxel_package::filing::grow(
             &workspace,
             &before,
@@ -6216,8 +8114,7 @@ window\tlog\n\
         );
         let said = said(&mount);
         assert!(
-            said
-                .iter()
+            said.iter()
                 .any(|line| line.contains("CSE-") && line.contains("world-2468")),
             "the ledger's ticket is named, with its world: {said:?}"
         );
@@ -6262,7 +8159,10 @@ window\tlog\n\
 
         let board =
             voxel_model::ticket::Board::from_chain(&voxel_package::filing::read(&workspace));
-        assert!(!board.is_empty(), "the repository's own record holds tickets");
+        assert!(
+            !board.is_empty(),
+            "the repository's own record holds tickets"
+        );
         assert_eq!(
             tickets,
             board.len(),
@@ -6334,7 +8234,10 @@ window\tlog\n\
         mount.set_workspace(workspace.clone());
         let board =
             voxel_model::ticket::Board::from_chain(&voxel_package::filing::read(&workspace));
-        assert!(!board.is_empty(), "the repository's own record holds tickets");
+        assert!(
+            !board.is_empty(),
+            "the repository's own record holds tickets"
+        );
         let open = board.open().len();
         assert!(open > 0, "the real record holds open tickets");
 
@@ -6490,7 +8393,9 @@ window\tlog\n\
         let mut arranged = 0usize;
         let mut work_orders = 0usize;
         for name in &recipes {
-            let case = name.trim_start_matches("recipe-").trim_end_matches(".musli");
+            let case = name
+                .trim_start_matches("recipe-")
+                .trim_end_matches(".musli");
             // **The content-addressed locator first, the seeding second.** The earlier compiler
             // wrote `packages/<ticket>.shpkg` with no digest in the name, which is the defect
             // that made those filings unrecompilable — so a locator that only matches the new
@@ -6504,10 +8409,9 @@ window\tlog\n\
                 );
                 legacy
             });
-            let loaded = voxel_package::recipe::load(
-                &std::fs::read(&package).expect("the package reads"),
-            )
-            .expect("and it frames");
+            let loaded =
+                voxel_package::recipe::load(&std::fs::read(&package).expect("the package reads"))
+                    .expect("and it frames");
             if loaded.recipe.windows.is_empty() {
                 work_orders += 1;
             } else {
@@ -6563,18 +8467,27 @@ window\tlog\n\
         // plus no record in the inbox, because the inbox did not exist when it was compiled.
         let packages = workspace.join(voxel_package::filing::PACKAGE_DIR);
         let legacy = packages.join("BLD-0001.shpkg");
-        std::fs::write(&legacy, b"the earlier compiler's package, under the name-only path")
-            .expect("the fixture writes the old name");
+        std::fs::write(
+            &legacy,
+            b"the earlier compiler's package, under the name-only path",
+        )
+        .expect("the fixture writes the old name");
         // **The fixture replaces the record on purpose**, which is a different act from the writer's:
         // the filing just emitted a digest-named package, and the state under test is one where the
         // *only* package for this ticket is the old name-only one.
-        for entry in std::fs::read_dir(&packages).expect("packages reads").flatten() {
+        for entry in std::fs::read_dir(&packages)
+            .expect("packages reads")
+            .flatten()
+        {
             if entry.path() != legacy {
                 std::fs::remove_file(entry.path()).expect("the emitted package is removed");
             }
         }
         let inbox = voxel_model::laya::agent_inbox_dir(&workspace);
-        for entry in std::fs::read_dir(&inbox).expect("the inbox is there").flatten() {
+        for entry in std::fs::read_dir(&inbox)
+            .expect("the inbox is there")
+            .flatten()
+        {
             std::fs::remove_file(entry.path()).expect("the record is removed");
         }
         assert!(
@@ -6599,7 +8512,10 @@ window\tlog\n\
             "carrying the work as a row: {:?}",
             loaded.recipe.rows
         );
-        assert!(legacy.exists(), "the earlier package was not deleted: {legacy:?}");
+        assert!(
+            legacy.exists(),
+            "the earlier package was not deleted: {legacy:?}"
+        );
         let _ = std::fs::remove_dir_all(&workspace);
     }
 
@@ -6645,7 +8561,11 @@ window\tlog\n\
         mount.focus("trees");
         assert!(!mount.console_has_focus());
         assert_eq!(mount.key_pressed(Key::Char('y'), None), KeyOutcome::Ignored);
-        assert_eq!(mount.console().draft(), "x", "and the draft is left as it was");
+        assert_eq!(
+            mount.console().draft(),
+            "x",
+            "and the draft is left as it was"
+        );
     }
 
     #[test]
@@ -6666,7 +8586,12 @@ window\tlog\n\
         empty.key_pressed(Key::Backspace, None);
         let panel = console_panel(empty.console(), 400.0);
         assert_eq!(
-            panel.rows.iter().find(|row| row.label == "input").unwrap().value,
+            panel
+                .rows
+                .iter()
+                .find(|row| row.label == "input")
+                .unwrap()
+                .value,
             ">"
         );
     }
@@ -6676,10 +8601,18 @@ window\tlog\n\
         // The reference returns before it clears, logs nothing and remembers nothing.
         let mut mount = console();
         assert_eq!(mount.key_pressed(Key::Enter, None), KeyOutcome::Changed);
-        assert!(said(&mount).is_empty(), "an empty line is not an event: {:?}", said(&mount));
+        assert!(
+            said(&mount).is_empty(),
+            "an empty line is not an event: {:?}",
+            said(&mount)
+        );
         mount.key_pressed(Key::Char(' '), None);
         mount.key_pressed(Key::Enter, None);
-        assert!(said(&mount).is_empty(), "and whitespace is not either: {:?}", said(&mount));
+        assert!(
+            said(&mount).is_empty(),
+            "and whitespace is not either: {:?}",
+            said(&mount)
+        );
     }
 
     #[test]
@@ -6697,7 +8630,10 @@ window\tlog\n\
             .iter()
             .position(|line| line.contains("focused trees"))
             .expect("and so is the outcome");
-        assert!(attempt < outcome, "the attempt precedes the outcome: {lines:?}");
+        assert!(
+            attempt < outcome,
+            "the attempt precedes the outcome: {lines:?}"
+        );
     }
 
     #[test]
@@ -6710,7 +8646,9 @@ window\tlog\n\
             "the attempt: {lines:?}"
         );
         assert!(
-            lines.iter().any(|line| line.contains("frobnicate") && !line.contains("> ")),
+            lines
+                .iter()
+                .any(|line| line.contains("frobnicate") && !line.contains("> ")),
             "and the refusal, naming it: {lines:?}"
         );
         assert!(
@@ -6752,7 +8690,9 @@ window\tlog\n\
             "a wrong number of arguments is one fact: {said:?}"
         );
         assert!(
-            !said.iter().any(|line| line.contains("not a declared window")),
+            !said
+                .iter()
+                .any(|line| line.contains("not a declared window")),
             "and it is not confused with the other refusal: {said:?}"
         );
 
@@ -6762,11 +8702,13 @@ window\tlog\n\
         type_line(&mut mount, "focus nosuchwindow");
         let said = mount.console().lines();
         assert!(
-            said.iter().any(|line| line.contains("not a declared window")),
+            said.iter()
+                .any(|line| line.contains("not a declared window")),
             "an unknown window is another: {said:?}"
         );
         assert!(
-            said.iter().any(|line| line.contains("world") && line.contains("console")),
+            said.iter()
+                .any(|line| line.contains("world") && line.contains("console")),
             "by name: {said:?}"
         );
     }
@@ -6791,7 +8733,10 @@ window\tlog\n\
         // Reclaiming focus is the console's own verb-free path, and then the close lands.
         mount.focus(CONSOLE_WINDOW);
         type_line(&mut mount, "close trees");
-        assert_eq!(mount.window("trees").map(|w| w.status), Some(Status::Closed));
+        assert_eq!(
+            mount.window("trees").map(|w| w.status),
+            Some(Status::Closed)
+        );
     }
 
     #[test]
@@ -6803,12 +8748,21 @@ window\tlog\n\
         assert_eq!(mount.console().draft(), "list");
         assert_eq!(mount.key_pressed(Key::HistoryUp, None), KeyOutcome::Changed);
         assert_eq!(mount.console().draft(), "stats");
-        assert_eq!(mount.key_pressed(Key::HistoryDown, None), KeyOutcome::Changed);
+        assert_eq!(
+            mount.key_pressed(Key::HistoryDown, None),
+            KeyOutcome::Changed
+        );
         assert_eq!(mount.console().draft(), "list");
         // Past the end the line empties rather than refusing to type.
-        assert_eq!(mount.key_pressed(Key::HistoryDown, None), KeyOutcome::Changed);
+        assert_eq!(
+            mount.key_pressed(Key::HistoryDown, None),
+            KeyOutcome::Changed
+        );
         assert_eq!(mount.console().draft(), "");
-        assert_eq!(mount.key_pressed(Key::HistoryDown, None), KeyOutcome::Ignored);
+        assert_eq!(
+            mount.key_pressed(Key::HistoryDown, None),
+            KeyOutcome::Ignored
+        );
     }
 
     #[test]
@@ -6874,7 +8828,8 @@ window\tlog\n\
             }],
         )
         .expect("the first record links");
-        voxel_package::filing::append(&workspace, &first).expect("the first filing creates the chain");
+        voxel_package::filing::append(&workspace, &first)
+            .expect("the first filing creates the chain");
         workspace
     }
 
@@ -7031,8 +8986,7 @@ window\tlog\n\
             .find(|row| row.label.ends_with("/evidence_grade"))
             .expect("the measured segment is a row");
         assert!(
-            cell.value.contains("evidence_grade ")
-                && cell.value.contains("(witness: crates/"),
+            cell.value.contains("evidence_grade ") && cell.value.contains("(witness: crates/"),
             "the cell names its reading and its own witness: {}",
             cell.value
         );
@@ -7061,8 +9015,14 @@ window\tlog\n\
             "a measured cell survives the bound: {:?}",
             panel.rows
         );
-        let held = panel.note.clone().expect("the document and its cells overrun the pane");
-        assert!(held.contains("held"), "the note says what it is holding: {held}");
+        let held = panel
+            .note
+            .clone()
+            .expect("the document and its cells overrun the pane");
+        assert!(
+            held.contains("held"),
+            "the note says what it is holding: {held}"
+        );
 
         // **Every row the pane could not fit is on the console**, which is what makes the bound a
         // bound rather than a deletion: the matrix's own report lines were logged as they were
@@ -7094,11 +9054,15 @@ window\tlog\n\
         // **The chain grew, and every byte that was already filed is still there, in order.**
         let after = std::fs::read(voxel_package::filing::chain_path(&workspace)).expect("reads");
         assert!(after.len() > before.len(), "the record got longer");
-        assert!(after.starts_with(&before), "and nothing already filed was rewritten");
+        assert!(
+            after.starts_with(&before),
+            "and nothing already filed was rewritten"
+        );
 
         // Read back **off the chain**, the way the gate does.
-        let read = voxel_package::compiler::read_back(&voxel_package::filing::chain_path(&workspace))
-            .expect("the chain reads");
+        let read =
+            voxel_package::compiler::read_back(&voxel_package::filing::chain_path(&workspace))
+                .expect("the chain reads");
         assert_eq!(read.chain.len(), 2, "two records, both linked");
         let ticket = read.board.tickets().last().expect("the filing is a ticket");
         assert!(
@@ -7110,11 +9074,13 @@ window\tlog\n\
         // And the console said so, with the id and what the ticket compiles to.
         let said = mount.console().lines();
         assert!(
-            said.iter().any(|line| line.contains("filed") && line.contains("BLD-")),
+            said.iter()
+                .any(|line| line.contains("filed") && line.contains("BLD-")),
             "the id is on the record: {said:?}"
         );
         assert!(
-            said.iter().any(|line| line.contains("emitted") && line.contains(".shpkg")),
+            said.iter()
+                .any(|line| line.contains("emitted") && line.contains(".shpkg")),
             "and the package is on disk at a named path: {said:?}"
         );
         assert!(
@@ -7152,7 +9118,10 @@ window\tlog\n\
         // difference between the two is the defect this test exists to catch.
         let after = std::fs::read(&chain).expect("reads");
         assert!(after.len() > before.len(), "the real record got longer");
-        assert!(after.starts_with(&before), "and nothing already filed was rewritten");
+        assert!(
+            after.starts_with(&before),
+            "and nothing already filed was rewritten"
+        );
 
         let read = voxel_package::compiler::read_back(&chain).expect("the chain reads");
         let ticket = read.board.tickets().last().expect("the filing is a ticket");
@@ -7163,11 +9132,13 @@ window\tlog\n\
         );
         let said = mount.console().lines();
         assert!(
-            said.iter().any(|line| line.contains("filed") && line.contains("BLD-")),
+            said.iter()
+                .any(|line| line.contains("filed") && line.contains("BLD-")),
             "the id is on the record: {said:?}"
         );
         assert!(
-            said.iter().any(|line| line.contains("emitted") && line.contains(".shpkg")),
+            said.iter()
+                .any(|line| line.contains("emitted") && line.contains(".shpkg")),
             "and the package is on disk at a named path: {said:?}"
         );
         let _ = std::fs::remove_dir_all(&workspace);
@@ -7195,7 +9166,10 @@ window\tlog\n\
 
         let mut mount = console();
         mount.set_workspace(workspace.clone());
-        type_line(&mut mount, "file the lighting in the valley is wrong at noon");
+        type_line(
+            &mut mount,
+            "file the lighting in the valley is wrong at noon",
+        );
 
         // The person's words are the objective, verbatim — the record keeps what they said.
         let read = voxel_package::compiler::read_back(&chain).expect("the chain reads");
@@ -7209,7 +9183,8 @@ window\tlog\n\
         // player cannot see past and the agent cannot work from.
         let said = mount.console().lines();
         assert!(
-            said.iter().any(|line| line.contains("emitted") && line.contains(".shpkg")),
+            said.iter()
+                .any(|line| line.contains("emitted") && line.contains(".shpkg")),
             "a person's ticket compiles to a package the agent can read: {said:?}"
         );
         let _ = std::fs::remove_dir_all(&workspace);
@@ -7238,14 +9213,23 @@ window\tlog\n\
         // **The path is derived from the record, not scraped out of the log**: the console's
         // line formatting is the console's business and a test that parses it breaks when the
         // prefix changes.
-        let read = voxel_package::compiler::read_back(&voxel_package::filing::chain_path(&workspace))
-            .expect("the chain reads");
-        let id = read.board.tickets().last().expect("the filing is a ticket").id.as_str().to_string();
+        let read =
+            voxel_package::compiler::read_back(&voxel_package::filing::chain_path(&workspace))
+                .expect("the chain reads");
+        let id = read
+            .board
+            .tickets()
+            .last()
+            .expect("the filing is a ticket")
+            .id
+            .as_str()
+            .to_string();
         let path = voxel_package::filing::newest_package(&workspace, &id)
             .expect("the filing emitted a package");
         let said = mount.console().lines();
         assert!(
-            said.iter().any(|line| line.contains(&id) && line.contains("emitted")),
+            said.iter()
+                .any(|line| line.contains(&id) && line.contains("emitted")),
             "the console names the ticket's own package: {said:?}"
         );
         assert_eq!(
@@ -7262,14 +9246,28 @@ window\tlog\n\
         // exist* rather than *in what order the package listed them*; the order that is
         // load-bearing — the bar's — is checked against the package's own list below.
         let after: Vec<String> = mount.windows().map(|w| w.spec.id.clone()).collect();
-        let mut declared: Vec<String> = loaded.recipe.windows.iter().map(|w| w.id.clone()).collect();
+        let mut declared: Vec<String> =
+            loaded.recipe.windows.iter().map(|w| w.id.clone()).collect();
         let mut sorted = after.clone();
         sorted.sort();
         declared.sort();
-        assert_eq!(sorted, declared, "the shell runs exactly what the package declares");
         assert_eq!(
-            mount.bar().iter().map(|entry| entry.id.clone()).collect::<Vec<_>>(),
-            loaded.recipe.tabs.iter().chain(loaded.recipe.bar.iter()).cloned().collect::<Vec<_>>(),
+            sorted, declared,
+            "the shell runs exactly what the package declares"
+        );
+        assert_eq!(
+            mount
+                .bar()
+                .iter()
+                .map(|entry| entry.id.clone())
+                .collect::<Vec<_>>(),
+            loaded
+                .recipe
+                .tabs
+                .iter()
+                .chain(loaded.recipe.bar.iter())
+                .cloned()
+                .collect::<Vec<_>>(),
             "the bar is the package's rows in strip order"
         );
         assert!(after.contains(&"api-viewer".to_string()), "{after:?}");
@@ -7282,7 +9280,8 @@ window\tlog\n\
             "the reload is on the record: {said:?}"
         );
         assert!(
-            said.iter().any(|line| line.contains("replaced") && line.contains("window(s)")),
+            said.iter()
+                .any(|line| line.contains("replaced") && line.contains("window(s)")),
             "and so is what it cost: {said:?}"
         );
         let _ = std::fs::remove_dir_all(&workspace);
@@ -7302,11 +9301,17 @@ window\tlog\n\
         let mut mount = console();
         mount.set_workspace(workspace.clone());
         type_line(&mut mount, &format!("file {RELOADABLE}"));
-        let filed = voxel_package::compiler::read_back(&voxel_package::filing::chain_path(
-            &workspace,
-        ))
-        .expect("reads");
-        let id = filed.board.tickets().last().expect("a ticket").id.as_str().to_owned();
+        let filed =
+            voxel_package::compiler::read_back(&voxel_package::filing::chain_path(&workspace))
+                .expect("reads");
+        let id = filed
+            .board
+            .tickets()
+            .last()
+            .expect("a ticket")
+            .id
+            .as_str()
+            .to_owned();
         let path = voxel_package::filing::newest_package(&workspace, &id)
             .expect("the filing emitted a package");
         let running: Vec<String> = mount.windows().map(|w| w.spec.id.clone()).collect();
@@ -7315,10 +9320,15 @@ window\tlog\n\
         // on purpose — so it writes the file itself rather than routing around `filing::file`.
         std::fs::write(&path, b"not a package").expect("the fixture replaces the file");
 
-        let why = mount.load_package(&path).expect_err("a file that is not a package");
+        let why = mount
+            .load_package(&path)
+            .expect_err("a file that is not a package");
         assert!(why.contains("does not frame a package"), "{why}");
         let after: Vec<String> = mount.windows().map(|w| w.spec.id.clone()).collect();
-        assert_eq!(after, running, "and the arrangement in force is left alone: {after:?}");
+        assert_eq!(
+            after, running,
+            "and the arrangement in force is left alone: {after:?}"
+        );
         let _ = std::fs::remove_dir_all(&workspace);
     }
 
@@ -7335,14 +9345,23 @@ window\tlog\n\
         let mut mount = console();
         mount.set_workspace(workspace.clone());
         type_line(&mut mount, &format!("file {RELOADABLE}"));
-        let filed = voxel_package::compiler::read_back(&voxel_package::filing::chain_path(
-            &workspace,
-        ))
-        .expect("reads");
-        let id = filed.board.tickets().last().expect("a ticket").id.as_str().to_owned();
+        let filed =
+            voxel_package::compiler::read_back(&voxel_package::filing::chain_path(&workspace))
+                .expect("reads");
+        let id = filed
+            .board
+            .tickets()
+            .last()
+            .expect("a ticket")
+            .id
+            .as_str()
+            .to_owned();
         let path = voxel_package::filing::newest_package(&workspace, &id)
             .expect("the filing emitted a package");
-        let dir = path.parent().expect("the compiler's output root").to_path_buf();
+        let dir = path
+            .parent()
+            .expect("the compiler's output root")
+            .to_path_buf();
 
         assert_eq!(
             mount.watch_packages(&dir, Some(7)),
@@ -7365,7 +9384,10 @@ window\tlog\n\
             "a file that does not frame was adopted"
         );
         let after: Vec<String> = mount.windows().map(|w| w.spec.id.clone()).collect();
-        assert_eq!(after, running, "a bad package changed the arrangement in force");
+        assert_eq!(
+            after, running,
+            "a bad package changed the arrangement in force"
+        );
         assert!(
             mount.watch_packages(&dir, Some(10)).is_none(),
             "the refused package was read again on the next tick"
@@ -7403,20 +9425,33 @@ window\tlog\n\
         // **A record written before the refusal is still readable after it.** The console is
         // `Mount`'s own field and not a window's, which is what makes a refused reload
         // recoverable rather than fatal.
-        mount.log(Level::Event, "before", "a record from before the filing", None);
+        mount.log(
+            Level::Event,
+            "before",
+            "a record from before the filing",
+            None,
+        );
 
         type_line(&mut mount, &format!("file {TICKET}"));
 
         let after: Vec<String> = mount.windows().map(|w| w.spec.id.clone()).collect();
-        assert_eq!(after, before, "the arrangement in force is unchanged: {after:?}");
+        assert_eq!(
+            after, before,
+            "the arrangement in force is unchanged: {after:?}"
+        );
         assert!(
-            mount.console().lines().iter().any(|line| line.contains("a record from before")),
+            mount
+                .console()
+                .lines()
+                .iter()
+                .any(|line| line.contains("a record from before")),
             "and the console kept its records: {:?}",
             mount.console().lines()
         );
         let said = mount.console().lines();
         assert!(
-            said.iter().any(|line| line.contains("Not reloaded") && line.contains("console")),
+            said.iter()
+                .any(|line| line.contains("Not reloaded") && line.contains("console")),
             "the refusal names the window and the consequence: {said:?}"
         );
         assert!(
@@ -7424,10 +9459,7 @@ window\tlog\n\
             "and the windows it did declare, so the ticket can be rewritten: {said:?}"
         );
         // The package is still emitted: refusing the reload is not refusing the compile.
-        assert!(
-            said.iter().any(|line| line.contains("emitted")),
-            "{said:?}"
-        );
+        assert!(said.iter().any(|line| line.contains("emitted")), "{said:?}");
         let _ = std::fs::remove_dir_all(&workspace);
     }
 
@@ -7506,11 +9538,14 @@ identity\tnot-established-no-signature
         // terminal; the console is the client's own record, and C-83.5's rule is that a count is
         // not the answer — *which* decision is not settled is.
         let mut mount = console();
-        mount.read_gate(GATE, Some(20)).expect("the gate report reads");
+        mount
+            .read_gate(GATE, Some(20))
+            .expect("the gate report reads");
 
         let said = said(&mount);
         assert!(
-            said.iter().any(|line| line.contains("deterministic") && line.contains("3 subject(s)")),
+            said.iter()
+                .any(|line| line.contains("deterministic") && line.contains("3 subject(s)")),
             "the instrument and the count: {said:?}"
         );
         for subject in ["feature/pinned_hud", "change_view"] {

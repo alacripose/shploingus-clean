@@ -2,9 +2,10 @@
 //! the GPU's `vs_quad` — and, since C-184, **one astronomical body** per record, expanded by
 //! `vs_body`.
 //!
-//! **The record is 32 bytes and its first slot is the discriminant.** Slots 0 and 1 are the unit's
-//! kind and its origin index; the six that follow are a rectangle's composition, slice, `uv`,
-//! extent and two slots it leaves zero, or a body's radiance and the direction its face is lit from.
+//! **The record is 44 bytes and its first slot is the discriminant.** Slots 0 and 1 are the unit's
+//! kind and its origin index; the eight that follow are a rectangle's composition, slice, `uv`,
+//! extent, the rung's own two numbers and the **per-axis shaper's cell** — two slopes and the
+//! bilinear's cross term — or a body's radiance and the direction its face is lit from.
 //! A body's **position and half-extent ride an origin**, exactly as a chunk's position does.
 //!
 //! Why a separate record instead of the four-corner vertex expansion the
@@ -22,8 +23,8 @@
 //! produces, so both paths end at the same two triangles and the pipeline does
 //! not care which one produced them.
 
-use voxel_model::{Face, MaterialId};
 use voxel_mesh::Quad;
+use voxel_model::{Face, MaterialId};
 
 /// Which face each record names. 6 entries — one per axis direction.
 pub const FACES_BY_INDEX: [Face; 6] = [
@@ -158,13 +159,26 @@ pub struct QuadRecord {
     pub chunk: u32,
     /// A body's light direction, **`y`** (an `f32`'s bits) — and a rectangle's first slot it leaves zero.
     pub light_y: u32,
-    /// A body's light direction, **`z`** — and a rectangle's second unused slot.
+    /// A body's light direction, **`z`**; a surface rung's coordinate unit; and, on a shaped
+    /// rectangle, the shaper's **low** slope.
     pub light_z: u32,
+    /// **The per-axis shaper's slope**, low edge: a roof's gradient along the face's first
+    /// in-plane axis, or a wall's bottom-edge gradient along its horizontal axis — in record
+    /// units per record unit, the same units as `uv` and `extent`. Zero is the flat face every
+    /// record written before the shaper was carried draws.
+    pub shape_lo: u32,
+    /// The shaper's **high** slope: a roof's gradient along the face's second in-plane axis,
+    /// or a wall's top-edge gradient along its horizontal axis.
+    pub shape_hi: u32,
+    /// The roof's **twist**, `∂²h/∂x∂z` in record units per record unit squared: the one term
+    /// that makes a roof the bilinear through its four **shared cell corners** rather than a plane
+    /// through its own centre. A wall and a flat face leave it zero.
+    pub shape_twist: u32,
 }
 
 impl QuadRecord {
     /// The record's fields, in the order they are written.
-    pub const FIELDS: usize = 8;
+    pub const FIELDS: usize = 11;
 
     /// **A rectangle with no extent** — the tombstone a departed chunk's records become.
     ///
@@ -182,7 +196,24 @@ impl QuadRecord {
             chunk: 0,
             light_y: 0,
             light_z: 0,
+            shape_lo: 0,
+            shape_hi: 0,
+            shape_twist: 0,
         }
+    }
+
+    /// **Carry the bilinear through four shared corners** — the roof's full `profile32` cell.
+    ///
+    /// `lo` and `hi` are the `x` and `z` gradients and `twist` the cross term, all in record units
+    /// per record unit (per unit squared for the twist), measured **from the rectangle's low
+    /// corner**, which `slice` must already be the height of: the constant term of the bilinear is
+    /// the record's own `slice`, so it is not a fourth number. Zero is the flat face every record
+    /// written before the shaper was carried draws, and every wall leaves it zero.
+    pub fn bilinear(mut self, lo: f32, hi: f32, twist: f32) -> Self {
+        self.shape_lo = lo.to_bits();
+        self.shape_hi = hi.to_bits();
+        self.shape_twist = twist.to_bits();
+        self
     }
 
     /// The record's stride in bytes — what the GPU's `array<QuadRecord>` uses.
@@ -206,6 +237,9 @@ impl QuadRecord {
             chunk,
             light_y: 0,
             light_z: 0,
+            shape_lo: 0,
+            shape_hi: 0,
+            shape_twist: 0,
         }
     }
 
@@ -234,6 +268,9 @@ impl QuadRecord {
             chunk,
             light_y: ly,
             light_z: lz,
+            shape_lo: 0,
+            shape_hi: 0,
+            shape_twist: 0,
         }
     }
 
@@ -279,6 +316,9 @@ impl QuadRecord {
             chunk,
             light_y: 0,
             light_z: 0,
+            shape_lo: 0,
+            shape_hi: 0,
+            shape_twist: 0,
         }
     }
 
@@ -315,7 +355,7 @@ impl QuadRecord {
         }
     }
 
-    /// The record's eight slots, in the order the GPU's `QuadRecord` declares them.
+    /// The record's slots, in the order the GPU's `QuadRecord` declares them.
     pub fn slots(self) -> [u32; Self::FIELDS] {
         [
             self.face,
@@ -326,6 +366,9 @@ impl QuadRecord {
             self.chunk,
             self.light_y,
             self.light_z,
+            self.shape_lo,
+            self.shape_hi,
+            self.shape_twist,
         ]
     }
 
@@ -367,12 +410,16 @@ mod tests {
         // had, so nothing drawn before clouds can change by this.
         let bytes = origin_bytes(&[[1.0, 2.0, -3.0, 0.72]], [0.0, 0.0, 0.0]);
         assert_eq!(bytes.len(), ORIGIN_SIZE as usize);
-        let f = |at: usize| voxel_model::endian::le_from_bytes::<f32>((bytes[at..at + 4].try_into()).unwrap());
+        let f = |at: usize| {
+            voxel_model::endian::le_from_bytes::<f32>((bytes[at..at + 4].try_into()).unwrap())
+        };
         assert_eq!((f(0), f(4), f(8)), (1.0, 2.0, -3.0));
         assert_eq!(f(12), 0.72, "the veil did not reach the origin's own w");
         // And the eye is still subtracted, in the world's own `f64`.
         let moved = origin_bytes(&[[1.0, 2.0, -3.0, 0.0]], [0.5, 0.25, -0.25]);
-        let g = |at: usize| voxel_model::endian::le_from_bytes::<f32>((moved[at..at + 4].try_into()).unwrap());
+        let g = |at: usize| {
+            voxel_model::endian::le_from_bytes::<f32>((moved[at..at + 4].try_into()).unwrap())
+        };
         assert_eq!((g(0), g(4), g(8)), (0.5, 1.75, -2.75));
     }
 
@@ -436,9 +483,12 @@ mod tests {
             chunk: 8,
             light_y: 9,
             light_z: 10,
+            shape_lo: 11,
+            shape_hi: 12,
+            shape_twist: 13,
         };
         let b = QuadRecord::bytes(&[r]);
-        assert_eq!(b.len(), 32);
+        assert_eq!(b.len(), 44);
         for (at, field) in r.slots().iter().enumerate() {
             assert_eq!(
                 &b[at * 4..at * 4 + 4],
@@ -462,7 +512,10 @@ mod tests {
         let r = QuadRecord::of_body(&body, 11);
         assert!(r.is_body());
         assert_eq!(r.chunk, 11, "a body's origin index was lost");
-        assert!(r.to_quad().is_none(), "a body was handed back as a rectangle");
+        assert!(
+            r.to_quad().is_none(),
+            "a body was handed back as a rectangle"
+        );
         assert_eq!(BODY_KIND, 6, "the kind moved onto one of the six faces");
     }
 
@@ -493,8 +546,18 @@ mod tests {
         };
         assert_eq!(body.origin(), [3.84e8, -1.0, 2.0, 1_737_400.0]);
         let bytes = origin_bytes(&[body.origin()], [3.84e8 - 8.0, -1.0, 2.0]);
-        let f = |at: usize| voxel_model::endian::le_from_bytes::<f32>((bytes[at..at + 4].try_into()).unwrap());
-        assert_eq!(f(0), 8.0, "the eye was not subtracted from the body's own centre");
-        assert_eq!(f(12), 1_737_400.0, "the half-extent did not reach the origin's `w`");
+        let f = |at: usize| {
+            voxel_model::endian::le_from_bytes::<f32>((bytes[at..at + 4].try_into()).unwrap())
+        };
+        assert_eq!(
+            f(0),
+            8.0,
+            "the eye was not subtracted from the body's own centre"
+        );
+        assert_eq!(
+            f(12),
+            1_737_400.0,
+            "the half-extent did not reach the origin's `w`"
+        );
     }
 }

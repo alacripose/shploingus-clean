@@ -33,8 +33,8 @@ use crate::shell::arrangement::PaneRef;
 use crate::shell::placeholder::dashed_edges;
 use crate::shell::splitter::Layout;
 use voxel_ui::{
-    contrast_over_backdrop, drop_zone_mark, spacing_dp, text_size_dp, Align, Element, Ink,
-    Palette, Paint, Rect, Role, UiResult, WHITE,
+    contrast_over_backdrop, drop_zone_mark, spacing_dp, text_size_dp, Align, Element, Ink, Paint,
+    Palette, Rect, Role, UiResult, WHITE,
 };
 
 /// **The reference's outer-edge band, in dp** (3195–3204: `<= 24`), which is also its
@@ -104,12 +104,7 @@ pub struct DropTarget {
 /// the **outer band** first (left, right, then top measured from *below* the title bar, then
 /// bottom), then the pane under the cursor with the nearest edge by normalised dominance, and
 /// the reference's `"right"` fallback when no pane is under the point.
-pub fn zone_at(
-    window: Rect,
-    titlebar: f64,
-    layout: &Layout,
-    at: (f64, f64),
-) -> Option<DropTarget> {
+pub fn zone_at(window: Rect, titlebar: f64, layout: &Layout, at: (f64, f64)) -> Option<DropTarget> {
     if !window.contains(at) {
         return None;
     }
@@ -151,7 +146,10 @@ pub fn zone_at(
                 } else {
                     DropZone::Bottom
                 };
-                DropTarget { zone, pane: Some(pane.clone()) }
+                DropTarget {
+                    zone,
+                    pane: Some(pane.clone()),
+                }
             }) {
             Some(target) => return Some(target),
             // The reference's fallback: no pane found means the window's right edge.
@@ -176,24 +174,18 @@ pub fn preview_rect(
             let half_w = pane.width_dp / 2.0;
             let half_h = pane.height_dp / 2.0;
             match target.zone {
-                DropZone::Left => Rect::new(
-                    pane.x,
-                    pane.y,
-                    half_w.max(HALF_FLOOR_DP),
-                    pane.height_dp,
-                ),
+                DropZone::Left => {
+                    Rect::new(pane.x, pane.y, half_w.max(HALF_FLOOR_DP), pane.height_dp)
+                }
                 DropZone::Right => Rect::new(
                     pane.x + half_w,
                     pane.y,
                     (pane.width_dp - half_w).max(HALF_FLOOR_DP),
                     pane.height_dp,
                 ),
-                DropZone::Top => Rect::new(
-                    pane.x,
-                    pane.y,
-                    pane.width_dp,
-                    half_h.max(HALF_FLOOR_DP),
-                ),
+                DropZone::Top => {
+                    Rect::new(pane.x, pane.y, pane.width_dp, half_h.max(HALF_FLOOR_DP))
+                }
                 DropZone::Bottom => Rect::new(
                     pane.x,
                     pane.y + half_h,
@@ -239,7 +231,11 @@ pub fn preview_rect(
 /// The preview's own words: **Split** into a pane, **Dock** onto a window edge (2742–2774), with
 /// the declared zone mark in front — `"◧  Split Left"`.
 pub fn label(target: &DropTarget) -> String {
-    let verb = if target.pane.is_some() { "Split" } else { "Dock" };
+    let verb = if target.pane.is_some() {
+        "Split"
+    } else {
+        "Dock"
+    };
     format!("{}  {} {}", target.zone.mark(), verb, target.zone.label())
 }
 
@@ -263,7 +259,10 @@ pub fn elements(
     let mut out = Vec::new();
     out.push(Element::Surface {
         rect,
-        paint: Paint { rgb: WHITE, alpha: Ink::Divider.opacity() * opacity },
+        paint: Paint {
+            rgb: WHITE,
+            alpha: Ink::Divider.opacity() * opacity,
+        },
     });
     for dash in dashed_edges(rect) {
         out.push(Element::Rule {
@@ -282,7 +281,10 @@ pub fn elements(
     contrast_over_backdrop(Ink::Full.composited_over(backdrop), backdrop)?;
     out.push(Element::Surface {
         rect: pill,
-        paint: Paint { rgb: chrome, alpha: opacity },
+        paint: Paint {
+            rgb: chrome,
+            alpha: opacity,
+        },
     });
     out.push(Element::Text {
         rect: Rect::new(
@@ -310,11 +312,14 @@ mod tests {
     }
 
     fn two_panes() -> Layout {
-        let mut arrangement = Arrangement::of(
-            WindowId::new("a").expect("id"),
-        );
+        let mut arrangement = Arrangement::of(WindowId::new("a").expect("id"));
         arrangement
-            .split(None, Orientation::Horizontal, Side::After, WindowId::new("b").expect("id"))
+            .split(
+                None,
+                Orientation::Horizontal,
+                Side::After,
+                WindowId::new("b").expect("id"),
+            )
             .expect("splits");
         splitter::layout(&arrangement, window()).expect("lays out")
     }
@@ -324,7 +329,10 @@ mod tests {
         let layout = two_panes();
         let target = zone_at(window(), 40.0, &layout, (10.0, 200.0)).expect("inside");
         assert_eq!(target.zone, DropZone::Left);
-        assert!(target.pane.is_none(), "the outer band docks to the window, not the pane");
+        assert!(
+            target.pane.is_none(),
+            "the outer band docks to the window, not the pane"
+        );
         let target = zone_at(window(), 40.0, &layout, (590.0, 200.0)).expect("inside");
         assert_eq!(target.zone, DropZone::Right);
     }
@@ -336,10 +344,14 @@ mod tests {
         // comparison of the same number put it (and the old arithmetic even read the desk's
         // bottom band for it).
         let offset = Rect::new(400.0, 300.0, 600.0, 400.0);
-        let mut arrangement =
-            Arrangement::of(WindowId::new("a").expect("id"));
+        let mut arrangement = Arrangement::of(WindowId::new("a").expect("id"));
         arrangement
-            .split(None, Orientation::Horizontal, Side::After, WindowId::new("b").expect("id"))
+            .split(
+                None,
+                Orientation::Horizontal,
+                Side::After,
+                WindowId::new("b").expect("id"),
+            )
             .expect("splits");
         let layout = splitter::layout(&arrangement, offset).expect("lays out");
         let target = zone_at(offset, 40.0, &layout, (410.0, 500.0)).expect("inside");
@@ -389,7 +401,10 @@ mod tests {
     fn no_pane_under_the_point_falls_back_to_the_reference_s_right() {
         // A layout whose panes do not cover the point (a hole is impossible in the tree, so the
         // test uses an empty layout — the reference's `if not drop_zone: drop_zone = "right"`).
-        let empty = Layout { panes: Vec::new(), seams: Vec::new() };
+        let empty = Layout {
+            panes: Vec::new(),
+            seams: Vec::new(),
+        };
         let target = zone_at(window(), 40.0, &empty, (300.0, 200.0)).expect("inside");
         assert_eq!(target.zone, DropZone::Right);
         assert!(target.pane.is_none());
@@ -410,7 +425,10 @@ mod tests {
         assert_eq!(rect.width_dp, pane.width_dp / 2.0);
         assert_eq!(rect.height_dp, pane.height_dp);
 
-        let target = DropTarget { zone: DropZone::Bottom, pane: None };
+        let target = DropTarget {
+            zone: DropZone::Bottom,
+            pane: None,
+        };
         let rect = preview_rect(window(), 40.0, &target, None);
         assert_eq!(rect.y, window().y + 40.0 + (400.0 - 40.0) / 2.0);
         assert_eq!(rect.x, window().x);
@@ -419,7 +437,10 @@ mod tests {
     #[test]
     fn a_tiny_pane_s_preview_still_meets_the_twenty_dp_floor() {
         let pane = Rect::new(10.0, 10.0, 30.0, 30.0);
-        let target = DropTarget { zone: DropZone::Left, pane: None };
+        let target = DropTarget {
+            zone: DropZone::Left,
+            pane: None,
+        };
         let rect = preview_rect(window(), 40.0, &target, Some(pane));
         assert_eq!(rect.width_dp, 20.0, "the reference's max(20, …)");
     }
@@ -430,7 +451,10 @@ mod tests {
             zone: DropZone::Left,
             pane: Some(PaneRef::Window(WindowId::new("a").expect("id"))),
         };
-        let dock = DropTarget { zone: DropZone::Bottom, pane: None };
+        let dock = DropTarget {
+            zone: DropZone::Bottom,
+            pane: None,
+        };
         assert_eq!(label(&split), "◧  Split Left");
         assert_eq!(label(&dock), "⬓  Dock Bottom");
         for zone in DropZone::ALL {
@@ -440,9 +464,12 @@ mod tests {
 
     #[test]
     fn the_preview_is_a_dashed_wash_with_the_label_on_a_declared_pill() {
-        let target = DropTarget { zone: DropZone::Right, pane: None };
-        let out = elements(window(), 40.0, &target, None, 1.0, &Palette::declared())
-            .expect("draws");
+        let target = DropTarget {
+            zone: DropZone::Right,
+            pane: None,
+        };
+        let out =
+            elements(window(), 40.0, &target, None, 1.0, &Palette::declared()).expect("draws");
         let surfaces = out
             .iter()
             .filter(|element| matches!(element, Element::Surface { .. }))

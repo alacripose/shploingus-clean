@@ -46,6 +46,23 @@ pub struct TerrainSample {
     pub mountain_m: f64,
 }
 
+/// **How much higher than the continents the ridged mountain term is read**: ranges are narrow and
+/// tall. It is the term's own frequency multiple — the one place it is written — so a reader that
+/// needs the wavelength of a range ([`range_wavelength_m`]) and the elevation law itself cannot
+/// drift apart.
+pub const RANGE_FREQUENCY_SCALE: f64 = 6.0;
+
+/// The **wavelength of the world's mountain ranges**, engine metres: one cycle of the ridged term's
+/// own base octave, `1 / (continent_frequency · 6)` — 66.7 engine metres for the default world.
+///
+/// **Read by [`crate::weather`] as the baseline for the air's upslope**, because that is the scale
+/// of the landform the air climbs: a gradient read two metres apart sampled the fractal's finest
+/// octaves instead, which is where the rain shadow became a per-cell coin toss rather than a
+/// mountain's own wet side and dry side.
+pub fn range_wavelength_m(spec: &WorldSpec) -> f64 {
+    1.0 / (spec.config.continent_frequency * RANGE_FREQUENCY_SCALE)
+}
+
 /// The continental field's fractal.
 fn continental(spec: &WorldSpec) -> Fractal {
     // Five octaves: enough to make a coastline ragged, few enough that a
@@ -92,7 +109,11 @@ pub fn elevation_m(spec: &WorldSpec, x: f64, z: f64) -> f64 {
         // A **field**, so the same stationary seed as the continents above.
         let r = ridged.ridged(
             spec.stationary_stage_seed("mountains"),
-            Vec3::new(x * f * 6.0, 0.0, z * f * 6.0),
+            Vec3::new(
+                x * f * RANGE_FREQUENCY_SCALE,
+                0.0,
+                z * f * RANGE_FREQUENCY_SCALE,
+            ),
         );
         r * cfg.relief_m * 0.55 * convergent
     } else {
@@ -157,7 +178,11 @@ pub fn sample(spec: &WorldSpec, x: f64, z: f64) -> TerrainSample {
         let ridged = Fractal::new(5, 2.0, 0.5, Kind::Perlin);
         ridged.ridged(
             spec.stationary_stage_seed("mountains"),
-            Vec3::new(x * cfg.continent_frequency * 6.0, 0.0, z * cfg.continent_frequency * 6.0),
+            Vec3::new(
+                x * cfg.continent_frequency * RANGE_FREQUENCY_SCALE,
+                0.0,
+                z * cfg.continent_frequency * RANGE_FREQUENCY_SCALE,
+            ),
         ) * cfg.relief_m
             * 0.55
             * convergent

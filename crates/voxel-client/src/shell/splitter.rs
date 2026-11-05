@@ -121,11 +121,18 @@ impl Layout {
     pub fn seam_elements(&self, hovered: Option<usize>, opacity: f64, out: &mut Vec<Element>) {
         let opacity = opacity.clamp(0.0, 1.0);
         for (index, seam) in self.seams.iter().enumerate() {
-            let ink = if hovered == Some(index) { Ink::Secondary } else { Ink::Divider };
+            let ink = if hovered == Some(index) {
+                Ink::Secondary
+            } else {
+                Ink::Divider
+            };
             let paint = ink.paint();
             out.push(Element::Rule {
                 rect: seam.rect,
-                paint: Paint { rgb: paint.rgb, alpha: paint.alpha * opacity },
+                paint: Paint {
+                    rgb: paint.rgb,
+                    alpha: paint.alpha * opacity,
+                },
             });
         }
     }
@@ -138,7 +145,10 @@ impl Layout {
 /// `PaneBelowFloor` refusal, so a tree that cannot be drawn cannot be laid out either and the
 /// two never disagree.
 pub fn layout(arrangement: &Arrangement, rect: Rect) -> UiResult<Layout> {
-    let mut out = Layout { panes: Vec::new(), seams: Vec::new() };
+    let mut out = Layout {
+        panes: Vec::new(),
+        seams: Vec::new(),
+    };
     // **The splitter counter is the walk's, and it matches `Arrangement::shares`**: a splitter
     // is numbered when the walk reaches it, before its children's splitters — the same preorder
     // `collect_shares` reads. A seam's address is only as good as that agreement.
@@ -146,7 +156,13 @@ pub fn layout(arrangement: &Arrangement, rect: Rect) -> UiResult<Layout> {
     // **The path is the walk's too**, and it is the same address [`PaneRef::Slot`] carries and
     // `Arrangement::slot_at` resolves: a slot's identity is the route the walk took to reach it.
     let mut path = Vec::new();
-    layout_node(arrangement.root(), rect, &mut path, &mut next_splitter, &mut out)?;
+    layout_node(
+        arrangement.root(),
+        rect,
+        &mut path,
+        &mut next_splitter,
+        &mut out,
+    )?;
     Ok(out)
 }
 
@@ -166,7 +182,10 @@ fn layout_node(
             out.panes.push((rect, PaneRef::Slot(path.clone())));
             Ok(())
         }
-        Node::Split { orientation, children } => {
+        Node::Split {
+            orientation,
+            children,
+        } => {
             let splitter = *next_splitter;
             *next_splitter += 1;
             let count = children.len().max(1) as f64;
@@ -216,18 +235,12 @@ fn layout_node(
 /// The handle's rect: [`HANDLE_DP`] thick, centred on the seam, spanning the cross axis.
 fn seam_at_cursor(orientation: Orientation, rect: Rect, cursor: f64) -> Rect {
     match orientation {
-        Orientation::Horizontal => Rect::new(
-            cursor - HANDLE_DP / 2.0,
-            rect.y,
-            HANDLE_DP,
-            rect.height_dp,
-        ),
-        Orientation::Vertical => Rect::new(
-            rect.x,
-            cursor - HANDLE_DP / 2.0,
-            rect.width_dp,
-            HANDLE_DP,
-        ),
+        Orientation::Horizontal => {
+            Rect::new(cursor - HANDLE_DP / 2.0, rect.y, HANDLE_DP, rect.height_dp)
+        }
+        Orientation::Vertical => {
+            Rect::new(rect.x, cursor - HANDLE_DP / 2.0, rect.width_dp, HANDLE_DP)
+        }
     }
 }
 
@@ -288,7 +301,12 @@ mod tests {
             .split(None, Orientation::Horizontal, Side::After, id("b"))
             .expect("splits");
         arrangement
-            .split(Some(&id("b")), Orientation::Horizontal, Side::After, id("c"))
+            .split(
+                Some(&id("b")),
+                Orientation::Horizontal,
+                Side::After,
+                id("c"),
+            )
             .expect("splits");
         let wide = layout(&arrangement, area()).expect("lays out");
         assert_eq!(wide.seams.len(), 2);
@@ -305,10 +323,17 @@ mod tests {
             .iter()
             .find(|seam| seam.orientation == Orientation::Vertical)
             .expect("the nested seam");
-        assert_eq!(nested.splitter, 1, "the nested splitter is the second in tree order");
+        assert_eq!(
+            nested.splitter, 1,
+            "the nested splitter is the second in tree order"
+        );
         // The nested splitter is vertical, so its span is the height it divides — the root's
         // 600 dp width is a different axis and a different number.
-        assert_eq!(nested.span, area().height_dp, "the nested splitter's own span, not the root's");
+        assert_eq!(
+            nested.span,
+            area().height_dp,
+            "the nested splitter's own span, not the root's"
+        );
     }
 
     #[test]
@@ -319,13 +344,22 @@ mod tests {
             .split(None, Orientation::Horizontal, Side::After, id("b"))
             .expect("splits");
         arrangement
-            .split(Some(&id("b")), Orientation::Horizontal, Side::After, id("c"))
+            .split(
+                Some(&id("b")),
+                Orientation::Horizontal,
+                Side::After,
+                id("c"),
+            )
             .expect("splits");
         assert_eq!(arrangement.panes(), 3);
         let narrow = Rect::new(0.0, 0.0, 100.0, 400.0);
         assert!(matches!(
             layout(&arrangement, narrow),
-            Err(UiRefusal::PaneBelowFloor { count: 3, floor: 40, .. })
+            Err(UiRefusal::PaneBelowFloor {
+                count: 3,
+                floor: 40,
+                ..
+            })
         ));
         // The same tree in a span that divides passes, and every pane meets the floor.
         let wide = Rect::new(0.0, 0.0, 120.0, 400.0);

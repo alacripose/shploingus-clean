@@ -114,9 +114,18 @@ fn main() {
     let limits = adapter.limits();
     println!();
     println!("limits");
-    println!("  max_storage_buffer_binding_size {} B", limits.max_storage_buffer_binding_size);
-    println!("  max_buffer_size                 {} B", limits.max_buffer_size);
-    println!("  max_compute_workgroup_size_x    {}", limits.max_compute_workgroup_size_x);
+    println!(
+        "  max_storage_buffer_binding_size {} B",
+        limits.max_storage_buffer_binding_size
+    );
+    println!(
+        "  max_buffer_size                 {} B",
+        limits.max_buffer_size
+    );
+    println!(
+        "  max_compute_workgroup_size_x    {}",
+        limits.max_compute_workgroup_size_x
+    );
     println!(
         "  max_storage_buffers_per_shader_stage {}",
         limits.max_storage_buffers_per_shader_stage

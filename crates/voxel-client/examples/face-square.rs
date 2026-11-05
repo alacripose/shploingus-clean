@@ -50,7 +50,11 @@ const BAND_HI: f64 = 1.55;
 
 fn srgb(v: f32) -> u8 {
     let v = v.clamp(0.0, 1.0) as f64;
-    let encoded = if v <= 0.003_130_8 { 12.92 * v } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
+    let encoded = if v <= 0.003_130_8 {
+        12.92 * v
+    } else {
+        1.055 * v.powf(1.0 / 2.4) - 0.055
+    };
     (encoded * 255.0 + 0.5) as u8
 }
 
@@ -199,7 +203,10 @@ impl Law<'_> {
             .pattern
             .at(self.material, p, footprint, self.surface)
             .expect("a finite point");
-        let varied = self.inputs.with_detail(deviation).expect("a legal deviation");
+        let varied = self
+            .inputs
+            .with_detail(deviation)
+            .expect("a legal deviation");
         let view = Vec3::new(-d[0] / distance, -d[1] / distance, -d[2] / distance);
         let (want, _) = shading::shade_cpu(
             &varied,
@@ -223,7 +230,9 @@ fn main() {
     let table = shading::table(&registry, &field).expect("every admitted material derives");
     let inputs = shading::inputs_for(&registry, MATERIAL).expect("the material derives");
     let surface = materials::pattern_of(MATERIAL);
-    let gain = field.gain(MATERIAL).expect("the world varies this material");
+    let gain = field
+        .gain(MATERIAL)
+        .expect("the world varies this material");
     let rig = LightRig::standard();
     let gpu_rig = GpuRig::from_rig(&rig).expect("the standard rig fits");
     let mut renderer = Renderer::new(SIDE, SIDE, &table, &gpu_rig).expect("a GPU");
@@ -241,7 +250,13 @@ fn main() {
     // ---- the corner: a wall at z = 0 and a floor at y = 0, both 2 m, both in one chunk ----
     let wall = Panel {
         name: "wall ",
-        quad: Quad { face: Face::PosZ, slice: 0, uv: [0, 0], extent: [EDGE, EDGE], material: MATERIAL },
+        quad: Quad {
+            face: Face::PosZ,
+            slice: 0,
+            uv: [0, 0],
+            extent: [EDGE, EDGE],
+            material: MATERIAL,
+        },
         normal: [0.0, 0.0, 1.0],
         corner: [0.0, 0.0, 0.0],
         u: [1.0, 0.0, 0.0],
@@ -249,7 +264,13 @@ fn main() {
     };
     let floor = Panel {
         name: "floor",
-        quad: Quad { face: Face::PosY, slice: 0, uv: [0, 0], extent: [EDGE, EDGE], material: MATERIAL },
+        quad: Quad {
+            face: Face::PosY,
+            slice: 0,
+            uv: [0, 0],
+            extent: [EDGE, EDGE],
+            material: MATERIAL,
+        },
         normal: [0.0, 1.0, 0.0],
         corner: [0.0, 0.0, 0.0],
         u: [1.0, 0.0, 0.0],
@@ -257,8 +278,16 @@ fn main() {
     };
     for panel in [&wall, &floor] {
         let (u, w) = face_axes(panel.quad.face);
-        assert_eq!(u, panel.u, "{}: the u axis is not `mesh::axes`'s", panel.name);
-        assert_eq!(w, panel.w, "{}: the w axis is not `mesh::axes`'s", panel.name);
+        assert_eq!(
+            u, panel.u,
+            "{}: the u axis is not `mesh::axes`'s",
+            panel.name
+        );
+        assert_eq!(
+            w, panel.w,
+            "{}: the w axis is not `mesh::axes`'s",
+            panel.name
+        );
     }
 
     let mesh = |quad: Quad| Mesh {
@@ -350,8 +379,10 @@ fn main() {
         }
         250.0 / crossings.max(1) as f64
     };
-    println!("
-=== the drawn cell along each in-plane axis, in world metres ===");
+    println!(
+        "
+=== the drawn cell along each in-plane axis, in world metres ==="
+    );
     let axis_of = |dir: [f64; 3]| -> usize {
         if dir[0].abs() > 0.5 {
             0
@@ -390,10 +421,12 @@ fn main() {
                         p[axis] = panel.corner[axis];
                     }
                 }
-                let Some(red) = project(&camera, p).and_then(|(x, y)| sample(&frame, x, y, 0)) else {
+                let Some(red) = project(&camera, p).and_then(|(x, y)| sample(&frame, x, y, 0))
+                else {
                     continue;
                 };
-                let Some(want) = law.red(p, panel.normal, Some(panel.quad.face.axis() as u32)) else {
+                let Some(want) = law.red(p, panel.normal, Some(panel.quad.face.axis() as u32))
+                else {
                     continue;
                 };
                 let delta = (red - want).abs();
@@ -414,8 +447,10 @@ fn main() {
         );
     }
 
-    println!("
-=== the comparison ===");
+    println!(
+        "
+=== the comparison ==="
+    );
     println!(
         "  the two footprints: {:.3} mm and {:.3} mm — ratio {:.4}",
         footprints[0] * 1000.0,
@@ -465,14 +500,22 @@ fn main() {
     };
     for panel in [&facing_z, &facing_x] {
         let (u, w) = face_axes(panel.quad.face);
-        assert_eq!(u, panel.u, "{}: the u axis is not `mesh::axes`'s", panel.name);
-        assert_eq!(w, panel.w, "{}: the w axis is not `mesh::axes`'s", panel.name);
+        assert_eq!(
+            u, panel.u,
+            "{}: the u axis is not `mesh::axes`'s",
+            panel.name
+        );
+        assert_eq!(
+            w, panel.w,
+            "{}: the w axis is not `mesh::axes`'s",
+            panel.name
+        );
     }
     let z_mesh = mesh(facing_z.quad);
     let x_mesh = mesh(facing_x.quad);
     let bisector = [-3.5f64, -1.5, -2.0];
-    let length = (bisector[0] * bisector[0] + bisector[1] * bisector[1] + bisector[2] * bisector[2])
-        .sqrt();
+    let length =
+        (bisector[0] * bisector[0] + bisector[1] * bisector[1] + bisector[2] * bisector[2]).sqrt();
     let mut camera = Camera::standard(eye, 1.0);
     camera.fov_y_rad = FIELD_DEG.to_radians();
     camera.yaw_rad = bisector[0].atan2(bisector[2]);
@@ -493,7 +536,13 @@ fn main() {
         let plane = Some(panel.quad.face.axis() as u32);
         let mut cells = Vec::new();
         for (label, dir) in [("along u", panel.u), ("along w", panel.w)] {
-            let axis = if dir[0].abs() > 0.5 { 0 } else if dir[1].abs() > 0.5 { 1 } else { 2 };
+            let axis = if dir[0].abs() > 0.5 {
+                0
+            } else if dir[1].abs() > 0.5 {
+                1
+            } else {
+                2
+            };
             let cell = cell_mm(bark_surface, axis, plane);
             println!("  {:<6} {label}: cell {cell:.1} mm", panel.name);
             cells.push(cell);
@@ -515,7 +564,9 @@ fn main() {
                 else {
                     continue;
                 };
-                let Some(want) = law.red(p, panel.normal, plane) else { continue };
+                let Some(want) = law.red(p, panel.normal, plane) else {
+                    continue;
+                };
                 deltas.push((drawn - want).abs());
             }
         }

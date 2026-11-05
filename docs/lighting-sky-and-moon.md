@@ -275,6 +275,35 @@ frame it was yesterday.
 
 *— stood in `crates/voxel-client/src/shading.wgsl`, lines 1047-1064 (18 lines).*
 
+### the second bounce, without which a closed face is black
+
+The ambient above is **single-scattered sky**: `world_sky` is the share of the sky a cell can
+see, so a face walled off on every side measures `0.0`, and `0.0` times any dome radiance is
+zero. No constant lifts that face without lifting open ground by the same amount, because the
+term they share is one multiplication.
+
+The light has not left the world. It landed on the terrain that occludes the face and comes
+back with **that terrain's** reflectance:
+
+```wgsl
+let enclosure = 1.0 - sky_share;
+let bounce = rig.ambient.rgb * (BOUNCE_REFLECTANCE * enclosure * enclosure);
+```
+
+`BOUNCE_REFLECTANCE` is `0.430`, the material table's mean base reflectance **measured** over the
+76 rows that carry a base colour (`light-at-a-pixel` prints it), and the square is the occluder's
+own share: a wall that hides three quarters of the hemisphere sees a quarter of it itself. It is
+added beside the dome and takes the same `ambient_gain`, and it is **independent of the three
+visible rays by construction** — it reads their complement — so it can only be large where the sky
+term is small.
+
+**Measured, with and without the term** (`light-at-a-pixel`, the `into a wall` pose, whose whole
+frame stands at the floor share): the enclosed set reads `0.0146` where it read `0.0000`, while
+the sunlit and shadowed open readings — `0.2542` and `0.0699` — do not move at all, because they
+stand at a share of `1.000` where the term is exactly zero. The obstructed poses move by `1.5 %`.
+So enclosed `0.0146` < shadowed open `0.0699` < sunlit `0.2542`, and the ordering is a measurement
+rather than a hope. The full record is `PATCH-081`.
+
 ### the illumination terms (2 — rim)
 
 2. Rim: Schlick's exponent, view-facing, scaled by the beam's own
@@ -802,10 +831,25 @@ behind it, anchored on the eye's own chunk minus one so the eye stands in the mi
 **A chunk crossing shifts the cube; it does not clear it.** Two thirds of the world in the cube is the
 same world one chunk over, so `recenter` copies both bands to their new addresses — one row copy per
 line, the far band's 32 m step falling on four whole 8 m cells — and keeps every stamp whose chunk is
-still inside the box. That is what makes the per-frame stamp budget cheap: a crossing owes only the
-chunks that entered, which is why `HORIZON_CHUNKS_PER_FRAME` is nine and not twenty-seven. The version
-that cleared the cube and restamped all twenty-seven walked every leaf of three unchanged chunks in the
-frame the player crossed a boundary, which is a stall the eye reads as the game hitching at a chunk.
+still inside the box. That is what makes the per-frame stamp budget affordable: a crossing owes only
+the chunks that entered — nine — and never all twenty-seven. The version that cleared the cube and
+restamped every chunk walked every leaf of three unchanged chunks in the frame the player crossed a
+boundary, which is a stall the eye reads as the game hitching at a chunk.
+
+**The budget is the cube, because the cube's first fill is the only frame it can bite.** It was nine, the
+size of a crossing's slab, which is right for a crossing and wrong for the first frame the box exists:
+that fill took three frames, and for two of them twenty-six of the twenty-seven chunks had no measurement
+to draw. `HORIZON_CHUNKS_PER_FRAME` is twenty-seven now — a frame after a crossing still spends nine
+walks, because eighteen chunks are carried — and the coarse band's budget rose with it for the same
+reason at eight metres a cell.
+
+**A chunk that has not been sampled is refused, not drawn.** Drawing it means drawing every ray it casts
+as *unmeasured*, which hands the fragment the shadow map's light with none of the horizon's shadowing — a
+chunk lit by a sun it cannot see. So a drawn chunk inside the fine cube whose slot bit is clear is
+filtered out of the frame's mesh set (`horizon::HorizonStream::lit`), exactly as an unmeshed chunk is
+absent. Two exemptions keep that from becoming a blank screen: a chunk in the **coarse** band alone is
+drawn, because its eight-metre answer exists, and the chunk under the eye is stamped first and outside
+the budget, because removing the ground the camera stands on is a worse lie than the rig it avoids.
 
 **A slot that has not been stamped is unmeasured, never air.** The coverage mask carries one bit per
 chunk slot; where it is clear the march reports no measurement and the shadow map keeps the answer. So a

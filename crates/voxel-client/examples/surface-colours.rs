@@ -13,7 +13,10 @@ fn main() {
     let registry = materials::registry().expect("the admitted registry builds");
     let field = materials::shading_field().expect("the world's shading field declares");
     let _ = shading::table(&registry, &field).expect("every admitted material derives");
-    println!("{:>3} {:<18} {:>8}  base colour (linear rgb)", "id", "name", "kg/m3");
+    println!(
+        "{:>3} {:<18} {:>8}  base colour (linear rgb)",
+        "id", "name", "kg/m3"
+    );
     for m in registry.materials() {
         let inputs = shading::inputs_for(&registry, m.id).expect("derives");
         let (r, g, b) = match inputs.base_color {

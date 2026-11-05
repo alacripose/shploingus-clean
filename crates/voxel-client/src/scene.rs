@@ -29,10 +29,10 @@
 //! slot 1 — the same row the fragment used to read — and the change is invisible
 //! on the current world.
 
-use voxel_mesh::Mesh;
+use crate::quad::QuadRecord;
 #[cfg(test)]
 use voxel_appearance::DetailLattice;
-use crate::quad::QuadRecord;
+use voxel_mesh::Mesh;
 
 /// A callback that gives the world's light at a cell, in band order (B3, B4, B5).
 /// `.0` = direct beam W/m², `.1` = diffuse (sky + one-bounce) W/m², per band.
@@ -259,6 +259,15 @@ pub struct Scene {
     /// One world origin per cloud record, in metres and with the veil in `w`, indexed by the
     /// record's own `chunk`.
     pub cloud_origins: Vec<[f64; 4]>,
+    /// **The far field's rectangles** — the world beyond the residency window, cut at the coarse
+    /// rung ([`crate::far_terrain`]). Their own pair for the cloud's own reason: a far chunk is
+    /// built on the far thread and does not move with a terrain slice, so a chunk landing near the
+    /// eye must not renumber what stands at the horizon. A far record's `chunk` indexes
+    /// [`Scene::far_origins`], and its redundant slot carries the cell size the material ladder is
+    /// told to respect.
+    pub far: Vec<QuadRecord>,
+    /// One world origin per far chunk, in metres.
+    pub far_origins: Vec<[f64; 4]>,
     /// **Whether this scene was built whole** — the upload a rebuild owes — against a resident
     /// scene, which carries only the ranges that changed. `fresh` scenes take the whole-array
     /// path (compare, patch or encode); a resident scene writes `written_*` and nothing else.
@@ -292,6 +301,8 @@ impl Default for Scene {
             bodies: Vec::new(),
             clouds: Vec::new(),
             cloud_origins: Vec::new(),
+            far: Vec::new(),
+            far_origins: Vec::new(),
             fresh: true,
             written_vertices: Vec::new(),
             written_indices: Vec::new(),
@@ -431,13 +442,13 @@ impl Scene {
         self.indices.truncate(indices);
         self.clouds.clear();
         self.cloud_origins.clear();
+        self.far.clear();
+        self.far_origins.clear();
         self.bodies.clear();
         self.written_vertices.clear();
         self.written_indices.clear();
         self.written_records.clear();
     }
-
-
 
     /// Build a vertex-format scene from meshes, with **no light field** and no
     /// per-corner detail sample. Displacement is not applied.
@@ -467,7 +478,9 @@ impl Scene {
         half_m: f32,
         eye_m: [f64; 3],
     ) -> Scene {
-        Scene::probe_with(normal, material, distance_m, half_m, eye_m, [0.0; 3], [0.0; 3], 0)
+        Scene::probe_with(
+            normal, material, distance_m, half_m, eye_m, [0.0; 3], [0.0; 3], 0,
+        )
     }
 
     /// **The same probe with a light sample of its own** — the single law's fixture.
@@ -553,6 +566,8 @@ impl Scene {
             bodies: Vec::new(),
             clouds: Vec::new(),
             cloud_origins: Vec::new(),
+            far: Vec::new(),
+            far_origins: Vec::new(),
             fresh: true,
             written_vertices: Vec::new(),
             written_indices: Vec::new(),
@@ -679,6 +694,91 @@ impl Scene {
         }
     }
 
+    /// **The far field appended, after the terrain and beside the cloud.**
+    ///
+    /// Each mesh is one far chunk: its quads are already on the coarse lattice (their planes, `uv`
+    /// and extents are multiples of [`crate::far_terrain::FAR_CELL_SUBVOXELS`]), so this is the
+    /// conversion the quad format asks for and nothing else — one origin per chunk, one record per
+    /// rectangle.
+    ///
+    /// **The cell size rides the record's spare slot** (`light_y`, which a rectangle leaves zero),
+    /// not a new field and not its origin's `w`: the origin's fourth float is the cloud's veil, and
+    /// a far chunk is not a cloud. `vs_quad` hands the number to the fragment, and the fragment
+    /// uses it as the **floor under its footprint** — a face whose cells are eight metres cannot be
+    /// finished by a ladder reading half-metre cells, so the rung it reads is the coarsest rung the
+    /// geometry actually holds.
+    pub fn with_far<'a>(mut self, meshes: impl IntoIterator<Item = &'a Mesh>) -> Scene {
+        self.add_far(meshes);
+        self
+    }
+
+    /// Append the far field to this scene, the mutating half of [`Scene::with_far`].
+    pub fn add_far<'a>(&mut self, meshes: impl IntoIterator<Item = &'a Mesh>) {
+        self.add_far_at(meshes, crate::far_terrain::FAR_CELL_M as f32);
+    }
+
+    /// **Append a far field cut at its own tier.**
+    ///
+    /// The cell size is the face's rung and travels in the record's spare slot; a tier-6 mesh
+    /// appended through [`Scene::add_far`] would be stamped eight metres and shaded as if its
+    /// half-chunk cells were quarter-chunks.
+    pub fn add_far_at<'a>(&mut self, meshes: impl IntoIterator<Item = &'a Mesh>, cell_m: f32) {
+        assert!(cell_m > 0.0, "a far mesh must state the cell it was cut at");
+        for mesh in meshes {
+            let origin = mesh.origin_voxel();
+            let chunk = self.far_origins.len() as u32;
+            self.far_origins
+                .push([origin[0] as f64, origin[1] as f64, origin[2] as f64, 0.0]);
+            for quad in &mesh.quads {
+                let mut record = QuadRecord::of(quad, chunk);
+                // The cell size, in the slot a rectangle leaves zero. `light_y` is a record's own
+                // spare float; `vs_quad` reads it as the face's rung.
+                record.light_y = cell_m.to_bits();
+                self.far.push(record);
+            }
+        }
+    }
+
+    /// **Append the surface rungs to this scene** — the ladder's tiers above a chunk.
+    ///
+    /// A rung's quads are in **sub-cell** units of its own cell
+    /// ([`crate::lod::SURFACE_SUB_CELLS`] a cell), so its records state two numbers: the **rung**
+    /// in `light_y` — the cell the fragment's light must measure it at — and the **step** in
+    /// `light_z`, the metres one coordinate of the rectangle stands for. A rectangle from the fine
+    /// path leaves both zero, and a chunk-held far mesh leaves `light_z` zero because its
+    /// coordinates are subvoxels.
+    pub fn add_surface<'a>(
+        &mut self,
+        rings: impl IntoIterator<Item = &'a crate::surface::SurfaceRing>,
+    ) {
+        for ring in rings {
+            let origin = ring.origin_m();
+            let chunk = self.far_origins.len() as u32;
+            self.far_origins
+                .push([origin[0], origin[1], origin[2], 0.0]);
+            let rung = ring.cell_m as f32;
+            let step = ring.step_m() as f32;
+            assert!(
+                rung > 0.0 && step > 0.0,
+                "a surface rung states its cell and its step"
+            );
+            assert_eq!(
+                ring.quads.len(),
+                ring.shapes.len(),
+                "a rung draws one shaper record a rectangle"
+            );
+            for (quad, shape) in ring.quads.iter().zip(ring.shapes.iter()) {
+                let mut record = QuadRecord::of(quad, chunk);
+                record.light_y = rung.to_bits();
+                record.light_z = step.to_bits();
+                record.shape_lo = shape[0].to_bits();
+                record.shape_hi = shape[1].to_bits();
+                record.shape_twist = shape[2].to_bits();
+                self.far.push(record);
+            }
+        }
+    }
+
     /// **No geometry at all, in either format.**
     ///
     /// The quad format writes no index and no vertex, so a check on `indices`
@@ -689,6 +789,7 @@ impl Scene {
         self.indices.is_empty()
             && self.records.is_empty()
             && self.clouds.is_empty()
+            && self.far.is_empty()
             && self.bodies.is_empty()
     }
 
@@ -795,10 +896,17 @@ impl SceneBuild {
         } else {
             let side = SHADOW_LATTICE;
             let asked = shadow_lattice.min(side);
-            (1..=side).rev().find(|n| side % *n == 0 && *n <= asked).unwrap_or(1)
+            (1..=side)
+                .rev()
+                .find(|n| side % *n == 0 && *n <= asked)
+                .unwrap_or(1)
         };
         Self {
-            scene: Scene { build: Scene::next_build(), fresh: true, ..Scene::default() },
+            scene: Scene {
+                build: Scene::next_build(),
+                fresh: true,
+                ..Scene::default()
+            },
             at: None,
             quad_at: 0,
             shadow_lattice: lattice,
@@ -848,15 +956,16 @@ impl SceneBuild {
             if entered != Some(index) {
                 let resumes = match self.at {
                     Some((pos, ordinal)) => {
-                        let base =
-                            meshes.partition_point(|m| key_of(m) < (pos.x, pos.y, pos.z));
+                        let base = meshes.partition_point(|m| key_of(m) < (pos.x, pos.y, pos.z));
                         mesh.chunk == pos && index == base + ordinal
                     }
                     None => false,
                 };
                 if !resumes {
                     let o = mesh.origin_voxel();
-                    self.scene.origins.push([o[0] as f64, o[1] as f64, o[2] as f64, 0.0]);
+                    self.scene
+                        .origins
+                        .push([o[0] as f64, o[1] as f64, o[2] as f64, 0.0]);
                     self.quad_at = 0;
                     // **The ordinal only means something on a sorted list.** A one-step build may
                     // be handed meshes in any order (a test's two faces of one block, say), and the
@@ -998,8 +1107,7 @@ impl SceneBuild {
         let measure_quad = |corners: [[i32; 3]; 4]| -> (u32, [(u32, [f32; 6]); 4]) {
             let mut measured = [(0u32, [0.0f32; 6]); 4];
             for (i, c) in corners.iter().enumerate() {
-                measured[i] =
-                    measure(place([c[0] as f64, c[1] as f64, c[2] as f64]));
+                measured[i] = measure(place([c[0] as f64, c[1] as f64, c[2] as f64]));
             }
             let present = u32::from(measured.iter().all(|m| m.0 == 1));
             (present, measured)
@@ -1163,11 +1271,7 @@ impl SceneBuild {
                         for (corner, (_, bands)) in corners.iter().zip(samples) {
                             push(
                                 scene,
-                                subvoxel_m([
-                                    corner[0] as f64,
-                                    corner[1] as f64,
-                                    corner[2] as f64,
-                                ]),
+                                subvoxel_m([corner[0] as f64, corner[1] as f64, corner[2] as f64]),
                                 normal,
                                 quad.material.0,
                                 bands,
@@ -1252,7 +1356,6 @@ impl SceneBuild {
         true
     }
 }
-
 
 /// **What a scene is a function of**: the world's own generation, its residency, and the
 /// light's revision.
@@ -1553,7 +1656,10 @@ impl ResidentScene {
     /// A resident scene with no chunks and the once-per-corner lattice.
     pub fn new() -> Self {
         Self {
-            scene: Some(Scene { fresh: false, ..Scene::default() }),
+            scene: Some(Scene {
+                fresh: false,
+                ..Scene::default()
+            }),
             blocks: std::collections::BTreeMap::new(),
             free_vertices: Free::new(),
             free_indices: Free::new(),
@@ -1601,13 +1707,19 @@ impl ResidentScene {
     /// not the world's is a number a reader can see, rather than a validation error after the
     /// device has already refused the buffer.
     pub fn corners(&self) -> usize {
-        self.scene.as_ref().map(|scene| scene.vertices.len()).unwrap_or(0)
+        self.scene
+            .as_ref()
+            .map(|scene| scene.vertices.len())
+            .unwrap_or(0)
     }
 
     /// **How many indices the resident scene holds** — the draw's own range, and the second half
     /// of the corner buffers' size.
     pub fn indices(&self) -> usize {
-        self.scene.as_ref().map(|scene| scene.indices.len()).unwrap_or(0)
+        self.scene
+            .as_ref()
+            .map(|scene| scene.indices.len())
+            .unwrap_or(0)
     }
 
     /// **How many corners the resident chunks' own slices hold** — live geometry, without the
@@ -1631,6 +1743,11 @@ impl ResidentScene {
     /// every frame about the chunk the eye stands in.
     pub fn holds(&self, pos: voxel_model::ChunkPos) -> bool {
         self.blocks.contains_key(&pos)
+    }
+
+    /// How many chunks the resident scene is drawing, streamed slices and no far field.
+    pub fn chunks(&self) -> usize {
+        self.blocks.len()
     }
 
     /// **The arrays and the blocks are one object**, checked after every sync in a debug build.
@@ -1693,11 +1810,29 @@ impl ResidentScene {
             );
         }
         let blocks: Vec<Block> = self.blocks.values().copied().collect();
-        accounted(blocks.iter().map(|b| b.vertices), &self.free_vertices, scene.vertices.len(), "corner");
-        accounted(blocks.iter().map(|b| b.indices), &self.free_indices, scene.indices.len(), "index");
-        accounted(blocks.iter().map(|b| b.records), &self.free_records, scene.records.len(), "rectangle");
+        accounted(
+            blocks.iter().map(|b| b.vertices),
+            &self.free_vertices,
+            scene.vertices.len(),
+            "corner",
+        );
+        accounted(
+            blocks.iter().map(|b| b.indices),
+            &self.free_indices,
+            scene.indices.len(),
+            "index",
+        );
+        accounted(
+            blocks.iter().map(|b| b.records),
+            &self.free_records,
+            scene.records.len(),
+            "rectangle",
+        );
         for b in &blocks {
-            assert!((b.origin as usize) < scene.origins.len(), "a chunk names a forgotten origin");
+            assert!(
+                (b.origin as usize) < scene.origins.len(),
+                "a chunk names a forgotten origin"
+            );
             for (range, len, what) in [
                 (b.vertices, scene.vertices.len(), "corner"),
                 (b.indices, scene.indices.len(), "index"),
@@ -1720,14 +1855,19 @@ impl ResidentScene {
                 );
             }
             for r in &scene.records[b.records[0] as usize..b.records[1] as usize] {
-                assert_eq!(r.chunk, b.origin, "a rectangle names another chunk's origin");
+                assert_eq!(
+                    r.chunk, b.origin,
+                    "a rectangle names another chunk's origin"
+                );
             }
         }
         // **A hole covers nothing.** The draw reads these bytes, so a stale corner or a rectangle
         // with an extent would draw a chunk that has left the world.
         for hole in &self.free_indices {
             assert!(
-                scene.indices[hole[0] as usize..hole[1] as usize].iter().all(|i| *i == 0),
+                scene.indices[hole[0] as usize..hole[1] as usize]
+                    .iter()
+                    .all(|i| *i == 0),
                 "an index in a hole is a live chunk's corner"
             );
         }
@@ -1786,9 +1926,7 @@ impl ResidentScene {
         // the world the edit removed.
         let replaced: Vec<_> = current
             .iter()
-            .filter(|(pos, (version, _))| {
-                self.blocks.get(pos).map(|b| b.version) != Some(*version)
-            })
+            .filter(|(pos, (version, _))| self.blocks.get(pos).map(|b| b.version) != Some(*version))
             .map(|(pos, _)| *pos)
             .collect();
         for pos in replaced {
@@ -1796,7 +1934,8 @@ impl ResidentScene {
         }
         // 2. What is still on its way back from a previous frame's budget, nearest first, and
         //    only while it is still drawn.
-        self.pending.retain(|pos| current.contains_key(pos) && !self.blocks.contains_key(pos));
+        self.pending
+            .retain(|pos| current.contains_key(pos) && !self.blocks.contains_key(pos));
         let mut landed: Vec<voxel_model::ChunkPos> = current
             .keys()
             .filter(|pos| !self.blocks.contains_key(pos) && !self.pending.contains(pos))
@@ -1814,7 +1953,9 @@ impl ResidentScene {
         queue.dedup();
         let mut budget = quads;
         for pos in queue {
-            let Some(&(version, mesh)) = current.get(&pos) else { continue };
+            let Some(&(version, mesh)) = current.get(&pos) else {
+                continue;
+            };
             let cost = mesh.quads.len();
             if report.landed > 0 && cost > budget {
                 self.pending.push(pos);
@@ -1869,7 +2010,11 @@ impl ResidentScene {
                 scene.vertices.len(),
                 scene.indices.len(),
             ];
-            scene.build = if report.changed { Scene::next_build() } else { scene.build };
+            scene.build = if report.changed {
+                Scene::next_build()
+            } else {
+                scene.build
+            };
             scene.fresh = false;
         }
         #[cfg(debug_assertions)]
@@ -1894,9 +2039,21 @@ impl ResidentScene {
         let origin = scene.origins.len() as u32;
         // **A place, not necessarily the end**: the smallest hole that fits, so a walk that has
         // been through a column lands into the footprint it left instead of growing the array.
-        let vertex_base = place(&mut self.free_vertices, one.vertices.len(), scene.vertices.len());
-        let index_base = place(&mut self.free_indices, one.indices.len(), scene.indices.len());
-        let record_base = place(&mut self.free_records, one.records.len(), scene.records.len());
+        let vertex_base = place(
+            &mut self.free_vertices,
+            one.vertices.len(),
+            scene.vertices.len(),
+        );
+        let index_base = place(
+            &mut self.free_indices,
+            one.indices.len(),
+            scene.indices.len(),
+        );
+        let record_base = place(
+            &mut self.free_records,
+            one.records.len(),
+            scene.records.len(),
+        );
         // The origin the one-chunk build made, or the mesh's own if the chunk has no geometry.
         let placed = one.origins.first().copied().unwrap_or_else(|| {
             let o = mesh.origin_voxel();
@@ -1906,7 +2063,10 @@ impl ResidentScene {
         let corners: Vec<Vertex> = one
             .vertices
             .iter()
-            .map(|v| Vertex { chunk: origin, ..*v })
+            .map(|v| Vertex {
+                chunk: origin,
+                ..*v
+            })
             .collect();
         put(&mut scene.vertices, vertex_base, &corners, Vertex::blank);
         let indices: Vec<u32> = one.indices.iter().map(|i| i + vertex_base).collect();
@@ -1914,12 +2074,21 @@ impl ResidentScene {
         let records: Vec<QuadRecord> = one
             .records
             .iter()
-            .map(|r| QuadRecord { chunk: origin, ..*r })
+            .map(|r| QuadRecord {
+                chunk: origin,
+                ..*r
+            })
             .collect();
         put(&mut scene.records, record_base, &records, QuadRecord::blank);
-        scene.written_vertices.push([vertex_base, vertex_base + corners.len() as u32]);
-        scene.written_indices.push([index_base, index_base + indices.len() as u32]);
-        scene.written_records.push([record_base, record_base + records.len() as u32]);
+        scene
+            .written_vertices
+            .push([vertex_base, vertex_base + corners.len() as u32]);
+        scene
+            .written_indices
+            .push([index_base, index_base + indices.len() as u32]);
+        scene
+            .written_records
+            .push([record_base, record_base + records.len() as u32]);
         self.blocks.insert(
             pos,
             Block {
@@ -1946,7 +2115,9 @@ impl ResidentScene {
     /// origin array is swap-removed, so the chunk standing on the freed slot has to name it, and
     /// that is exactly one chunk's worth of work rather than the window's.
     fn remove(&mut self, pos: voxel_model::ChunkPos) {
-        let Some(block) = self.blocks.remove(&pos) else { return };
+        let Some(block) = self.blocks.remove(&pos) else {
+            return;
+        };
         let scene = self.scene.as_mut().expect("held");
         // **The origin, freed by swapping in the last one.** A chunk's origin index is what its
         // corners and rectangles name, so the chunk that lands on the freed slot has its own
@@ -1960,7 +2131,8 @@ impl ResidentScene {
                 .map(|(p, _)| *p);
             if let Some(moved_pos) = moved_pos {
                 let moved = self.blocks[&moved_pos];
-                for v in &mut scene.vertices[moved.vertices[0] as usize..moved.vertices[1] as usize] {
+                for v in &mut scene.vertices[moved.vertices[0] as usize..moved.vertices[1] as usize]
+                {
                     v.chunk = block.origin;
                 }
                 for r in &mut scene.records[moved.records[0] as usize..moved.records[1] as usize] {
@@ -2049,9 +2221,8 @@ impl ResidentScene {
         let indices = live(&mut self.blocks.values().map(|block| block.indices));
         let records = live(&mut self.blocks.values().map(|block| block.records));
         let scene = self.scene.as_ref().expect("held");
-        let over = |len: usize, live: usize| {
-            len.saturating_sub(live) > live / ARENA_DEAD_IN + ARENA_FLOOR
-        };
+        let over =
+            |len: usize, live: usize| len.saturating_sub(live) > live / ARENA_DEAD_IN + ARENA_FLOOR;
         if !(over(scene.vertices.len(), vertices)
             || over(scene.indices.len(), indices)
             || over(scene.records.len(), records))
@@ -2076,8 +2247,11 @@ impl ResidentScene {
         let old_indices = std::mem::take(&mut scene.indices);
         let old_records = std::mem::take(&mut scene.records);
         let old_origins = std::mem::take(&mut scene.origins);
-        let mut blocks: Vec<(voxel_model::ChunkPos, Block)> =
-            self.blocks.iter().map(|(pos, block)| (*pos, *block)).collect();
+        let mut blocks: Vec<(voxel_model::ChunkPos, Block)> = self
+            .blocks
+            .iter()
+            .map(|(pos, block)| (*pos, *block))
+            .collect();
         blocks.sort_unstable_by_key(|(_, block)| block.origin);
         let mut vertices = Vec::with_capacity(old_vertices.len());
         let mut indices = Vec::with_capacity(old_indices.len());
@@ -2089,7 +2263,10 @@ impl ResidentScene {
             vertices.extend(
                 old_vertices[block.vertices[0] as usize..block.vertices[1] as usize]
                     .iter()
-                    .map(|v| Vertex { chunk: origin_index, ..*v }),
+                    .map(|v| Vertex {
+                        chunk: origin_index,
+                        ..*v
+                    }),
             );
             let index_base = indices.len() as u32;
             indices.extend(
@@ -2101,13 +2278,22 @@ impl ResidentScene {
             records.extend(
                 old_records[block.records[0] as usize..block.records[1] as usize]
                     .iter()
-                    .map(|r| QuadRecord { chunk: origin_index, ..*r }),
+                    .map(|r| QuadRecord {
+                        chunk: origin_index,
+                        ..*r
+                    }),
             );
             origins.push(old_origins[block.origin as usize]);
             block.origin = origin_index;
-            block.vertices = [vertex_base, vertex_base + block.vertices[1] - block.vertices[0]];
+            block.vertices = [
+                vertex_base,
+                vertex_base + block.vertices[1] - block.vertices[0],
+            ];
             block.indices = [index_base, index_base + block.indices[1] - block.indices[0]];
-            block.records = [record_base, record_base + block.records[1] - block.records[0]];
+            block.records = [
+                record_base,
+                record_base + block.records[1] - block.records[0],
+            ];
         }
         self.blocks = blocks.into_iter().collect();
         scene.vertices = vertices;
@@ -2118,7 +2304,9 @@ impl ResidentScene {
         scene.written_indices.clear();
         scene.written_records.clear();
         if !scene.vertices.is_empty() {
-            scene.written_vertices.push([0, scene.vertices.len() as u32]);
+            scene
+                .written_vertices
+                .push([0, scene.vertices.len() as u32]);
         }
         if !scene.indices.is_empty() {
             scene.written_indices.push([0, scene.indices.len() as u32]);
@@ -2142,7 +2330,9 @@ impl ResidentScene {
         displacement: Option<&voxel_model::DisplacementField>,
         refine: Option<&voxel_mesh::RefineConfig>,
     ) {
-        let Some(block) = self.blocks.get(&pos).copied() else { return };
+        let Some(block) = self.blocks.get(&pos).copied() else {
+            return;
+        };
         let one = one_chunk(mesh, light, displacement, refine, self.shadow_lattice);
         let same = one.vertices.len() as u32 == block.vertices[1] - block.vertices[0]
             && one.indices.len() as u32 == block.indices[1] - block.indices[0]
@@ -2216,7 +2406,6 @@ fn subvoxel_m(subvoxel: [f64; 3]) -> [f64; 3] {
     ]
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2229,7 +2418,13 @@ mod tests {
         Mesh {
             chunk: voxel_model::ChunkPos::new(0, 0, 0),
             origin: [0, 0, 0],
-            quads: vec![Quad { face, slice: 4, uv: [0, 0], extent: [4, 4], material }],
+            quads: vec![Quad {
+                face,
+                slice: 4,
+                uv: [0, 0],
+                extent: [4, 4],
+                material,
+            }],
             loops: Vec::new(),
             stats: voxel_mesh::MeshStats {
                 solid_voxels: 1,
@@ -2260,14 +2455,16 @@ mod tests {
         let roof = one_block_face(Face::PosY, ROCK);
         let wall = one_block_face(Face::PosZ, ROCK);
 
-        let scene = Scene::build(
-            [&roof, &wall],
-            [0.0; 3],
-            Some(&field),
-            Some(&config),
+        let scene = Scene::build([&roof, &wall], [0.0; 3], Some(&field), Some(&config));
+        assert_eq!(
+            scene.bent_quads, 1,
+            "the law reached a quad it does not touch"
         );
-        assert_eq!(scene.bent_quads, 1, "the law reached a quad it does not touch");
-        assert_eq!(scene.records.len(), 1, "a bent quad was left in the record format");
+        assert_eq!(
+            scene.records.len(),
+            1,
+            "a bent quad was left in the record format"
+        );
         assert_eq!(scene.quads, 2);
         assert_eq!(scene.indices.len(), 96, "32 triangles is 96 indices");
 
@@ -2284,18 +2481,20 @@ mod tests {
         };
         for (x, z) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
             let y = top(x, z);
-            assert!((y - 1.0).abs() < 1e-4, "the corner at ({x}, {z}) moved to {y}");
+            assert!(
+                (y - 1.0).abs() < 1e-4,
+                "the corner at ({x}, {z}) moved to {y}"
+            );
         }
         let centre = top(0.5, 0.5);
         assert!(
             (centre - (1.0 + amplitude_m)).abs() < 1e-3,
             "the cap stands {centre} m against the declared {amplitude_m} m above the plane"
         );
-        let inside = scene
-            .vertices
-            .iter()
-            .all(|v| (-1e-4..=1.0 + 1e-4).contains(&v.position[0])
-                && (-1e-4..=1.0 + 1e-4).contains(&v.position[2]));
+        let inside = scene.vertices.iter().all(|v| {
+            (-1e-4..=1.0 + 1e-4).contains(&v.position[0])
+                && (-1e-4..=1.0 + 1e-4).contains(&v.position[2])
+        });
         assert!(inside, "the refinement left its own rectangle in plane");
     }
 
@@ -2317,7 +2516,11 @@ mod tests {
             assert!(
                 scene.vertices.iter().all(|v| v.plane_axis == axis),
                 "a corner of {face:?} did not state axis {axis}: {:?}",
-                scene.vertices.iter().map(|v| v.plane_axis).collect::<Vec<_>>()
+                scene
+                    .vertices
+                    .iter()
+                    .map(|v| v.plane_axis)
+                    .collect::<Vec<_>>()
             );
         }
         // Geometry that is not cut from a block's face states none, and `-1` is what the
@@ -2358,13 +2561,7 @@ mod tests {
                 Some([0.5f32, 0.5, 0.5, 0.5, 0.5, 0.5])
             }
         };
-        let scene = Scene::build_with_light(
-            [&roof],
-            [0.0; 3],
-            &light,
-            None,
-            None,
-        );
+        let scene = Scene::build_with_light([&roof], [0.0; 3], &light, None, None);
         assert_eq!(scene.vertices.len(), 4, "one quad is four corners");
         for v in &scene.vertices {
             assert_eq!(
@@ -2417,14 +2614,8 @@ mod tests {
         };
         let coarse = Scene::build_with_light([&roof], [0.0; 3], &half, None, None);
         assert_eq!(coarse.vertices.len(), 4, "the once-per-corner path moved");
-        let fine = Scene::build_with_light_lattice(
-            [&roof],
-            [0.0; 3],
-            &half,
-            None,
-            None,
-            SHADOW_LATTICE,
-        );
+        let fine =
+            Scene::build_with_light_lattice([&roof], [0.0; 3], &half, None, None, SHADOW_LATTICE);
         let side = SHADOW_LATTICE as usize;
         assert_eq!(
             fine.vertices.len(),
@@ -2433,9 +2624,15 @@ mod tests {
         );
         // The grid's own triangles: two a cell, six indices each, and every index inside the
         // face's corners — sharing moves the vertices, never the picture.
-        assert_eq!(fine.indices.len(), 6 * side * side, "the shared grid's triangles");
+        assert_eq!(
+            fine.indices.len(),
+            6 * side * side,
+            "the shared grid's triangles"
+        );
         assert!(
-            fine.indices.iter().all(|i| (*i as usize) < fine.vertices.len()),
+            fine.indices
+                .iter()
+                .all(|i| (*i as usize) < fine.vertices.len()),
             "an index points past the grid"
         );
         // The samples' own spacing, which is the whole claim: a quarter of a metre, at the
@@ -2443,7 +2640,11 @@ mod tests {
         let mut xs: Vec<f32> = fine.vertices.iter().map(|v| v.position[0]).collect();
         xs.sort_by(f32::total_cmp);
         xs.dedup();
-        assert_eq!(xs, vec![0.0, 0.25, 0.5, 0.75, 1.0], "the face's sample grid");
+        assert_eq!(
+            xs,
+            vec![0.0, 0.25, 0.5, 0.75, 1.0],
+            "the face's sample grid"
+        );
         // And the edge is *in* the grid rather than blended across it: the corners either side of
         // 0.5 m disagree, and the disagreement happens inside the face.
         let at = |x: f32, scene: &Scene| -> f32 {
@@ -2462,7 +2663,11 @@ mod tests {
         let mut coarse_xs: Vec<f32> = coarse.vertices.iter().map(|v| v.position[0]).collect();
         coarse_xs.sort_by(f32::total_cmp);
         coarse_xs.dedup();
-        assert_eq!(coarse_xs, vec![0.0, 1.0], "the old path is the corners and nothing else");
+        assert_eq!(
+            coarse_xs,
+            vec![0.0, 1.0],
+            "the old path is the corners and nothing else"
+        );
     }
 
     /// **A face the light does not cross keeps its four corners.** The lattice is sampled to
@@ -2474,14 +2679,8 @@ mod tests {
         const ROCK: MaterialId = MaterialId(6);
         let roof = one_block_face(Face::PosY, ROCK);
         let even = |_: [f64; 3]| Some([0.5f32; 6]);
-        let scene = Scene::build_with_light_lattice(
-            [&roof],
-            [0.0; 3],
-            &even,
-            None,
-            None,
-            SHADOW_LATTICE,
-        );
+        let scene =
+            Scene::build_with_light_lattice([&roof], [0.0; 3], &even, None, None, SHADOW_LATTICE);
         assert_eq!(
             scene.vertices.len(),
             4,
@@ -2489,7 +2688,10 @@ mod tests {
         );
         assert_eq!(scene.indices.len(), 6, "one rectangle is two triangles");
         assert!(
-            scene.vertices.iter().all(|v| v.light_present == 1 && v.light_direct == [0.5; 3]),
+            scene
+                .vertices
+                .iter()
+                .all(|v| v.light_present == 1 && v.light_direct == [0.5; 3]),
             "the face's one answer did not reach every corner"
         );
     }
@@ -2540,11 +2742,17 @@ mod tests {
         assert_eq!(SceneBuild::with_shadow_lattice(0).shadow_lattice, 1);
         assert_eq!(SceneBuild::with_shadow_lattice(1).shadow_lattice, 1);
         assert_eq!(SceneBuild::with_shadow_lattice(2).shadow_lattice, 2);
-        assert_eq!(SceneBuild::with_shadow_lattice(SHADOW_LATTICE).shadow_lattice, SHADOW_LATTICE);
+        assert_eq!(
+            SceneBuild::with_shadow_lattice(SHADOW_LATTICE).shadow_lattice,
+            SHADOW_LATTICE
+        );
         // Anything past the finest stored cell is the finest stored cell; three is not a divisor
         // and is answered by the largest one below it.
         assert_eq!(SceneBuild::with_shadow_lattice(3).shadow_lattice, 2);
-        assert_eq!(SceneBuild::with_shadow_lattice(9).shadow_lattice, SHADOW_LATTICE);
+        assert_eq!(
+            SceneBuild::with_shadow_lattice(9).shadow_lattice,
+            SHADOW_LATTICE
+        );
     }
 
     #[test]
@@ -2556,13 +2764,7 @@ mod tests {
         const ROCK: MaterialId = MaterialId(6);
         let roof = one_block_face(Face::PosY, ROCK);
         let light = |_: [f64; 3]| Some([1.0f32; 6]);
-        let lit = Scene::build_with_light(
-            [&roof],
-            [0.0; 3],
-            &light,
-            None,
-            None,
-        );
+        let lit = Scene::build_with_light([&roof], [0.0; 3], &light, None, None);
         assert_eq!(lit.records.len(), 0, "a lit quad left the record format");
         assert!(!lit.vertices.is_empty(), "a lit quad built no corners");
         let plain = Scene::build([&roof], [0.0; 3], None, None);
@@ -2579,16 +2781,24 @@ mod tests {
         // Two triangles cannot hold a subdivided face, so every bend here is refused.
         let refused = RefineConfig::new(4, 2).expect("a cap of two triangles is a cap");
         let roof = one_block_face(Face::PosY, ROCK);
-        let scene = Scene::build(
-            [&roof],
-            [0.0; 3],
-            Some(&field),
-            Some(&refused),
+        let scene = Scene::build([&roof], [0.0; 3], Some(&field), Some(&refused));
+        assert!(
+            !scene.is_empty(),
+            "a refused refinement made the world disappear"
         );
-        assert!(!scene.is_empty(), "a refused refinement made the world disappear");
-        assert_eq!(scene.bent_quads, 0, "a refused quad claimed the vertex format");
-        assert_eq!(scene.records.len(), 1, "the planar fallback is not one rectangle");
-        assert!(scene.indices.is_empty(), "a refused quad spent vertices anyway");
+        assert_eq!(
+            scene.bent_quads, 0,
+            "a refused quad claimed the vertex format"
+        );
+        assert_eq!(
+            scene.records.len(),
+            1,
+            "the planar fallback is not one rectangle"
+        );
+        assert!(
+            scene.indices.is_empty(),
+            "a refused quad spent vertices anyway"
+        );
     }
 
     #[test]
@@ -2600,17 +2810,19 @@ mod tests {
         let config = RefineConfig::new(4, 4096).unwrap();
         let roof = one_block_face(Face::PosY, ROCK);
         let wall = one_block_face(Face::PosZ, ROCK);
-        let wired = Scene::build(
-            [&roof, &wall],
-            [0.0; 3],
-            Some(&field),
-            Some(&config),
-        );
+        let wired = Scene::build([&roof, &wall], [0.0; 3], Some(&field), Some(&config));
         let unwired = Scene::build_with_detail([&roof, &wall], [0.0; 3]);
-        assert_eq!(wired.records.len(), 2, "the empty field moved a quad out of the record");
+        assert_eq!(
+            wired.records.len(),
+            2,
+            "the empty field moved a quad out of the record"
+        );
         assert!(wired.indices.is_empty());
         assert_eq!(wired.bent_quads, 0);
-        assert_eq!(wired.records, unwired.records, "wiring the stage changed the frame");
+        assert_eq!(
+            wired.records, unwired.records,
+            "wiring the stage changed the frame"
+        );
         assert_eq!(wired.origins, unwired.origins);
 
         // What the wiring costs, as a reading: a thousand quads a scene, since the stage is
@@ -2637,12 +2849,7 @@ mod tests {
             t0.elapsed().as_nanos() / n as u128
         };
         let wired = || {
-            let built = Scene::build(
-                [&many],
-                [0.0; 3],
-                Some(&field),
-                Some(&config),
-            );
+            let built = Scene::build([&many], [0.0; 3], Some(&field), Some(&config));
             std::hint::black_box(built.records.len());
         };
         let unwired = || {
@@ -2677,8 +2884,8 @@ mod tests {
         // the origin's `w` and a chunk origin is shared by every quad standing on that chunk.
         // The world's own veil is zero, which is what that float was before clouds existed — so
         // adding clouds cannot change how a chunk shades.
-        use voxel_model::Face;
         use voxel_mesh::{Mesh, Quad};
+        use voxel_model::Face;
         let mesh = Mesh {
             chunk: voxel_model::ChunkPos::new(0, 0, 0),
             origin: [0, 0, 0],
@@ -2712,6 +2919,9 @@ mod tests {
                 chunk: 0,
                 light_y: 0,
                 light_z: 0,
+                shape_lo: 0,
+                shape_hi: 0,
+                shape_twist: 0,
             }],
             origins: vec![[10.0, 500.0, -20.0, 0.72]],
             cell_m: 4.0,
@@ -2721,12 +2931,31 @@ mod tests {
             ..Default::default()
         };
         let scene = terrain.with_clouds(&cubes);
-        assert_eq!(scene.records.len(), 1, "the cloud is in the terrain's array");
+        assert_eq!(
+            scene.records.len(),
+            1,
+            "the cloud is in the terrain's array"
+        );
         assert_eq!(scene.clouds.len(), 1, "the cloud's own array is empty");
-        assert_eq!(scene.clouds[0].chunk, 0, "the cloud's record does not name its own origin");
-        assert_eq!(scene.origins.len(), 1, "the cloud's origin is in the terrain's slots");
-        assert_eq!(scene.origins[0], [0.0, 0.0, 0.0, 0.0], "a chunk carries a veil");
-        assert_eq!(scene.cloud_origins.len(), 1, "the cloud has no origin of its own");
+        assert_eq!(
+            scene.clouds[0].chunk, 0,
+            "the cloud's record does not name its own origin"
+        );
+        assert_eq!(
+            scene.origins.len(),
+            1,
+            "the cloud's origin is in the terrain's slots"
+        );
+        assert_eq!(
+            scene.origins[0],
+            [0.0, 0.0, 0.0, 0.0],
+            "a chunk carries a veil"
+        );
+        assert_eq!(
+            scene.cloud_origins.len(),
+            1,
+            "the cloud has no origin of its own"
+        );
         // **The cell's veil, in the encoding the shader reads back**: `1 + opacity`, positive for
         // the newer of the two trees a fade may join (`cloud_cubes::veil_with_side`), so
         // `abs(w) - 1` is the opacity and `w != 0` is "this is a cloud".
@@ -2739,8 +2968,8 @@ mod tests {
 
     #[test]
     fn the_two_trees_of_a_fade_carry_their_side_in_the_sign_of_their_veils() {
-        use voxel_model::Face;
         use voxel_mesh::{Mesh, Quad};
+        use voxel_model::Face;
         let mesh = Mesh {
             chunk: voxel_model::ChunkPos::new(0, 0, 0),
             origin: [0, 0, 0],
@@ -2771,6 +3000,9 @@ mod tests {
                 chunk: 0,
                 light_y: 0,
                 light_z: 0,
+                shape_lo: 0,
+                shape_hi: 0,
+                shape_twist: 0,
             }],
             origins: vec![[x, 500.0, -20.0, veil]],
             cell_m: 4.0,
@@ -2782,7 +3014,11 @@ mod tests {
         let older = cell(0.6, 0.0);
         let newer = cell(0.6, 8.0);
         let scene = terrain.clone().with_cloud_fade(&older, &newer);
-        assert_eq!(scene.records.len(), 1, "the join is not the world's own rectangle");
+        assert_eq!(
+            scene.records.len(),
+            1,
+            "the join is not the world's own rectangle"
+        );
         assert_eq!(scene.clouds.len(), 2, "the join is not both trees");
         assert_eq!(
             scene.clouds[1].chunk, 1,
@@ -2808,8 +3044,15 @@ mod tests {
         // frame draws at the start of a cadence and at the end of it is literally one value — and
         // a scene built from the pair is the same one the frame before it held.
         let again = terrain.clone().with_cloud_fade(&older, &newer);
-        assert_eq!(scene, again, "the pair's own bytes depend on something but the trees");
-        assert_ne!(scene, terrain.clone().with_clouds(&newer), "a lone tree is not a pair");
+        assert_eq!(
+            scene, again,
+            "the pair's own bytes depend on something but the trees"
+        );
+        assert_ne!(
+            scene,
+            terrain.clone().with_clouds(&newer),
+            "a lone tree is not a pair"
+        );
 
         // One tree alone carries the newer side, so a frame with nothing in flight draws its own
         // number whole: the shader's weight is `1.0` there and the decode is the identity.
@@ -2839,6 +3082,9 @@ mod tests {
                     chunk: i as u32,
                     light_y: 0,
                     light_z: 0,
+                    shape_lo: 0,
+                    shape_hi: 0,
+                    shape_twist: 0,
                 })
                 .collect(),
             origins: (0..count)
@@ -2886,8 +3132,20 @@ mod tests {
         for (i, record) in scene.clouds[count..].iter().enumerate() {
             let source = &newer.records[i];
             assert_eq!(
-                (record.face, record.material, record.slice, record.uv, record.extent),
-                (source.face, source.material, source.slice, source.uv, source.extent),
+                (
+                    record.face,
+                    record.material,
+                    record.slice,
+                    record.uv,
+                    record.extent
+                ),
+                (
+                    source.face,
+                    source.material,
+                    source.slice,
+                    source.uv,
+                    source.extent
+                ),
                 "the second tree's record {i} is not the tree's own: the fade re-meshed it"
             );
             assert_eq!(
@@ -2900,7 +3158,10 @@ mod tests {
         // adopted; every frame of the dissolve after it draws the same bytes with one uniform
         // changed, so what the dissolve costs the frame thread is nothing at all — the interpolation
         // is `shading.wgsl`'s, per pixel.
-        assert_eq!(scene.clouds[count].chunk, count as u32, "the newer tree is not last");
+        assert_eq!(
+            scene.clouds[count].chunk, count as u32,
+            "the newer tree is not last"
+        );
         assert!(
             scene.cloud_origins[0][3] < 0.0 && scene.cloud_origins[count][3] > 0.0,
             "the two trees' sides are not in the signs: {} against {}",
@@ -2928,12 +3189,22 @@ mod tests {
         };
         let scene = Scene::default().with_bodies(&[moon]);
         assert_eq!(scene.bodies.len(), 1, "the body was not appended");
-        assert_eq!(scene.origins, vec![moon.origin()], "the body has no origin of its own");
+        assert_eq!(
+            scene.origins,
+            vec![moon.origin()],
+            "the body has no origin of its own"
+        );
         assert_eq!(scene.records.len(), 0, "a body is not a rectangle's record");
         assert_eq!(scene.clouds.len(), 0, "a body declared itself a cloud");
         assert!(scene.bodies[0].is_body());
-        assert!(!scene.is_empty(), "a scene with the Moon in it read as empty");
-        assert_eq!(scene.bodies[0].chunk, 0, "the record does not name its own origin");
+        assert!(
+            !scene.is_empty(),
+            "a scene with the Moon in it read as empty"
+        );
+        assert_eq!(
+            scene.bodies[0].chunk, 0,
+            "the record does not name its own origin"
+        );
     }
 
     /// **The cache against a world that is actually changing.** The key is the whole of the
@@ -2949,14 +3220,15 @@ mod tests {
         let spec = WorldSpec::new(2468, Config::default());
         let registry = voxel_shapers::materials::registry().expect("the registry");
         let mesh_config = voxel_mesh::MeshConfig::from_registry(&registry).expect("a mesh config");
-        let mut streamer = voxel_work::Streamer::new(
-            WorldSource::new(spec),
-            mesh_config,
-            2,
-            64 * 1024 * 1024,
-        )
-        .and_then(|s| s.with_window(voxel_work::ChunkWindow { radius_chunks: 1, vertical_chunks: 0 }))
-        .expect("a streamer");
+        let mut streamer =
+            voxel_work::Streamer::new(WorldSource::new(spec), mesh_config, 2, 64 * 1024 * 1024)
+                .and_then(|s| {
+                    s.with_window(voxel_work::ChunkWindow {
+                        radius_chunks: 1,
+                        vertical_chunks: 0,
+                    })
+                })
+                .expect("a streamer");
         let surface = voxel_model::ChunkPos::new(
             0,
             voxel_shapers::terrain::elevation_m(&spec, 16.5, 16.5) as i32 / 32,
@@ -2979,9 +3251,29 @@ mod tests {
                 // cannot see, and it is here so the test can fail for it: a cache that kept the
                 // old scene would draw 4 144 quads of a world the streamer no longer holds.
                 2 => {
+                    // **A world change keeps the picture and, for that reason, the key.** The
+                    // meshes are demoted to the stale set rather than dropped
+                    // ([`voxel_work::Streamer::note_world_changed`] says why, with the client's
+                    // own reading of a world that vanished for 428 frames), so the frame after a
+                    // change still draws the world the frame before it drew — and since the bytes
+                    // did not change, neither does the key: the replacement moves a mesh's version
+                    // one chunk at a time, and *that* is what the scene diffs. Clearing here drew
+                    // nothing until the rebuild reached every chunk, which is the defect the
+                    // demotion fixed; bumping the key here would rebuild the same bytes.
+                    let before = streamer.residency_generation();
+                    let drawn_before: usize = streamer.meshes().map(|m| m.quads.len()).sum();
+                    assert!(drawn_before > 0, "the world was empty before the change");
                     streamer.note_world_changed();
-                    let emptied: usize = streamer.meshes().map(|m| m.quads.len()).sum();
-                    assert_eq!(emptied, 0, "the world was not emptied");
+                    let drawn: usize = streamer.meshes().map(|m| m.quads.len()).sum();
+                    assert_eq!(
+                        drawn, drawn_before,
+                        "a world change emptied the drawn world"
+                    );
+                    assert_eq!(
+                        streamer.residency_generation(),
+                        before,
+                        "a world change moved the key for bytes that did not change"
+                    );
                 }
                 // The refill: chunks arriving one pump at a time.
                 3 | 5 | 7 | 8 | 9 | 11 => drop(streamer.pump().expect("a pump")),
@@ -3028,7 +3320,10 @@ mod tests {
             // under an older light is visible in the bytes and not only in a build count.
             let bands = move |_: [f64; 3]| Some([light as f32, 0.0, 0.0, 0.0, 0.0, 0.0]);
             let scene = cache.take(key, || {
-                (Scene::build_with_light(streamer.meshes(), [0.0; 3], &bands, None, None), true)
+                (
+                    Scene::build_with_light(streamer.meshes(), [0.0; 3], &bands, None, None),
+                    true,
+                )
             });
             frames += 1;
             if scene.build != last_build {
@@ -3044,7 +3339,11 @@ mod tests {
                 "frame {frame}: the scene drew {} quads for a residency of {resident}",
                 scene.quads
             );
-            assert_eq!(scene.vertices.len(), corners, "frame {frame}: a corner is missing");
+            assert_eq!(
+                scene.vertices.len(),
+                corners,
+                "frame {frame}: a corner is missing"
+            );
             // **And the light is the frame's own**, not the one the scene was kept under.
             assert!(
                 scene
@@ -3055,9 +3354,10 @@ mod tests {
             );
             // And the frame's own suffix, stripped on the next take the way `main.rs` strips it.
             let mut scene = scene.with_bodies(&[]);
-            scene
-                .clouds
-                .push(QuadRecord::of(&one_block_face(Face::PosY, MaterialId(0)).quads[0], 0));
+            scene.clouds.push(QuadRecord::of(
+                &one_block_face(Face::PosY, MaterialId(0)).quads[0],
+                0,
+            ));
             scene.cloud_origins.push([0.0, 0.0, 0.0, 0.9]);
             cache.put(scene);
             let scene = cache.take(key, || unreachable!("a kept frame rebuilt"));
@@ -3066,7 +3366,11 @@ mod tests {
                 scene.terrain[0],
                 "frame {frame}: a record survived into the next frame"
             );
-            assert_eq!(scene.clouds.len(), 0, "frame {frame}: the cloud survived the take");
+            assert_eq!(
+                scene.clouds.len(),
+                0,
+                "frame {frame}: the cloud survived the take"
+            );
             cache.put(scene);
         }
         assert!(frames >= 24);
@@ -3076,7 +3380,10 @@ mod tests {
             builds < frames,
             "every one of {frames} frames rebuilt: the key is not holding"
         );
-        assert!(builds >= 4, "the mutations did not move the key at all ({builds} builds)");
+        assert!(
+            builds >= 4,
+            "the mutations did not move the key at all ({builds} builds)"
+        );
     }
 
     /// **The atmosphere cadence does not rebuild a scene the field cannot change.**
@@ -3100,13 +3407,22 @@ mod tests {
             let scene = cache.take(key, || {
                 builds += 1;
                 (
-                    Scene::build_with_light(std::iter::once(&mesh), [0.0; 3], &no_light, None, None),
+                    Scene::build_with_light(
+                        std::iter::once(&mesh),
+                        [0.0; 3],
+                        &no_light,
+                        None,
+                        None,
+                    ),
                     true,
                 )
             });
             cache.put(scene);
         }
-        assert_eq!(builds, 1, "the atmosphere cadence rebuilt a scene it cannot change");
+        assert_eq!(
+            builds, 1,
+            "the atmosphere cadence rebuilt a scene it cannot change"
+        );
         // **A field with a measurement does move the key**: those bands are the corner's, not the
         // uniform's, so a held cell's light is geometry and the revision that measured it is part
         // of it — and a tick that measured nothing is not.
@@ -3124,7 +3440,6 @@ mod tests {
     /// measure, which is exactly what the key now says.
     #[test]
     fn an_empty_field_gives_byte_identical_corners_at_every_cadence_tick() {
-
         let spec = voxel_shapers::WorldSpec::new(2468, voxel_shapers::Config::default());
         let inputs = voxel_appearance::sky::SkyInputs::default();
         let mesh = one_block_face(Face::PosY, MaterialId(0));
@@ -3134,13 +3449,8 @@ mod tests {
                 .expect("a tick the atmosphere can describe");
             let field = std::cell::RefCell::new(field);
             let light = crate::field::light_at(&field);
-            let scene = Scene::build_with_light(
-                std::iter::once(&mesh),
-                [0.0; 3],
-                &light,
-                None,
-                None,
-            );
+            let scene =
+                Scene::build_with_light(std::iter::once(&mesh), [0.0; 3], &light, None, None);
             assert_eq!(
                 field.borrow().held(),
                 0,
@@ -3162,7 +3472,11 @@ mod tests {
     fn a_kept_scene_keeps_its_corners_and_drops_the_frames_suffix() {
         let mesh = one_block_face(Face::PosY, MaterialId(0));
         let mut cache = SceneCache::default();
-        let key = SceneKey { world: 1, residency: 1, light: 1 };
+        let key = SceneKey {
+            world: 1,
+            residency: 1,
+            light: 1,
+        };
         let no_light = |_: [f64; 3]| None;
         let built = cache.take(key, || {
             (
@@ -3177,22 +3491,41 @@ mod tests {
         cache.put(built);
         // The frame's own additions: a cloud record on its own origin, and a body.
         let mut scene = cache.take(key, || unreachable!("a kept frame rebuilt"));
-        scene
-            .clouds
-            .push(QuadRecord::of(&one_block_face(Face::PosY, MaterialId(0)).quads[0], 0));
+        scene.clouds.push(QuadRecord::of(
+            &one_block_face(Face::PosY, MaterialId(0)).quads[0],
+            0,
+        ));
         scene.cloud_origins.push([8.0, 0.0, 0.0, 0.9]);
-        scene.bodies.push(QuadRecord::of(&one_block_face(Face::PosY, MaterialId(0)).quads[0], 0));
+        scene.bodies.push(QuadRecord::of(
+            &one_block_face(Face::PosY, MaterialId(0)).quads[0],
+            0,
+        ));
         scene.origins.push([3.0e8, 0.0, 0.0, 0.0]);
         cache.put(scene);
 
         let scene = cache.take(key, || unreachable!("a kept frame rebuilt"));
         assert_eq!(scene.terrain, terrain, "the terrain's own counts moved");
-        assert_eq!(scene.records.len(), terrain[0], "a cloud record outlived its frame");
-        assert_eq!(scene.origins.len(), terrain[1], "an origin outlived its frame");
+        assert_eq!(
+            scene.records.len(),
+            terrain[0],
+            "a cloud record outlived its frame"
+        );
+        assert_eq!(
+            scene.origins.len(),
+            terrain[1],
+            "an origin outlived its frame"
+        );
         assert_eq!(scene.bodies.len(), 0, "a body outlived its frame");
         assert_eq!(scene.clouds.len(), 0, "a cloud record outlived its frame");
-        assert_eq!(scene.cloud_origins.len(), 0, "a cloud origin outlived its frame");
-        assert_eq!(scene.vertices, vertices, "a corner was stripped or rewritten");
+        assert_eq!(
+            scene.cloud_origins.len(),
+            0,
+            "a cloud origin outlived its frame"
+        );
+        assert_eq!(
+            scene.vertices, vertices,
+            "a corner was stripped or rewritten"
+        );
         assert_eq!(scene.indices, indices, "an index was stripped or rewritten");
         let reach = scene.vertices.len() as u32;
         assert!(
@@ -3200,7 +3533,10 @@ mod tests {
             "an index points past the corners that keep it"
         );
         assert!(
-            scene.vertices.iter().all(|v| (v.chunk as usize) < scene.origins.len()),
+            scene
+                .vertices
+                .iter()
+                .all(|v| (v.chunk as usize) < scene.origins.len()),
             "a corner names an origin the strip removed"
         );
     }
@@ -3345,9 +3681,17 @@ mod tests {
             .map(|a| a.offset + a.format.size())
             .max()
             .unwrap();
-        assert_eq!(last, Vertex::STRIDE, "the attributes do not cover the vertex");
+        assert_eq!(
+            last,
+            Vertex::STRIDE,
+            "the attributes do not cover the vertex"
+        );
         for a in Vertex::attributes() {
-            assert!(a.offset.is_multiple_of(4), "offset {} is not 4-aligned", a.offset);
+            assert!(
+                a.offset.is_multiple_of(4),
+                "offset {} is not 4-aligned",
+                a.offset
+            );
         }
     }
 
@@ -3409,7 +3753,11 @@ mod tests {
     fn a_scene_cache_builds_only_when_its_key_moves() {
         let mut cache = SceneCache::default();
         let mut builds = 0u32;
-        let key = SceneKey { world: 7, residency: 11, light: 0 };
+        let key = SceneKey {
+            world: 7,
+            residency: 11,
+            light: 0,
+        };
         let mut build = |builds: &mut u32| {
             *builds += 1;
             (Scene::probe([0.0, 1.0, 0.0], 0, 2.0, 0.5, [0.0; 3]), true)
@@ -3424,9 +3772,10 @@ mod tests {
         assert_eq!(second.build, build_id, "a kept scene kept its build id");
         assert_eq!(second.vertices.len(), 4, "the probe's own four corners");
         assert_eq!(second.terrain, [0, 1, 4, 6]);
-        second
-            .clouds
-            .push(QuadRecord::of(&one_block_face(Face::PosY, MaterialId(0)).quads[0], 0));
+        second.clouds.push(QuadRecord::of(
+            &one_block_face(Face::PosY, MaterialId(0)).quads[0],
+            0,
+        ));
         second.cloud_origins.push([1.0, 2.0, 3.0, 0.9]);
         cache.put(second);
         let third = cache.take(key, || build(&mut builds));
@@ -3440,16 +3789,25 @@ mod tests {
         cache.put(third);
         // A moved key: the world (or its residency, or the light) changed, so the mesh walk runs
         // again and the new scene states a new build.
-        let moved = SceneKey { residency: 12, ..key };
+        let moved = SceneKey {
+            residency: 12,
+            ..key
+        };
         let fourth = cache.take(moved, || build(&mut builds));
         assert_eq!(builds, 2, "a moved key did not rebuild");
-        assert_ne!(fourth.build, build_id, "a rebuilt scene kept the old build id");
+        assert_ne!(
+            fourth.build, build_id,
+            "a rebuilt scene kept the old build id"
+        );
         cache.put(fourth);
         // And a build that refused to be kept — the light field measuring new cells — is asked
         // for again under the very same key, which is the whole reason `take` returns a flag
         // rather than assuming its build is worth keeping.
         let mut refused = 0u32;
-        let next = SceneKey { residency: 13, ..moved };
+        let next = SceneKey {
+            residency: 13,
+            ..moved
+        };
         let _ = cache.take(next, || {
             refused += 1;
             (Scene::probe([0.0, 1.0, 0.0], 0, 2.0, 0.5, [0.0; 3]), false)
@@ -3458,7 +3816,10 @@ mod tests {
             refused += 1;
             (Scene::probe([0.0, 1.0, 0.0], 0, 2.0, 0.5, [0.0; 3]), false)
         });
-        assert_eq!(refused, 2, "a scene the caller did not keep was treated as kept");
+        assert_eq!(
+            refused, 2,
+            "a scene the caller did not keep was treated as kept"
+        );
     }
 
     /// **What a scene draws, as placed rectangles**: each record's own shape against the world
@@ -3529,16 +3890,12 @@ mod tests {
             meshes.iter().map(|m| (m.chunk, 1u64, *m)).collect()
         }
         let all = [&a, &b, &c];
-        let report = resident.sync(
-            drawn(&all).into_iter(),
-            centre,
-            None,
-            None,
-            None,
-            1_000,
-            0,
+        let report = resident.sync(drawn(&all).into_iter(), centre, None, None, None, 1_000, 0);
+        assert_eq!(
+            (report.landed, report.left),
+            (3, 0),
+            "the first sync did not land three"
         );
-        assert_eq!((report.landed, report.left), (3, 0), "the first sync did not land three");
         let expected = Scene::build_with_detail([&a, &b, &c], [0.0; 3]);
         assert_eq!(placed_records(resident.scene()), placed_records(&expected));
 
@@ -3553,8 +3910,15 @@ mod tests {
             1_000,
             0,
         );
-        assert_eq!((report.landed, report.left), (0, 1), "the leave did not happen");
-        assert!(!resident.holds(b.chunk), "the chunk that left is still in the scene");
+        assert_eq!(
+            (report.landed, report.left),
+            (0, 1),
+            "the leave did not happen"
+        );
+        assert!(
+            !resident.holds(b.chunk),
+            "the chunk that left is still in the scene"
+        );
         let expected = Scene::build_with_detail([&a, &c], [0.0; 3]);
         assert_eq!(
             placed_records(resident.scene()),
@@ -3594,15 +3958,7 @@ mod tests {
         });
         let remeshed = [(&a, 1u64), (&b2, 2u64), (&c, 1u64)];
         let drawn: Vec<_> = remeshed.iter().map(|(m, v)| (m.chunk, *v, *m)).collect();
-        let report = resident.sync(
-            drawn.into_iter(),
-            centre,
-            None,
-            None,
-            None,
-            1_000,
-            0,
-        );
+        let report = resident.sync(drawn.into_iter(), centre, None, None, None, 1_000, 0);
         assert_eq!(report.left, 0, "a remeshed chunk was counted as leaving");
         assert_eq!(report.landed, 1, "the remeshed chunk did not land again");
         let expected = Scene::build_with_detail([&a, &b2, &c], [0.0; 3]);
@@ -3630,7 +3986,10 @@ mod tests {
             let mut mesh = one_face_at(pos);
             let one = mesh.quads[0];
             mesh.quads = (0..quads)
-                .map(|i| Quad { slice: 4 + i as u16, ..one })
+                .map(|i| Quad {
+                    slice: 4 + i as u16,
+                    ..one
+                })
                 .collect();
             mesh.stats.quads = quads as u64;
             mesh
@@ -3691,7 +4050,10 @@ mod tests {
             let mut mesh = one_face_at(pos);
             let one = mesh.quads[0];
             mesh.quads = (0..quads)
-                .map(|i| Quad { slice: 4 + i as u16, ..one })
+                .map(|i| Quad {
+                    slice: 4 + i as u16,
+                    ..one
+                })
                 .collect();
             mesh.stats.quads = quads as u64;
             mesh
@@ -3765,8 +4127,14 @@ mod tests {
             1,
             0,
         );
-        assert_eq!(report.landed, 1, "a budget of one quad landed more than one chunk");
-        assert!(resident.holds(near.chunk), "the eye's chunk waited for the far one");
+        assert_eq!(
+            report.landed, 1,
+            "a budget of one quad landed more than one chunk"
+        );
+        assert!(
+            resident.holds(near.chunk),
+            "the eye's chunk waited for the far one"
+        );
         assert_eq!(report.pending, 1);
         // The carried chunk lands on the next frame's budget, not never.
         let drawn: Vec<_> = meshes.iter().map(|m| (m.chunk, 1u64, *m)).collect();
@@ -3779,7 +4147,11 @@ mod tests {
             1_000,
             0,
         );
-        assert_eq!((report.landed, report.pending), (1, 0), "the carried chunk did not land");
+        assert_eq!(
+            (report.landed, report.pending),
+            (1, 0),
+            "the carried chunk did not land"
+        );
         assert!(resident.holds(far.chunk));
     }
 
@@ -3857,9 +4229,20 @@ mod tests {
         );
         assert_eq!(report.landed, 2);
         let scene = resident.scene();
-        assert_eq!(scene.vertices.len(), 8, "the vertex format is not four corners a quad");
-        assert_eq!(scene.indices.len(), 12, "two quads are not six indices each");
-        assert!(scene.indices.iter().all(|i| (*i as usize) < scene.vertices.len()));
+        assert_eq!(
+            scene.vertices.len(),
+            8,
+            "the vertex format is not four corners a quad"
+        );
+        assert_eq!(
+            scene.indices.len(),
+            12,
+            "two quads are not six indices each"
+        );
+        assert!(scene
+            .indices
+            .iter()
+            .all(|i| (*i as usize) < scene.vertices.len()));
         // A revision that reaches only the first chunk re-emits one slice and leaves the other.
         let drawn: Vec<_> = [&a, &b].iter().map(|m| (m.chunk, 7u64, *m)).collect();
         let light2: &LightAt = &|_: [f64; 3]| Some([2.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
@@ -3872,11 +4255,22 @@ mod tests {
             1,
             2,
         );
-        assert_eq!(report.refreshed, 1, "the budget refreshed more than one chunk");
-        let scene = resident.scene();
-        assert_eq!(scene.vertices.len(), 8, "a refresh resized the vertex array");
         assert_eq!(
-            scene.vertices.iter().filter(|v| v.light_direct[0] == 2.0).count(),
+            report.refreshed, 1,
+            "the budget refreshed more than one chunk"
+        );
+        let scene = resident.scene();
+        assert_eq!(
+            scene.vertices.len(),
+            8,
+            "a refresh resized the vertex array"
+        );
+        assert_eq!(
+            scene
+                .vertices
+                .iter()
+                .filter(|v| v.light_direct[0] == 2.0)
+                .count(),
             4,
             "the refreshed chunk's corners are not the new light"
         );
@@ -3896,7 +4290,13 @@ mod tests {
         Mesh {
             chunk: voxel_model::ChunkPos::new(0, 0, 0),
             origin: [0, 0, 0],
-            quads: vec![Quad { face: Face::PosY, slice: extent, uv: [0, 0], extent: [extent, extent], material }],
+            quads: vec![Quad {
+                face: Face::PosY,
+                slice: extent,
+                uv: [0, 0],
+                extent: [extent, extent],
+                material,
+            }],
             loops: Vec::new(),
             stats: voxel_mesh::MeshStats {
                 solid_voxels: 1,
@@ -3966,10 +4366,8 @@ mod tests {
     fn face_pixels(face_m: f64) -> f64 {
         const WIDTH: f64 = 512.0;
         const HEIGHT: f64 = 288.0;
-        let mut camera = crate::Camera::standard(
-            [face_m / 2.0, 1.0 + face_m, face_m / 2.0],
-            WIDTH / HEIGHT,
-        );
+        let mut camera =
+            crate::Camera::standard([face_m / 2.0, 1.0 + face_m, face_m / 2.0], WIDTH / HEIGHT);
         camera.pitch_rad = -crate::camera::MAX_PITCH_RAD;
         let matrix = camera.view_projection();
         let left = project(&camera, &matrix, [0.0, 1.0, face_m / 2.0]);
@@ -4044,7 +4442,11 @@ mod tests {
         // A shadow one subvoxel wide, wholly inside a 2 m face: both corners are lit, and the
         // lattice's 0.25 m lines are at 0.5 m (dark) and 0.75 m (lit).
         let interior = |p: [f64; 3]| {
-            Some(if (0.5..0.75).contains(&p[0]) { [0.0f32; 6] } else { [1.0f32; 6] })
+            Some(if (0.5..0.75).contains(&p[0]) {
+                [0.0f32; 6]
+            } else {
+                [1.0f32; 6]
+            })
         };
 
         let one = build(4, &corner, 1);
@@ -4125,7 +4527,11 @@ mod tests {
             "the even face is two triangles, not {}",
             even.0.indices.len()
         );
-        assert_eq!(two.0.indices.len(), 384, "an 8 × 8 grid is 128 cells, six indices each");
+        assert_eq!(
+            two.0.indices.len(),
+            384,
+            "an 8 × 8 grid is 128 cells, six indices each"
+        );
         assert!(
             two_drop > 0.5,
             "the interior shadow is not drawn: drop {two_drop:.2}"
@@ -4172,7 +4578,10 @@ mod tests {
         assert!(!unmeasured.vertices.is_empty(), "the face drew no corners");
         for v in &unmeasured.vertices {
             assert_eq!(v.light_present, 0, "an unmeasured corner claimed a light");
-            assert_eq!(v.light_direct, [0.0; 3], "an unmeasured corner carried bands");
+            assert_eq!(
+                v.light_direct, [0.0; 3],
+                "an unmeasured corner carried bands"
+            );
             assert_eq!(v.light_diffuse, [0.0; 3]);
         }
 
@@ -4181,7 +4590,11 @@ mod tests {
         let air = Air(std::sync::Arc::new(voxel_mesh::SparseVoxelOctree::new()));
         let mut measured_bands = Vec::new();
         for v in &unmeasured.vertices {
-            let point = [v.position[0] as f64, v.position[1] as f64, v.position[2] as f64];
+            let point = [
+                v.position[0] as f64,
+                v.position[1] as f64,
+                v.position[2] as f64,
+            ];
             let cell = crate::field::SubvoxelPos::of_point(point).expect("a corner has a cell");
             let (bands, _) = field
                 .borrow_mut()
@@ -4197,7 +4610,14 @@ mod tests {
         for (v, bands) in measured.vertices.iter().zip(&measured_bands) {
             assert_eq!(v.light_present, 1, "a measured corner disowned its bands");
             assert_eq!(
-                [v.light_direct[0], v.light_direct[1], v.light_direct[2], v.light_diffuse[0], v.light_diffuse[1], v.light_diffuse[2]],
+                [
+                    v.light_direct[0],
+                    v.light_direct[1],
+                    v.light_direct[2],
+                    v.light_diffuse[0],
+                    v.light_diffuse[1],
+                    v.light_diffuse[2]
+                ],
                 *bands,
                 "the corner's bands are not the march's"
             );

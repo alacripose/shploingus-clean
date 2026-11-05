@@ -15,6 +15,20 @@
 //! bits — per block, which is not a tree renderer; the law is four multiplies and a
 //! square root per sample.
 //!
+//! # Two records, one denominator
+//!
+//! [`Shaped`] is a **body of revolution** — a trunk, a branch, a crown, a root. [`Cell`]
+//! is the **per-axis** law a terrain cell uses: up to one cut per axis, each a plane
+//! with a point-based gradient, intersected. A ramp leans in both horizontal axes, a
+//! cliff has a side, and a corner is three planes at once; none of those is a surface
+//! of revolution, so they get their own record rather than a profile bent to fit.
+//!
+//! Both answer at [`PROFILE_SIDE`] divisions an axis, so a shaped block and a shaped
+//! body are the same fraction of a block without a conversion. The cell record is
+//! **cubic** and is the format a terrain shaper samples; no drawn face reads it yet —
+//! the mesh carrier and the shader arm are the next unit. The column-shaped path in
+//! this tree belongs only to the 2D cell renderer and is not a 3D shape here.
+//!
 //! # What a shaper profile is, and what it is not
 //!
 //! `docs/GAIA_comprehensive.md` §5 draws the line: a profile is an **envelope**, not
@@ -316,6 +330,196 @@ pub fn blend(from: &Shaped, to: &Shaped, t: f64, at: [f64; 3]) -> f64 {
     a + (b - a) * t
 }
 
+/// **One axis's cut through a block**: a plane with a point-based gradient, in block units.
+///
+/// A [`Shaped`] body is a surface of revolution about one axis. A terrain cell is not
+/// one, so its shape is stated **per axis**: each cut says where the solid side starts
+/// on that axis, and how the plane leans across the other two. The cell is the
+/// intersection of the cuts, and every cut is evaluated at the sample's own position —
+/// a leaning plane is a plane, not a staircase of 31.25 mm steps.
+///
+/// The gradient is a number and not a direction: `lean[0]` is the change in `at` per
+/// block unit across the axis's first in-plane coordinate, `lean[1]` the second, both
+/// measured from the block's centre. A flat cut has both zero. A 45° ramp on a Y cut
+/// has a lean of 1 on the axis it rises along.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct AxisCut {
+    /// Where the plane crosses the block's centre on this axis, in block units.
+    pub at: f64,
+    /// `+1` when the inside is above the plane, `-1` when it is below.
+    pub inside: f64,
+    /// The plane's gradient across the other two axes, block units per block unit.
+    pub lean: [f64; 2],
+}
+
+impl AxisCut {
+    /// A cut with the solid side **above** `at`.
+    pub const fn above(at: f64) -> Self {
+        Self { at, inside: 1.0, lean: [0.0; 2] }
+    }
+
+    /// A cut with the solid side **below** `at`.
+    pub const fn below(at: f64) -> Self {
+        Self { at, inside: -1.0, lean: [0.0; 2] }
+    }
+
+    /// A cut at `at`, solid on the `inside` side, leaning by `lean`.
+    pub const fn leaning(at: f64, inside: f64, lean: [f64; 2]) -> Self {
+        Self { at, inside, lean }
+    }
+
+    /// **Where the plane stands at a point**, in block units on this axis.
+    pub fn plane_at(&self, axis: Axis, at: [f64; 3]) -> f64 {
+        let (i, j) = axis.planes();
+        self.at + self.lean[0] * (at[i] - 0.5) + self.lean[1] * (at[j] - 0.5)
+    }
+
+    /// The signed field's gradient on the three world axes, unnormalised.
+    ///
+    /// The field is `inside · (p[axis] − plane(p))`, so its gradient is the axis unit
+    /// vector scaled by `inside`, less each lean along its own in-plane axis.
+    fn gradient(&self, axis: Axis) -> [f64; 3] {
+        let (i, j) = axis.planes();
+        let mut g = [0.0; 3];
+        g[axis.index()] = self.inside;
+        g[i] = -self.inside * self.lean[0];
+        g[j] = -self.inside * self.lean[1];
+        g
+    }
+
+    /// **How much of the 1/32 cell at `at` is on the inside of this cut**, in `[0, 1]`.
+    ///
+    /// The edge is anti-aliased over one profile cell **measured perpendicular to the
+    /// plane**, which is why the width is scaled by the gradient's length: a steeply
+    /// leaning cut crosses a cell over a longer vertical distance, and using the flat
+    /// width there would shave the boundary thinner than a cell.
+    pub fn coverage(&self, axis: Axis, at: [f64; 3]) -> f64 {
+        let plane = self.plane_at(axis, at);
+        let signed = self.inside * (at[axis.index()] - plane);
+        let g = self.gradient(axis);
+        let length = (g[0] * g[0] + g[1] * g[1] + g[2] * g[2]).sqrt();
+        edge(signed, PROFILE_CELL_M * length)
+    }
+
+    /// **The exact outward normal of this cut's plane**, or `None` for a degenerate one.
+    pub fn normal(&self, axis: Axis) -> Option<[f64; 3]> {
+        let g = self.gradient(axis);
+        let length = (g[0] * g[0] + g[1] * g[1] + g[2] * g[2]).sqrt();
+        if length <= f64::EPSILON {
+            return None;
+        }
+        Some([g[0] / length, g[1] / length, g[2] / length])
+    }
+}
+
+/// **A voxel cell shaped on its own three axes**: the per-axis counterpart of [`Shaped`].
+///
+/// The record is up to three [`AxisCut`]s — one per world axis — and the cell is their
+/// intersection. `None` on an axis means that axis does not cut the cell, so
+/// [`Cell::solid`] is the whole block and [`Cell::top`] is the whole block under a plane.
+///
+/// This is the format a terrain shaper samples at a 1/32 cell — a ramp is one leaning Y
+/// cut, a cliff is a Y cut plus an X or Z side, and a corner is three cuts — though no
+/// drawn face reads it yet: the mesh carrier is still owed. It is also
+/// the bridge between the octree's cuboid and the finer surface: the coarse record says
+/// *this block holds matter*, and a `Cell` says *which part of it*, at the same
+/// denominator a fluid's fill uses.
+///
+/// Nothing here is stored: [`Cell::coverage`] is the law and [`Cell::volume`] is the
+/// witness, not a buffer.
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+pub struct Cell {
+    /// The cut on each axis, in `[X, Y, Z]` order.
+    pub cuts: [Option<AxisCut>; 3],
+}
+
+impl Cell {
+    /// A cell with no cut: the whole block.
+    pub const fn solid() -> Self {
+        Cell { cuts: [None, None, None] }
+    }
+
+    /// The same cell with `axis`'s cut replaced.
+    pub fn with(mut self, axis: Axis, cut: AxisCut) -> Self {
+        self.cuts[axis.index()] = Some(cut);
+        self
+    }
+
+    /// **The whole block under a top plane** — the terrain cell's common case.
+    pub fn top(at: f64) -> Self {
+        Self::solid().with(Axis::Y, AxisCut::above(at))
+    }
+
+    /// **The whole block above a floor plane.**
+    pub fn floor(at: f64) -> Self {
+        Self::solid().with(Axis::Y, AxisCut::below(at))
+    }
+
+    /// **How much of the 1/32 cell at `at` is inside every cut**, in `[0, 1]`.
+    ///
+    /// The product is the intersection: a point outside any one cut is outside the
+    /// cell. A cut whose coverage is zero short-circuits, because a product with a zero
+    /// is a zero and the other axes cannot bring it back.
+    pub fn coverage(&self, at: [f64; 3]) -> f64 {
+        let mut inside = 1.0;
+        for axis in [Axis::X, Axis::Y, Axis::Z] {
+            let Some(cut) = self.cuts[axis.index()] else { continue };
+            inside *= cut.coverage(axis, at);
+            if inside <= 0.0 {
+                return 0.0;
+            }
+        }
+        inside
+    }
+
+    /// [`Self::coverage`] for a cell index on the grid.
+    pub fn cell(&self, u: u32, v: u32, w: u32) -> f64 {
+        self.coverage(centre(u, v, w))
+    }
+
+    /// **The outward normal of the cut the point is nearest to.**
+    ///
+    /// A cell can have three surfaces; the one a point sees is the cut whose coverage
+    /// is smallest there. At an exact tie (a corner) the lowest axis wins, which is a
+    /// stated choice rather than a blend: the intersection's normal is not defined at a
+    /// corner, and inventing an average would be a fourth surface nobody declared.
+    pub fn normal(&self, at: [f64; 3]) -> Option<[f64; 3]> {
+        let mut best: Option<(f64, [f64; 3])> = None;
+        for axis in [Axis::X, Axis::Y, Axis::Z] {
+            let Some(cut) = self.cuts[axis.index()] else { continue };
+            let Some(normal) = cut.normal(axis) else { continue };
+            let coverage = cut.coverage(axis, at);
+            if best.is_none_or(|(seen, _)| coverage < seen) {
+                best = Some((coverage, normal));
+            }
+        }
+        best.map(|(_, normal)| normal)
+    }
+
+    /// **Where one axis's cut stands at a point**, or `None` when that axis is open.
+    pub fn plane(&self, axis: Axis, at: [f64; 3]) -> Option<f64> {
+        self.cuts[axis.index()].map(|cut| cut.plane_at(axis, at))
+    }
+
+    /// **The fraction of the block the cell occupies**, sampled on the 32³ grid.
+    ///
+    /// This is a **witness**, not a frame cost: it walks every profile cell, which is
+    /// the walk the design refuses to do per frame. It exists so a shaper can be asked
+    /// what it occupied rather than asserting a fraction, and so a baseline can print
+    /// one number for a cell law.
+    pub fn volume(&self) -> f64 {
+        let mut sum = 0.0;
+        for w in 0..PROFILE_SIDE {
+            for v in 0..PROFILE_SIDE {
+                for u in 0..PROFILE_SIDE {
+                    sum += self.cell(u, v, w);
+                }
+            }
+        }
+        sum / PROFILE_CELLS as f64
+    }
+}
+
 /// The centre of a profile cell, in block units.
 pub fn centre(u: u32, v: u32, w: u32) -> [f64; 3] {
     [
@@ -464,5 +668,85 @@ mod tests {
         let cone = Shaped::of(Profile::Frustum { low_radius: 0.4, high_radius: 0.1 }, Axis::Y);
         let leaned = cone.normal([0.8, 0.5, 0.5]).expect("off the axis");
         assert!(leaned[1] > 0.0, "a narrowing column's normal tips upward: {leaned:?}");
+    }
+
+    #[test]
+    fn a_plane_shapes_a_cell_at_one_thirty_second_an_axis() {
+        // The denominator is the profile's own, and it is not a second grid: a cut one
+        // profile cell from the top is exactly one of the 32 layers, and half a block is
+        // exactly half the cells.
+        assert_eq!(PROFILE_SIDE, 32);
+        assert_eq!(PROFILE_CELLS, 32 * 32 * 32);
+        assert_eq!(Cell::solid().volume(), 1.0);
+        let half = Cell::top(0.5);
+        assert!(
+            (half.volume() - 0.5).abs() < 1e-12,
+            "half a block is half the cells, not {} of them",
+            half.volume()
+        );
+        let skin = Cell::top(1.0 - PROFILE_CELL_M);
+        assert!(
+            (skin.volume() - PROFILE_CELL_M).abs() < 1e-12,
+            "a cut one cell down is one layer: {}",
+            skin.volume()
+        );
+        assert_eq!(skin.cell(16, 31, 16), 1.0, "the top layer is inside the cut");
+        assert_eq!(skin.cell(16, 30, 16), 0.0, "the layer below it is outside");
+    }
+
+    #[test]
+    fn a_leaning_top_is_a_plane_and_not_a_staircase() {
+        // y = 0.5 + 0.5(x − 0.5): at x = 0.25 the plane is 0.375, at x = 0.75 it is
+        // 0.625. The point is that a sample *on* the plane is half covered wherever it
+        // is, which a staircase at 1/32 could not state.
+        let ramp = Cell::solid().with(Axis::Y, AxisCut::leaning(0.5, 1.0, [0.5, 0.0]));
+        assert!((ramp.plane(Axis::Y, [0.25, 0.5, 0.5]).unwrap() - 0.375).abs() < 1e-12);
+        assert!((ramp.plane(Axis::Y, [0.75, 0.5, 0.5]).unwrap() - 0.625).abs() < 1e-12);
+        assert!((ramp.coverage([0.25, 0.375, 0.5]) - 0.5).abs() < 1e-9);
+        assert_eq!(ramp.coverage([0.25, 0.34, 0.5]), 0.0, "below the plane");
+        assert_eq!(ramp.coverage([0.25, 0.41, 0.5]), 1.0, "above it");
+        assert!(
+            (ramp.volume() - 0.5).abs() < 1e-3,
+            "a plane whose mean is half the block occupies half of it: {}",
+            ramp.volume()
+        );
+        // The normal is the plane's own: (−0.5, 1, 0) normalised, tilted toward −x
+        // because the surface rises toward +x.
+        let n = ramp.normal([0.25, 0.4, 0.5]).expect("a cut has a normal");
+        assert!((n[0] + 0.447_213_595_499_957_9).abs() < 1e-9, "{n:?}");
+        assert!((n[1] - 0.894_427_190_999_915_9).abs() < 1e-9, "{n:?}");
+        assert!(n[2].abs() < 1e-12, "{n:?}");
+    }
+
+    #[test]
+    fn three_axis_cuts_shape_a_corner_in_three_dimensions() {
+        // Three half-spaces intersected: the corner is one eighth of the block, and each
+        // axis removes its own half. This is the shape a cell-wide terrain corner needs
+        // and a body of revolution cannot state.
+        let corner = Cell::solid()
+            .with(Axis::X, AxisCut::above(0.5))
+            .with(Axis::Y, AxisCut::above(0.5))
+            .with(Axis::Z, AxisCut::above(0.5));
+        assert!(
+            (corner.volume() - 0.125).abs() < 1e-12,
+            "three halves make an eighth, not {}",
+            corner.volume()
+        );
+        assert_eq!(corner.cell(24, 24, 24), 1.0, "the inside corner");
+        assert_eq!(corner.cell(8, 24, 24), 0.0, "outside the x cut");
+        assert_eq!(corner.cell(24, 8, 24), 0.0, "outside the y cut");
+        assert_eq!(corner.cell(24, 24, 8), 0.0, "outside the z cut");
+
+        // A side cut alone takes half the block and points along its own axis.
+        let side = Cell::solid().with(Axis::X, AxisCut::below(0.5));
+        assert!((side.volume() - 0.5).abs() < 1e-12);
+        let n = side.normal([0.2, 0.5, 0.5]).expect("a side has a normal");
+        assert_eq!(n, [-1.0, 0.0, 0.0]);
+
+        // The normal a point sees is the limiting cut's, not an average: on the y plane
+        // the roof answers, and deeper inside the tie falls to the first axis.
+        assert_eq!(corner.normal([0.75, 0.5, 0.75]), Some([0.0, 1.0, 0.0]));
+        assert_eq!(corner.normal([0.75, 0.75, 0.75]), Some([1.0, 0.0, 0.0]));
+        assert_eq!(Cell::solid().normal([0.5, 0.5, 0.5]), None, "a whole block has no surface");
     }
 }

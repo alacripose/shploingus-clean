@@ -314,6 +314,50 @@ fn selection_of(code: KeyCode) -> Option<usize> {
     })
 }
 
+/// **The map window's key map**: the physical keys a hand reaches for, and the map verb each one
+/// runs ([`ShellMount::map_action`]).
+///
+/// Arrows and WASD both move the view — the arrows because that is what a map is scrolled with, the
+/// letters because that is what Hammer's own viewports are flown with — and the rest are the map's
+/// own verbs spelled on the keyboard. One table, so a key and a gutter button cannot become two
+/// spellings of the same move.
+fn map_action_of(code: KeyCode) -> Option<&'static str> {
+    Some(match code {
+        KeyCode::ArrowUp | KeyCode::KeyW => "move up",
+        KeyCode::ArrowDown | KeyCode::KeyS => "move down",
+        KeyCode::ArrowLeft | KeyCode::KeyA => "move left",
+        KeyCode::ArrowRight | KeyCode::KeyD => "move right",
+        KeyCode::KeyQ => "rotate left",
+        KeyCode::KeyE => "rotate right",
+        KeyCode::Minus | KeyCode::NumpadSubtract => "zoom out",
+        KeyCode::Equal | KeyCode::NumpadAdd => "zoom in",
+        KeyCode::Home => "recenter",
+        _ => return None,
+    })
+}
+
+/// **A key by the name a script writes it** (`key w`, `key left`, `key home`), the inverse of
+/// [`map_action_of`] for the keys it names. A name table wider than the key map would be a second
+/// key map, so it holds exactly the keys the map's vocabulary uses.
+fn key_code_of(name: &str) -> Option<KeyCode> {
+    Some(match name.to_ascii_lowercase().as_str() {
+        "w" => KeyCode::KeyW,
+        "a" => KeyCode::KeyA,
+        "s" => KeyCode::KeyS,
+        "d" => KeyCode::KeyD,
+        "up" => KeyCode::ArrowUp,
+        "down" => KeyCode::ArrowDown,
+        "left" => KeyCode::ArrowLeft,
+        "right" => KeyCode::ArrowRight,
+        "q" => KeyCode::KeyQ,
+        "e" => KeyCode::KeyE,
+        "minus" => KeyCode::Minus,
+        "equal" => KeyCode::Equal,
+        "home" => KeyCode::Home,
+        _ => return None,
+    })
+}
+
 /// The outward voxel step of a face — the direction of
 /// [`voxel_model::profile::face_vector`], as integer steps so a placed voxel
 /// lands exactly on the grid.
@@ -375,7 +419,115 @@ const REFINE_MAX_TRIANGLES_PER_QUAD: u32 = 2
     * voxel_mesh::SUBVOXEL_CHUNK_SIDE as u32
     * voxel_mesh::SUBVOXEL_CHUNK_SIDE as u32;
 
+/// **When the process started**, read only by the boot timings `SHPLOINGUS_PROBE_DEBUG` prints.
+///
+/// The frame report measures frames; this measures the wait *before* the first one, which is the
+/// cost a player pays on every launch and which no frame instrument can see. One clock, set at the
+/// top of `main`, so the gate report, the window, the graphics device and world-open are all
+/// numbered from the same instant rather than from four private ones.
+static BOOT_AT: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+/// **Whether the probe was asked for**, read once.
+///
+/// `std::env::var_os` allocates an `OsString` on every call, and the far, wide, chunk, ladder,
+/// horizon and stall reports all consult this flag **inside the frame loop** — seven lookups a
+/// frame is a cost the debug switch would otherwise charge the shipping path, which is the exact
+/// complaint the boot work was answering. Read once, then a branch.
+static PROBE_ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+/// Whether `SHPLOINGUS_PROBE_DEBUG` asked for the probe, cached after the first look.
+fn probe_on() -> bool {
+    *PROBE_ON.get_or_init(|| std::env::var_os("SHPLOINGUS_PROBE_DEBUG").is_some())
+}
+
+/// Elapsed milliseconds since [`BOOT_AT`], or zero before `main` has set it.
+fn since_boot_ms() -> f64 {
+    BOOT_AT
+        .get()
+        .map_or(0.0, |at| at.elapsed().as_secs_f64() * 1000.0)
+}
+
+/// **One boot phase and when it finished**, printed only when the probe asks for it — the same
+/// `SHPLOINGUS_PROBE_DEBUG` the far and surface fields report under.
+fn boot_phase(phase: &str) {
+    if probe_on() {
+        eprintln!("boot: {phase} {:.1} ms", since_boot_ms());
+    }
+}
+
+/// **The last frame the probe saw**, so the next one can name the *trigger* of whatever it
+/// reports: a startup transient, an eye-chunk crossing, the world centre moving off the eye,
+/// a world change, the light's own tick — or a frame nothing structural moved on. The distinction
+/// is the difference between "the world is still filling" and "the world was emptied", and it is
+/// the question every collapse report in this thread has had to answer by inference.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+struct ProbeWatch {
+    eye_chunk: (i32, i32, i32),
+    ground_chunk: (i32, i32, i32),
+    world_generation: u64,
+    light_epoch: u64,
+    slab_missed: bool,
+    near_disc: bool,
+}
+
+/// **What moved since the last frame**, as one token: `boot` while the window has never been
+/// whole, `eye` when the eye's chunk moved, `ground` when the world centre's did, `world` when the
+/// record's generation moved (a placement or a dig), `light` when the light's revision did, `disc`
+/// when the near ground was handed over or given back, and `-` for a frame nothing structural
+/// moved on. More than one can be true; they are joined rather than ranked, because a frame that
+/// crossed *and* was edited is a frame whose collapse must be attributable to both.
+fn probe_trigger(watch: &Option<ProbeWatch>, now: ProbeWatch, settled: bool) -> String {
+    let Some(last) = watch else {
+        return "first".into();
+    };
+    let mut causes = Vec::new();
+    if !settled {
+        causes.push("boot");
+    }
+    if last.eye_chunk != now.eye_chunk {
+        causes.push("eye");
+    }
+    if last.ground_chunk != now.ground_chunk {
+        causes.push("ground");
+    }
+    if last.world_generation != now.world_generation {
+        causes.push("world");
+    }
+    if last.light_epoch != now.light_epoch {
+        causes.push("light");
+    }
+    if last.slab_missed != now.slab_missed {
+        causes.push("slab");
+    }
+    if last.near_disc != now.near_disc {
+        causes.push("disc");
+    }
+    if causes.is_empty() {
+        "-".into()
+    } else {
+        causes.join("+")
+    }
+}
+
+/// **Whether the near ground is drawn beyond the slab's own answer** — the measurement switch the
+/// hand-over is reproduced under.
+///
+/// `SHPLOINGUS_NEAR_DISC=0` forces the near disc off, which is the shipped client **before this
+/// pass**: an eye a hundred metres over the ground draws a window of air and no ground under it.
+/// `=1` forces it on, which is the state a walking player would double-draw the ground in. Unset
+/// takes the slab's own answer, which is what ships: the disc is drawn exactly while the streamed
+/// slab stands above the ground the eye is over.
+fn near_disc_forced() -> Option<bool> {
+    static FORCED: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+    *FORCED.get_or_init(|| {
+        std::env::var("SHPLOINGUS_NEAR_DISC")
+            .ok()
+            .map(|text| !text.trim().eq_ignore_ascii_case("0"))
+    })
+}
+
 fn main() {
+    let _ = BOOT_AT.set(std::time::Instant::now());
     // Fail before opening the client if its required data package cannot load.
     // The shell will mount these declarations; a build proof is not a mounted UI.
     let shell = match voxel_package::recipe::load(SHELL_PACKAGE) {
@@ -386,6 +538,7 @@ fn main() {
         }
     };
     println!("{PACKAGE_GATE}");
+    boot_phase("gate report");
 
     // The loaded package, **mounted**. The gate above already printed every window's
     // evaluation; this constructs the shell's window manager from the same declarations, so
@@ -394,6 +547,62 @@ fn main() {
     // the console's `file` verb (as before) and the judgement the game asks for below.
     let found_root =
         voxel_package::features::workspace_root(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
+    // ---- the biomes catalog, mounted from its folder ------------------------------
+    //
+    // **The catalog is a package, and the game mounts the folder** — the embedded copy is what a
+    // tool with no workspace reads, and the file beside the shell's package is what a running game
+    // classifies from. One loader call, the same act as the shell's own mount below, so an edit to
+    // `display-packages/biomes/package.shspec` changes the world without a rebuild. A package that
+    // cannot be read is named once and the embedded catalog stays: the world is never left without
+    // a classifier.
+    let biomes = match found_root.as_deref() {
+        Some(root) => {
+            let path = root.join("display-packages/biomes/package.shspec");
+            match std::fs::read_to_string(&path)
+                .map_err(|why| format!("{} cannot be read ({why})", path.display()))
+                .and_then(|source| voxel_shapers::biome_library::mount(&source))
+            {
+                Ok(catalog) => format!("{} {} at {}", catalog.package, catalog.version, path.display()),
+                Err(why) => {
+                    eprintln!(
+                        "shploingus: the biomes package is not mounted: {why}; the embedded \
+                         catalog stays"
+                    );
+                    "the embedded package".to_string()
+                }
+            }
+        }
+        None => "the embedded package".to_string(),
+    };
+    {
+        let catalog = voxel_shapers::biome_library::library();
+        println!(
+            "shploingus: the biomes catalog: {} rows ({} envelopes, {} types, {} overlays, {} \
+             deferred) from {biomes}",
+            catalog.envelopes.len() + catalog.types.len() + catalog.overlays.len() + catalog.deferred.len(),
+            catalog.envelopes.len(),
+            catalog.types.len(),
+            catalog.overlays.len(),
+            catalog.deferred.len(),
+        );
+        // **The world's own read of it.** This column is classified by the same function the
+        // ground's materials call (`ecology::biome_for`), so the line changes when the mounted
+        // catalog does — which is what makes the mount observable from the built game.
+        let world = World::shipped();
+        let at = spawn_feet(&world);
+        let (biotemperature_c, precipitation_mm) =
+            voxel_shapers::ecology::holdridge_inputs(world.spec(), at[0], at[2], at[1], 0);
+        let envelope = voxel_shapers::biome_library::envelope_of(biotemperature_c, precipitation_mm);
+        let formation = voxel_shapers::ecology::biome_for(biotemperature_c, precipitation_mm);
+        println!(
+            "shploingus: the spawn column at ({:.1}, {:.1}) reads {biotemperature_c:.1} C / \
+             {precipitation_mm:.0} mm: the {} envelope, formation {}",
+            at[0],
+            at[2],
+            envelope.name,
+            formation.name()
+        );
+    }
     let mut mount = match ShellMount::new(&shell) {
         Ok(mut mount) => {
             // **The workspace root, found rather than assumed** — the same call the build
@@ -481,6 +690,7 @@ fn main() {
             std::process::exit(1);
         }
     };
+    boot_phase("shell mounted");
     // ---- the judgement, on the game's own clock -----------------------------
     //
     // **The queue's production writer, and it is the game.** Before this the only callers of
@@ -529,6 +739,7 @@ fn main() {
         None => (None, None),
     };
 
+    boot_phase("judgement");
     let tabs: Vec<&str> = mount
         .bar()
         .iter()
@@ -573,6 +784,15 @@ fn main() {
     // whatever the input does, so a frame that only wakes on events would show a
     // world that stops arriving whenever the player stops moving.
     event_loop.set_control_flow(ControlFlow::Poll);
+    boot_phase("event loop");
+    // **A scripted run opens the shell**, because every verb it can speak addresses a window
+    // and a hidden shell draws none. Left alone, the shell boots in whatever layer the record
+    // starts in — this is the instrument's one assumption, and it is stated rather than silent.
+    let mut mount = mount;
+    if std::env::var_os("SHPLOINGUS_SHELL").is_some() {
+        mount.set_shown(true);
+        println!("shploingus: SHPLOINGUS_SHELL is set — the shell opens shown");
+    }
     let mut app = App::new(mount, notifications, workspace);
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("shploingus: {e}");
@@ -606,6 +826,14 @@ struct Graphics {
     scale: f32,
     /// What the adapter calls itself, for the title bar and the world panel.
     adapter: String,
+    /// **Whether a capture is a surface measurement** — the world with no shell over it.
+    ///
+    /// Off unless `SHPLOINGUS_CAPTURE_WORLD_ONLY` is set. **A capture draws the shell by
+    /// default**, because the recorder copies the swapchain texture the frame was presented
+    /// from and that is the picture a player saw; this flag is the one case where the overlay
+    /// would confuse a measurement, and it is a thing the caller asks for rather than a thing
+    /// a capture implies.
+    capture_world_only: bool,
     /// **The frame-level recorder**, off unless `SHPLOINGUS_CAPTURE_DIR` names a folder.
     ///
     /// It reads the **swapchain texture the frame was presented from**, after the world and
@@ -637,7 +865,7 @@ struct Graphics {
 /// `None` while the frame holds no ground under the eye at all: a capture that opens before the
 /// world is resident must not fix the trace on a point in mid-air for the rest of the run.
 fn ground_probe(scene: &Scene, eye: [f64; 3]) -> Option<[f64; 3]> {
-    if std::env::var_os("SHPLOINGUS_PROBE_DEBUG").is_some() {
+    if probe_on() {
         let mut faces = [0usize; 6];
         let mut near = 0usize;
         for record in &scene.records {
@@ -855,6 +1083,8 @@ impl Graphics {
         let scale = window.scale_factor() as f32;
         // Built before the struct takes ownership of the device and the config.
         let capture = capture::FrameRecorder::from_env(&device, width, height, format);
+        let capture_world_only =
+            std::env::var_os("SHPLOINGUS_CAPTURE_WORLD_ONLY").is_some();
 
         Ok(Graphics {
             window,
@@ -871,6 +1101,7 @@ impl Graphics {
             scale,
             shading,
             adapter: adapter_name,
+            capture_world_only,
             capture,
             capture_probe: None,
         })
@@ -941,6 +1172,25 @@ fn depth_target(
 struct App {
     graphics: Option<Graphics>,
     streamer: Option<Streamer>,
+    /// **The world beyond the streamed window**, at the coarse rung ([`voxel_client::FarTerrain`]).
+    ///
+    /// Its own thread because a far chunk is a tree build; its own ring because the streamer's
+    /// window is the fine path's and this begins one chunk past it. `None` until the streamer
+    /// exists, for the same reason the streamer is: both are built from the one world's spec.
+    far: Option<voxel_client::FarTerrain>,
+    /// **The rung past the far ring**: the same field one cell coarser, drawn outside it.
+    ///
+    /// Tier 6 cuts the same chunks at 16 m and places its ring at `radius+3 ..= radius+4`, so the
+    /// two fields meet on a chunk boundary and neither draws the other's ground. Its faces are
+    /// stamped into the wide band, which measures at the same 16 m.
+    far_wide: Option<voxel_client::FarTerrain>,
+    /// **The last chunk-held rung**: one 32 m cell a chunk, drawn at `radius+5 ..= radius+6`.
+    far_chunk_band: Option<voxel_client::FarTerrain>,
+    /// **Every rung above a chunk**, measured one sample a cell on its own thread
+    /// ([`voxel_client::SurfaceLadder`]): tiers 8 through 28, from tier 7's 384 m edge to
+    /// 1 073 742 km. The rungs arrive one at a time, so the first frame after world-open draws the
+    /// 64 m rung and the ladder is complete a fraction of a second later.
+    surface: Option<voxel_client::SurfaceLadder>,
     /// **The 256 level's physical declaration, and the rate it is refined at** (C-44).
     ///
     /// Both are declared properties of the pipeline in the sense sea level is, so they are
@@ -957,6 +1207,15 @@ struct App {
     /// pinned subset of the same set (H-9.8) — so an app without one is an app with nothing
     /// to draw over the world.
     shell: ShellMount,
+    /// **The scripted shell pointer**, or `None` for a run a person is driving.
+    shell_script: Option<ShellScript>,
+    /// **The last map observation**, so a survey the world moved is reported once rather than
+    /// every frame. `None` before the map's first observation of the frame.
+    ///
+    /// **The survey itself is not here.** It is the map window's own (the mount's), keyed on the
+    /// camera, the plan, the ground revision and the view — this program's whole part of the
+    /// interface is [`App::observe_map`]'s one call.
+    map_observation: Option<voxel_client::map_survey::Observation>,
     camera: Camera,    /// **The god's ghost**, a being with no body — the demo's observer and, one day, Laya's
     /// vantage. It is a separate record from the player rather than a mode of it: a ghost stands
     /// somewhere and is read, a body stands somewhere and is pushed.
@@ -1038,6 +1297,16 @@ struct App {
     changes: Vec<shell_changes::ChangeRegion>,
     change_generation: u64,
     changes_seen: usize,
+    /// **The window's own floor** — the lowest surface chunk in the footprint the eye's column
+    /// holds, with the column it was read at. See [`App::window_floor`]: one elevation sample a
+    /// column is what tied the streamed slab to a single column and dropped the ground.
+    window_floor: Option<(i32, i32, i32)>,
+    /// **What the last frame was, for the probe's own attribution.** A collapse that cannot be
+    /// named is a collapse somebody guesses about: this holds the eye's chunk, the ground chunk,
+    /// the world's generation, the light's revision and the slab-miss state of the last frame the
+    /// probe saw, so the next frame can say *which* of them moved. Only read and written while
+    /// [`probe_on`] — the shipping path pays a branch, not a diff.
+    probe_watch: Option<ProbeWatch>,
     /// **The corner refusals the report has already logged.** The pipeline counts *distinct*
     /// refusals, and this is how each one reaches stderr once rather than once a second.
     corner_refusals_seen: u64,
@@ -1439,6 +1708,80 @@ impl GeometryTally {
 
 /// **The frame-timing instrument** (`SHPLOINGUS_FRAMES`), which is the audit's owed report.
 ///
+/// **A scripted shell pointer**, so the frame loop can be exercised with nobody at the keyboard.
+///
+/// The shell's own buttons are pointer targets, and every proof of them before this one was a
+/// test or a capture fixture — two harnesses that compose the shell but never run the game's
+/// frame loop. This is the smallest instrument that closes that gap: `SHPLOINGUS_SHELL` names
+/// frames and verbs, and each verb is dispatched **through the same entry point the window's
+/// `MouseInput` event uses** ([`ShellMount::pointer_pressed`] with the lane the frame draws), so
+/// what runs is the live path rather than a second one written for the proof.
+///
+/// ```text
+/// SHPLOINGUS_SHELL="6:open map-plan,10:pin map-plan,40:unpin map-plan,44:shell"
+/// ```
+///
+/// The verbs are `open <id>`, `pin <id>`, `unpin <id>`, `click <x> <y>`, `hover <x> <y>`,
+/// `wheel <x> <y> <lines>`, `map <action>`, `key <name>`, `shell` (toggle the shell layer) and
+/// `quit` (end the run). **`click` presses through [`App::shell_press`]** — the routing a real press
+/// takes — **`map <action>` is the map window's own vocabulary** ([`ShellMount::map_action`], the
+/// call a gutter button's press lands on), and **`key <name>` is one physical key through
+/// [`App::map_key`]**, which is only the map's while the map holds the keyboard. Each verb prints
+/// what it answered, so a run can be driven to the state a proof needs without a pointer having to
+/// guess a button's rectangle. A malformed entry is **refused by name and the script does not run**, because a
+/// proof that silently skipped half its actions would report a frame nobody asked for. The first
+/// `frame:` is counted from the first drawn frame, and a verb fires once.
+struct ShellScript {
+    /// `(frame, verb)` in the order they were written.
+    entries: Vec<(u64, String)>,
+    /// How many have fired.
+    fired: usize,
+    /// Frames drawn since the app started.
+    frame: u64,
+}
+
+impl ShellScript {
+    /// Read `SHPLOINGUS_SHELL`, or `None` when it is not set.
+    fn from_env() -> Option<ShellScript> {
+        let text = std::env::var("SHPLOINGUS_SHELL").ok()?;
+        let mut entries = Vec::new();
+        for entry in text.split(',') {
+            let entry = entry.trim();
+            if entry.is_empty() {
+                continue;
+            }
+            let Some((frame, verb)) = entry.split_once(':') else {
+                eprintln!(
+                    "shploingus: SHPLOINGUS_SHELL entry {entry:?} has no `frame:` prefix; the                      script does not run"
+                );
+                return None;
+            };
+            let Ok(frame) = frame.trim().parse::<u64>() else {
+                eprintln!(
+                    "shploingus: SHPLOINGUS_SHELL entry {entry:?} names a frame that is not a                      number; the script does not run"
+                );
+                return None;
+            };
+            entries.push((frame, verb.trim().to_string()));
+        }
+        println!("shploingus: SHPLOINGUS_SHELL is set — {} verb(s) will fire", entries.len());
+        Some(ShellScript { entries, fired: 0, frame: 0 })
+    }
+}
+
+impl ShellScript {
+    /// The verbs due at this frame, in written order, and the frame counter's step.
+    fn due(&mut self) -> Vec<String> {
+        self.frame += 1;
+        let mut out = Vec::new();
+        while self.fired < self.entries.len() && self.entries[self.fired].0 <= self.frame {
+            out.push(self.entries[self.fired].1.clone());
+            self.fired += 1;
+        }
+        out
+    }
+}
+
 /// Off by default, and **off costs one boolean test per frame**: a player who did not ask for a
 /// report does not get one, and an instrument that charges for existing would be measuring
 /// itself. Turned on, it prints a line for every frame longer than the stall threshold and
@@ -1820,7 +2163,13 @@ impl App {
         camera.pitch_rad = GAME_PITCH_RAD;
         App {
             graphics: None,
+            shell_script: ShellScript::from_env(),
+            map_observation: None,
             streamer: None,
+            far: None,
+            far_wide: None,
+            far_chunk_band: None,
+            surface: None,
             shell,
             camera,
             laya: LayaGhost::at(camera.position_m),
@@ -1836,6 +2185,7 @@ impl App {
             )
             .expect("the declared refinement rate is inside the addressed level"),
             earthworks: Earthworks::new(),
+            probe_watch: None,
             held: BTreeSet::new(),
             selected: 0,
             cursor: None,
@@ -1859,6 +2209,7 @@ impl App {
             changes: Vec::new(),
             change_generation: 0,
             changes_seen: 0,
+            window_floor: None,
             corner_refusals_seen: 0,
         clock: Clock::at(TICK),
         tick_driver: voxel_work::TickDriver::full()
@@ -2076,6 +2427,47 @@ impl ApplicationHandler for App {
         if self.graphics.is_some() {
             return;
         }
+        boot_phase("resumed");
+        // **The fields that measure the world, started before the window exists.**
+        //
+        // None of them needs a device or a surface: a far census and a surface rung are pure
+        // functions of the spec, built on their own threads. Started here rather than after
+        // `Graphics::new`, they measure *through* the device's own 1.8 s and the first frames'
+        // chunk streaming instead of after them — the difference between the 64 m rung landing at
+        // ~12 s and at ~7 s on this machine, and the whole ladder at ~14 s against ~9 s.
+        //
+        // **The far field, from the same spec as the streamer.** One generator reached twice: the
+        // far thread builds the same chunks the streamer would, at the coarse rung, and its ring
+        // begins one chunk beyond the window so the two never draw the same ground.
+        let field_spec = *self.spec();
+        self.far = Some(voxel_client::FarTerrain::new(
+            field_spec,
+            WINDOW.radius_chunks,
+        ));
+        // **The next rung out, at sixteen metres.** The same generator and the same thread law, a
+        // coarser census and a ring one band beyond: 256–320 m while the window is 160 m, so the
+        // far ring (224–256 m) is untouched and the two meet at a chunk boundary.
+        self.far_wide = Some(voxel_client::FarTerrain::at_tier(
+            field_spec,
+            WINDOW.radius_chunks,
+            voxel_client::lod::WIDE_TIER,
+            3,
+            4,
+        ));
+        // **Tier 7, the last chunk-held rung.** One 32 m cell a chunk, 320–352 m; its band is two
+        // kilometres wide, so the rung past the 1 km box is still measured.
+        self.far_chunk_band = Some(voxel_client::FarTerrain::at_tier(
+            field_spec,
+            WINDOW.radius_chunks,
+            voxel_client::lod::CHUNK_TIER,
+            5,
+            6,
+        ));
+        // **The ladder above them, from the same spec.** One sample a cell: tier 8 begins at
+        // 384 m — the outer edge of the chunk tier's own ring — and each rung doubles the last, so
+        // the annuli tile the ground out to 1 073 742 km. Its thread measures, and the frame draws
+        // each rung as it lands.
+        self.surface = Some(voxel_client::SurfaceLadder::new(field_spec));
         let attributes = Window::default_attributes()
             .with_title("shploingus")
             .with_inner_size(LogicalSize::new(1280.0, 720.0));
@@ -2123,6 +2515,7 @@ impl ApplicationHandler for App {
                 return;
             }
         };
+        boot_phase("window");
         let graphics = match Graphics::new(window, &boot_rig) {
             Ok(g) => g,
             Err(e) => {
@@ -2131,6 +2524,9 @@ impl ApplicationHandler for App {
                 return;
             }
         };
+        // The device, its pipelines and the screens' own textures: the one phase whose cost is
+        // the driver's rather than this file's, and the reason the phase line exists.
+        boot_phase("graphics");
         // The sky, from the same `Daylight` the boot rig came from. Before the sky pass
         // existed this line had nothing to write to and every uncovered pixel was the
         // render pass's clear value.
@@ -2180,8 +2576,11 @@ impl ApplicationHandler for App {
             graphics.world.write_no_sky_model();
         }
 
-        // The streamer, with one fewer worker than the machine has, because the
-        // frame loop needs a core too.
+        // The streamer, with **every core the machine has**. It used to keep one back for the
+        // frame loop, and the light horizon then starved the loop it was built to feed: the frame
+        // spends its own time stamping and drawing, and a build that takes one core longer to
+        // finish is a chunk that arrives a frame later than its neighbours. Oversubscribing by one
+        // costs a scheduler wake, not a frame.
         //
         // `SHPLOINGUS_WORKERS` overrides it. That is not a convenience: the HUD
         // tells the player that the worker count is a perf knob and that the
@@ -2202,7 +2601,7 @@ impl ApplicationHandler for App {
                 }
             },
             Err(_) => std::thread::available_parallelism()
-                .map(|n| n.get().saturating_sub(1).max(1))
+                .map(|n| n.get().max(1))
                 .unwrap_or(1),
         };
         let spec = *self.spec();
@@ -2241,10 +2640,13 @@ impl ApplicationHandler for App {
             CEILING_BYTES / (1024 * 1024)
         );
         self.streamer = Some(streamer);
+        // The four measuring fields were started at the top of `resumed`, before the window: they
+        // need no device and their threads run through the rest of this setup.
         self.graphics = Some(graphics);
         self.workers = workers;
         self.last = Instant::now();
         self.title_at = Instant::now();
+        boot_phase("world-open");
         // **Apply the pointer's owner as soon as a window exists to apply it to.** The
         // focus event that would otherwise do it can arrive before `graphics` does — and
         // is then a no-op — so a world view whose pointer was never grabbed would read as
@@ -2351,6 +2753,15 @@ impl ApplicationHandler for App {
                     }
                     return;
                 }
+                // **The map window owns its keys while it holds focus** — the same rule the
+                // console's line edit follows, and the reason a held `W` walks the map rather than
+                // walking the player at the same time.
+                if event.state == ElementState::Pressed {
+                    if let Some(said) = self.map_key(code) {
+                        println!("shploingus: map {said}");
+                        return;
+                    }
+                }
                 // **F3 draws the debug lanes: a declared, labelled outline over every piece of the
                 // shell's own structure and every affordance on it** (event-0013, H-7.25 — *the
                 // lanes on every window are the test surface*). It is on its own key rather than a
@@ -2411,38 +2822,26 @@ impl ApplicationHandler for App {
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let at = self.shell_point();
+                let button = match button {
+                    MouseButton::Right => ShellButton::Right,
+                    _ => ShellButton::Left,
+                };
                 if state == ElementState::Pressed {
-                    // **The shell gets the click first when it is drawn there.** A click that
-                    // lands on the bar or a window is the shell's; only a click that lands on
-                    // the world is the world's, because digging through a window is a mis-click
-                    // rather than a feature.
-                    if self.shell.shell_shown() && self.shell.hit(at) {
-                        let button = match button {
-                            MouseButton::Right => ShellButton::Right,
-                            _ => ShellButton::Left,
-                        };
-                        // **The second press of a pair is answered as the double-click it is.**
-                        // The platform reports presses and no counts, so the count is made here
-                        // against the two declared platform numbers above, on the raw cursor
-                        // position they are measured in; the port's `press_at` takes the
-                        // verdict as its `double` flag.
-                        let raw = self.cursor.unwrap_or((-1.0, -1.0));
-                        if self.count_shell_click(button, raw) {
-                            self.shell.pointer_double_clicked(button, at);
-                        } else {
-                            self.shell.pointer_pressed(button, at);
-                        }
+                    // **The shell gets the click first when it is drawn there**, and the routing is
+                    // [`App::shell_press`] — the same call the scripted pointer presses through, so
+                    // a proof of a button is a proof of the button.
+                    if self.shell_press(button, at) {
                         return;
                     }
-                    // A press the shell did not claim cannot be half of a pair with one it did.
+                    // A press the shell did not claim cannot be half of a pair with one it did, and
+                    // it took the keyboard back with it ([`App::shell_press`]).
                     self.last_shell_click = None;
                     match button {
-                        MouseButton::Left => self.break_at_target(),
-                        MouseButton::Right => self.build_at_target(),
-                        _ => {}
+                        ShellButton::Left => self.break_at_target(),
+                        ShellButton::Right => self.build_at_target(),
                     }
                 } else {
-                    self.shell.pointer_released(at);
+                    self.shell_release(at);
                 }
             }
             // **The wheel belongs to the windows, and only to the windows.** A gesture that
@@ -2463,6 +2862,29 @@ impl ApplicationHandler for App {
                             ShellWheel::Pixels(position.y / scale.max(1e-6))
                         }
                     };
+                    // **The wheel over the map body is the map's zoom**, anchored on the pointer;
+                    // the windows keep every other wheel.
+                    // **The map's own two regions**: the ground, whose wheel is the camera's, and
+                    // the control gutter, whose wheel scrolls the column of controls the map
+                    // window is too short to show at once. Both are the map's, so both go to the
+                    // mount's own entry point, which decides what a wheel means where.
+                    let over_map = self
+                        .shell
+                        .map
+                        .view_rect(&self.shell.map_chrome())
+                        .is_some_and(|rect| rect.contains(at))
+                        || self
+                            .shell
+                            .map
+                            .controls_rect(&self.shell.map_chrome())
+                            .is_some_and(|rect| rect.contains(at));
+                    let lines = match delta {
+                        ShellWheel::Lines(lines) => lines,
+                        ShellWheel::Pixels(pixels) => pixels / 40.0,
+                    };
+                    if over_map && self.shell.map.wheel(at, lines, &self.shell.map_chrome()) {
+                        return;
+                    }
                     self.shell.wheel(at, delta);
                 }
             }
@@ -2474,12 +2896,18 @@ impl ApplicationHandler for App {
                 // reports both can never double-turn the view.
                 let now = (position.x, position.y);
                 let scale = self.graphics.as_ref().map(|g| g.scale as f64).unwrap_or(1.0);
-                self.shell.pointer_moved((now.0 / scale.max(1e-6), now.1 / scale.max(1e-6)));
+                let at = (now.0 / scale.max(1e-6), now.1 / scale.max(1e-6));
+                self.shell.pointer_moved(at);
+                // **The map reads the pointer twice**: a held press pans the camera, and either way
+                // the toolbar states the world position of the cell under it.
+                self.shell.map.drag(at, &self.shell.map_chrome());
+                self.shell.map.hover(at, &self.shell.map_chrome());
                 self.cursor = Some(now);
             }
             WindowEvent::CursorLeft { .. } => {
                 self.cursor = None;
                 self.shell.pointer_left();
+                self.shell.map.pointer_left();
             }
             WindowEvent::RedrawRequested => self.redraw(event_loop),
             // **Regain the grab on focus.** The platform releases it when the window
@@ -2524,6 +2952,74 @@ impl App {
         let double = is_double_click(button, at, now, self.last_shell_click);
         self.last_shell_click = if double { None } else { Some((now, at, button)) };
         double
+    }
+
+    /// **A press, through the shell's own routing**, answering whether the shell claimed it.
+    ///
+    /// A click that lands on the bar or a window is the shell's; only a press that lands on the
+    /// world is the world's, because digging through a window is a mis-click rather than a feature.
+    /// **A press on the map body is the map's** — it starts a pan, and it hands the window the
+    /// keyboard, which is how a person gives the keys their owner. Every other point is the
+    /// desktop's, where the second press of a pair is answered as the double-click the platform
+    /// does not report.
+    ///
+    /// One function, because the scripted pointer presses through it too: a script that reached
+    /// `pointer_pressed` itself would be proving a second path.
+    fn shell_press(&mut self, button: ShellButton, at: (f64, f64)) -> bool {
+        if !self.shell.shell_shown() || !self.shell.hit(at) {
+            // **The keyboard goes back to the world with a press that reached it**: digging is the
+            // plainest statement that the person is done with the windows. Here rather than in the
+            // window event, so the scripted pointer's press is the same press.
+            self.shell.blur();
+            return false;
+        }
+        if button == ShellButton::Left {
+            let on_body = self
+                .shell
+                .map
+                .view_rect(&self.shell.map_chrome())
+                .is_some_and(|rect| rect.contains(at));
+            if on_body && self.shell.map.press(at, &self.shell.map_chrome()) {
+                self.shell.focus_map();
+                return true;
+            }
+        }
+        // The platform reports presses and no counts, so the count is made here against the two
+        // declared platform numbers above, on the raw cursor position they are measured in; the
+        // port's `press_at` takes the verdict as its `double` flag.
+        let raw = self.cursor.unwrap_or((-1.0, -1.0));
+        if self.count_shell_click(button, raw) {
+            self.shell.pointer_double_clicked(button, at);
+        } else {
+            self.shell.pointer_pressed(button, at);
+        }
+        true
+    }
+
+    /// The other half of a press: the pointer's release. The map reads it (a press that never
+    /// travelled selects the cell under it) and the shell reads it (a drag ends, a window docks).
+    fn shell_release(&mut self, at: (f64, f64)) {
+        self.shell.map.release(at, &self.shell.map_chrome());
+        self.shell.pointer_released(at);
+    }
+
+    /// **One key for the map window while it holds focus**: the key map's verb
+    /// ([`map_action_of`]) through the same call a gutter button's press lands on, so a key and a
+    /// button cannot become two spellings of the same move — and the scripted pointer drives the
+    /// keys' own path rather than a second one written for the proof.
+    ///
+    /// `None` when the key is not the map's: it does not hold the keyboard, or the key is not one of
+    /// its verbs. That answer is what keeps the movement keys from walking the player while they are
+    /// moving the map.
+    fn map_key(&mut self, code: KeyCode) -> Option<String> {
+        if !self.shell.map_has_focus() {
+            return None;
+        }
+        let action = map_action_of(code)?;
+        Some(match self.shell.map_action(action) {
+            Ok(said) => format!("{action} — {said}"),
+            Err(refusal) => format!("{action} — refused: {refusal}"),
+        })
     }
 
     /// **Show the next decision the game's own pass wrote** — at most one per tick (H-12.2).
@@ -2999,7 +3495,18 @@ impl App {
 
         // ---- drive the world --------------------------------------------
         // Every frame, so the shapers are continuous rather than a load step.
-        let centre = self.chunk_of_eye();
+        let centre = self.world_centre();
+        // **Whether the slab the frame streams stands above the ground the eye is over.** This is
+        // the hand-over's own question, and it is about the *streamed* window rather than about the
+        // ladder: the window is five chunk layers around the eye, so a player a hundred metres up
+        // is inside a window made of air, and the ground within the window's own footprint — which
+        // every ring and rung begins *outside* of — is drawn by nothing at all. The ground chunk is
+        // the surface chunk under the eye; the slab's own layer band is the centre's `vertical`
+        // either way.
+        let slab_missed = {
+            let ground = self.ground_chunk().y;
+            ground < centre.y - WINDOW.vertical_chunks || ground > centre.y + WINDOW.vertical_chunks
+        };
         let frame = {
             let streamer = self.streamer.as_mut().expect("checked above");
             streamer.set_centre(centre);
@@ -3074,17 +3581,36 @@ impl App {
         // "The horizon's streaming rules"). The coarse band is sixteen summaries a frame — it
         // reaches 256 m each way, so its first fill is the world's whole skyline rather than a
         // crossing's slab.
-        const HORIZON_CHUNKS_PER_FRAME: usize = 9;
-        const HORIZON_FAR_CHUNKS_PER_FRAME: usize = 16;
-        // **Nothing is withheld from the frame over a missing stamp.** A chunk whose cells are not
-        // stamped yet now says so (`horizon_stamped`), and an unmeasured ray is the shadow map's
-        // answer rather than an invented one — so the chunk is drawn, and it is drawn with a real
-        // measurement. Withholding it instead removed the ground under the player for the frames a
-        // crossing's slab was still being stamped, which is the black the player saw.
+        // **A whole cube a frame, and the nine a crossing owes are inside it.** The budget was the
+        // size of a crossing's slab, so the cube's *first* fill took three frames — and for two of
+        // them twenty-six chunks were drawn with no horizon measurement at all, which is the
+        // player's report that "chunks outside the one the player is in aren't sampling". That
+        // first fill is the only time the budget can bite, because `recenter` carries eighteen of
+        // the twenty-seven across a crossing; so the budget is the cube, and a frame after a
+        // crossing spends nine walks, not twenty-seven.
+        const HORIZON_CHUNKS_PER_FRAME: usize = 27;
+        // The coarse band is a 512 m box around the eye — a window's worth of skyline is hundreds
+        // of summaries, so it fills at a rate that is still a stream and no longer a minute.
+        const HORIZON_FAR_CHUNKS_PER_FRAME: usize = 64;
+        // The far field's own lands: a coarse chunk's stamp is one 4×4×4 write, and the ring is
+        // drawn as it arrives rather than in one frame.
+        const FAR_CHUNKS_PER_FRAME: usize = 8;
+        // **A chunk whose light has not been sampled is refused, not drawn.** Drawing one means
+        // drawing its every ray as "unmeasured" — the shadow map's light with none of the
+        // horizon's shadowing, a chunk lit by a sun it cannot see — which is a stand-in and not a
+        // measurement. It is filtered out of `drawn_meshes()` below, exactly as an unmeshed chunk
+        // is absent (docs/lighting-sky-and-moon.md, "A chunk is drawn only with sampled light").
         //
-        // **The eye's own chunk is stamped first, outside the frame's budget**, because it is the
-        // one chunk the player is standing on.
+        // **Only inside the fine cube**, where a missing slot is a missing measurement: a chunk in
+        // the coarse band alone is lit at the eight-metre rung and has its answer, and refusing it
+        // would hide the skyline to protect a rung it is not drawn at.
+        //
+        // **And never the eye's own chunk**, which is stamped first and outside the budget for
+        // exactly this: removing the ground under the camera is a worse lie than the rig it avoids.
+        let mut unlit: std::collections::BTreeSet<(i32, i32, i32)> = std::collections::BTreeSet::new();
         let eye_chunk_stamp = self.chunk_of_eye();
+        // **The world the fields are centred on, which is not the eye.** See [`App::world_centre`].
+        let world_ground = self.ground_chunk();
         if let Some(graphics) = self.graphics.as_mut() {
             let eye = self.camera.position_m;
             // **The cell under the eye, before and after the crossing**: a band that reports rock
@@ -3092,7 +3618,7 @@ impl App {
             // move is a stamp that was already wrong.
             let solid_before = graphics.world.horizon_solid(eye).is_some_and(|solid| solid);
             let moved = graphics.world.horizon_recenter(eye);
-            if moved && std::env::var_os("SHPLOINGUS_PROBE_DEBUG").is_some() {
+            if moved && probe_on() {
                 eprintln!(
                     "horizon-recenter: eye {eye:?} before {solid_before} after {:?}",
                     graphics.world.horizon_solid(eye)
@@ -3100,8 +3626,33 @@ impl App {
             }
             if let Some(streamer) = self.streamer.as_ref() {
                 // A chunk the window dropped leaves its trees behind; the volume must drop its cells.
-                let resident: std::collections::BTreeSet<(i32, i32, i32)> =
-                    streamer.tree_chunks().map(|pos| (pos.x, pos.y, pos.z)).collect();
+                //
+                // **What counts as resident is what is *drawn*, not what currently holds a tree.** A
+                // chunk being rebuilt releases its tree the moment the build is queued and takes the
+                // new one when it lands, so keying this on `tree_chunks` deleted that chunk's stamp —
+                // and cleared its cells — for the frames the rebuild was in flight. With the frame's
+                // refusal in place that made every rebuild a chunk that vanished and came back a few
+                // frames later, which is the blocks appearing and disappearing. A chunk is forgotten
+                // when it leaves the window, which is what `drawn_meshes` (fresh and stale together)
+                // says.
+                let mut resident: std::collections::BTreeSet<(i32, i32, i32)> =
+                    streamer.drawn_meshes().map(|(pos, _, _)| (pos.x, pos.y, pos.z)).collect();
+                // **The far field is resident too**, for the light volume's own bookkeeping: its
+                // chunks are stamped from their censuses rather than from the streamer's trees,
+                // and `retain` forgets what it is not told about. Leaving them out would clear
+                // the coarse band behind them on the next frame.
+                for far in [
+                    self.far.as_ref(),
+                    self.far_wide.as_ref(),
+                    self.far_chunk_band.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    for pos in far.positions() {
+                        resident.insert((pos.x, pos.y, pos.z));
+                    }
+                }
                 graphics.world.horizon_retain(&resident);
                 // Before the budget: the chunk under the eye.
                 //
@@ -3146,11 +3697,143 @@ impl App {
                         *budget -= 1;
                     }
                 }
+                // ---- the far field, one boundary past the window ------------------
+                // **Scheduled on the crossing, adopted on the frame's budget.** The far thread
+                // generates the arc that entered; `advance` takes what is ready and its census is
+                // stamped into the coarse band here, so a far face is never drawn before the light
+                // that answers it. Eight a frame: a chunk's stamp is a 64-cell write, and a whole
+                // ring arriving at once would be a visible hitch for a row of hills.
+                if let Some(far) = self.far.as_mut() {
+                    far.set_eye(world_ground);
+                    for chunk in far.advance(FAR_CHUNKS_PER_FRAME) {
+                        graphics
+                            .world
+                            .horizon_stamp_far(chunk.pos, &chunk.census, chunk.version);
+                        // **And the same voxels at 16 m**, so a tier-6 beam that crosses the far
+                        // ring meets its terrain instead of an unmeasured cell. The aggregate is
+                        // the sum of the 8 m cells, not a second reading of the world.
+                        graphics.world.horizon_stamp_wide(
+                            chunk.pos,
+                            &chunk.census.aggregate(2),
+                            chunk.version,
+                        );
+                        graphics.world.horizon_stamp_chunk_band(
+                            chunk.pos,
+                            &chunk.census.aggregate(4),
+                            chunk.version,
+                        );
+                    }
+                    if probe_on() {
+                        eprintln!(
+                            "far: {} of {} chunks, {} quads",
+                            far.len(),
+                            far.scheduled(),
+                            far.quads(),
+                        );
+                    }
+                }
+                // ---- tier 6, the same law one rung up -------------------------------
+                // The wide field's faces are stamped into its own 16 m band before they are
+                // drawn, exactly as the far ring's are; `stamp_wide` refuses a census that is not
+                // tier 6, so a grain mismatch is a panic rather than a face lit by the wrong rung.
+                if let Some(far) = self.far_wide.as_mut() {
+                    far.set_eye(world_ground);
+                    for chunk in far.advance(FAR_CHUNKS_PER_FRAME) {
+                        graphics
+                            .world
+                            .horizon_stamp_wide(chunk.pos, &chunk.census, chunk.version);
+                        graphics.world.horizon_stamp_chunk_band(
+                            chunk.pos,
+                            &chunk.census.aggregate(2),
+                            chunk.version,
+                        );
+                    }
+                    if probe_on() {
+                        eprintln!(
+                            "far-wide: {} of {} chunks, {} quads",
+                            far.len(),
+                            far.scheduled(),
+                            far.quads(),
+                        );
+                    }
+                }
+                // ---- the surface ladder, tier 8 and up ---------------------------------
+                // **Measured on its own thread, stamped on the frame that draws it.** A rung's band
+                // is the very samples its faces were cut from ([`voxel_client::surface`]), so the
+                // stamp comes first and the geometry is appended after it — a face is never drawn
+                // before the light that answers it exists. A crossing re-measures the rungs it
+                // moves, nearest first; the rung already in hand stays drawn until the new one
+                // lands, and the rings tile, so the ground between them is never a hole.
+                if let Some(ladder) = self.surface.as_mut() {
+                    ladder.advance(eye, voxel_client::surface::SURFACE_RUNG_WAVE);
+                    // **The ground the slab cannot hold hands over to the ladder's first rung.** A
+                    // crossing meshes the ring in hand from its own samples in this same frame, so
+                    // the ground under a high eye is covered before the frame ends; the worker's
+                    // shaped ring — 32² point samples a cell — replaces it a frame or two later.
+                    ladder.set_near_disc(near_disc_forced().unwrap_or(slab_missed));
+                    for tier in ladder.adopted().to_vec() {
+                        if let Some(ring) = ladder.ring(tier) {
+                            graphics.world.horizon_stamp_surface(ring);
+                        }
+                    }
+                    if probe_on() {
+                        eprintln!(
+                            "surface: {} of {} rungs, {} quads, {:.1} ms of samples",
+                            ladder.len(),
+                            ladder.total(),
+                            ladder.quads(),
+                            ladder.sampled_us() as f64 / 1000.0,
+                        );
+                    }
+                }
+                // ---- tier 7, the last chunk-held rung ------------------------------
+                // The 32 m field's own band, stamped before a face is drawn. The two finer fields
+                // above also reduce their censuses into it, so a beam crossing them is occluded
+                // rather than meeting an unmeasured cell.
+                if let Some(far) = self.far_chunk_band.as_mut() {
+                    far.set_eye(world_ground);
+                    for chunk in far.advance(FAR_CHUNKS_PER_FRAME) {
+                        graphics
+                            .world
+                            .horizon_stamp_chunk_band(chunk.pos, &chunk.census, chunk.version);
+                    }
+                    if probe_on() {
+                        eprintln!(
+                            "far-chunk: {} of {} chunks, {} quads",
+                            far.len(),
+                            far.scheduled(),
+                            far.quads(),
+                        );
+                    }
+                }
+                // **Which drawn chunks have no horizon measurement this frame.** Computed from
+                // what is *drawn*, not from what is resident: those are the chunks a frame would
+                // light, and a chunk whose mesh has landed while its stamp has not is exactly the
+                // one that would be drawn with the shadow map's light alone.
+                for (pos, _, _) in streamer.drawn_meshes() {
+                    if pos == eye_chunk_stamp {
+                        continue;
+                    }
+                    if graphics.world.horizon_covers(pos) && !graphics.world.horizon_lit(pos) {
+                        unlit.insert((pos.x, pos.y, pos.z));
+                    }
+                }
+                // **What the refusal took out of the frame**, when the probe is asked for. A
+                // rebuild keeps its chunk's stamp now, so this is zero in a settled world; a
+                // number that stays above zero names a chunk that landed without a measurement.
+                if probe_on() {
+                    eprintln!(
+                        "frame: unlit {} of {} drawn, coverage {:#x}",
+                        unlit.len(),
+                        streamer.drawn_meshes().count(),
+                        graphics.world.horizon_coverage(),
+                    );
+                }
                 // **What the band actually holds at the eye**, one line a frame, when the probe
                 // is asked for: the slots it has looked at and whether the air above the camera
                 // is measured as matter. A frame whose ground is black and whose cells above it
                 // are solid is a stamp that put rock where there is none.
-                if std::env::var_os("SHPLOINGUS_PROBE_DEBUG").is_some() {
+                if probe_on() {
                     let eye = self.camera.position_m;
                     // **The world's own answer beside the band's**, from the streamer's record: the
                     // generator and the stamp are two statements about one cell, and a frame whose
@@ -3247,7 +3930,8 @@ impl App {
                 self.streamer
                     .as_ref()
                     .expect("checked above")
-                    .drawn_meshes(),
+                    .drawn_meshes()
+                    .filter(|(pos, _, _)| !unlit.contains(&(pos.x, pos.y, pos.z))),
                 eye_chunk,
                 light,
                 Some(&self.displacement),
@@ -3275,6 +3959,136 @@ impl App {
             }
         }
         let scene = self.resident.take();
+        // **The world past the window, appended as its own records.** The far field is a separate
+        // pair in the scene and a separate draw in the pass, so it neither renumbers the resident
+        // chunks' rectangles nor rides a terrain slice.
+        let scene = match self.far.as_ref() {
+            Some(far) if !far.is_empty() => scene.with_far(far.meshes()),
+            _ => scene,
+        };
+        let mut scene = scene;
+        if let Some(far) = self.far_wide.as_ref() {
+            if !far.is_empty() {
+                scene.add_far_at(far.meshes(), voxel_client::lod::WIDE_CELL_M);
+            }
+        }
+        if let Some(far) = self.far_chunk_band.as_ref() {
+            if !far.is_empty() {
+                scene.add_far_at(far.meshes(), voxel_client::lod::CHUNK_CELL_M);
+            }
+        }
+        // **And every rung above a chunk, in its own sub-cell units.** Each of these records states
+        // its own rung and its own step, so the ladder's rungs are drawn by the same pass and lit by
+        // the band each was stamped with.
+        if let Some(ladder) = self.surface.as_ref() {
+            if !ladder.is_empty() {
+                scene.add_surface(ladder.rings());
+            }
+        }
+        if probe_on() {
+            let eye = self.camera.position_m;
+            // **What moved since the last frame**, so a collapse in the numbers below is attributed
+            // rather than guessed at: `boot` while the window is filling, `eye`, `ground`, `world`,
+            // `light`, `slab` and `disc` for the events this pass is about, and `-` for a frame
+            // nothing structural moved on. The watch is updated after the line is printed.
+            let watch_now = ProbeWatch {
+                eye_chunk: {
+                    let c = self.chunk_of_eye();
+                    (c.x, c.y, c.z)
+                },
+                ground_chunk: {
+                    let c = self.ground_chunk();
+                    (c.x, c.y, c.z)
+                },
+                world_generation: self
+                    .streamer
+                    .as_ref()
+                    .map(|s| s.world_generation())
+                    .unwrap_or(0),
+                light_epoch: self.light_epoch,
+                slab_missed,
+                near_disc: self
+                    .surface
+                    .as_ref()
+                    .is_some_and(|ladder| ladder.near_disc()),
+            };
+            let trigger = probe_trigger(&self.probe_watch, watch_now, frame.progress() >= 1.0);
+            self.probe_watch = Some(watch_now);
+            // **What the streamer offered this frame, beside what the scene kept.** The two are the
+            // question a collapse turns on: a scene that is behind its own streamer is a landing the
+            // budget deferred, and a streamer whose own quads have gone is the mesh itself. Stated
+            // together so the answer does not have to be inferred from either alone.
+            let (mesh_quads, mesh_empty) = self
+                .streamer
+                .as_ref()
+                .map(|s| {
+                    let mut quads = 0usize;
+                    let mut empty = 0usize;
+                    for (_, _, mesh) in s.drawn_meshes() {
+                        quads += mesh.quads.len();
+                        empty += usize::from(mesh.quads.is_empty());
+                    }
+                    (quads, empty)
+                })
+                .unwrap_or((0, 0));
+            // **The near ground's own count**, beside the ladder's: the first rung's quads are the
+            // hand-over's — the disc when the slab stands above the ground, the annulus alone when
+            // it does not — and `disc` says whether that ground arrived shaped (the worker's
+            // profile samples) or flat (the ring in hand, meshed from its own cell samples).
+            let near = self
+                .surface
+                .as_ref()
+                .and_then(|ladder| ladder.ring(voxel_client::lod::SURFACE_FIRST_TIER))
+                .map_or(0, |ring| ring.quads.len());
+            eprintln!(
+                "scene-probe tick {} why {} disc {} near {} quads {} eye-chunk {:?} ground {:?} y {:.1} slab-miss {} resident {} blocks {} streamer-q {} empty {} eye-mesh-q {} nonempty {} landed {} left {} pending {} build {} far {:?} wide {:?} chunk {:?} rungs {}/{}",
+                self.clock.tick,
+                trigger,
+                if self
+                    .surface
+                    .as_ref()
+                    .is_some_and(|ladder| ladder.ring(voxel_client::lod::SURFACE_FIRST_TIER).is_some_and(|ring| ring.shaped()))
+                {
+                    "shaped"
+                } else if self
+                    .surface
+                    .as_ref()
+                    .is_some_and(|ladder| ladder.near_disc())
+                {
+                    "flat"
+                } else {
+                    "off"
+                },
+                near,
+                scene.quads,
+                self.chunk_of_eye(),
+                self.ground_chunk(),
+                eye[1],
+                self.streamer.as_ref().map(|s| s.drawn_meshes().count()).unwrap_or(0),
+                self.resident.chunks(),
+                scene.quads,
+                mesh_quads,
+                mesh_empty,
+                self.streamer
+                    .as_ref()
+                    .and_then(|s| s.drawn(self.chunk_of_eye()))
+                    .map(|mesh| mesh.quads.len())
+                    .unwrap_or(0),
+                self.streamer
+                    .as_ref()
+                    .map(|s| s.drawn_meshes().filter(|(_, _, mesh)| !mesh.quads.is_empty()).count())
+                    .unwrap_or(0),
+                self.residency.landed,
+                self.residency.left,
+                self.residency.pending,
+                scene.build,
+                self.far.as_ref().map(|f| (f.len(), f.scheduled())),
+                self.far_wide.as_ref().map(|f| (f.len(), f.scheduled())),
+                self.far_chunk_band.as_ref().map(|f| (f.len(), f.scheduled())),
+                self.surface.as_ref().map(|s| s.len()).unwrap_or(0),
+                self.surface.as_ref().map(|s| s.total()).unwrap_or(0),
+            );
+        }
         self.geometry.scene_taken(scene.build);
         self.geometry.residency(self.residency);
         // The frame's own tally, folded into the report's running sum and then put back: the
@@ -3406,6 +4220,13 @@ impl App {
         // The viewport is the shell's, not the frame loop's: a maximized window is sized
         // against it, and a resize is a state change rather than a per-frame argument.
         self.shell.set_viewport(viewport_dp);
+        // **The scripted pointer's verbs for this frame**, before anything is composed: a press
+        // that lands this frame is drawn this frame, which is what makes a capture of it a
+        // capture of the live path.
+        self.run_shell_script(event_loop, viewport_dp);
+        // **The map's own observation, before the renderer is borrowed.** Sampling the world reads
+        // the world's spec and the streamer; both borrows must be over before the draw.
+        self.observe_map(dt);
         let projected = self.change_strokes(&render_camera, viewport_dp);
         let strokes: Vec<voxel_client::hud::Stroke> =
             if self.lanes { projected } else { Vec::new() };
@@ -3540,6 +4361,13 @@ impl App {
                             elements
                         }
                     };
+                    // **The map is already in this frame.** Its ground, its marks, its toolbar and
+                    // its control gutter are the map window's content, drawn by the mount inside
+                    // `shell_elements`' own window order — so there is nothing to stitch in here.
+                    // What is left of the stitching is the *raster*, and the mount's own filter
+                    // keeps the map's declared cells out of it once the survey is live: a window
+                    // drawn after the map covers it, a window drawn before it is covered by it,
+                    // and no second map is drawn over the first.
                     let reading = shell_debug::drawing(&elements).describe();
                     if self.drawing.as_deref() != Some(reading.as_str()) {
                         self.shell.log(
@@ -3641,10 +4469,11 @@ impl App {
                 pixel_angle,
             );
         }
-        // **The recorder takes the world alone.** A panel opening over the ground is a change
-        // of overlay, not of surface, and a measurement of the surface must not have to tell
-        // the two apart — so the shell's pass is skipped while `SHPLOINGUS_CAPTURE_DIR` is set.
-        if graphics.capture.is_none() && (elements.is_some() || !strokes.is_empty()) {
+        // **The shell is drawn in a capture**, because the recorder copies the texture the
+        // frame was presented from and a picture without the overlay is not that frame. A
+        // *surface* measurement is the case that wants the world alone, and it asks with
+        // `SHPLOINGUS_CAPTURE_WORLD_ONLY` rather than getting it for having a recorder at all.
+        if !graphics.capture_world_only && (elements.is_some() || !strokes.is_empty()) {
             // A second pass, loading what the world drew: no depth, no clear.
             graphics.hud.draw(&mut encoder, &view);
         }
@@ -4075,6 +4904,293 @@ impl App {
             )
     }
 
+    /// **Run the scripted shell pointer's due verbs**, through the shell's own entry points.
+    ///
+    /// Each verb lands where the window's own event would: `pin`/`unpin` press the **lane the
+    /// frame draws** and release it, `click` presses and releases a point, `open` opens a window
+    /// and `shell` toggles the layer. Nothing here reaches into the mount's state directly — a
+    /// script that set `pinned` itself would be a proof of the script rather than of the button.
+    fn run_shell_script(&mut self, event_loop: &ActiveEventLoop, viewport: voxel_ui::Rect) {
+        let Some(script) = self.shell_script.as_mut() else {
+            return;
+        };
+        let due = script.due();
+        if due.is_empty() {
+            return;
+        }
+        let tick = Some(self.clock.tick);
+        for verb in due {
+            let (head, rest) = match verb.split_once(char::is_whitespace) {
+                Some((head, rest)) => (head, rest.trim()),
+                None => (verb.as_str(), ""),
+            };
+            let result = match head {
+                "shell" => {
+                    self.shell.toggle_shell();
+                    self.sync_pointer_grab();
+                    Ok(format!("the shell is {}", if self.shell.shell_shown() { "shown" } else { "hidden" }))
+                }
+                "open" => self
+                    .shell
+                    .open(rest)
+                    .map(|()| format!("{rest} opened"))
+                    .map_err(|refusal| refusal.to_string()),
+                "pin" | "unpin" => {
+                    let want = head == "pin";
+                    let rect = match self.shell.rect_of(rest) {
+                        Some(rect) => rect,
+                        None => {
+                            self.shell.log(
+                                ConsoleLevel::Warn,
+                                "script",
+                                format!("{verb}: {rest} is not on screen"),
+                                tick,
+                            );
+                            continue;
+                        }
+                    };
+                    let lane = self
+                        .shell
+                        .control_lanes(rest, rect)
+                        .into_iter()
+                        .find(|(action, _)| *action == voxel_ui::GlyphAction::Pin)
+                        .map(|(_, lane)| lane);
+                    match lane {
+                        Some(lane) => {
+                            let at = (lane.x + lane.width_dp / 2.0, lane.y + lane.height_dp / 2.0);
+                            // **A lane under another window is not this window's button.** The
+                            // frame draws the covering window at that point, so pressing it would
+                            // press *that* window — the refusal names what is actually on top,
+                            // which is what a person would be looking at.
+                            match self.shell.topmost_window(at).map(|(id, _)| id) {
+                                Some(owner) if owner != rest => {
+                                    Err(format!("{rest}'s pin is under {owner}"))
+                                }
+                                _ => {
+                                    self.shell.pointer_pressed(ShellButton::Left, at);
+                                    self.shell.pointer_released(at);
+                                    let now = self.shell.is_pinned(rest);
+                                    if now == want {
+                                        Ok(format!(
+                                            "{rest} {}",
+                                            if want { "pinned" } else { "unpinned" }
+                                        ))
+                                    } else {
+                                        Err(format!(
+                                            "{rest} did not {} (now {now})",
+                                            if want { "pin" } else { "unpin" }
+                                        ))
+                                    }
+                                }
+                            }
+                        }
+                        None => Err(format!("{rest} draws no pin lane")),
+                    }
+                }
+                // **The map's own verbs**, one entry point: `map zoom out`, `map move up`,
+                // `map plan ocean`. The vocabulary is the gutter's, the keyboard's and the
+                // console's, because every one of them ends at `Mount::map_action`.
+                "map" => self.shell.map_action(rest),
+                // **A key, through the app's own keyboard path.** The map's keys are the map's only
+                // while it holds focus, so this proves the focus and the key together: `key w`
+                // moves the map exactly as a held `W` does, and says so when it does not.
+                "key" => match key_code_of(rest) {
+                    Some(code) => self.map_key(code).ok_or_else(|| {
+                        format!("the map does not hold the keyboard, so `{rest}` was not the map's")
+                    }),
+                    None => Err(format!("{verb:?} names no key this app knows")),
+                },
+                // **The pointer, without a click.** The map's readout is a *hover* — the cell under
+                // the pointer, and the ground the map draws there — so a script that has to prove
+                // what the map says at a point needs the move itself. It runs the same three calls
+                // the window's `CursorMoved` makes, in the same order, so a scripted hover is a
+                // hover and not a second path.
+                "hover" => {
+                    let point = rest.split_once(char::is_whitespace).and_then(|(x, y)| {
+                        Some((x.trim().parse::<f64>().ok()?, y.trim().parse::<f64>().ok()?))
+                    });
+                    match point {
+                        Some(at) => {
+                            self.shell.pointer_moved(at);
+                            self.shell.map.drag(at, &self.shell.map_chrome());
+                            self.shell.map.hover(at, &self.shell.map_chrome());
+                            // **The ground, not just the cell**: the toolbar's cursor fact is where
+                            // the map says the world is, and that same point's world column is what
+                            // the survey is asked for — so a hover reads the ground at the column the
+                            // readout names, in the map's own voice.
+                            let cursor = self.shell.map.facts(&self.shell.map_chrome()).and_then(|facts| facts.cursor);
+                            let column = cursor.map(|[x, _, z]| [x, z]);
+                            let ground = column.and_then(|centre| self.shell.map.ground_at(centre));
+                            Ok(format!(
+                                "hover {:.0},{:.0} — the map's cell: {:?} · the cursor says {:?} · the ground at {:?} is {:?}",
+                                at.0,
+                                at.1,
+                                self.shell.map.cursor_cell(),
+                                cursor,
+                                column,
+                                ground
+                            ))
+                        }
+                        None => Err(format!("{verb:?} is not `hover <x> <y>`")),
+                    }
+                }
+                "click" => {
+                    let point = rest.split_once(char::is_whitespace).and_then(|(x, y)| {
+                        Some((x.trim().parse::<f64>().ok()?, y.trim().parse::<f64>().ok()?))
+                    });
+                    match point {
+                        Some(at) => {
+                            // **The app's own press path**, so a click on the map body is the map's
+                            // press: it focuses the window and answers whether the shell claimed it.
+                            let claimed = self.shell_press(ShellButton::Left, at);
+                            self.shell_release(at);
+                            Ok(format!("clicked {:.0},{:.0} (the shell claimed it: {claimed})", at.0, at.1))
+                        }
+                        None => Err(format!("{verb:?} is not `click <x> <y>`")),
+                    }
+                }
+                // **The wheel, without a trackpad.** The map's gutter is a column taller than the
+                // window that draws it, and whether its scroll really moves the declared controls
+                // into view can only be answered by the gesture itself: this verb runs the same two
+                // steps the window's own `MouseWheel` runs — the pointer's position, then the
+                // mount's decision about what a wheel there means — and reports **what the gutter
+                // now draws**, which is the claim, rather than the offset, which is only arithmetic.
+                "wheel" => {
+                    let mut parts = rest.split_whitespace();
+                    let point = (|| {
+                        let x = parts.next()?.trim().parse::<f64>().ok()?;
+                        let y = parts.next()?.trim().parse::<f64>().ok()?;
+                        let lines = parts.next()?.trim().parse::<f64>().ok()?;
+                        Some(((x, y), lines))
+                    })();
+                    match point {
+                        Some((at, lines)) => {
+                            self.shell.pointer_moved(at);
+                            let body = self.shell.map.view_rect(&self.shell.map_chrome());
+                            let gutter = self.shell.map.controls_rect(&self.shell.map_chrome());
+                            let over_map = body.is_some_and(|rect| rect.contains(at))
+                                || gutter.is_some_and(|rect| rect.contains(at));
+                            let claimed = over_map && self.shell.map.wheel(at, lines, &self.shell.map_chrome());
+                            if !claimed {
+                                self.shell.wheel(at, ShellWheel::Lines(lines));
+                            }
+                            let drawn: Vec<String> = self
+                                .shell
+                                .map
+                                .controls(&self.shell.map_chrome())
+                                .map(|rendered| {
+                                    rendered
+                                        .buttons
+                                        .into_iter()
+                                        .map(|button| button.action)
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+                            Ok(format!(
+                                "wheel {lines:+.1} at {:.0},{:.0} — the body is {body:?} and the gutter {gutter:?} — the map claimed it: {claimed}; the map is at zoom {}; the gutter is at {:.0} dp of {:.0} and draws {} control(s): {}",
+                                at.0,
+                                at.1,
+                                self.shell.map.zoom(),
+                                self.shell.map.controls_scroll(),
+                                self.shell.map.controls_scroll_max(&self.shell.map_chrome()),
+                                drawn.len(),
+                                drawn.join(", "),
+                            ))
+                        }
+                        None => Err(format!("{verb:?} is not `wheel <x> <y> <lines>`")),
+                    }
+                }
+                // **A scripted run has to be able to stop**, or a capture records until the
+                // disk does. `quit` is the run's own end rather than the process's signal.
+                "quit" => {
+                    event_loop.exit();
+                    Ok("the run ends".to_string())
+                }
+                other => Err(format!("{other:?} is not a shell verb")),
+            };
+            match result {
+                Ok(said) => {
+                    println!("shploingus: script — {said}");
+                    self.shell.log(ConsoleLevel::Event, "script", said, tick);
+                }
+                Err(refusal) => {
+                    eprintln!("shploingus: script — {refusal}");
+                    self.shell.log(ConsoleLevel::Warn, "script", refusal, tick);
+                }
+            }
+        }
+        // The viewport is a state change and the verbs may have opened or pinned windows; the
+        // next layout reads it from the mount, and this keeps the frame's own copy current.
+        self.shell.set_viewport(viewport);
+    }
+
+    /// **Observe the world for the map window**, once per frame.
+    ///
+    /// One call is the whole of this program's part of the map: the mount places the camera on the
+    /// column the frame declares, asks the survey for the plan its body and camera imply, writes
+    /// **the streamer's own voxels** over the laws' field wherever it holds chunks, and moves the
+    /// marker to the player's own column and heading. The app holds no terrain and no key — the one
+    /// thing the window cannot know by itself is the world it stands in, and that is the argument.
+    ///
+    /// A closed map, or a package with no GPU frame, costs one frame's read of a null camera and
+    /// moves nothing.
+    fn observe_map(&mut self, dt_s: f64) {
+        let spec = self.world.spec();
+        let world = voxel_client::map_survey::MapWorld {
+            ground: self
+                .streamer
+                .as_ref()
+                .map(|streamer| streamer as &dyn voxel_client::map_survey::MapGround),
+            spec,
+            tick: self.clock.tick,
+        };
+        let pose = self.map_pose();
+        let observation = self.shell.map.observe(world, pose, dt_s, &self.shell.map_chrome());
+        // **Reported when it changes**, which is when the world moved under the map or the map
+        // moved over the world — a survey that answered the same way twice is not news.
+        if self.map_observation != Some(observation) {
+            if observation.law || observation.ground {
+                self.shell.log(
+                    ConsoleLevel::Event,
+                    "map",
+                    format!(
+                        "{} of {} samples from the world's own ground — {} resident, {} asked of the generator ({} still the law's){}{}",
+                        observation.world_samples(),
+                        observation.samples,
+                        observation.from_chunks,
+                        observation.from_world,
+                        // **A report must not panic the run.** The counts are the survey's and the
+                        // sample count is the plan's; a line that subtracts them is a reading, and
+                        // a reading that underflows would take the frame loop down with it.
+                        observation.samples.saturating_sub(observation.world_samples()),
+                        if observation.law { " · laws resampled" } else { "" },
+                        if observation.ground { " · ground rewritten" } else { "" },
+                    ),
+                    Some(self.clock.tick),
+                );
+            }
+            self.map_observation = Some(observation);
+        }
+    }
+
+    /// **The map's reading of the player**: the eye's own world column and the heading it looks
+    /// along. The marker's height is the survey's, not the eye's: the map shows the ground the
+    /// player stands on, and a viewer walking a valley should have a marker that stays in it.
+    fn map_pose(&self) -> Option<[f64; 3]> {
+        let camera = self.camera;
+        let [x, _, z] = camera.position_m;
+        let forward = camera.forward();
+        let bearing = voxel_client::map_view::bearing_of(
+            camera.position_m,
+            [
+                camera.position_m[0] + forward[0],
+                camera.position_m[1] + forward[1],
+                camera.position_m[2] + forward[2],
+            ],
+        );
+        Some([x, z, bearing])
+    }
+
     /// The world's spec, borrowed. Every shaper call takes `&WorldSpec`, and this is
     /// the one place the App turns its [`App::world`] into one — so there is exactly
     /// one world in this program rather than one per call site.
@@ -4223,6 +5339,79 @@ impl App {
         self.camera.position_m = self.laya.position_m;
     }
 
+    /// **The centre of every field: the world under the eye, not the eye.**
+    ///
+    /// A box centred on the eye is a box of air whenever the eye is above the surface, and the
+    /// ground it is meant to draw is then not in it at all. So the centre's **floor is the
+    /// ground** — and it is the lowest surface chunk the window's own footprint holds, not the
+    /// surface under the eye's single column (2026-10-26). The clamp keeps the eye's own chunk
+    /// inside the box, so a player far above the world keeps the space they are standing in.
+    ///
+    /// # Why the column under the eye was not enough, measured
+    ///
+    /// The window is five chunks deep — a floor and four layers over it — so tying the floor to
+    /// the surface chunk under the eye's own column ties the *whole slab* to one column of 121.
+    /// The moment that column's surface rises a chunk the floor rises with it, above the terrain
+    /// every neighbouring column stands in: those chunks leave the window, and **nothing covers
+    /// where they were**, because the far field's rings begin *outside* the window's footprint.
+    /// The ground under the player then has no coarse rung to fall to and is simply not drawn.
+    ///
+    /// From the shipped client's own probe (`SHPLOINGUS_PROBE_DEBUG`), flying the demo at the
+    /// user's eye height:
+    ///
+    /// ```text
+    /// tick 81728  blocks 605  quads 57188   the settled world
+    /// tick 81729  blocks 484  quads 36      the surface chunk under the eye rose one chunk
+    /// tick 82120  blocks 605  quads 57188   428 frames later, as the window refilled
+    /// ```
+    ///
+    /// `left 121` on the frame between them is the **whole ground layer** leaving the window, and
+    /// it is the user's report in their own words: *"the terrain that's supposed to render near
+    /// the player stops rendering instead of switching to a lower lod"* (their screenshot: `605 /
+    /// 605` chunks resident, `quads drawn 40`).
+    fn world_centre(&mut self) -> ChunkPos {
+        let eye = self.chunk_of_eye();
+        let floor = self.window_floor();
+        ChunkPos::new(eye.x, centre_y(floor, eye, WINDOW.vertical_chunks), eye.z)
+    }
+
+    /// **The lowest surface chunk in the window's own footprint** — the floor the streamed slab
+    /// stands on.
+    ///
+    /// The elevation law is pure and cheap, so this is `(2·radius + 1)²` = **121 samples** of it,
+    /// taken once per column the eye is standing in and kept: a window that steps a chunk re-reads
+    /// it, and a frame that moves the eye *within* its chunk does not. The alternative — one
+    /// sample under the eye — is the defect `world_centre` documents.
+    fn window_floor(&mut self) -> i32 {
+        let eye = self.chunk_of_eye();
+        if let Some((x, z, floor)) = self.window_floor {
+            if (x, z) == (eye.x, eye.z) {
+                return floor;
+            }
+        }
+        let floor = window_floor_of(
+            self.spec(),
+            eye,
+            WINDOW.radius_chunks,
+            CHUNK_SIDE as f64,
+        );
+        self.window_floor = Some((eye.x, eye.z, floor));
+        floor
+    }
+
+    /// **The chunk the ground under the eye stands in** — the centre every far ring is built
+    /// around, because a ring built around the eye is a ring of air whenever the eye is high.
+    fn ground_chunk(&self) -> ChunkPos {
+        let eye = self.chunk_of_eye();
+        let side = CHUNK_SIDE as f64;
+        let surface = voxel_shapers::terrain::elevation_m(
+            self.world.spec(),
+            self.camera.position_m[0],
+            self.camera.position_m[2],
+        );
+        ChunkPos::new(eye.x, (surface / side).floor() as i32, eye.z)
+    }
+
     fn chunk_of_eye(&self) -> ChunkPos {
         let side = CHUNK_SIDE as f64;
         ChunkPos::new(
@@ -4233,11 +5422,121 @@ impl App {
     }
 }
 
+/// **The surface chunk of one column**, by the same division the fields use: the elevation law
+/// read at the column's own centre, floored to its 32 m chunk.
+fn surface_chunk_of(spec: &WorldSpec, x: i32, z: i32, side: f64) -> i32 {
+    // A footprint column is measured where it stands — at its own centre — rather than on the
+    // seam it shares with its neighbour.
+    let at = [x as f64 * side + side * 0.5, z as f64 * side + side * 0.5];
+    (voxel_shapers::terrain::elevation_m(spec, at[0], at[1]) / side).floor() as i32
+}
+
+/// **The floor the streamed slab stands on**: the lowest surface chunk in the footprint the eye's
+/// column holds — see [`App::world_centre`] for the defect that made it a footprint rather than a
+/// single column.
+fn window_floor_of(spec: &WorldSpec, eye: ChunkPos, radius: i32, side: f64) -> i32 {
+    let mut floor = i32::MAX;
+    for dx in -radius..=radius {
+        for dz in -radius..=radius {
+            floor = floor.min(surface_chunk_of(spec, eye.x + dx, eye.z + dz, side));
+        }
+    }
+    floor
+}
+
+/// **The centre's own `y`**: the floor plus the layers over it, clamped to the band that still
+/// holds the eye's chunk.
+fn centre_y(floor: i32, eye: ChunkPos, vertical: i32) -> i32 {
+    (floor + vertical).clamp(eye.y - vertical, eye.y + vertical)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
     use voxel_model::VoxelPos;
+
+    /// **The streamed slab's floor is the lowest surface in its footprint, not the surface under
+    /// the eye's own column.**
+    ///
+    /// This is the rule `App::world_centre` states and the defect it was written for: a floor tied
+    /// to one column rose with it and took the whole ground layer out of the window (the shipped
+    /// probe: `601 -> 484` blocks, **57 188 -> 36 quads**, `left 121`). So the test asks the
+    /// world's own law two questions over a grid of eye columns:
+    ///
+    /// 1. **Is the floor at or below *every* footprint column's surface?** — which is the property
+    ///    that keeps the ground inside the box wherever the eye stands; and
+    /// 2. **Is the old rule wrong on this world?** — that some column's own surface chunk stands
+    ///    *above* its footprint's floor, so the defect was reachable and not hypothetical.
+    ///
+    /// And the eye is still kept: the clamp puts every eye chunk inside the box, including the one
+    /// standing far above the world.
+    #[test]
+    fn the_windows_floor_holds_the_whole_footprint_and_the_eyes_own_chunk() {
+        let spec = WorldSpec::new(voxel_client::game::GAME_SEED, voxel_shapers::Config::default());
+        let side = CHUNK_SIDE as f64;
+        let radius = voxel_client::game::GAME_WINDOW.radius_chunks;
+        let vertical = voxel_client::game::GAME_WINDOW.vertical_chunks;
+        let mut highs = 0u32;
+        let mut columns = 0u32;
+        // A sweep of the world rather than one neighbourhood: the defect needs relief that crosses
+        // a 32 m chunk boundary inside one footprint, and where that happens is the world's business.
+        for eye_z in (-40..=40i32).step_by(8) {
+            for eye_x in (-40..=40i32).step_by(8) {
+                columns += 1;
+                let floor = window_floor_of(&spec, ChunkPos::new(eye_x, 0, eye_z), radius, side);
+                let own = surface_chunk_of(&spec, eye_x, eye_z, side);
+                if own > floor {
+                    highs += 1;
+                }
+                for dx in -radius..=radius {
+                    for dz in -radius..=radius {
+                        let surface = surface_chunk_of(&spec, eye_x + dx, eye_z + dz, side);
+                        assert!(
+                            floor <= surface,
+                            "the floor is above the ground at ({}, {}): floor {floor}, surface \
+                             {surface}",
+                            eye_x + dx,
+                            eye_z + dz
+                        );
+                    }
+                }
+                // **The eye's own chunk stays inside the box, and the rule that puts it there is
+                // stated exactly**: while the two can share one slab the floor is the ground, and
+                // an eye so far above the world that they cannot keeps its own chunk at the floor
+                // — the documented trade, "nothing clamps the sky to the window".
+                for eye_y in [-4i32, 0, 3, 40] {
+                    let eye = ChunkPos::new(eye_x, eye_y, eye_z);
+                    let centre = centre_y(floor, eye, vertical);
+                    assert!(
+                        (centre - vertical..=centre + vertical).contains(&eye.y),
+                        "the box {centre}±{vertical} does not hold the eye's chunk {}",
+                        eye.y
+                    );
+                    // The rule itself: the floor is the ground whenever the ground stands in the
+                    // eye's own band, and the eye's band wins when the two cannot share one slab
+                    // (whether the eye is far above the world or buried under it).
+                    if (eye.y - vertical..=eye.y + vertical).contains(&(floor + vertical)) {
+                        assert_eq!(
+                            centre,
+                            floor + vertical,
+                            "an eye whose band holds the ground must put the floor on it"
+                        );
+                    } else {
+                        assert!(
+                            centre == eye.y - vertical || centre == eye.y + vertical,
+                            "an eye outside the ground's reach keeps its own band"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            highs > 0,
+            "no column of this world stands above its footprint's floor, so the defect this test \
+             exists for was not reachable here"
+        );
+    }
 
     /// **The pair rule is the platform's two numbers and nothing else.** Each bound is checked
     /// at it and past it, because a `<=` written as a `<` is invisible in a running window and

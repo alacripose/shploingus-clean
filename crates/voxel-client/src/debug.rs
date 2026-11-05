@@ -163,11 +163,19 @@ pub enum LaneRefusal {
     ///
     /// **Not clamped.** An overlay that drew inside the screen anyway would be a box somewhere other
     /// than the thing under test.
-    OffSurface { lane: String, region: String, surface: String },
+    OffSurface {
+        lane: String,
+        region: String,
+        surface: String,
+    },
     /// The region is not a region: inverted bounds, or a non-finite number.
     NotARegion { lane: String, region: String },
     /// The set of lanes is larger than the budget declared for its unit.
-    OverBudget { unit: LaneUnit, lanes: usize, budget: usize },
+    OverBudget {
+        unit: LaneUnit,
+        lanes: usize,
+        budget: usize,
+    },
     /// A lane with no label. A lane that says nothing is not a test surface.
     Unlabelled { lane: String },
 }
@@ -385,7 +393,10 @@ impl LaneSet {
 
     /// Every lane whose class is `class`, in declaration order.
     pub fn of_class(&self, class: LaneClass) -> Vec<&Lane> {
-        self.lanes.iter().filter(|lane| lane.class == class).collect()
+        self.lanes
+            .iter()
+            .filter(|lane| lane.class == class)
+            .collect()
     }
 
     /// **Collects every refusal rather than returning the first**, the same rule
@@ -396,7 +407,9 @@ impl LaneSet {
         let mut by_unit: Vec<(LaneUnit, usize)> = Vec::new();
         for lane in &self.lanes {
             if lane.label.trim().is_empty() {
-                out.push(LaneRefusal::Unlabelled { lane: lane.id.clone() });
+                out.push(LaneRefusal::Unlabelled {
+                    lane: lane.id.clone(),
+                });
             }
             if !lane.is_a_region() {
                 out.push(LaneRefusal::NotARegion {
@@ -420,7 +433,11 @@ impl LaneSet {
         for (unit, count) in by_unit {
             let budget = lane_budget(unit);
             if count > budget {
-                out.push(LaneRefusal::OverBudget { unit, lanes: count, budget });
+                out.push(LaneRefusal::OverBudget {
+                    unit,
+                    lanes: count,
+                    budget,
+                });
             }
         }
         out
@@ -453,12 +470,17 @@ impl LaneSet {
             if voxel_ui::contrast_over_backdrop(hue, backdrop_of(lane)).is_err() {
                 continue;
             }
-            let paint = Paint { rgb: hue, alpha: 1.0 };
+            let paint = Paint {
+                rgb: hue,
+                alpha: 1.0,
+            };
             let Ok(edges) = lane.outline() else { continue };
             for edge in edges {
                 out.push(Element::Rule { rect: edge, paint });
             }
-            let Region::Rect(r) = lane.region else { continue };
+            let Region::Rect(r) = lane.region else {
+                continue;
+            };
             // The label sits **at the lane's own position**, not in a legend.
             out.push(Element::Text {
                 rect: Rect::new(r.x, r.y, r.width_dp, voxel_ui::text_size_dp()),
@@ -541,7 +563,11 @@ mod tests {
         let refusals = set.validate(&screen());
         assert_eq!(refusals.len(), 1, "{refusals:?}");
         match &refusals[0] {
-            LaneRefusal::OffSurface { lane, region, surface } => {
+            LaneRefusal::OffSurface {
+                lane,
+                region,
+                surface,
+            } => {
                 assert_eq!(lane, "window");
                 assert!(region.contains("400"), "{region}");
                 assert!(surface.contains("1280"), "{surface}");
@@ -561,13 +587,23 @@ mod tests {
             "World",
             Rect::new(0.0, 0.0, 1280.0, 720.0),
         ));
-        assert!(set.validate(&screen()).is_empty(), "{:?}", set.validate(&screen()));
+        assert!(
+            set.validate(&screen()).is_empty(),
+            "{:?}",
+            set.validate(&screen())
+        );
     }
 
     #[test]
     fn an_inverted_cuboid_is_refused_rather_than_sorted() {
         // Sorting the corners would make the lane cover a region nobody declared.
-        let lane = Lane::world("selection", LaneClass::World, "pick", [4.0, 8.0, 0.0], [0.0, 0.0, 1.0]);
+        let lane = Lane::world(
+            "selection",
+            LaneClass::World,
+            "pick",
+            [4.0, 8.0, 0.0],
+            [0.0, 0.0, 1.0],
+        );
         assert!(!lane.is_a_region());
         let mut set = LaneSet::new();
         set.push(lane);
@@ -592,34 +628,76 @@ mod tests {
         for i in 0..=LANE_BUDGET_WORLD_UNITS {
             let lo = [i as f64, 0.0, 0.0];
             let hi = [i as f64 + 0.5, 1.0, 1.0];
-            set.push(Lane::world("chunk", LaneClass::World, format!("c{i}"), lo, hi));
+            set.push(Lane::world(
+                "chunk",
+                LaneClass::World,
+                format!("c{i}"),
+                lo,
+                hi,
+            ));
         }
         let refusals = set.validate(&Region::Cuboid([-64.0; 3], [64.0; 3]));
         let over = refusals
             .iter()
-            .find(|r| matches!(r, LaneRefusal::OverBudget { unit: LaneUnit::WorldUnits, .. }))
+            .find(|r| {
+                matches!(
+                    r,
+                    LaneRefusal::OverBudget {
+                        unit: LaneUnit::WorldUnits,
+                        ..
+                    }
+                )
+            })
             .expect("the world budget is enforced");
         match over {
-            LaneRefusal::OverBudget { unit, lanes, budget } => {
-                assert_eq!((*unit, *lanes, *budget), (LaneUnit::WorldUnits, LANE_BUDGET_WORLD_UNITS + 1, LANE_BUDGET_WORLD_UNITS));
+            LaneRefusal::OverBudget {
+                unit,
+                lanes,
+                budget,
+            } => {
+                assert_eq!(
+                    (*unit, *lanes, *budget),
+                    (
+                        LaneUnit::WorldUnits,
+                        LANE_BUDGET_WORLD_UNITS + 1,
+                        LANE_BUDGET_WORLD_UNITS
+                    )
+                );
             }
             other => panic!("wrong refusal: {other}"),
         }
         // And the screen lanes in the same set are untouched by the world's overflow.
-        assert!(!refusals.iter().any(|r| matches!(r, LaneRefusal::OverBudget { unit: LaneUnit::Pixels, .. })));
+        assert!(!refusals.iter().any(|r| matches!(
+            r,
+            LaneRefusal::OverBudget {
+                unit: LaneUnit::Pixels,
+                ..
+            }
+        )));
     }
 
     #[test]
     fn validate_collects_every_refusal_rather_than_the_first() {
         let mut set = LaneSet::new();
-        set.push(Lane::pixels("a", LaneClass::Structure, "", Rect::new(0.0, 0.0, 10.0, 10.0)));
+        set.push(Lane::pixels(
+            "a",
+            LaneClass::Structure,
+            "",
+            Rect::new(0.0, 0.0, 10.0, 10.0),
+        ));
         set.push(Lane::pixels(
             "b",
             LaneClass::Structure,
             "off",
             Rect::new(2000.0, 0.0, 10.0, 10.0),
         ));
-        set.push(Lane::world("c", LaneClass::World, "inverted", [1.0; 3], [0.0; 3]));
+        set.push(Lane::world(
+            "c",
+            LaneClass::World,
+            "inverted",
+            [1.0; 3],
+            [0.0; 3],
+        ));
         let refusals = set.validate(&screen());
         assert_eq!(refusals.len(), 3, "{refusals:?}");
     }
@@ -627,8 +705,16 @@ mod tests {
     #[test]
     fn a_lane_with_no_label_is_refused() {
         let mut set = LaneSet::new();
-        set.push(Lane::pixels("a", LaneClass::Structure, "   ", Rect::new(0.0, 0.0, 10.0, 10.0)));
-        assert!(matches!(set.validate(&screen())[0], LaneRefusal::Unlabelled { .. }));
+        set.push(Lane::pixels(
+            "a",
+            LaneClass::Structure,
+            "   ",
+            Rect::new(0.0, 0.0, 10.0, 10.0),
+        ));
+        assert!(matches!(
+            set.validate(&screen())[0],
+            LaneRefusal::Unlabelled { .. }
+        ));
     }
 
     #[test]
@@ -641,16 +727,26 @@ mod tests {
             assert!(!class.slug().is_empty());
             assert!(!class.label().is_empty());
             let hue = class.hue();
-            assert!(!seen.contains(&hue), "{} shares a hue with another class", class.slug());
+            assert!(
+                !seen.contains(&hue),
+                "{} shares a hue with another class",
+                class.slug()
+            );
             seen.push(hue);
         }
-        assert_eq!(LaneClass::ALL.len(), 5, "the class set is measured here, not asserted elsewhere");
+        assert_eq!(
+            LaneClass::ALL.len(),
+            5,
+            "the class set is measured here, not asserted elsewhere"
+        );
         // **Readable where lanes are drawn**, over the two backdrops `shell::debug` hands them:
         // the window body and the title bar. A hue that failed here would be a lane the overlay
         // silently skipped on every window.
         let palette = voxel_ui::Palette::declared();
         for role in [voxel_ui::Role::Surface, voxel_ui::Role::Chrome] {
-            let backdrop = palette.get(role).expect("the declared palette names both roles");
+            let backdrop = palette
+                .get(role)
+                .expect("the declared palette names both roles");
             for class in LaneClass::ALL {
                 assert!(
                     voxel_ui::contrast_over_backdrop(class.hue(), backdrop).is_ok(),
@@ -672,7 +768,11 @@ mod tests {
         for (id, class) in LANE_VOCABULARY {
             assert!(seen.insert((*id, class.slug())), "{id} is declared twice");
         }
-        assert_eq!(vocabulary_digest(), vocabulary_digest(), "a digest is a function of the table");
+        assert_eq!(
+            vocabulary_digest(),
+            vocabulary_digest(),
+            "a digest is a function of the table"
+        );
     }
 
     #[test]
@@ -684,7 +784,11 @@ mod tests {
             declared.insert(class.slug());
         }
         for class in LaneClass::ALL {
-            assert!(declared.contains(class.slug()), "{} has no lane in the vocabulary", class.slug());
+            assert!(
+                declared.contains(class.slug()),
+                "{} has no lane in the vocabulary",
+                class.slug()
+            );
         }
     }
 
@@ -699,12 +803,22 @@ mod tests {
         ));
         let elements = set.elements(|_| voxel_ui::Rgb::new(0, 0, 0));
         let labels: Vec<&str> = elements.iter().filter_map(|e| e.text()).collect();
-        assert_eq!(labels, vec!["structure World"], "the label is drawn, not put in a legend");
-        let text = elements.iter().find(|e| e.text().is_some()).expect("the label");
+        assert_eq!(
+            labels,
+            vec!["structure World"],
+            "the label is drawn, not put in a legend"
+        );
+        let text = elements
+            .iter()
+            .find(|e| e.text().is_some())
+            .expect("the label");
         assert_eq!(text.rect().x, 16.0, "at the lane's own x");
         assert_eq!(text.rect().y, 48.0, "and its own y");
         // Four edges, so the outline is a box and not a line.
-        let rules = elements.iter().filter(|e| matches!(e, Element::Rule { .. })).count();
+        let rules = elements
+            .iter()
+            .filter(|e| matches!(e, Element::Rule { .. }))
+            .count();
         assert_eq!(rules, 4);
     }
 
@@ -712,7 +826,13 @@ mod tests {
     fn a_world_lane_is_not_projected_by_guesswork() {
         // The vector change view owns the projection (H-7.9); this surface does not invent one.
         let mut set = LaneSet::new();
-        set.push(Lane::world("chunk", LaneClass::World, "0,0,0", [0.0; 3], [16.0; 3]));
+        set.push(Lane::world(
+            "chunk",
+            LaneClass::World,
+            "0,0,0",
+            [0.0; 3],
+            [16.0; 3],
+        ));
         let elements = set.elements(|_| voxel_ui::Rgb::new(0, 0, 0));
         assert!(elements.is_empty(), "{elements:?}");
         assert!(matches!(

@@ -139,9 +139,15 @@ impl BodyCuboid {
         altitude_deg: f64,
         azimuth_deg: f64,
     ) -> Result<Self, SunRefusal> {
-        for v in world_anchor.iter().chain([altitude_deg, azimuth_deg].iter()) {
+        for v in world_anchor
+            .iter()
+            .chain([altitude_deg, azimuth_deg].iter())
+        {
             if !v.is_finite() {
-                return Err(SunRefusal::NotFinite { what: "world anchor or angle", value: *v });
+                return Err(SunRefusal::NotFinite {
+                    what: "world anchor or angle",
+                    value: *v,
+                });
             }
         }
         let d = direction_to(&SolarPosition {
@@ -165,7 +171,9 @@ impl BodyCuboid {
     /// would be a worse lie than no body.
     pub fn at_tick(world_anchor: [f64; 3], solar: &SolarPosition) -> Result<Self, SunRefusal> {
         if solar.altitude_deg <= 0.0 {
-            return Err(SunRefusal::BelowHorizon { altitude_deg: solar.altitude_deg });
+            return Err(SunRefusal::BelowHorizon {
+                altitude_deg: solar.altitude_deg,
+            });
         }
         Self::at(world_anchor, solar.altitude_deg, solar.azimuth_deg)
     }
@@ -236,7 +244,10 @@ impl BodyCuboid {
             let (radius, angle) = if s == 0 {
                 (0.0, 0.0)
             } else {
-                (r * (s as f64 / samples as f64).sqrt(), s as f64 * 2.399_963_229_728_653)
+                (
+                    r * (s as f64 / samples as f64).sqrt(),
+                    s as f64 * 2.399_963_229_728_653,
+                )
             };
             let (c, n) = (angle.cos(), angle.sin());
             let target = [
@@ -244,7 +255,11 @@ impl BodyCuboid {
                 self.centre[1] + (right[1] * c + up[1] * n) * radius,
                 self.centre[2] + (right[2] * c + up[2] * n) * radius,
             ];
-            let ray = [target[0] - from[0], target[1] - from[1], target[2] - from[2]];
+            let ray = [
+                target[0] - from[0],
+                target[1] - from[1],
+                target[2] - from[2],
+            ];
             if !is_blocked(from, ray) {
                 visible += 1;
             }
@@ -403,7 +418,8 @@ impl DrawnSun {
     pub fn body_record_graded(&self, eye_m: [f64; 3], grade: f64) -> crate::quad::BodyRecord {
         let mut centre_m = [0.0f64; 3];
         for (axis, slot) in centre_m.iter_mut().enumerate() {
-            *slot = eye_m[axis] + voxel_shapers::scale::voxels(self.body.centre[axis] - eye_m[axis]);
+            *slot =
+                eye_m[axis] + voxel_shapers::scale::voxels(self.body.centre[axis] - eye_m[axis]);
         }
         crate::quad::BodyRecord {
             centre_m,
@@ -423,7 +439,6 @@ impl DrawnSun {
 /// `voxel_shapers::atmosphere::SCALE_HEIGHT_M` is the same air after the 1:8 ruling, so this is the
 /// figure that constant scales rather than a second measurement of the atmosphere.
 pub const REAL_SCALE_HEIGHT_M: f64 = 8_500.0;
-
 
 /// **The air a ray crosses**, from the world's own measurements rather than a caller's guess: the
 /// shapers' own density and scale height, and the cloud column's water path at `(x, z)`.
@@ -568,7 +583,8 @@ impl DrawnMoon {
     pub fn body_record_graded(&self, eye_m: [f64; 3], grade: f64) -> crate::quad::BodyRecord {
         let mut centre_m = [0.0f64; 3];
         for (axis, slot) in centre_m.iter_mut().enumerate() {
-            *slot = eye_m[axis] + voxel_shapers::scale::voxels(self.body.centre[axis] - eye_m[axis]);
+            *slot =
+                eye_m[axis] + voxel_shapers::scale::voxels(self.body.centre[axis] - eye_m[axis]);
         }
         crate::quad::BodyRecord {
             centre_m,
@@ -657,18 +673,20 @@ mod tests {
         .expect("a moon to draw");
 
         // The body is where the model puts it, at the size the Moon is.
-        let distance_m =
-            (moon.body.centre[0].powi(2) + moon.body.centre[1].powi(2) + moon.body.centre[2].powi(2))
-            .sqrt();
+        let distance_m = (moon.body.centre[0].powi(2)
+            + moon.body.centre[1].powi(2)
+            + moon.body.centre[2].powi(2))
+        .sqrt();
         let expected_distance_m = voxel_light::MOON_DISTANCE_KM * 1_000.0;
         assert!(
             (distance_m - expected_distance_m).abs() < 1.0e3,
             "the body stands at {distance_m} m, not the Moon's own {expected_distance_m}"
         );
-        let angular_diameter_deg =
-            2.0 * (moon.body.radius_m / distance_m).atan().to_degrees();
-        println!("the drawn moon subtends {angular_diameter_deg:.3}° and its face reads {:.3e}",
-            moon.radiance.luminance());
+        let angular_diameter_deg = 2.0 * (moon.body.radius_m / distance_m).atan().to_degrees();
+        println!(
+            "the drawn moon subtends {angular_diameter_deg:.3}° and its face reads {:.3e}",
+            moon.radiance.luminance()
+        );
         assert!(
             (0.45..0.60).contains(&angular_diameter_deg),
             "the drawn body subtends {angular_diameter_deg}°, which is not the Moon's own half a 
@@ -759,7 +777,10 @@ mod tests {
         // A new moon has no lit face, so it is refused rather than drawn black — and a Moon that
         // has set is refused by the same rule, because the solver gives a body below the horizon
         // no radiance at all.
-        let new_moon = voxel_shapers::sky::MoonPosition { phase_fraction: 0.0, ..orbit };
+        let new_moon = voxel_shapers::sky::MoonPosition {
+            phase_fraction: 0.0,
+            ..orbit
+        };
         assert!(
             DrawnMoon::of(
                 &new_moon,
@@ -772,7 +793,10 @@ mod tests {
             .is_none(),
             "a new moon was handed to the pass as a body"
         );
-        let set_moon = voxel_shapers::sky::MoonPosition { altitude_deg: -5.0, ..orbit };
+        let set_moon = voxel_shapers::sky::MoonPosition {
+            altitude_deg: -5.0,
+            ..orbit
+        };
         assert!(
             DrawnMoon::of(
                 &set_moon,
@@ -797,7 +821,10 @@ mod tests {
     }
 
     fn morning() -> SolarPosition {
-        SolarPosition { altitude_deg: 30.0, ..noon() }
+        SolarPosition {
+            altitude_deg: 30.0,
+            ..noon()
+        }
     }
 
     #[test]
@@ -847,7 +874,10 @@ mod tests {
 
     #[test]
     fn a_sun_below_the_horizon_is_refused_and_not_a_light_from_underneath() {
-        let set = SolarPosition { altitude_deg: -5.0, ..noon() };
+        let set = SolarPosition {
+            altitude_deg: -5.0,
+            ..noon()
+        };
         assert!(matches!(
             BodyCuboid::at_tick([0.0; 3], &set),
             Err(SunRefusal::BelowHorizon { .. })
@@ -886,8 +916,16 @@ mod tests {
         };
         let sun = BodyCuboid::at_tick([0.0; 3], &noon()).expect("a sun");
 
-        assert_eq!(sun.visibility([1.0, 0.0, 0.0], 64, wall), 1.0, "clear of the edge");
-        assert_eq!(sun.visibility([-1.0, 0.0, 0.0], 64, wall), 0.0, "behind the slab");
+        assert_eq!(
+            sun.visibility([1.0, 0.0, 0.0], 64, wall),
+            1.0,
+            "clear of the edge"
+        );
+        assert_eq!(
+            sun.visibility([-1.0, 0.0, 0.0], 64, wall),
+            0.0,
+            "behind the slab"
+        );
 
         // **The transition itself, and its width.** Near the edge the sun is half hidden, so
         // the visibility is strictly between; ten metres below a sun of angular radius
@@ -953,7 +991,11 @@ mod tests {
             let seen = [c[0] / length, c[1] / length, c[2] / length];
             let up = day.sky.sun_altitude_deg > 0.0;
             let want = if up {
-                let light = day.rig.lights.first().expect("a sun light while the Sun is up");
+                let light = day
+                    .rig
+                    .lights
+                    .first()
+                    .expect("a sun light while the Sun is up");
                 compared += 1;
                 if day.sky.sun_azimuth_deg < 180.0 {
                     morning = true;
@@ -982,7 +1024,10 @@ mod tests {
         // The guard is only against a day with no sun in it (which would make every assertion
         // above vacuous): the world's own day puts the sun above the horizon for about a third
         // of these samples.
-        assert!(compared >= 24, "only {compared} of 96 samples carried a sun to compare");
+        assert!(
+            compared >= 24,
+            "only {compared} of 96 samples carried a sun to compare"
+        );
         assert!(
             morning && afternoon,
             "the comparison has to cover both sides of noon: morning {morning}, afternoon {afternoon}"
@@ -1007,10 +1052,16 @@ mod tests {
             let tick = sample * (TICKS_PER_DAY / 96);
             let day = daylight_of(&world, tick, inputs, 0).expect("a sky");
             let drawn = DrawnSun::of(&day.sky, peak, [0.0; 3]).unwrap_or_else(|| {
-                panic!("tick {tick} at {:.3}°: the Sun emits and no body was drawn", day.sky.sun_altitude_deg)
+                panic!(
+                    "tick {tick} at {:.3}°: the Sun emits and no body was drawn",
+                    day.sky.sun_altitude_deg
+                )
             });
             let radiance = drawn.radiance.luminance();
-            assert!(radiance.is_finite() && radiance > 0.0, "a drawn body with no radiance at tick {tick}");
+            assert!(
+                radiance.is_finite() && radiance > 0.0,
+                "a drawn body with no radiance at tick {tick}"
+            );
             if day.sky.sun_altitude_deg > 0.0 {
                 above += 1;
                 // **While the Sun is up the share is exactly `1.0`**, so the body is the sky's own
@@ -1018,10 +1069,9 @@ mod tests {
                 let c = drawn.body.centre;
                 let length = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
                 let unit = [c[0] / length, c[1] / length, c[2] / length];
-                let expected = sky_exposed(
-                    day.sky.sun / (peak * cuboid_solid_angle_sr(AU_M, unit)),
-                )
-                .luminance();
+                let expected =
+                    sky_exposed(day.sky.sun / (peak * cuboid_solid_angle_sr(AU_M, unit)))
+                        .luminance();
                 assert!(
                     (radiance - expected).abs() <= 1.0e-9 * expected.max(1.0),
                     "tick {tick}: a lit body is {radiance:e} where the sky's own sun is {expected:e}"
@@ -1039,12 +1089,17 @@ mod tests {
                 );
             }
         }
-        assert!(above > 0 && below > 0, "the day has to have both: {above} above, {below} below");
+        assert!(
+            above > 0 && below > 0,
+            "the day has to have both: {above} above, {below} below"
+        );
         assert!(
             brightest_below > 0.0,
             "no body was drawn below the horizon, which is the switch this rule removed"
         );
-        println!("the body is drawn for {above} of 96 samples above the horizon and {below} below it");
+        println!(
+            "the body is drawn for {above} of 96 samples above the horizon and {below} below it"
+        );
     }
 
     /// **The face is a square and not a disc.** With a face presented to the eye the body's
@@ -1061,7 +1116,10 @@ mod tests {
             let (s, c) = angle.sin_cos();
             [s * across.cos(), c, s * across.sin()]
         };
-        assert!(sun.ray_hits([0.0; 3], [0.0, 1.0, 0.0]), "the body's own direction missed it");
+        assert!(
+            sun.ray_hits([0.0; 3], [0.0, 1.0, 0.0]),
+            "the body's own direction missed it"
+        );
         assert!(
             sun.ray_hits([0.0; 3], ray(0.5 * half_width, 0.0)),
             "half the half-width inside the edge missed, so the edge is not at R/d"
@@ -1087,7 +1145,10 @@ mod tests {
     /// refraction.
     #[test]
     fn the_shadow_rule_refuses_a_sun_the_drawn_body_still_places() {
-        let set = SolarPosition { altitude_deg: -0.4, ..noon() };
+        let set = SolarPosition {
+            altitude_deg: -0.4,
+            ..noon()
+        };
         assert!(matches!(
             BodyCuboid::at_tick([0.0; 3], &set),
             Err(SunRefusal::BelowHorizon { .. })
@@ -1177,7 +1238,11 @@ mod tests {
         // multiplies in the other order.
         let want = sky_exposed(day.sky.sun) / (peak * solid_angle);
         let got = drawn.radiance;
-        for (name, a, b) in [("r", got.r, want.r), ("g", got.g, want.g), ("b", got.b, want.b)] {
+        for (name, a, b) in [
+            ("r", got.r, want.r),
+            ("g", got.g, want.g),
+            ("b", got.b, want.b),
+        ] {
             assert!(
                 (a - b).abs() <= 1.0e-12 * b.abs().max(1.0),
                 "channel {name} measured {a} against {b}"

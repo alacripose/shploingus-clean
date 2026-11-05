@@ -19,7 +19,22 @@
 //! player is. `Mesh::corner_positions_m` stays chunk-relative for the same
 //! reason (`LEDGER.md`), and this is the other half of that decision.
 
-/// A perspective camera with a yaw/pitch orientation, in metres.
+/// **How a camera projects its frame.** The map window's camera is orthographic: a world map is
+/// read by scale, so two cells of the same size must stay the same size wherever they stand in the
+/// view. The first-person camera is perspective and is unchanged.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Projection {
+    /// The lens: a fov and an aspect. Every game frame before the map surface.
+    Perspective,
+    /// **A stated half-height in metres**, whatever the target's pixels are. The width follows
+    /// from the aspect, so the map's scale is one number and never a second fov.
+    Orthographic {
+        /// Half the view's height at the camera's plane, metres.
+        half_height_m: f64,
+    },
+}
+
+/// A camera with a yaw/pitch orientation, in metres.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Camera {
     /// Eye position in **world** metres.
@@ -42,6 +57,9 @@ pub struct Camera {
     pub aspect: f64,
     pub near_m: f64,
     pub far_m: f64,
+    /// **The projection this frame is drawn through.** [`Projection::Perspective`] is the lens
+    /// every game frame uses; an orthographic projection is the map's.
+    pub projection: Projection,
 }
 
 /// 89.9°, and it is a **platform** number rather than a design one: a look-at
@@ -63,8 +81,8 @@ pub const MAX_PITCH_RAD: f64 = 1.569_051_2;
 /// 8,192 m and following the eye, so the furthest cloud there can be is the field's own corner with
 /// the tropopause above it, and that is the reach this plane is set to.
 ///
-/// The default is therefore **derived**, not chosen twice: it is `cloud_field`'s own declared reach,
-/// so the plane cannot be narrower than the sky it is meant to show, and a caller that wants
+/// The default is therefore **derived**, not chosen twice: it is the furthest thing the frame can
+/// draw, so the plane cannot be narrower than what it is meant to show, and a caller that wants
 /// another plane sets [`Camera::far_m`].
 /// A test holds the two together, and the depth cost of the wider range is nil — the depth
 /// derivative at a given distance is `near / d²` to first order and does not read `far` at all, so
@@ -78,7 +96,16 @@ pub const MAX_PITCH_RAD: f64 = 1.569_051_2;
 /// `vs_body` plots the record's **direction** at [`BODY_PLOT_M`] and scales the half-extent by the same
 /// ratio, which leaves the subtended angle exactly the world's own — the claim `renderer`'s body
 /// test makes per pixel, and one that holds at any plot distance.
-pub const FAR_M: f64 = crate::cloud_field::CLOUD_MAX_DISTANCE_M as f64;
+///
+/// **And the ladder is now the furthest thing drawn, so the plane is the further of the two.** The
+/// surface rungs ([`crate::lod`]) draw ground out to `8 589 935 km`, and geometry past this plane
+/// is discarded whatever its own tier says — a ladder that reaches the Moon and a plane at 12.5 km
+/// would draw one rung and cut the other twenty-three. [`crate::lod::LADDER_FAR_M`] is twice the
+/// top rung's own outer radius, so the furthest cell stands well inside a plane that discards what
+/// is exactly on it; the cloud field's 12 500 m is *inside* that, so the sky is still held. The two
+/// are held together by `the_far_plane_reaches_the_cloud_fields_own_corner` (the sky) and
+/// `surface::tests::the_top_of_the_ladder_is_drawn` (the ground).
+pub const FAR_M: f64 = crate::lod::LADDER_FAR_M;
 
 /// **How far a drawn astronomical body is plotted**, metres — [`FAR_M`]'s own reach, exactly.
 ///
@@ -107,6 +134,49 @@ impl Camera {
             aspect,
             near_m: 0.1,
             far_m: FAR_M,
+            projection: Projection::Perspective,
+        }
+    }
+
+    /// **The map's camera**: orthographic, looking down at `pitch_rad` so the horizon is in the
+    /// frame rather than a plan drawn from directly above.
+    ///
+    /// The eye is the **centre of the view**, not a stand point: an orthographic projection has no
+    /// vanishing point to walk toward, so moving the eye slides the picture rather than changing
+    /// what is in it. `yaw_rad` 0 looks down +Z, and a negative pitch looks down.
+    pub fn orthographic(
+        position_m: [f64; 3],
+        aspect: f64,
+        half_height_m: f64,
+        yaw_rad: f64,
+        pitch_rad: f64,
+    ) -> Self {
+        Camera {
+            position_m,
+            yaw_rad,
+            pitch_rad: pitch_rad.clamp(-MAX_PITCH_RAD, MAX_PITCH_RAD),
+            roll_rad: 0.0,
+            fov_y_rad: 0.0,
+            aspect,
+            near_m: 1.0,
+            far_m: FAR_M,
+            projection: Projection::Orthographic {
+                half_height_m: half_height_m.max(0.001),
+            },
+        }
+    }
+
+    /// The world units one pixel covers at this camera's plane. **The map's pattern scale**, and
+    /// for a perspective camera the angular size [`crate::pattern::pixel_angle_rad`] answers;
+    /// an orthographic frame has no angle, so it states its own metres per pixel.
+    pub fn metres_per_pixel(&self, height_px: u32) -> f64 {
+        match self.projection {
+            Projection::Perspective => {
+                2.0 * (self.fov_y_rad / 2.0).tan() / f64::from(height_px.max(1))
+            }
+            Projection::Orthographic { half_height_m } => {
+                2.0 * half_height_m / f64::from(height_px.max(1))
+            }
         }
     }
 
@@ -157,15 +227,32 @@ impl Camera {
             [0.0, 0.0, 0.0, 1.0],
         ];
 
-        let f = 1.0 / (self.fov_y_rad / 2.0).tan();
-        let nf = 1.0 / (self.near_m - self.far_m);
-        // wgpu clip space is depth 0…1, not -1…1.
-        let projection = [
-            [(f / self.aspect) as f32, 0.0, 0.0, 0.0],
-            [0.0, f as f32, 0.0, 0.0],
-            [0.0, 0.0, (self.far_m * nf) as f32, -1.0],
-            [0.0, 0.0, (self.near_m * self.far_m * nf) as f32, 0.0],
-        ];
+        // **One projection, chosen by the frame's own declaration.** wgpu clip space is depth
+        // 0…1, not -1…1, in both arms.
+        let projection = match self.projection {
+            Projection::Perspective => {
+                let f = 1.0 / (self.fov_y_rad / 2.0).tan();
+                let nf = 1.0 / (self.near_m - self.far_m);
+                [
+                    [(f / self.aspect) as f32, 0.0, 0.0, 0.0],
+                    [0.0, f as f32, 0.0, 0.0],
+                    [0.0, 0.0, (self.far_m * nf) as f32, -1.0],
+                    [0.0, 0.0, (self.near_m * self.far_m * nf) as f32, 0.0],
+                ]
+            }
+            Projection::Orthographic { half_height_m } => {
+                let half = half_height_m.max(0.001);
+                let half_w = half * self.aspect.max(0.001);
+                // View space looks down −Z: `z = −near` answers 0 and `z = −far` answers 1.
+                let span = (self.far_m - self.near_m).max(0.001);
+                [
+                    [(1.0 / half_w) as f32, 0.0, 0.0, 0.0],
+                    [0.0, (1.0 / half) as f32, 0.0, 0.0],
+                    [0.0, 0.0, (-1.0 / span) as f32, 0.0],
+                    [0.0, 0.0, (-self.near_m / span) as f32, 1.0],
+                ]
+            }
+        };
 
         multiply(projection, view)
     }
@@ -283,12 +370,19 @@ mod tests {
         cam.roll_rad = 0.3;
         let (right, up, forward) = cam.basis();
         assert!(up[0] < 0.0, "up tilted toward {:.3} on X, not left", up[0]);
-        assert!(right[1] > 0.0, "right tilted toward {:.3} on Y, not up", right[1]);
+        assert!(
+            right[1] > 0.0,
+            "right tilted toward {:.3} on Y, not up",
+            right[1]
+        );
         // Rolling about the view direction does not move the view direction.
         assert_eq!(forward, [0.0, 0.0, 1.0]);
         // And a zero roll is exactly the unrolled basis.
         let upright = Camera::standard([0.0, 0.0, 0.0], 1.0);
-        assert_eq!(upright.basis(), ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]));
+        assert_eq!(
+            upright.basis(),
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0])
+        );
     }
 
     #[test]
@@ -407,11 +501,15 @@ mod tests {
         // Centred on the eye, so the corner is `half` away on both horizontal axes — the furthest
         // a drawn cell can be — with the field's own measured slab top above it.
         let field = CloudField::sample(&spec, crate::GAME_TICK, [0.0, 0.0]);
-        assert!(field.cloudy > 0, "the shipped field is clear, so this proves nothing");
+        assert!(
+            field.cloudy > 0,
+            "the shipped field is clear, so this proves nothing"
+        );
         let top = field.slab_top_m.max(0.0);
         let reach = (half * half + top * top + half * half).sqrt();
         // **The bound is the declared sky, not this tick's weather**: a column is capped at the tropopause.
-        let declared = (half * half + voxel_shapers::clouds::TROPOPAUSE_M.powi(2) + half * half).sqrt();
+        let declared =
+            (half * half + voxel_shapers::clouds::TROPOPAUSE_M.powi(2) + half * half).sqrt();
         assert!(
             cam.far_m >= declared,
             "the default far plane is {:.0} m and a column at the tropopause is {declared:.0} m away, \

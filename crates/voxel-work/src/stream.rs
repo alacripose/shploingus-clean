@@ -219,6 +219,38 @@ pub fn chunks_touching(voxel: [i32; 3]) -> Vec<ChunkPos> {
     out
 }
 
+/// **The most one hammer stroke may lift or drop**, metres — the world's own bound, declared here
+/// rather than trusted from a caller: the record is per voxel and a stroke is a press.
+pub const MAX_HAMMER_LIFT_M: i32 = 8;
+
+/// **What one [`Streamer::shape_columns`] did**, so a stroke is reported rather than assumed.
+///
+/// Counted in **voxels**, not columns, because that is what the record holds and what the frame
+/// paid for: a column can lose its whole stroke to a refusal half-way (a fluid three metres up),
+/// and a report that said "one column raised" would hide it. `skipped` is "the world had no
+/// solid surface there", `refused` is "the world declined the voxel" — two different answers a
+/// person would want apart.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Shaped {
+    /// Columns the stroke was aimed at.
+    pub columns: usize,
+    /// Voxels placed.
+    pub raised: usize,
+    /// Voxels removed.
+    pub lowered: usize,
+    /// Voxels the world refused.
+    pub refused: usize,
+    /// Columns with no solid surface to strike.
+    pub skipped: usize,
+}
+
+impl Shaped {
+    /// Every voxel the record took.
+    pub fn voxels(&self) -> usize {
+        self.raised + self.lowered
+    }
+}
+
 /// The whole engine: a pool, a mesh residency, and a ceiling.
 pub struct Streamer {
     pool: Pool,
@@ -464,6 +496,137 @@ impl Streamer {
 
     pub fn material_at(&self, x: i32, y: i32, z: i32) -> Refused<MaterialId> {
         self.pool.material_at(x, y, z)
+    }
+
+    /// **The world's own surface at one column, whether or not the chunk is resident.**
+    ///
+    /// The same world the resident chunks were built from, read at a few voxels instead of a
+    /// chunk's worth: the generator's own material law with the earthworks record composed
+    /// over it, so a placed block or a dug pit shows here exactly as it does in the chunk it
+    /// landed in. A caller holding a map of ground far outside the streamed window — which no
+    /// chunk has been built for — asks this and gets the world's answer rather than the
+    /// elevation law's.
+    ///
+    /// `None` where nothing solid stands in the probed span. It says nothing about residency:
+    /// [`Streamer::chunk_surface`](crate::Streamer::tree) territory is the exact read for a
+    /// chunk that is in hand, and it is the one to prefer wherever the chunk is there.
+    pub fn column_surface(&self, x: i32, z: i32) -> Refused<Option<f32>> {
+        self.pool.column_surface(x, z)
+    }
+
+    /// **Raise or lower the ground over a set of columns**, one voxel at a time, recorded.
+    ///
+    /// This is a stroke reaching the world: a footprint's whole-metre columns and a lift in metres,
+    /// handed here by whoever owns the world. The map window used to be that caller and no longer is
+    /// — it draws the ground and moves over it, and the terrain's modification is the shapers' over
+    /// the world's cadence tick — so this is the door that path takes when it hands a stroke down.
+    ///
+    /// # What "raise" means, exactly
+    ///
+    /// Each column is read at **its own surface**, the top of its topmost solid voxel, which is the
+    /// surface the map draws (canopy included, fluids skipped — the same rule
+    /// [`Streamer::column_surface`] and the survey share). A raise then **places a voxel of the
+    /// surface's own material above it**, one per metre, so a grassy hill rises as grass and a
+    /// scree slope as scree; a lower **removes the topmost voxel**, one per metre. Nothing is
+    /// invented: a column of air is skipped, not filled, and a stroke that meets water is counted
+    /// as refused rather than forced (`hand_change` will not mint or delete a fluid).
+    ///
+    /// # Why per voxel, and why bounded
+    ///
+    /// **The record is per voxel** ([`voxel_shapers::earthworks`]), so a stroke is many entries
+    /// and there is no region door to take instead — pretending there were would be a second
+    /// record. The cost is a lock and a ledger per voxel, which is why the lift is bounded here and
+    /// the caller's own ladder is so short: a stroke is a press, not a batch job.
+    pub fn shape_columns(&mut self, columns: &[[i32; 2]], lift: i32, reason: &str) -> Refused<Shaped> {
+        if columns.is_empty() {
+            return Err(Refusal::new(
+                RefusalKind::OutOfDeclaredRange,
+                "a hammer stroke of no columns records nothing",
+            ));
+        }
+        if lift == 0 {
+            return Err(Refusal::new(
+                RefusalKind::OutOfDeclaredRange,
+                "a hammer stroke of 0 metres records nothing",
+            ));
+        }
+        // **One declared bound.** A lift of a hundred metres is not a stroke a person meant, and
+        // the failure it would cause is a frame spent recording a hundred thousand voxels.
+        if lift.abs() > MAX_HAMMER_LIFT_M {
+            return Err(Refusal::owned(
+                RefusalKind::OutOfDeclaredRange,
+                format!(
+                    "a hammer stroke of {lift} m is past the {MAX_HAMMER_LIFT_M} m a stroke may lift"
+                ),
+            ));
+        }
+        let mut report = Shaped::default();
+        for &[x, z] in columns {
+            let surface = match self.column_surface(x, z) {
+                Ok(surface) => surface,
+                Err(_) => {
+                    report.refused += 1;
+                    continue;
+                }
+            };
+            // A column the world answers nothing for — open water over no floor, a column past the
+            // declared span — is **skipped**, not filled from the law: the hammer edits voxels, and
+            // there are none here to edit.
+            let Some(top_m) = surface else {
+                report.skipped += 1;
+                continue;
+            };
+            // **The top voxel, from the top face.** A voxel at `y` owns `[y, y+1)`, so a surface at
+            // 12.0 m is voxel 11's top face and a ¾-metre shape at 12.75 m is voxel 12's. The
+            // epsilon keeps a whole-metre face from rounding up into the next voxel.
+            let top_voxel = (top_m - 1e-4).floor() as i32;
+            // **A column is either up or down for the whole stroke**, decided by its own
+            // surface: a raise copies the material the surface is made of, and a lower takes it
+            // away. Both are recorded as the player's hand at this column.
+            if lift > 0 {
+                let Ok(material) = self.material_at(x, top_voxel, z) else {
+                    report.refused += 1;
+                    continue;
+                };
+                if material.is_empty() {
+                    report.skipped += 1;
+                    continue;
+                }
+                for step in 1..=lift {
+                    let edit = crate::pool::Edit {
+                        x,
+                        y: top_voxel + step,
+                        z,
+                        to: material,
+                        reason: format!("{reason} — raised at {x},{z}"),
+                        actor: voxel_model::world::ActorId::player(),
+                        verb: voxel_model::world::PhysicalVerb::Fill,
+                    };
+                    match self.edit(edit) {
+                        Ok(_) => report.raised += 1,
+                        Err(_) => report.refused += 1,
+                    }
+                }
+            } else {
+                for step in 0..(-lift) {
+                    let edit = crate::pool::Edit {
+                        x,
+                        y: top_voxel - step,
+                        z,
+                        to: voxel_shapers::materials::AIR,
+                        reason: format!("{reason} — lowered at {x},{z}"),
+                        actor: voxel_model::world::ActorId::player(),
+                        verb: voxel_model::world::PhysicalVerb::Dig,
+                    };
+                    match self.edit(edit) {
+                        Ok(_) => report.lowered += 1,
+                        Err(_) => report.refused += 1,
+                    }
+                }
+            }
+        }
+        report.columns = columns.len();
+        Ok(report)
     }
 
     /// **Change the world**: record one voxel and mark exactly the chunks
@@ -862,25 +1025,55 @@ impl Streamer {
 
     /// The generator's world changed.
     ///
-    /// Everything is dropped, because **every** mesh came from the generator and
-    /// the record does not say which chunks an edit reached. That is coarse on
-    /// purpose and matches `voxel_stream::Resident::note_world_changed`: a
-    /// cleverer version needs the earthworks record to index itself by chunk,
-    /// which is a change to the record and not to this engine.
+    /// **Every mesh is out of date, and every mesh is still a picture of the world.** The record
+    /// does not say which chunks the change reached, so every fresh mesh is *demoted to the stale
+    /// set*: still drawn, still charged, and replaced one landing at a time as the pool answers —
+    /// the same rule [`Streamer::edit`] states for one chunk, applied to the window because that is
+    /// how far the change reaches.
+    ///
+    /// # Why not clear them, measured
+    ///
+    /// Clearing is what the whole window used to do, and a world drawn from a cleared window is a
+    /// world that is *absent* until the rebuild reaches each chunk. From the client's own witness
+    /// (`voxel-client/tests/the_world_does_not_vanish.rs`, a settled window of 92 chunks):
+    ///
+    /// ```text
+    /// settled        10 024 quads drawn
+    /// after          0 quads drawn, and still 0 twenty frames later
+    /// ```
+    ///
+    /// and in a live run at the user's eye height the same shape read `57 188 -> 36 quads` with
+    /// **428 frames** before the world was back — the player's report, twice: *"the terrain that's
+    /// supposed to render near the player stops rendering instead of switching to a lower lod"*.
+    ///
+    /// **Nothing is copied and nothing is re-walked**: the demotion is a move between two maps, so
+    /// the frame after a world change draws the world the frame before it drew, at the version it
+    /// already had. A chunk's *replacement* moves its version, and that is what the scene diffs.
+    /// The trees *are* dropped: a tree is the input to the next build, and the one in hand describes
+    /// the world the change removed.
     pub fn note_world_changed(&mut self) {
-        self.meshes.clear();
-        self.residency = self.residency.wrapping_add(1);
-        // The stale set goes too. Clearing `meshes` alone would drop the fresh
-        // meshes while leaving the stale ones held **and still charged** — and
-        // the charge is released wholesale on the line below, so the budget would
-        // silently stop accounting for memory this crate is still holding. This
-        // path is a full world change, so there is nothing worth drawing from it
-        // anyway: every chunk is about to be rebuilt from the new source.
-        self.stale.clear();
-        self.trees.clear();
+        let fresh = std::mem::take(&mut self.meshes);
+        for (pos, mesh) in fresh {
+            // `or_insert`, for the same reason `edit` uses it: a chunk already stale holds a mesh
+            // at least as good as this one, and re-demoting it would be a no-op that still cost a
+            // lookup — and would drop the mesh it was holding.
+            self.stale.entry(pos).or_insert(mesh);
+        }
+        // The versions stay put, deliberately: the bytes a chunk is drawn from have not changed
+        // yet, so a scene that diffs them must see no change. When the replacement lands, `absorb`
+        // charges it, releases the stale mesh and moves the version — one chunk at a time.
+        //
+        // **A dropped octree's charge goes back with it.** The trees are the one thing here that
+        // is not kept, and every other place a tree is dropped releases its bytes
+        // ([`Streamer::edit`], [`Streamer::pump`]); `clear` alone would drop them and keep
+        // charging for them, so every world change would leave a window's worth of octrees on the
+        // ledger forever — measured by
+        // `a_changed_world_demotes_every_mesh_and_the_rebuild_is_the_same_world`.
+        for (_, tree) in std::mem::take(&mut self.trees) {
+            self.budget.release(tree.bytes());
+        }
         self.failed.clear();
         self.last_refusal = None;
-        self.budget.release(self.budget.charged());
     }
 
     /// Stop the workers. Consuming, so a stopped streamer cannot be pumped.
@@ -923,6 +1116,84 @@ mod tests {
         let spec = WorldSpec::new(2468, Config::default());
         let e = voxel_shapers::terrain::elevation_m(&spec, 16.5, 16.5);
         ChunkPos::new(0, e.floor() as i32 / 32, 0)
+    }
+
+    /// **The hammer's stroke moves the world's own surface and the record holds it**, which is the
+    /// whole contract the map's ring promises: what it drew is what the world now says.
+    #[test]
+    fn a_hammer_stroke_raises_the_worlds_own_surface_and_records_it() {
+        let mut s = streamer(2, 64 * 1024 * 1024);
+        s.settle().expect("settles");
+        let spec = WorldSpec::new(2468, Config::default());
+        let sea = spec.config.sea_level_m as f32;
+        // **A bare column above the sea**: its surface is the generated ground's own top face, not
+        // a canopy standing over it and not a lake's floor. Without that, a stroke that follows the
+        // contract exactly still reads as a different height — the test would be measuring a tree.
+        let [x, z] = (0..32)
+            .flat_map(|x| (0..32).map(move |z| [x, z]))
+            .find(|[x, z]| {
+                let surface = voxel_shapers::terrain::elevation_m(
+                    &spec,
+                    f64::from(*x) + 0.5,
+                    f64::from(*z) + 0.5,
+                );
+                let ground = (surface - 0.5).floor();
+                s.column_surface(*x, *z).ok().flatten().is_some_and(|top| {
+                    top > sea + 1.0 && (f64::from(top) - 1.0 - ground).abs() < 1e-6
+                })
+            })
+            .expect("a bare column above the sea");
+        let before = s
+            .column_surface(x, z)
+            .expect("the world answers")
+            .expect("solid ground");
+        let generation = s.world_generation();
+
+        let shaped = s
+            .shape_columns(&[[x, z]], 2, "a test's hammer")
+            .expect("a stroke");
+        assert_eq!(shaped.columns, 1);
+        assert_eq!(shaped.raised, 2, "{shaped:?}");
+        assert_eq!(shaped.refused + shaped.skipped, 0, "{shaped:?}");
+        assert!(s.world_generation() > generation, "the record did not move");
+        let after = s
+            .column_surface(x, z)
+            .expect("the world answers")
+            .expect("solid ground");
+        assert!(
+            (after - (before + 2.0)).abs() < 1e-4,
+            "two metres of lift read back as {after}, from {before}"
+        );
+
+        // **And down again, below where it started**: the stroke is the same door in both
+        // directions, and the surface follows it exactly.
+        let shaped = s
+            .shape_columns(&[[x, z]], -3, "a test's hammer")
+            .expect("a stroke");
+        assert_eq!(shaped.lowered, 3, "{shaped:?}");
+        let lowered = s
+            .column_surface(x, z)
+            .expect("the world answers")
+            .expect("solid ground");
+        assert!(
+            (lowered - (before - 1.0)).abs() < 1e-4,
+            "three metres of dig read back as {lowered}, from {after}"
+        );
+        // **The record says so per voxel, in the hammer's words** — a stroke is entries, not a
+        // summary, and the map's next read is the record's own answer.
+        let entries = s.modifications();
+        assert_eq!(
+            entries.iter().filter(|entry| entry.reason.contains("a test's hammer")).count(),
+            5,
+            "{entries:?}"
+        );
+
+        // A stroke that means nothing is refused by name rather than recording nothing.
+        assert!(s.shape_columns(&[], 1, "a test's hammer").is_err());
+        assert!(s.shape_columns(&[[x, z]], 0, "a test's hammer").is_err());
+        assert!(s
+            .shape_columns(&[[x, z]], MAX_HAMMER_LIFT_M + 1, "a test's hammer")
+            .is_err());
     }
 
     #[test]
@@ -1522,21 +1793,50 @@ mod tests {
         s.shutdown();
     }
 
+    /// **A world change demotes the window, it does not empty it** — and the ledger is exactly the
+    /// window's own at every step of it.
+    ///
+    /// The old contract this test used to pin ("drops every mesh", charge back to zero) is the
+    /// behaviour the flash fix replaced: a dropped window is a world that is *absent* until the
+    /// rebuild reaches each chunk, which read `57 188 -> 36 quads` with 428 frames of hole in a
+    /// live run. What holds now is the demotion: every current mesh moves to the stale set, still
+    /// drawn and still charged, and its replacement releases it one chunk at a time. The octrees
+    /// are the exception — the change goes *into* them, so they are dropped, and with them their
+    /// charge.
     #[test]
-    fn a_changed_world_drops_every_mesh_because_the_generator_is_the_only_source() {
+    fn a_changed_world_demotes_every_mesh_and_the_rebuild_is_the_same_world() {
         let mut s = streamer(4, 64 * 1024 * 1024);
         s.settle().unwrap();
         let before = s.digest();
-        assert!(!s.is_empty());
+        let charged = s.budget().charged();
+        let drawn = s.len();
+        assert!(drawn > 0, "the window settled empty");
         s.note_world_changed();
-        assert_eq!(s.len(), 0);
-        assert_eq!(s.budget().charged(), 0);
-        // And it rebuilds to the same world, because the generator did not change.
-        // That is the point of dropping everything rather than invalidating
-        // selectively: nothing was lost, because nothing was stored that could not
-        // be recomputed.
+        assert_eq!(s.len(), 0, "a mesh stayed current through a world change");
+        assert_eq!(
+            s.stale_len(),
+            drawn,
+            "the demotion lost a mesh rather than staling it"
+        );
+        // What is drawn is charged, so the demotion cannot give the window's bytes back — but what
+        // it dropped, it pays for: a world change that kept the octrees' charge would leave a
+        // window's worth of them on the ledger at every change.
+        assert!(
+            s.budget().charged() < charged,
+            "the dropped octrees are still charged: {} B of {charged} B",
+            s.budget().charged()
+        );
+        // And it rebuilds to the same world, because the generator did not change. That is what
+        // makes demoting safe: nothing was lost, because nothing was stored that could not be
+        // recomputed.
         s.settle().unwrap();
         assert_eq!(s.digest(), before, "the rebuilt world was not the same world");
+        assert_eq!(s.len(), drawn, "the window did not come back whole");
+        assert_eq!(
+            s.budget().charged(),
+            charged,
+            "the rebuilt window is not the window's own charge: the trees leaked"
+        );
         s.shutdown();
     }
 

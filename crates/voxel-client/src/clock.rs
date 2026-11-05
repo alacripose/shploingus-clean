@@ -101,14 +101,22 @@ impl Default for Clock {
 impl Clock {
     /// A clock at tick 0 with nothing carried.
     pub fn new() -> Self {
-        Clock { tick: 0, accumulator_ticks: 0.0, dropped: 0 }
+        Clock {
+            tick: 0,
+            accumulator_ticks: 0.0,
+            dropped: 0,
+        }
     }
 
     /// A clock already at a tick, with nothing carried. For a world resuming from
     /// a save: `LEDGER.md` H-7.16 says the save is record + seed + tick, so a
     /// resumed world starts at the tick it was saved at and not at zero.
     pub fn at(tick: u64) -> Self {
-        Clock { tick, accumulator_ticks: 0.0, dropped: 0 }
+        Clock {
+            tick,
+            accumulator_ticks: 0.0,
+            dropped: 0,
+        }
     }
 
     /// How many whole ticks are due for `seconds` of elapsed time, **and what to
@@ -154,7 +162,12 @@ impl Clock {
                 remainder_ticks: carried - whole,
             };
         }
-        Due { ticks, dropped: 0, refused: None, remainder_ticks: carried - whole }
+        Due {
+            ticks,
+            dropped: 0,
+            refused: None,
+            remainder_ticks: carried - whole,
+        }
     }
 
     /// Advance the world by `seconds`, returning how many ticks it moved.
@@ -230,7 +243,11 @@ impl TimeSeek {
     /// fraction of a day standing.
     pub fn offset_at(&self, start_offset: f64) -> f64 {
         let t = (self.elapsed as f64 / self.duration as f64).clamp(0.0, 1.0);
-        let eased = if t < 0.5 { 4.0 * t * t * t } else { 1.0 - 4.0 * (1.0 - t) * (1.0 - t) * (1.0 - t) };
+        let eased = if t < 0.5 {
+            4.0 * t * t * t
+        } else {
+            1.0 - 4.0 * (1.0 - t) * (1.0 - t) * (1.0 - t)
+        };
         start_offset + (self.to_offset - start_offset) * eased
     }
 
@@ -300,10 +317,19 @@ mod tests {
             clock.advance(frame);
             frames += 1;
         }
-        assert_eq!(clock.tick, 20, "a second of frames at 60 fps did not give 20 ticks");
-        assert_eq!(clock.dropped, 0, "a normal frame rate was treated as a stall");
+        assert_eq!(
+            clock.tick, 20,
+            "a second of frames at 60 fps did not give 20 ticks"
+        );
+        assert_eq!(
+            clock.dropped, 0,
+            "a normal frame rate was treated as a stall"
+        );
         // And the frame count is right: 60 frames of 1/60 s is one second.
-        assert!((59..=61).contains(&frames), "it took {frames} frames to reach a second");
+        assert!(
+            (59..=61).contains(&frames),
+            "it took {frames} frames to reach a second"
+        );
     }
 
     #[test]
@@ -317,7 +343,11 @@ mod tests {
         for _ in 0..3 {
             assert_eq!(clock.advance(quarter), 0, "a quarter tick moved the world");
         }
-        assert_eq!(clock.advance(quarter), 1, "the fourth quarter did not complete a tick");
+        assert_eq!(
+            clock.advance(quarter),
+            1,
+            "the fourth quarter did not complete a tick"
+        );
         assert_eq!(clock.tick, 1);
     }
 
@@ -330,7 +360,11 @@ mod tests {
         let moved = clock.advance(10.0);
         assert_eq!(moved, MAX_CATCH_UP, "the bound let {moved} ticks through");
         assert_eq!(clock.tick, MAX_CATCH_UP as u64);
-        assert_eq!(clock.dropped, 200 - MAX_CATCH_UP as u64, "the dropped ticks were not counted");
+        assert_eq!(
+            clock.dropped,
+            200 - MAX_CATCH_UP as u64,
+            "the dropped ticks were not counted"
+        );
     }
 
     #[test]
@@ -349,7 +383,10 @@ mod tests {
         // Both sides of the bound, because a bound tested from one side only does
         // not say which side owns the boundary.
         let mut at_bound = Clock::new();
-        assert_eq!(at_bound.advance(MAX_CATCH_UP as f64 * tick_seconds()), MAX_CATCH_UP);
+        assert_eq!(
+            at_bound.advance(MAX_CATCH_UP as f64 * tick_seconds()),
+            MAX_CATCH_UP
+        );
         assert_eq!(at_bound.dropped, 0);
 
         // **One whole tick past the bound, not a fraction of one past it.** The
@@ -361,13 +398,19 @@ mod tests {
         let mut past_bound = Clock::new();
         let one_tick_past = (MAX_CATCH_UP as f64 + 1.0) * tick_seconds();
         assert_eq!(past_bound.advance(one_tick_past), MAX_CATCH_UP);
-        assert_eq!(past_bound.dropped, 1, "the tick past the bound was not reported");
+        assert_eq!(
+            past_bound.dropped, 1,
+            "the tick past the bound was not reported"
+        );
 
         // And the fraction just inside is still honoured whole.
         let mut just_inside = Clock::new();
         let almost = (MAX_CATCH_UP as f64 + 0.999) * tick_seconds();
         assert_eq!(just_inside.advance(almost), MAX_CATCH_UP);
-        assert_eq!(just_inside.dropped, 0, "a frame a millisecond under five ticks was refused");
+        assert_eq!(
+            just_inside.dropped, 0,
+            "a frame a millisecond under five ticks was refused"
+        );
     }
 
     #[test]
@@ -378,11 +421,17 @@ mod tests {
         for bad in [-0.001, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let mut clock = Clock::new();
             let due = clock.due(bad);
-            assert!(due.refused.is_some(), "{bad} seconds was accepted as a duration");
+            assert!(
+                due.refused.is_some(),
+                "{bad} seconds was accepted as a duration"
+            );
             assert_eq!(due.ticks, 0);
             clock.advance(bad);
             assert_eq!(clock.tick, 0, "{bad} seconds moved the world");
-            assert_eq!(clock.dropped, 0, "{bad} seconds was counted as dropped ticks");
+            assert_eq!(
+                clock.dropped, 0,
+                "{bad} seconds was counted as dropped ticks"
+            );
         }
     }
 
@@ -413,7 +462,11 @@ mod tests {
         assert!((clock.interpolation() - 0.5).abs() < 1e-9);
         clock.advance(tick_seconds() / 2.0);
         assert_eq!(clock.tick, 1);
-        assert_eq!(clock.interpolation(), 0.0, "a completed tick left a remainder");
+        assert_eq!(
+            clock.interpolation(),
+            0.0,
+            "a completed tick left a remainder"
+        );
     }
 
     #[test]
@@ -448,14 +501,20 @@ mod tests {
 
         let mut one_gulp = Clock::new();
         one_gulp.advance(total);
-        assert_eq!(one_gulp.tick, MAX_CATCH_UP as u64, "a 3.5 s gulp was not capped");
+        assert_eq!(
+            one_gulp.tick, MAX_CATCH_UP as u64,
+            "a 3.5 s gulp was not capped"
+        );
         assert_eq!(one_gulp.dropped, 70 - MAX_CATCH_UP as u64);
 
         let mut at_60 = Clock::new();
         for _ in 0..frames_at_60 {
             at_60.advance(1.0 / 60.0);
         }
-        assert_eq!(at_60.tick, 70, "three and a half seconds is seventy ticks at 20 Hz");
+        assert_eq!(
+            at_60.tick, 70,
+            "three and a half seconds is seventy ticks at 20 Hz"
+        );
         assert_eq!(at_60.dropped, 0);
 
         // And the invariance itself: two *different* fine partitions of the same
@@ -486,7 +545,10 @@ mod tests {
             "a 30 fps and a 60 fps client saw different worlds: {} against {}",
             at_30.tick, at_60.tick
         );
-        assert_eq!(at_30.tick, 70, "an exact partition of 3.5 s is seventy ticks");
+        assert_eq!(
+            at_30.tick, 70,
+            "an exact partition of 3.5 s is seventy ticks"
+        );
     }
 
     #[test]
@@ -495,12 +557,23 @@ mod tests {
         // term in it: the seek is in world ticks, so the clock's 20 Hz is untouched.
         let day = voxel_shapers::climate::TICKS_PER_DAY;
         let mut seek = TimeSeek::between(0, 10 * day, 2.0).expect("a seek");
-        assert_eq!(seek.duration, 20 * day, "the window is not the distance times the ratio");
+        assert_eq!(
+            seek.duration,
+            20 * day,
+            "the window is not the distance times the ratio"
+        );
         assert!(!seek.done());
         // Cubic ease-in-out: it leaves at rest, is halfway at half the window, and arrives at rest.
-        assert_eq!(seek.offset_at(0.0), 0.0, "a seek that has not started moved the date");
+        assert_eq!(
+            seek.offset_at(0.0),
+            0.0,
+            "a seek that has not started moved the date"
+        );
         seek.advance(10 * day);
-        assert!((seek.offset_at(0.0) - 5.0 * day as f64).abs() < 1e-6, "not halfway at half time");
+        assert!(
+            (seek.offset_at(0.0) - 5.0 * day as f64).abs() < 1e-6,
+            "not halfway at half time"
+        );
         seek.advance(10 * day);
         assert!(seek.done());
         assert_eq!(
@@ -511,12 +584,21 @@ mod tests {
         // And the curve is slow at the start: a tenth of the window moves less than a tenth.
         let mut early = TimeSeek::between(0, 10 * day, 2.0).expect("a seek");
         early.advance(2 * day);
-        assert!(early.offset_at(0.0) < 2.0 * day as f64, "the ease-in did not ease in");
+        assert!(
+            early.offset_at(0.0) < 2.0 * day as f64,
+            "the ease-in did not ease in"
+        );
         // A ratio the arithmetic cannot use is no seek rather than a division by it.
         for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-            assert!(TimeSeek::between(0, day, bad).is_none(), "ratio {bad} was accepted");
+            assert!(
+                TimeSeek::between(0, day, bad).is_none(),
+                "ratio {bad} was accepted"
+            );
         }
-        assert!(TimeSeek::between(5, 5, 1.0).is_none(), "a zero-distance seek was accepted");
+        assert!(
+            TimeSeek::between(5, 5, 1.0).is_none(),
+            "a zero-distance seek was accepted"
+        );
         // A backwards seek is the same law in the other direction.
         let back = TimeSeek::between(10 * day, 0, 1.0).expect("a backward seek");
         assert_eq!(back.to_offset, -(10.0 * day as f64));

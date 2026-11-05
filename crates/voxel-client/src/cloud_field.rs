@@ -109,8 +109,7 @@ pub const CLOUD_BLOCK_CHUNKS: i32 = (CLOUD_BLOCK_M as i32) / voxel_model::CHUNK_
 /// and this field reaches **128**. So the cloud field is **not inside the horizon ladder** — it is
 /// wider than the widest horizon there is, which is what makes it un-streamable as it stands:
 /// there is no horizon that could bound which cells a refresh should touch.
-pub const CLOUD_HALF_EXTENT_CHUNKS: i32 =
-    (CLOUD_SPAN_M as i32) / 2 / voxel_model::CHUNK_SIDE;
+pub const CLOUD_HALF_EXTENT_CHUNKS: i32 = (CLOUD_SPAN_M as i32) / 2 / voxel_model::CHUNK_SIDE;
 
 /// **Two facts about the numbers above, pinned in the compiler rather than asserted in a test.**
 ///
@@ -758,7 +757,10 @@ mod tests {
         // class is ever a blend of two classes.
         let spec = spec();
         let field = CloudField::sample(&spec, noon(), [0.0, 0.0]);
-        assert!(field.cloudy > 0, "the field is clear; nothing is being tested");
+        assert!(
+            field.cloudy > 0,
+            "the field is clear; nothing is being tested"
+        );
         let n = CLOUD_COLUMNS as usize;
         let m = CLOUD_SAMPLES_PER_AXIS as usize;
 
@@ -875,7 +877,10 @@ mod tests {
                 // range of the *wet* corners, so a clear corner's zeros cannot drag a
                 // cloud's base to an altitude nobody measured.
                 let wet: Vec<[f32; 4]> = corners.iter().copied().filter(|c| c[0] > 0.0).collect();
-                assert!(!wet.is_empty(), "a cloudy texel whose corners are all clear");
+                assert!(
+                    !wet.is_empty(),
+                    "a cloudy texel whose corners are all clear"
+                );
                 let base_lo = wet.iter().map(|c| c[1]).fold(f32::INFINITY, f32::min);
                 let base_hi = wet.iter().map(|c| c[1]).fold(f32::NEG_INFINITY, f32::max);
                 assert!(
@@ -900,7 +905,10 @@ mod tests {
             }
         }
         assert_eq!(on_lattice, m * m, "the sample lattice is not m x m");
-        assert!(between > 0, "nothing was interpolated; the stride is not a stride");
+        assert!(
+            between > 0,
+            "nothing was interpolated; the stride is not a stride"
+        );
     }
 
     #[test]
@@ -908,12 +916,19 @@ mod tests {
         let texel = [0.5f32, 1_000.0, 1_500.0, 1.0];
         assert_eq!(density_of(texel, 999.9), 0.0);
         assert_eq!(density_of(texel, 1_500.0), 0.0);
-        assert!(density_of(texel, 1_250.0) > 0.4, "the middle of the layer is its deepest");
+        assert!(
+            density_of(texel, 1_250.0) > 0.4,
+            "the middle of the layer is its deepest"
+        );
     }
 
     #[test]
     fn the_kind_encoding_is_injective_over_every_kind() {
-        let codes: Vec<u32> = clouds::CloudKind::ALL.iter().copied().map(kind_code).collect();
+        let codes: Vec<u32> = clouds::CloudKind::ALL
+            .iter()
+            .copied()
+            .map(kind_code)
+            .collect();
         assert_eq!(codes, vec![0, 1, 2]);
     }
 
@@ -995,7 +1010,9 @@ mod tests {
         let mut best: Option<((u32, u32), [f32; 4], f64)> = None;
         for j in 0..CLOUD_COLUMNS {
             for i in 0..CLOUD_COLUMNS {
-                let Some(texel) = field.texel(i, j) else { continue };
+                let Some(texel) = field.texel(i, j) else {
+                    continue;
+                };
                 if texel[0] <= 0.0 {
                     continue;
                 }
@@ -1022,7 +1039,10 @@ mod tests {
         );
         let walk = sampler.beam(&CloudMedium::new(&field), from_m);
         let closed = cloud_transmittance(lwp);
-        assert_eq!(open, 1.0, "a beam that stops short of the layer was dimmed by it");
+        assert_eq!(
+            open, 1.0,
+            "a beam that stops short of the layer was dimmed by it"
+        );
         assert!(
             closed > 0.0 && closed < 1.0,
             "the chosen column is not a dimmer: {closed}"
@@ -1060,12 +1080,8 @@ mod tests {
         let top_m = texel[2] as f64;
         // Above the top, looking up crosses nothing, which is what an eye over the cloud sees
         // of the Sun.
-        let above = voxel_stream::light::transmittance(
-            &medium,
-            [x, top_m + 4.0, z],
-            [0.0, 1.0, 0.0],
-            64.0,
-        );
+        let above =
+            voxel_stream::light::transmittance(&medium, [x, top_m + 4.0, z], [0.0, 1.0, 0.0], 64.0);
         let under = voxel_stream::light::transmittance(
             &medium,
             [x, base_m - 4.0, z],
@@ -1149,7 +1165,10 @@ mod tests {
             CLOUD_MAX_DISTANCE_M / CLOUD_STEP_M,
             CLOUD_SPAN_M,
         );
-        assert!(field.cloudy > 0, "a clear field is not a field this test can report");
+        assert!(
+            field.cloudy > 0,
+            "a clear field is not a field this test can report"
+        );
     }
 
     /// **What the stride costs the picture** — reported, not asserted, for the reason every
@@ -1263,9 +1282,19 @@ mod tests {
         // `CHUNK_SIDE` and no extent at all — so every ratio is pinned here rather than restated.
         let chunk_m = voxel_model::CHUNK_SIDE as f64;
         assert_eq!(chunk_m, 32.0, "one voxel is one metre, so a chunk is 32 m");
-        assert_eq!(CLOUD_COLUMN_CHUNKS, 2, "a cloud column straddles exactly two chunks");
-        assert_eq!(CLOUD_BLOCK_CHUNKS, 64, "a cloud block is 64 chunks across, not one");
-        assert_eq!(CLOUD_SPAN_M / chunk_m, 256.0, "the field is 256 chunks across");
+        assert_eq!(
+            CLOUD_COLUMN_CHUNKS, 2,
+            "a cloud column straddles exactly two chunks"
+        );
+        assert_eq!(
+            CLOUD_BLOCK_CHUNKS, 64,
+            "a cloud block is 64 chunks across, not one"
+        );
+        assert_eq!(
+            CLOUD_SPAN_M / chunk_m,
+            256.0,
+            "the field is 256 chunks across"
+        );
 
         // And the exactness the two integer constants depend on: those divisions must not be
         // truncating a fraction, or a "column" would not be a whole number of chunks and the
@@ -1278,9 +1307,16 @@ mod tests {
         // number of chunks, so a chunk owner can name the samples it needs — and the texels
         // between two samples are interpolated rather than asked.
         assert_eq!(CLOUD_SAMPLE_M, 128.0, "the sample rate moved");
-        assert_eq!(CLOUD_SAMPLE_M / chunk_m, 4.0, "the sample lattice is a chunk lattice");
+        assert_eq!(
+            CLOUD_SAMPLE_M / chunk_m,
+            4.0,
+            "the sample lattice is a chunk lattice"
+        );
         assert_eq!(CLOUD_SAMPLE_M % chunk_m, 0.0);
-        assert_eq!(CLOUD_SAMPLES_PER_AXIS, 65, "65 samples a side, the last pinned to the edge");
+        assert_eq!(
+            CLOUD_SAMPLES_PER_AXIS, 65,
+            "65 samples a side, the last pinned to the edge"
+        );
         assert_eq!(
             CLOUD_SAMPLES_PER_AXIS * CLOUD_SAMPLES_PER_AXIS,
             4_225,

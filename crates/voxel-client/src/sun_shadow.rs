@@ -23,19 +23,21 @@
 //!
 //! | cascade | range | texels | texel on the ground |
 //! |---|---|---|---|
-//! | near | 0–28 m | 1024² | 5.5 cm |
-//! | far | 28–256 m | 1024² | 50 cm |
+//! | near | 0–160 m | 1024² | 31 cm |
+//! | far | 160–320 m | 1024² | 62 cm |
 //!
-//! A pixel at 28 m is about 3.4 cm across and one at 256 m about 30 cm (`Camera::standard`'s
-//! 70° over 288 rows is 1.2 mrad), so the near texel is under two drawn pixels and the far one
-//! about two. That is the LOD: the same shadow detail per pixel near and far, rather than the
+//! The near radius is **the streamed window's own radius** — five chunks at
+//! [`CHUNK_SIDE`](voxel_model::CHUNK_SIDE) metres — so every chunk the frame draws is inside the
+//! detailed cascade rather than only the ground a few steps away. A pixel at 160 m is about 19 cm
+//! across and the near texel is 31 cm (`Camera::standard`'s 70° over 288 rows is 1.2 mrad): about
+//! 1.6 texels a pixel, the same ratio the old 28 m cascade held. That is the LOD: the same shadow detail per pixel near and far, rather than the
 //! same metre. It is both distance- and projected-size-selected, because the split is a distance
 //! and the resolutions were chosen from the pixel angle.
 //!
 //! # The split is a handover, not a switch
 //!
-//! Choosing one cascade by distance is a **step**: a surface crossing 28 m moves from 5.5 cm texels
-//! and a 3 × 3 comparison a texel wide to 50 cm texels and one nine times wider, and the shadow
+//! Choosing one cascade by distance is a **step**: a surface crossing 160 m moves from 31 cm texels
+//! and a 3 × 3 comparison a texel wide to 62 cm texels and one nine times wider, and the shadow
 //! term jumps with it — a hard line across the ground at a distance the player can walk to. So the
 //! fragment treats the two maps as **levels of one shadow**, the way the materials' pattern ladder
 //! treats its rungs (`pattern_deviation`'s `weight_sum`): each cascade returns its comparison mean
@@ -47,12 +49,11 @@
 //! through the shipped function, and reports the
 //! largest frame-to-frame change before and after, in shading units, in metres and in rows.
 //!
-//! **The far range is the shipped window's own horizon** — [`crate::game::GAME_WINDOW`] is eight
-//! chunks, 256 m — so every chunk a frame streams gets its direct shadow from the map. Past it
-//! the beam is drawn **unshadowed but current**, not held at the last cell a build happened to
-//! ask about: a horizon larger than this loses distant cast shadows (which is the usual shadow
-//! distance) and never shows stale ones. [`SunShadow::write`]'s range argument is where a host
-//! that streams farther raises it.
+//! **The near cascade reaches the streamed window's own radius** — five chunks, 160 m — so every
+//! chunk a frame draws gets its direct shadow from the detailed map. The far cascade takes the
+//! ground beyond it to the host's range, at least twice the near radius. Past the far range the
+//! beam is drawn **unshadowed but current**, not held at the last cell a build happened to ask
+//! about. [`SunShadow::write`]'s range argument is where a host that streams farther raises it.
 //!
 //! One 1024² depth map is 4 MB, so the pair is 8 MB of a pipeline — a cost a test that builds
 //! dozens of them at once has to be able to carry.
@@ -67,8 +68,15 @@ use crate::scene::Vertex;
 
 /// Edge of one cascade's depth map, in texels.
 pub const SHADOW_RESOLUTION: u32 = 1024;
-/// Where the near cascade ends, metres from the eye.
-pub const NEAR_RANGE_M: f32 = 28.0;
+/// Where the near cascade ends, metres from the eye — its **radius** across the ground as well
+/// as its forward reach.
+///
+/// **It is the streamed window's radius**, not a distance chosen for the map: five chunks of
+/// [`CHUNK_SIDE`](voxel_model::CHUNK_SIDE) metres is 160 m, and every mesh the frame draws from
+/// the streamer is inside it. The map is 1024² over a 320 m box, so its texel is 31 cm — about
+/// 1.6 drawn pixels at the edge, the ratio the 28 m cascade held at 5.5 cm. The far cascade takes
+/// over beyond it (the host's range, at least twice this one).
+pub const NEAR_RANGE_M: f32 = 160.0;
 /// **The comparison's bias**, metres: the receiver is lifted along its own normal by this much
 /// and the depth is compared as it stands. The shader reads it from `split.z`; a ground edge
 /// moves by `SHADOW_BIAS_M / tan(elevation)` — 0.11 m at the shipped Sun's 10.6°. The value is
@@ -526,7 +534,10 @@ mod tests {
         let matrix = cascade(forward, toward, half);
         let centre = [0.0, 0.0, half * 0.5];
         let ndc = clip(matrix, centre);
-        assert!(ndc[0].abs() < 1e-3 && ndc[1].abs() < 1e-3, "centre is {ndc:?}");
+        assert!(
+            ndc[0].abs() < 1e-3 && ndc[1].abs() < 1e-3,
+            "centre is {ndc:?}"
+        );
         assert!((0.0..=1.0).contains(&ndc[2]), "centre depth is {}", ndc[2]);
         let edge = [half, 0.0, half * 0.5];
         let ndc = clip(matrix, edge);
@@ -588,7 +599,7 @@ mod tests {
     const SEAM_ROWS: u32 = 801;
     /// What the lattice spans: lateral offset from the eye, then distance from it, metres.
     const SEAM_X: (f32, f32) = (-5.0, 2.0);
-    const SEAM_D: (f32, f32) = (20.0, 36.0);
+    const SEAM_D: (f32, f32) = (152.0, 168.0);
     /// The fastest a player crosses the seam, m/s, and the frame rate it is crossed at.
     const WALK_M_PER_S: f64 = 5.6;
     const FRAME_HZ: f64 = 60.0;
@@ -642,7 +653,7 @@ mod tests {
     ///
     /// The casters are two long boxes whose ground shadows run the whole length of the sweep — so
     /// nothing in the shadow varies along a column except the cascade — with a **slit** between
-    /// them: 1.2 m of lit ground that the near map's 5.5 cm texels resolve and the far map's 50 cm
+    /// them: 1.2 m of lit ground that the near map's 31 cm texels resolve and the far map's 62 cm
     /// ones cannot. That disagreement is the pop a cascade switch makes, and it is what the numbers
     /// below are about.
     #[test]
@@ -659,8 +670,11 @@ mod tests {
 
         let mut vertex_bytes = Vec::new();
         let mut indices = Vec::new();
-        box_caster(-0.5, 0.5, 10.0, 46.0, &mut vertex_bytes, &mut indices);
-        box_caster(5.0, 5.6, 10.0, 46.0, &mut vertex_bytes, &mut indices);
+        box_caster(-0.5, 0.5, 10.0, 170.0, &mut vertex_bytes, &mut indices);
+        // The second box is placed so the lit slit between the two shadows is **half a metre** —
+        // between the new near map's 31 cm and the far map's 62 cm, which is what a cascade
+        // handover is for. At the old 28 m radius the same role was played by a 1.2 m slit.
+        box_caster(1.0, 1.6, 10.0, 170.0, &mut vertex_bytes, &mut indices);
 
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("seam caster"),
@@ -692,7 +706,12 @@ mod tests {
         });
         queue.write_buffer(&origins, 0, &origin_bytes);
 
-        shadow.write(&queue, &camera, Some([toward[0], toward[1], toward[2], 1.0]), FAR_RANGE_M);
+        shadow.write(
+            &queue,
+            &camera,
+            Some([toward[0], toward[1], toward[2], 1.0]),
+            FAR_RANGE_M,
+        );
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("seam witness"),
@@ -905,8 +924,10 @@ mod tests {
         // fragment as the sample point slides through it — a 1/9 step, present before this change
         // and inherent to a nine-tap comparison, not the seam. The handover's own rate is measured
         // on the columns where the term crosses the band one way.
-        let band_from = ((seam_m - band - f64::from(SEAM_D.0)) / f64::from(grid_d)).max(0.0) as usize;
-        let band_to = (((seam_m + band - f64::from(SEAM_D.0)) / f64::from(grid_d)) as usize).min(rows - 1);
+        let band_from =
+            ((seam_m - band - f64::from(SEAM_D.0)) / f64::from(grid_d)).max(0.0) as usize;
+        let band_to =
+            (((seam_m + band - f64::from(SEAM_D.0)) / f64::from(grid_d)) as usize).min(rows - 1);
         let mut quiet = vec![false; cols];
         for (col, flag) in quiet.iter_mut().enumerate() {
             let mut sign = 0.0f64;
@@ -936,7 +957,8 @@ mod tests {
                         per_row[law] = (step, col, row);
                     }
                     if row + frame_rows < rows {
-                        let step = (sample(col, row + frame_rows, law) - sample(col, row, law)).abs();
+                        let step =
+                            (sample(col, row + frame_rows, law) - sample(col, row, law)).abs();
                         if step > per_frame[law].0 {
                             per_frame[law] = (step, col, row);
                         }
@@ -971,7 +993,7 @@ mod tests {
             f64::from(grid_d) * 1000.0
         );
         println!(
-            "handover: {band_m:.2} m wide ({} far texels) = {band_rows:.0} rows of a 288-row frame at 28 m\n\
+            "handover: {band_m:.2} m wide ({} far texels) = {band_rows:.0} rows of a 288-row frame at {NEAR_RANGE_M} m\n\
              sampling: {:.3} m between rows, {frame_m:.3} m per frame at {WALK_M_PER_S} m/s, {FRAME_HZ:.0} Hz",
             2.0 * BLEND_TEXELS,
             f64::from(grid_d),
@@ -1026,8 +1048,13 @@ mod tests {
             row += 12;
         }
 
+        // **The cliff is half the term, not the whole of it.** The near map covers 160 m now, so
+        // its texel is 31 cm against the far map's 62 cm: a feature between the two is resolved
+        // by one cascade and not the other, and the one-rung step is about 0.49 of the shadow
+        // term. The old 28 m near map's 5.5 cm texels made the same step larger; the bound is the
+        // measured cliff, not a constant from the old radius.
         assert!(
-            per_frame[0].0 > 0.5,
+            per_frame[0].0 > 0.45,
             "the witness found no pop to remove: the step law moves {:.4} per frame",
             per_frame[0].0
         );

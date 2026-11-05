@@ -40,7 +40,11 @@ const STEP: f32 = 3.0e-3;
 
 fn srgb(v: f32) -> u8 {
     let v = v.clamp(0.0, 1.0) as f64;
-    let encoded = if v <= 0.003_130_8 { 12.92 * v } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
+    let encoded = if v <= 0.003_130_8 {
+        12.92 * v
+    } else {
+        1.055 * v.powf(1.0 / 2.4) - 0.055
+    };
     (encoded * 255.0 + 0.5) as u8
 }
 
@@ -121,12 +125,18 @@ fn duplicate_faces(meshes: &[Mesh]) -> (usize, usize, usize) {
                     c[au] = quad.uv[0] as i32 + du;
                     c[av] = quad.uv[1] as i32 + dv;
                     // Collapsed onto the solid cell, exactly as the mesher's own guard does.
-                    let solid = if quad.face.is_positive() { c[axis] - 1 } else { c[axis] };
+                    let solid = if quad.face.is_positive() {
+                        c[axis] - 1
+                    } else {
+                        c[axis]
+                    };
                     c[axis] = solid;
                     for a in 0..3 {
                         c[a] += origin[a] * SUBVOXEL_SIDE as i32;
                     }
-                    *seen.entry((c, axis as u8, quad.face.is_positive())).or_insert(0) += 1;
+                    *seen
+                        .entry((c, axis as u8, quad.face.is_positive()))
+                        .or_insert(0) += 1;
                     *coplanar.entry((c, axis as u8)).or_insert(0) += 1;
                 }
             }
@@ -145,8 +155,7 @@ fn ray_hit(camera: &Camera, i: u32, j: u32, p: [f64; 3], n: [f64; 3]) -> Option<
     let ndc_y = 1.0 - 2.0 * (j as f64 + 0.5) / SIDE as f64;
     let mut dir = [0.0f64; 3];
     for axis in 0..3 {
-        dir[axis] =
-            forward[axis] + right[axis] * ndc_x * camera.aspect * t + up[axis] * ndc_y * t;
+        dir[axis] = forward[axis] + right[axis] * ndc_x * camera.aspect * t + up[axis] * ndc_y * t;
     }
     let denom = dir[0] * n[0] + dir[1] * n[1] + dir[2] * n[2];
     if denom.abs() < 1.0e-9 {
@@ -174,7 +183,11 @@ fn in_plane(n: [f64; 3]) -> [f64; 3] {
     if n[1].abs() > 0.9 {
         [1.0, 0.0, 0.0]
     } else {
-        unit([n[1] * 0.0 - n[2] * 1.0, n[2] * 0.0 - n[0] * 0.0, n[0] * 1.0 - n[1] * 0.0])
+        unit([
+            n[1] * 0.0 - n[2] * 1.0,
+            n[2] * 0.0 - n[0] * 0.0,
+            n[0] * 1.0 - n[1] * 0.0,
+        ])
     }
 }
 
@@ -218,9 +231,8 @@ fn main() {
     );
 
     // ---- one vertical face and one horizontal one, of the same varied material ---------
-    let speckle = |m: MaterialId| {
-        matches!(materials::pattern_of(m), materials::SurfacePattern::Speckle)
-    };
+    let speckle =
+        |m: MaterialId| matches!(materials::pattern_of(m), materials::SurfacePattern::Speckle);
     let mut pairs: std::collections::BTreeMap<MaterialId, (usize, Quad, f64, usize, Quad, f64)> =
         Default::default();
     for (index, mesh) in meshes.iter().enumerate() {
@@ -229,9 +241,14 @@ fn main() {
                 continue;
             }
             let area = quad.area() as f64;
-            let entry = pairs
-                .entry(quad.material)
-                .or_insert((usize::MAX, *quad, 0.0, usize::MAX, *quad, 0.0));
+            let entry = pairs.entry(quad.material).or_insert((
+                usize::MAX,
+                *quad,
+                0.0,
+                usize::MAX,
+                *quad,
+                0.0,
+            ));
             if quad.face.axis() != 1 {
                 if area > entry.2 {
                     *entry = (index, *quad, area, entry.3, entry.4, entry.5);
@@ -298,15 +315,40 @@ fn main() {
     // **And the wall at a walk-past angle.** A vertical side is what the eye sees at
     // grazing incidence, so 78° off its normal is the case the report is about.
     for (name, mesh, quad, area, oblique, png) in [
-        ("wall ", &wall_only, &vquad, varea, OBLIQUE, Some("target/face-vertical.png")),
-        ("floor", &floor_only, &hquad, harea, OBLIQUE, Some("target/face-horizontal.png")),
-        ("wall 78°", &wall_only, &vquad, varea, 0.978, Some("target/face-grazing.png")),
+        (
+            "wall ",
+            &wall_only,
+            &vquad,
+            varea,
+            OBLIQUE,
+            Some("target/face-vertical.png"),
+        ),
+        (
+            "floor",
+            &floor_only,
+            &hquad,
+            harea,
+            OBLIQUE,
+            Some("target/face-horizontal.png"),
+        ),
+        (
+            "wall 78°",
+            &wall_only,
+            &vquad,
+            varea,
+            0.978,
+            Some("target/face-grazing.png"),
+        ),
     ] {
         let corners = corners_m(mesh, quad);
         let face_centre = centre_of(&corners);
         let n = normal_of(quad);
         let u = in_plane(n);
-        let w = [u[1] * n[2] - u[2] * n[1], u[2] * n[0] - u[0] * n[2], u[0] * n[1] - u[1] * n[0]];
+        let w = [
+            u[1] * n[2] - u[2] * n[1],
+            u[2] * n[0] - u[0] * n[2],
+            u[0] * n[1] - u[1] * n[0],
+        ];
         // **A face's centre is a corner of the address grid**, where eight cells meet and
         // "which one" is a convention rather than a claim; the point measured is half a
         // cell in on both in-plane axes, so only the face's own axis is on a boundary.
@@ -355,7 +397,9 @@ fn main() {
             let mut previous_hit: Option<[f64; 3]> = None;
             for i in 1..SIDE - 1 {
                 let (x, y) = if across { (i, CENTRE) } else { (CENTRE, i) };
-                let Some(pixel) = frame.pixel(x, y) else { continue };
+                let Some(pixel) = frame.pixel(x, y) else {
+                    continue;
+                };
                 if let Some(before) = previous {
                     if (pixel[0] - before[0]).abs() > STEP {
                         let (ax, ay) = if across { (x - 1, y) } else { (x, y - 1) };
@@ -395,7 +439,11 @@ fn main() {
     let mut centre = centre_of(&corners_m(&wall_only, &vquad));
     let n = normal_of(&vquad);
     let u = in_plane(n);
-    let w = [u[1] * n[2] - u[2] * n[1], u[2] * n[0] - u[0] * n[2], u[0] * n[1] - u[1] * n[0]];
+    let w = [
+        u[1] * n[2] - u[2] * n[1],
+        u[2] * n[0] - u[0] * n[2],
+        u[0] * n[1] - u[1] * n[0],
+    ];
     for axis in 0..3 {
         centre[axis] += u[axis] * 0.125 + w[axis] * 0.125;
     }

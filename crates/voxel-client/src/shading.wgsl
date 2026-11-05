@@ -120,11 +120,22 @@ struct QuadRecord {
     uv: u32,        // uv.x in the low 16 bits, uv.y in the high
     extent: u32,    // extent.x in the low 16 bits, extent.y in the high
     chunk: u32,     // an index into `origins`
-    // **A body's light direction, `y` and `z`** (C-184), and a rectangle's two unused slots: for a
+    // **A body's light direction, `y` and `z`** (C-184), and a rectangle's two rung slots: for a
     // body the six slots after `face` and `chunk` are its radiance's three channels, then `x`, `y`, `z`
     // of the direction that lights it, each an `f32`'s bits.
     light_y: u32,
     light_z: u32,
+    // **The per-axis shaper's cell, carried on the rectangle** — `profile32::Cell`'s leaning cut,
+    // as two slopes in record units per record unit. A roof states its `(x, z)` gradient; a wall
+    // states its bottom and top edges' gradient along the horizontal axis it runs on. Zero is the
+    // flat rectangle the format drew before the shaper was carried, so no earlier record moves.
+    shape_lo: u32,
+    // The shaper's second slope: a roof's gradient along `z`, a wall's along the far edge of its
+    // horizontal axis.
+    shape_hi: u32,
+    // The bilinear's cross term: a roof that shares its four corner heights with its neighbours.
+    // Zero is a flat face (and every wall), so older records keep their meaning.
+    shape_twist: u32,
 };
 
 // The record's own discriminant for a body (C-184): `voxel_client::quad::BODY_KIND`.
@@ -359,18 +370,37 @@ fn world_march(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> vec2<f32> {
 /// **The coarse band's transmittance along one direction**, from the point the fine band stopped
 /// measuring — the same walk at eight metres a cell, which is the rung a far chunk is lit at.
 ///
-/// Its word is a **share** (`FAR_SHARE` of the cell holds matter), so the ray keeps that fraction
-/// and walks on: a colonnade dims by the pillars it crosses instead of turning into a wall of
-/// eight-metre stones. The fragment's own coarse cell is advanced past before anything is tested,
-/// exactly as the fine walk does — a surface is drawn on its own cell's boundary and a march that
-/// counted it would shadow every block in the world.
+/// Its word is a **share** (`FAR_SHARE` of the cell holds matter), and this walk **answers a
+/// question at the rung's own resolution instead of accumulating one**: a cell holding at least
+/// `FAR_BLOCKS` of matter is in the ray's way and ends the walk, and a cell below it is passed.
+///
+/// Multiplying the shares was the first law here and it is wrong. A cell that holds a hill's
+/// *surface* is half matter, so a beam grazing a hillside lost half its light per cell, and
+/// sixty-four cells of that is zero: every fragment past the fine cube went black on a straight
+/// line, which is the cube's own face and not a shadow. Taking the *worst* cell instead fixed the
+/// distance and darkened the ground, because one canopy-filled cell then put out a ray that only
+/// grazed it. A share is an occupancy of eight metres, not a slab of thickness along the ray, so
+/// the only honest use of it is the threshold: this cell has matter in it, or it does not.
+///
+/// The fragment's own coarse cell is advanced past before anything is tested, exactly as the fine
+/// walk does — a surface is drawn on its own cell's boundary and a march that counted it would
+/// shadow every block in the world.
 ///
 /// **An unstamped cell ends the walk with what it had**: the band's own "not measured" is the
 /// shadow map's answer, not clear air.
-fn world_far_share(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> f32 {
-    let cell_m = horizon.far.x;
-    let n = vec3<i32>(horizon.far.yzw);
-    let rel = (local - horizon.to_far.xyz) / cell_m;
+/// The walk itself, shared by both coarse rungs: a share per cell, a threshold, and an unstamped
+/// cell that ends the walk with what it had.
+fn world_band_share(
+    local: vec3<f32>,
+    d: vec3<f32>,
+    to_origin: vec4<f32>,
+    params: vec4<f32>,
+    offset: u32,
+) -> f32 {
+    let cell_m = params.x;
+    let n = vec3<i32>(params.yyy);
+    let reach_m = params.z;
+    let rel = (local - to_origin.xyz) / cell_m;
     if (any(rel < vec3<f32>(0.0)) || any(rel >= vec3<f32>(n))) {
         return 1.0;
     }
@@ -388,7 +418,6 @@ fn world_far_share(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> f32 {
         }
     }
     let t_delta = vec3<f32>(cell_m) / max(abs(d), vec3<f32>(1e-20));
-    var clear = 1.0;
     for (var step = 0; step < HORIZON_MAX_STEPS; step = step + 1) {
         var axis = 0;
         if (t_max.y <= t_max.x && t_max.y <= t_max.z) {
@@ -397,20 +426,105 @@ fn world_far_share(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> f32 {
             axis = 2;
         }
         if (t_max[axis] >= reach_m) {
-            return clear;
+            return 1.0;
         }
         i[axis] = i[axis] + walk[axis];
         t_max[axis] = t_max[axis] + t_delta[axis];
         if (any(i < vec3<i32>(0)) || any(i >= n)) {
-            return clear;
+            return 1.0;
         }
-        let word = horizon_far_word(i);
+        let word = horizon_coarse[offset + u32(i.x + n.x * (i.y + n.y * i.z))];
         if ((word & FAR_MEASURED) == 0u) {
-            return clear;
+            return 1.0;
         }
-        clear = clear * (1.0 - f32(word & FAR_SHARE) / 255.0);
+        if (f32(word & FAR_SHARE) / 255.0 >= FAR_BLOCKS) {
+            return 0.0;
+        }
     }
-    return clear;
+    return 1.0;
+}
+
+/// The 8 m far band's share, from the fragment's own cell outward.
+fn world_far_share(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> f32 {
+    return world_band_share(
+        local,
+        d,
+        horizon.to_far,
+        vec4<f32>(horizon.far.x, horizon.far.y, reach_m, 0.0),
+        u32(horizon.offsets.x),
+    );
+}
+
+/// **One surface rung's band**, by its slot in the rung table, walked as far as the caller says.
+///
+/// The reach is the caller's, exactly as it is for the three coarse rungs above: the **beam** walks
+/// a rung's own extent (`params.z`, 16 of its cells) and the **dome** walks the short reach its own
+/// ray declares. A rung is an offset and a cell in the ladder's one buffer, not a second walk.
+fn world_surface_share(rung: i32, local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> f32 {
+    let entry = horizon.surfaces[rung];
+    return world_band_share(
+        local,
+        d,
+        entry.to_anchor,
+        vec4<f32>(entry.params.x, entry.params.y, reach_m, entry.params.w),
+        u32(entry.params.w),
+    );
+}
+
+/// **The surface rung a face's own cell belongs to**, or `-1` when no rung measures that cell.
+fn surface_rung(cell_m: f32) -> i32 {
+    for (var r = 0; r < i32(horizon.offsets.w); r = r + 1) {
+        if (abs(horizon.surfaces[r].params.x - cell_m) < 0.5) {
+            return r;
+        }
+    }
+    return -1;
+}
+
+/// **Tier 6's band**, sampled by the rung that owns it: sixteen-metre cells over a kilometre.
+fn world_wide_share(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> f32 {
+    return world_band_share(
+        local,
+        d,
+        horizon.to_wide,
+        vec4<f32>(horizon.wide.x, horizon.wide.y, reach_m, 0.0),
+        u32(horizon.offsets.y),
+    );
+}
+
+/// **Tier 7's band**: one 32 m cell a chunk, the last chunk-held rung.
+fn world_chunk_share(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> f32 {
+    return world_band_share(
+        local,
+        d,
+        horizon.to_chunk,
+        vec4<f32>(horizon.chunk.x, horizon.chunk.y, reach_m, 0.0),
+        u32(horizon.offsets.z),
+    );
+}
+
+/// **The band a face's own cell belongs to.** Coarsest first: a 64 m face is lit by the group
+/// band, a 32 m face by the chunk band, a 16 m face by the wide one, an 8 m far face by the coarse
+/// band. A streamed face has no cell of its own and the fine march answers first, so it keeps the
+/// coarse band for what lies past the cube.
+fn world_band_for(cell_m: f32, local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> f32 {
+    if (cell_m >= 64.0 - 0.5) {
+        let rung = surface_rung(cell_m);
+        if (rung >= 0) {
+            return world_surface_share(rung, local, d, reach_m);
+        }
+        // **A face coarser than every rung in the table is answered by the finest band that
+        // measures there** rather than by an invented clear sky: the chunk tier's 32 m cells are a
+        // finer measurement of the same ground, and a rung that is not in the table is one nobody
+        // has measured — no drawn face is cut at a cell the ladder does not hold.
+    }
+    if (cell_m >= HORIZON_CHUNK_CELL_M - 0.5) {
+        return world_chunk_share(local, d, reach_m);
+    }
+    if (cell_m >= HORIZON_WIDE_CELL_M - 0.5) {
+        return world_wide_share(local, d, reach_m);
+    }
+    return world_far_share(local, d, reach_m);
 }
 
 /// **How much of one direction reaches an eye-relative point**: `1` clear, `0` stopped.
@@ -422,7 +536,7 @@ fn world_far_share(local: vec3<f32>, d: vec3<f32>, reach_m: f32) -> f32 {
 /// it stopped** — the trade the shadow's cascades make, at the light's own grain — so a chunk at
 /// 200 m is lit by a measurement instead of the unshadowed sky. A direction neither band could
 /// measure is `1.0`, the answer the dome had before the volume existed.
-fn world_visibility(local: vec3<f32>, dir: vec3<f32>, reach_m: f32) -> f32 {
+fn world_visibility(local: vec3<f32>, dir: vec3<f32>, reach_m: f32, cell_m: f32) -> f32 {
     let length_dir = length(dir);
     if (length_dir <= 0.0) {
         return 1.0;
@@ -440,7 +554,7 @@ fn world_visibility(local: vec3<f32>, dir: vec3<f32>, reach_m: f32) -> f32 {
     if (all(rel >= vec3<f32>(0.0)) && all(rel < horizon.near.yzw)) {
         return 1.0;
     }
-    return world_far_share(local, d, reach_m);
+    return world_band_for(cell_m, local, d, reach_m);
 }
 
 /// **The dome's own share at a point**: the mean of the three declared rays.
@@ -450,11 +564,11 @@ fn world_visibility(local: vec3<f32>, dir: vec3<f32>, reach_m: f32) -> f32 {
 /// The radiance the share multiplies is the atmosphere's own, which is where the **Moon's**
 /// scattered term is: a night fragment is lit by the Sun reflected off the Moon, and the march
 /// decides how much of that reaches it.
-fn world_sky(local: vec3<f32>) -> f32 {
+fn world_sky(local: vec3<f32>, cell_m: f32) -> f32 {
     var total = 0.0;
-    total = total + world_visibility(local, vec3<f32>(0.0, 1.0, 0.0), HORIZON_SKY_REACH_M);
-    total = total + world_visibility(local, vec3<f32>(0.70710677, 0.70710677, 0.0), HORIZON_SKY_REACH_M);
-    total = total + world_visibility(local, vec3<f32>(0.0, 0.70710677, -0.70710677), HORIZON_SKY_REACH_M);
+    total = total + world_visibility(local, vec3<f32>(0.0, 1.0, 0.0), HORIZON_SKY_REACH_M, cell_m);
+    total = total + world_visibility(local, vec3<f32>(0.70710677, 0.70710677, 0.0), HORIZON_SKY_REACH_M, cell_m);
+    total = total + world_visibility(local, vec3<f32>(0.0, 0.70710677, -0.70710677), HORIZON_SKY_REACH_M, cell_m);
     return total / 3.0;
 }
 
@@ -556,6 +670,12 @@ struct VsOut {
     /// stretch on the material's **world** axis — square cells on the face that looks along
     /// that axis, stretched ones on every other side (C-163.2).
     @location(12) @interpolate(flat) plane_axis: i32,
+    /// **The stride this face was cut at**, in metres — `0` for the fine path and the far field's
+    /// own cell size for a rectangle from `far_terrain`. It is the floor under the fragment's
+    /// footprint: a ladder cannot resolve a rung finer than the geometry actually holds, so a face
+    /// made of eight-metre cells reads the eight-metre rung rather than inventing sub-cell detail.
+    /// `vs_quad` takes it from the record's spare slot; a corner has no record and states zero.
+    @location(13) @interpolate(flat) cell_m: f32,
 };
 
 @vertex
@@ -593,6 +713,9 @@ fn vs_main(in: VsIn) -> VsOut {
     // normal names, so the fragment keeps the interpolated address for this format (see
     // `plane`); only `vs_quad` knows a plane to state.
     out.plane = vec2<i32>(-1, 0);
+    // A corner is the fine path's: its faces are subvoxel rectangles and the ladder may read every
+    // rung down to the subvoxel.
+    out.cell_m = 0.0;
     // The face the refinement cut this corner from. A corner states no *plane* (its surface
     // is off the plane its normal names), but it does state the face's **axis**, which is
     // all the shaper's stretch needs.
@@ -636,6 +759,21 @@ fn winding_flips(face: u32) -> bool {
 ///
 /// `corner` is `0..3` in `Quad::corners`' own order, and the winding flip is applied here rather
 /// than by either caller.
+/// **The metres one coordinate step of a record is.**
+///
+/// A fine or chunk-held quad's coordinates are subvoxels, and the rate the camera already carries
+/// converts them (`SUBVOXEL_SIDE` cells a metre). A **surface rung's** coordinates are its own
+/// cell cut into [`SUB_CELLS`] steps — a 536 870 912 m cell is 2 147 483 648 subvoxels, past what a
+/// rectangle can state — and the record carries that step in `light_z`, which a rectangle otherwise
+/// leaves zero. One number, and no rung is past the format.
+fn quad_unit(quad: QuadRecord) -> f32 {
+    return select(
+        1.0 / f32(camera.rates.x),
+        bitcast<f32>(quad.light_z),
+        quad.light_z != 0u,
+    );
+}
+
 fn quad_corner_m(quad_index: u32, corner_in: u32) -> vec3<f32> {
     let quad = quads[quad_index];
     var corner = corner_in;
@@ -653,6 +791,32 @@ fn quad_corner_m(quad_index: u32, corner_in: u32) -> vec3<f32> {
     let plane = f32(quad.slice);
     let su = f32(u);
     let sv = f32(v);
+    // **The shaper's slope, applied to the one coordinate a face moves along** — `y`, whichever
+    // axis the face lies on: a roof's whole rectangle leans, and a wall's top edge leans while its
+    // bottom keeps the neighbour's plane. The slopes are in record units per record unit, so the
+    // offset is the same unit as `uv` and needs no conversion of its own.
+    let lo = bitcast<f32>(quad.shape_lo);
+    let hi = bitcast<f32>(quad.shape_hi);
+    let twist = bitcast<f32>(quad.shape_twist);
+    var shape = 0.0;
+    if (lo != 0.0 || hi != 0.0 || twist != 0.0) {
+        let centre = vec2<f32>(f32(low.x) + f32(size.x) * 0.5, f32(low.y) + f32(size.y) * 0.5);
+        if (axis == 1u) {
+            // **The bilinear through the cell's four shared corners**, anchored at the rectangle's
+            // low corner: `slice` is that corner's height, so the constant term is zero and `lo`,
+            // `hi` and `twist` reproduce the other three. Measured from the low corner, every
+            // corner is the one integer the neighbouring roof also reads there.
+            let dx = su - f32(low.x);
+            let dz = sv - f32(low.y);
+            shape = lo * dx + hi * dz + twist * dx * dz;
+        } else if (axis == 0u) {
+            // An X wall's vertical is `u` and its horizontal `v`.
+            shape = select(lo, hi, su >= f32(low.x + size.x)) * (sv - centre.y);
+        } else {
+            // A Z wall's vertical is `v` and its horizontal `u`.
+            shape = select(lo, hi, sv >= f32(low.y + size.y)) * (su - centre.x);
+        }
+    }
     var sub = vec3<f32>(0.0);
     if (axis == 0u) {
         sub = vec3<f32>(plane, su, sv);
@@ -661,11 +825,9 @@ fn quad_corner_m(quad_index: u32, corner_in: u32) -> vec3<f32> {
     } else {
         sub = vec3<f32>(su, sv, plane);
     }
-    // Subvoxels to metres, from the rate the camera already carries — one metre a
-    // voxel, `SUBVOXEL_SIDE` cells across it — and then the chunk's own origin.
-    //
     // **The face is the tree's own plane**, so a flat boundary is one rectangle and two derivations of a tree draw the same bytes.
-    return sub / f32(camera.rates.x) + origins[quad.chunk].xyz;
+    sub.y += shape;
+    return sub * quad_unit(quad) + origins[quad.chunk].xyz;
 }
 
 @vertex
@@ -678,6 +840,13 @@ fn vs_quad(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     var out: VsOut;
     out.clip = camera.vp * vec4<f32>(p, 1.0);
     out.normal = face_normal(quad.face);
+    // **A shaped roof is lit by its own plane**, not by the world's up: the shaper's gradient tilts
+    // the normal, so a ramp shades as the plane it is rather than as a staircase's tread.
+    let slope_lo = bitcast<f32>(quad.shape_lo);
+    let slope_hi = bitcast<f32>(quad.shape_hi);
+    if (quad.face == 3u && (slope_lo != 0.0 || slope_hi != 0.0)) {
+        out.normal = normalize(vec3<f32>(-slope_lo, 1.0, -slope_hi));
+    }
     // **The face's plane, exactly.** `slice` is the plane in whole subvoxels from the
     // chunk's low corner, and a chunk origin is a whole metre, so this cell is an integer
     // the rectangle can state. The origin is recovered from the eye-relative origin here
@@ -689,7 +858,11 @@ fn vs_quad(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     );
     let cells = vec3<i32>(origin_m) * i32(camera.rates.x);
     let plane_axis = face_axis(quad.face);
-    out.plane = vec2<i32>(i32(plane_axis), cells[plane_axis] + i32(quad.slice));
+    // **The plane's own metres, in the record's own unit**: a surface rung's plane index is in its
+    // cell's steps (`quad_unit` is a 64 m cell's 256th) and a rectangle's is already subvoxels, so
+    // one multiply puts both in the subvoxel the material's world-space law is stated in.
+    let plane_sub = f32(quad.slice) * quad_unit(quad) * f32(camera.rates.x);
+    out.plane = vec2<i32>(i32(plane_axis), cells[plane_axis] + i32(round(plane_sub)));
     out.plane_axis = i32(plane_axis);
     // The eye is the origin here, exactly as in `vs_main`: the geometry arrived
     // already relative to it.
@@ -704,6 +877,10 @@ fn vs_quad(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     out.light_direct = vec3<f32>(0.0);
     out.light_diffuse = vec3<f32>(0.0);
     out.light_present = 0u;
+    // **The far field's stride, from the record's spare slot** — see `VsOut::cell_m`. A rectangle
+    // from the fine path leaves the slot zero, so this is zero for every face the game drew before
+    // the far field existed.
+    out.cell_m = bitcast<f32>(quad.light_y);
     // **The veil rides the origin** (C-179). A cloud cell's own origin carries the
     // transmittance of the column it stands in, in the one float of that `vec4` the world
     // never used, so the veil needs no new field in the record and no new binding.
@@ -1072,14 +1249,11 @@ fn lattice_domain(seed: vec2<u32>, tag: vec2<u32>, material: u32, cell: vec3<i32
 // the side's own bit width (`DetailLattice::flat`, four bits an axis at 16 samples
 // a side), which the caller derives from the uniform rather than stating.
 fn lattice_sample(
-    seed: vec2<u32>,
+    domain: vec2<u32>,
     tag: vec2<u32>,
-    material: u32,
-    cell: vec3<i32>,
     address: u32,
     channel: u32,
 ) -> f32 {
-    let domain = lattice_domain(seed, tag, material, cell);
     return signed3(domain, vec2<u32>(channel, 0u), vec2<u32>(address, 0u), tag);
 }
 
@@ -1158,7 +1332,20 @@ fn rung_weights(footprint: f32) -> array<f32, 5> {
 // the trilinear version and does in the nearest one. A blend is Lipschitz in position, so the same
 // jitter moves it by the jitter's own worth of gradient. Sharp cells and jump stability cannot
 // both hold here; the ladder's smooth handover is what changes with distance.
-fn grid_sample(
+//
+/// **Both channels of one grid cell, from one fold.** Roughness and reflectance are two readings
+/// of the *same* eight corners — `signed3(domain, (1,0), …)` and `signed3(domain, (2,0), …)` — so
+/// sampling them separately rebuilt each corner's `lattice_domain` (five `mix64`s, each three
+/// 64-bit multiplies built from 16-bit partial products) a second time for the second channel.
+/// This walks the corners once, folds each once, and reads both channels from that fold: the same
+/// corners in the same order, the same fold, the same `signed3` per channel, and the same weighted
+/// sum — a `vec2` per corner rather than two scalar passes. **Measured identical**: every named
+/// pixel in `light-at-a-pixel` reads the same four decimals as before, and the golden images did
+/// not move.
+///
+/// **The lattice is the largest single term in the fragment path** (`docs/baselines/frame-cost.json`
+/// and `PATCH-082`), and half of its folds were the second channel's.
+fn grid_sample_pair(
     seed: vec2<u32>,
     tag: vec2<u32>,
     material: u32,
@@ -1168,15 +1355,11 @@ fn grid_sample(
     bits: u32,
     step: i32,
     shift: u32,
-    channel: u32,
-) -> f32 {
-    // `sub` is the fragment's place inside its fine cell, so the coordinate is exact: without it
-    // the field would step by a whole 31.25 mm cell at every fine boundary, which is the
-    // `f32`-against-`f64` disagreement the agreement test refuses.
+) -> vec2<f32> {
     let fine = cell * i32(camera.rates.y) + vec3<i32>(a);
     let grid = fine >> vec3<u32>(shift);
     let frac = (vec3<f32>(fine & vec3<i32>(step - 1)) + sub) / f32(step);
-    var total = 0.0;
+    var total = vec2<f32>(0.0);
     for (var i = 0u; i < 2u; i = i + 1u) {
         let wu = select(1.0 - frac.x, frac.x, i == 1u);
         for (var j = 0u; j < 2u; j = j + 1u) {
@@ -1187,8 +1370,12 @@ fn grid_sample(
                 let corner = corner_fine >> vec3<u32>(4u);
                 let addr = corner_fine & vec3<i32>(0xF);
                 let flat = u32(addr.x) | (u32(addr.y) << bits) | (u32(addr.z) << (2u * bits));
-                total = total
-                    + wu * wv * ww * lattice_sample(seed, tag, material, corner, flat, channel);
+                let corner_domain = lattice_domain(seed, tag, material, corner);
+                let both = vec2<f32>(
+                    lattice_sample(corner_domain, tag, flat, 1u),
+                    lattice_sample(corner_domain, tag, flat, 2u),
+                );
+                total = total + wu * wv * ww * both;
             }
         }
     }
@@ -1203,6 +1390,10 @@ const PATTERN_TINT: f32 = 0.35;
 // reflectance, `((1.5 - 1)/(1.5 + 1))^2` — the same value the clear coat is
 // specified with, so a wet surface's highlight is the layer's own boundary.
 const COAT_F0: f32 = 0.04;
+// `voxel_appearance::provenance::BOUNCE_REFLECTANCE`: the mean base reflectance of the material
+// table, which is what the terrain gives back to a face it has walled off. Typed here for the same
+// reason `COAT_F0` is: a shader cannot call Rust.
+const BOUNCE_REFLECTANCE: f32 = 0.43;
 // **The hemisphere's cosine-weighted integral of a uniform radiance** — `skylight::WorldLight`'s
 // `assemble` applies the same π to its stencil's mean, so a corner with the atmosphere's one ray
 // and no stencil reads the same kind of number as a measured corner's diffuse band.
@@ -1286,38 +1477,33 @@ fn pattern_deviation(
     var roughness = 0.0;
     var reflectance = 0.0;
     if (weights[0] > 0.0) {
-        let r = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_0, SHIFT_0, 1u);
-        let f = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_0, SHIFT_0, 2u);
-        roughness = roughness + weights[0] * r;
-        reflectance = reflectance + weights[0] * f;
+        let s = grid_sample_pair(seed, tag, material, cell, a, sub, bits, STEP_0, SHIFT_0);
+        roughness = roughness + weights[0] * s.x;
+        reflectance = reflectance + weights[0] * s.y;
         total = total + weights[0];
     }
     if (weights[1] > 0.0) {
-        let r = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_1, SHIFT_1, 1u);
-        let f = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_1, SHIFT_1, 2u);
-        roughness = roughness + weights[1] * r;
-        reflectance = reflectance + weights[1] * f;
+        let s = grid_sample_pair(seed, tag, material, cell, a, sub, bits, STEP_1, SHIFT_1);
+        roughness = roughness + weights[1] * s.x;
+        reflectance = reflectance + weights[1] * s.y;
         total = total + weights[1];
     }
     if (weights[2] > 0.0) {
-        let r = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_2, SHIFT_2, 1u);
-        let f = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_2, SHIFT_2, 2u);
-        roughness = roughness + weights[2] * r;
-        reflectance = reflectance + weights[2] * f;
+        let s = grid_sample_pair(seed, tag, material, cell, a, sub, bits, STEP_2, SHIFT_2);
+        roughness = roughness + weights[2] * s.x;
+        reflectance = reflectance + weights[2] * s.y;
         total = total + weights[2];
     }
     if (weights[3] > 0.0) {
-        let r = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_3, SHIFT_3, 1u);
-        let f = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_3, SHIFT_3, 2u);
-        roughness = roughness + weights[3] * r;
-        reflectance = reflectance + weights[3] * f;
+        let s = grid_sample_pair(seed, tag, material, cell, a, sub, bits, STEP_3, SHIFT_3);
+        roughness = roughness + weights[3] * s.x;
+        reflectance = reflectance + weights[3] * s.y;
         total = total + weights[3];
     }
     if (weights[4] > 0.0) {
-        let r = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_4, SHIFT_4, 1u);
-        let f = grid_sample(seed, tag, material, cell, a, sub, bits, STEP_4, SHIFT_4, 2u);
-        roughness = roughness + weights[4] * r;
-        reflectance = reflectance + weights[4] * f;
+        let s = grid_sample_pair(seed, tag, material, cell, a, sub, bits, STEP_4, SHIFT_4);
+        roughness = roughness + weights[4] * s.x;
+        reflectance = reflectance + weights[4] * s.y;
         total = total + weights[4];
     }
     // A footprint past the ladder's fade draws nothing, and `total` is zero there: the
@@ -1436,7 +1622,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let ndotv = clamp(dot(n, v), 0.0, 1.0);
 
     // the material's own pattern, read at this fragment's address — docs/lighting-sky-and-moon.md
-    let footprint = eye_footprint(in.eye_rel);
+    //
+    // **A face cannot show a rung finer than the cells it was cut at.** The far field's rectangles
+    // are eight-metre cells; a footprint smaller than that would read half-metre cells across a
+    // face that holds none, so the stride floors it. A fine rectangle carries `0` and is unchanged.
+    let footprint = max(eye_footprint(in.eye_rel), in.cell_m);
     // The ladder speaks where it can and fades to the fallback across its top rung's
     // band — docs/lighting-sky-and-moon.md
     let vertex_deviation = vec2<f32>(in.detail_roughness, in.detail_reflectance)
@@ -1587,15 +1777,24 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // had been measured and one that had not. The shader no longer branches on `light_present`,
     // and both branches of the retired law are gone. The vertex format still carries the bands (a
     // mesh is a format's, not this pass's to shrink); nothing in this file reads them.
-    var sky = rig.ambient.rgb;
-    var beams = vec3<f32>(0.0);
+    // ---- the frame's light law: two terms, two occlusions, no shared scaling -----
+    // **Direct** is the frame's one Sun/Moon beam. It is the only term whose visibility is the
+    // beam's own — the shadow map's cascades and the subvoxel march along `beam_dir`.
+    // **Dome** is the atmosphere's own sky radiance (`skylight`'s ambient: the horizon ring's four
+    // azimuths plus the zenith). Its visibility is the horizon's three sky rays and nothing else —
+    // the sky is not behind the caster, so a fragment the beam misses keeps its whole sky share.
+    // Scaling either term by the other's visibility is the mistake this split makes hard to
+    // write: with each term named for what occludes it, a line that reaches across is visible as
+    // one, and the two shares cannot be swapped for one another by a reader in a hurry.
+    var dome = rig.ambient.rgb;
+    var direct = vec3<f32>(0.0);
     // **The beam's direction is the frame's one Sun/Moon direction**, read from the rig uniform;
     // it is the direction *of the beam*, not a second light. A per-corner direction is the next
     // slice's input (M1.2/M2.0), and until it exists this is the only direction the frame has.
     var beam_dir = vec3<f32>(0.0, 1.0, 0.0);
     var beam_known = false;
     if (rig.count.x > 0u) {
-        beams = rig.lights[0].colour.rgb * rig.lights[0].direction.w;
+        direct = rig.lights[0].colour.rgb * rig.lights[0].direction.w;
         beam_dir = normalize(rig.lights[0].direction.xyz);
         beam_known = true;
     }
@@ -1633,10 +1832,67 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         // the map's texel and its normal bias are not a second opinion; outside the reach, or
         // outside the cube, `marched.y` is zero and the map answers.
         let marched = world_march(horizon_point, beam_dir, WORLD_HORIZON_REACH_M);
-        beam_visibility = select(beam_visibility, marched.x, marched.y > 0.5);
+        if (marched.y > 0.5) {
+            beam_visibility = marched.x;
+        } else {
+            // **Outside the fine cube the coarse rung answers the beam too**, exactly as it
+            // answers the sky. The shadow map is a box a few tens of metres across, and the drawn
+            // world is hundreds: leaving the beam to the map past the cube meant every hill past
+            // the cube's edge was lit by no sun it could see, while the same hill's *sky* was
+            // still measured at eight metres. That asymmetry is the whole of the unlit distance —
+            // one band answered a question the other did not. Inside the cube an unmeasured cell
+            // is a chunk that has not landed, and there the map's answer still stands.
+            let rel = (horizon_point - horizon.to_anchor.xyz) / horizon.near.x;
+            let inside = all(rel >= vec3<f32>(0.0)) && all(rel < horizon.near.yzw);
+            if (!inside) {
+                if (in.cell_m >= 64.0 - 0.5) {
+                    let rung = surface_rung(in.cell_m);
+                    if (rung >= 0) {
+                        // **A rung's own extent, as every band above walks its own.** The table says
+                        // how far that is: 16 of the rung's cells, from a metre to 8 589 935 km.
+                        beam_visibility = world_surface_share(
+                            rung,
+                            horizon_point,
+                            beam_dir,
+                            horizon.surfaces[rung].params.z,
+                        );
+                    } else {
+                        beam_visibility = world_chunk_share(horizon_point, beam_dir, HORIZON_CHUNK_REACH_M);
+                    }
+                } else if (in.cell_m >= HORIZON_CHUNK_CELL_M - 0.5) {
+                    beam_visibility = world_chunk_share(horizon_point, beam_dir, HORIZON_CHUNK_REACH_M);
+                } else if (in.cell_m >= HORIZON_WIDE_CELL_M - 0.5) {
+                    beam_visibility = world_wide_share(horizon_point, beam_dir, HORIZON_WIDE_REACH_M);
+                } else {
+                    beam_visibility = world_far_share(horizon_point, beam_dir, HORIZON_FAR_REACH_M);
+                }
+            }
+        }
     }
-    beams *= beam_visibility;
-    sky *= world_sky(horizon_point);
+    // **The two occlusions, applied to their own terms and to nothing else.** The beam's share is
+    // the shadow map's and the march's; the sky's is the three rays' and `world_sky`'s alone.
+    direct *= beam_visibility;
+    let sky_share = world_sky(horizon_point, in.cell_m);
+    dome *= sky_share;
+    // **The second bounce — the term a face with no sky in its three rays has and the single
+    // scattering above it does not.** `world_sky` is the share of the *sky* a cell can see, so a
+    // face walled on every side and roofed reads `0.0` and is lit by nothing: `0.0` times any dome
+    // is `0.0`, however bright the day. That light has not left the world. It landed on the terrain
+    // that occludes the face and comes back with **that terrain's** own reflectance, which is what
+    // `BOUNCE_REFLECTANCE` is: the material table's mean base reflectance, measured rather than
+    // chosen (`light-at-a-pixel` prints it, 0.430 over the 76 rows that carry a base colour).
+    //
+    // **Squared in the enclosure**, because the occluder is not lit as brightly as the sky it
+    // hides: a wall that blocks three quarters of the hemisphere sees a quarter of it itself, so
+    // what it gives back falls with the square of how much it takes. That is also what keeps this
+    // term out of the two pictures already measured — open ground reads a share of `1.000`, so
+    // `enclosed` is zero and the bounce is zero; canopy ground at `0.667` gets `0.111` of it, which
+    // is a fortieth of the ambient and inside the tolerance `light-at-a-pixel` declares.
+    //
+    // It is added **beside the dome, not instead of it**, and it takes the same `ambient_gain`: a
+    // face with holes receives less of everything, bounce included.
+    let enclosure = 1.0 - sky_share;
+    let bounce = rig.ambient.rgb * (BOUNCE_REFLECTANCE * enclosure * enclosure);
     let opaque = (1.0 - metalness) * (1.0 - transmission);
     // **`npr::shade`'s ambient gain, which this transcription dropped** — PATCH-074. A
     // transmissive surface receives the sky from every direction rather than only above it, and a
@@ -1665,12 +1921,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let half_lambert = ndotl * 0.5 + 0.5;
         let lambert_term = clamp(ndotl, 0.0, 1.0);
         let wrap = half_lambert + subsurface * (lambert_term - half_lambert);
-        colour += base * (beams * (wrap * opaque * substrate) + sky * ambient_gain);
+        colour += base * (direct * (wrap * opaque * substrate) + (dome + bounce) * ambient_gain);
     }
 
     // the illumination terms (2 — rim) — docs/lighting-sky-and-moon.md
     let rim_reflectance = select(vec3<f32>(1.0), base, base_present > 0.5);
-    colour += rim_reflectance * (beams * (beam_share * silhouette));
+    colour += rim_reflectance * (direct * (beam_share * silhouette));
 
     // 2b. The coat, over the rim: a smooth dielectric layer at `COAT_F0`, gated on
     //     both its weight and its admitted roughness (a highlight with no spread
@@ -1679,7 +1935,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     //     the two can be held against each other. Its subtraction from the base is the
     //     layer's pass-through above.
     if (coat > 0.0) {
-        colour += beams * (coat * silhouette);
+        colour += direct * (coat * silhouette);
     }
 
     // the illumination terms (3 — the specular warp) — docs/lighting-sky-and-moon.md
@@ -1687,7 +1943,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let half_v = normalize(beam_dir + v);
         let facing = clamp(dot(n, half_v), 0.0, 1.0);
         if ((1.0 - facing) <= roughness) {
-            colour += beams * (weight * f0);
+            colour += direct * (weight * f0);
         }
     }
 

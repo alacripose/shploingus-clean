@@ -122,7 +122,13 @@ impl Measurer {
             .name("light".into())
             .spawn(move || run(ask_rx, tree_tx, tree_rx, result_tx))
             .expect("a thread for the world's light");
-        Measurer { asks, tree_asks, tree_replies, results: result_rx, in_flight: 0 }
+        Measurer {
+            asks,
+            tree_asks,
+            tree_replies,
+            results: result_rx,
+            in_flight: 0,
+        }
     }
 
     /// Whether an ask is still being marched. The caller composes the next one when this is false,
@@ -149,7 +155,11 @@ impl Measurer {
             return;
         }
         self.in_flight += cells.len();
-        let _ = self.asks.send(AskBatch { ask, cells, resident });
+        let _ = self.asks.send(AskBatch {
+            ask,
+            cells,
+            resident,
+        });
     }
 
     /// **Answer the worker's own questions, up to `budget` trees a frame.**
@@ -237,7 +247,10 @@ fn run(
         let key = (
             batch.ask.tick,
             batch.ask.new_moon_tick,
-            [batch.ask.inputs.turbidity.to_bits(), batch.ask.inputs.ozone_atm_cm.to_bits()],
+            [
+                batch.ask.inputs.turbidity.to_bits(),
+                batch.ask.inputs.ozone_atm_cm.to_bits(),
+            ],
             batch.ask.generation,
         );
         if solver_key != Some(key) {
@@ -263,7 +276,10 @@ fn run(
             // A solver the sky refused is the frame's own refusal: nothing is measured, and the
             // frame keeps the rig. The ask is answered with nothing rather than with a guess —
             // and with the end-of-ask message, so the frame may ask again.
-            let _ = results.send(Batch { measured: Vec::new(), last: true });
+            let _ = results.send(Batch {
+                measured: Vec::new(),
+                last: true,
+            });
             continue;
         };
         let toward = light.toward_beam();
@@ -291,7 +307,11 @@ fn run(
                 reply: &tree_rx,
             };
             if let Some((bands, _absent)) = light.bands_across(&trees, cell.centre_m(), REACH_M) {
-                out.push(Measured { cell, bands, toward });
+                out.push(Measured {
+                    cell,
+                    bands,
+                    toward,
+                });
             }
             if out.len() >= BATCH {
                 let _ = results.send(Batch {
@@ -301,7 +321,10 @@ fn run(
             }
         }
         // The end of the ask, always: an ask whose cells all read as absent still ends.
-        let _ = results.send(Batch { measured: out, last: true });
+        let _ = results.send(Batch {
+            measured: out,
+            last: true,
+        });
     }
 }
 
@@ -370,7 +393,9 @@ mod tests {
                 generation: 0,
                 eye: [0.0; 3],
             },
-            (0..32).map(|i| SubvoxelPos::from(VoxelPos::new(i % 8, 0, i / 8))).collect(),
+            (0..32)
+                .map(|i| SubvoxelPos::from(VoxelPos::new(i % 8, 0, i / 8)))
+                .collect(),
             vec![chunk],
         );
         // The frame's side of the handshake, until the batch has been answered. A real frame does
@@ -382,11 +407,22 @@ mod tests {
             got.extend(measurer.adopt(1_024));
             std::thread::yield_now();
         }
-        assert_eq!(got.len(), 32, "the worker answered {} of 32 cells", got.len());
-        assert!(!measurer.busy(), "the batch was still in flight after it landed");
+        assert_eq!(
+            got.len(),
+            32,
+            "the worker answered {} of 32 cells",
+            got.len()
+        );
+        assert!(
+            !measurer.busy(),
+            "the batch was still in flight after it landed"
+        );
         // **One cell, one answer**, and its bands are a measurement: a cell under open sky reads
         // more than nothing in its direct bands.
-        let first = got.iter().find(|m| m.cell == SubvoxelPos::from(VoxelPos::new(0, 0, 0))).expect("the first cell");
+        let first = got
+            .iter()
+            .find(|m| m.cell == SubvoxelPos::from(VoxelPos::new(0, 0, 0)))
+            .expect("the first cell");
         assert!(
             first.bands[0] + first.bands[1] + first.bands[2] > 0.0,
             "an open cell measured no beam: {:?}",
@@ -421,7 +457,11 @@ mod tests {
 
         // The first build asks for the cell, and the ask is made with no residency: refused.
         field.begin_frame();
-        assert_eq!(field.at(cell), None, "an unmeasured cell answered with a light");
+        assert_eq!(
+            field.at(cell),
+            None,
+            "an unmeasured cell answered with a light"
+        );
         let first = field.wants(CELLS_PER_ASK);
         assert_eq!(first, vec![cell], "the build's demand was not queued");
         measurer.ask_for(ask, first, Vec::new());
@@ -483,6 +523,9 @@ mod tests {
             got.extend(measurer.adopt(1_024));
             std::thread::yield_now();
         }
-        assert!(got.is_empty(), "a cell with no world under it was measured: {got:?}");
+        assert!(
+            got.is_empty(),
+            "a cell with no world under it was measured: {got:?}"
+        );
     }
 }

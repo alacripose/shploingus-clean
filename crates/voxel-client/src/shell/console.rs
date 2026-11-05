@@ -273,7 +273,13 @@ impl Console {
     /// **The reference logs the typed command at `ACTION` before it dispatches**, so an operator
     /// can see what they asked for even when the verb refused — and that is the whole reason a
     /// console exists rather than an error dialog.
-    pub fn log(&mut self, level: Level, category: &str, message: impl Into<String>, tick: Option<u64>) {
+    pub fn log(
+        &mut self,
+        level: Level,
+        category: &str,
+        message: impl Into<String>,
+        tick: Option<u64>,
+    ) {
         let record = Record {
             level,
             category: category.to_string(),
@@ -487,9 +493,7 @@ impl Console {
                 }
                 KeyOutcome::Changed
             }
-            (Field::Search, Key::HistoryUp | Key::HistoryDown | Key::Enter) => {
-                KeyOutcome::Ignored
-            }
+            (Field::Search, Key::HistoryUp | Key::HistoryDown | Key::Enter) => KeyOutcome::Ignored,
             (Field::Command, Key::Char(character)) => {
                 self.draft.push(character);
                 KeyOutcome::Changed
@@ -705,11 +709,23 @@ impl Verb {
     /// reads it.
     pub const fn arity(self) -> Option<(usize, usize)> {
         match self {
-            Verb::Help | Verb::List | Verb::Stats | Verb::Clear | Verb::Report
-            | Verb::Approvals | Verb::Blockers => Some((0, 0)),
+            Verb::Help
+            | Verb::List
+            | Verb::Stats
+            | Verb::Clear
+            | Verb::Report
+            | Verb::Approvals
+            | Verb::Blockers => Some((0, 0)),
             Verb::Echo | Verb::Theme => Some((1, usize::MAX)),
-            Verb::Launch | Verb::Focus | Verb::Close | Verb::Min | Verb::Max | Verb::Plan
-            | Verb::Approve | Verb::Reject | Verb::Mode => Some((1, 1)),
+            Verb::Launch
+            | Verb::Focus
+            | Verb::Close
+            | Verb::Min
+            | Verb::Max
+            | Verb::Plan
+            | Verb::Approve
+            | Verb::Reject
+            | Verb::Mode => Some((1, 1)),
             // **One or more words, because a ticket is prose.** `file` takes the rest of the
             // line verbatim, which is why it is the only verb whose maximum is unbounded.
             Verb::File => Some((1, usize::MAX)),
@@ -815,10 +831,14 @@ pub struct Command {
 pub fn parse(line: &str) -> Result<Command, CommandRefusal> {
     let mut parts = line.split_whitespace();
     let Some(head) = parts.next() else {
-        return Err(CommandRefusal::UnknownVerb { said: String::new() });
+        return Err(CommandRefusal::UnknownVerb {
+            said: String::new(),
+        });
     };
     let verb = Verb::parse(head.to_ascii_lowercase().as_str()).ok_or_else(|| {
-        CommandRefusal::UnknownVerb { said: head.to_string() }
+        CommandRefusal::UnknownVerb {
+            said: head.to_string(),
+        }
     })?;
     let args: Vec<String> = parts.map(ToOwned::to_owned).collect();
     if let Some((min, max)) = verb.arity() {
@@ -884,7 +904,10 @@ mod tests {
         // to prevent.
         assert_eq!(console.draft(), "");
         assert_eq!(console.len(), 3);
-        assert!(console.submit(Some(9)).is_none(), "an empty draft submits nothing");
+        assert!(
+            console.submit(Some(9)).is_none(),
+            "an empty draft submits nothing"
+        );
 
         // History is the command line's, so the search box ignores it.
         assert_eq!(console.key(Key::HistoryUp), KeyOutcome::Ignored);
@@ -908,7 +931,11 @@ mod tests {
             assert_eq!(console.cycle_filter(), Some(wanted.0));
             assert_eq!(console.filter_name(), wanted.1);
         }
-        assert_eq!(console.cycle_filter(), None, "and the cycle returns to All Logs");
+        assert_eq!(
+            console.cycle_filter(),
+            None,
+            "and the cycle returns to All Logs"
+        );
         assert_eq!(console.filter_name(), "All Logs");
     }
 
@@ -916,15 +943,25 @@ mod tests {
     fn autoscroll_off_freezes_the_view_and_counts_what_it_is_not_showing() {
         let mut console = Console::new();
         console.log(Level::Info, "TEST", "first", Some(0));
-        assert!(console.autoscroll(), "the reference checks Auto-Scroll by default");
+        assert!(
+            console.autoscroll(),
+            "the reference checks Auto-Scroll by default"
+        );
         assert_eq!(console.lines().len(), 1);
 
-        assert!(!console.toggle_autoscroll(), "the toggle reports the new state");
+        assert!(
+            !console.toggle_autoscroll(),
+            "the toggle reports the new state"
+        );
         console.log(Level::Info, "TEST", "second", Some(1));
         console.log(Level::Info, "TEST", "third", Some(2));
         assert_eq!(console.held_back(), 2);
         let frozen = console.lines();
-        assert_eq!(frozen.len(), 1, "the view still shows the row it was showing");
+        assert_eq!(
+            frozen.len(),
+            1,
+            "the view still shows the row it was showing"
+        );
         assert!(frozen[0].contains("first"), "{frozen:?}");
 
         assert!(console.toggle_autoscroll(), "switched back on");
@@ -940,7 +977,11 @@ mod tests {
         for level in Level::ALL {
             assert_eq!(Level::parse(level.slug()), Some(level));
         }
-        assert_eq!(Level::parse("DEBUG"), None, "and an undeclared level is refused");
+        assert_eq!(
+            Level::parse("DEBUG"),
+            None,
+            "and an undeclared level is refused"
+        );
     }
 
     #[test]
@@ -951,7 +992,11 @@ mod tests {
         // `Verb::Plan` in no row. The measurement is the record's correction, and this pins the
         // corrected number so it cannot drift back into a document.
         assert_eq!(Verb::ALL.len(), Verb::COUNT);
-        assert_eq!(Verb::COUNT, 22, "twelve, plus two, plus seven, plus this tree's `file`");
+        assert_eq!(
+            Verb::COUNT,
+            22,
+            "twelve, plus two, plus seven, plus this tree's `file`"
+        );
         assert_eq!(VERBS_ARE_TOTAL, [(); Verb::COUNT]);
         // The pin that would have caught it: the table is as wide as the enum.
         assert_eq!(VERBS_COVER_EVERY_VARIANT, [(); VARIANT_WIDTH]);
@@ -967,7 +1012,11 @@ mod tests {
         let mut unique = names.clone();
         unique.sort_unstable();
         unique.dedup();
-        assert_eq!(unique.len(), names.len(), "no verb is listed twice: {names:?}");
+        assert_eq!(
+            unique.len(),
+            names.len(),
+            "no verb is listed twice: {names:?}"
+        );
         assert_eq!(Verb::parse("undock"), Some(Verb::Undock));
         assert_eq!(Verb::parse("setting"), Some(Verb::Setting));
         assert_eq!(Verb::parse("?"), Some(Verb::Help));
@@ -1008,7 +1057,9 @@ mod tests {
         let refusal = parse("frobnicate").expect_err("not a verb");
         assert_eq!(
             refusal,
-            CommandRefusal::UnknownVerb { said: "frobnicate".to_string() }
+            CommandRefusal::UnknownVerb {
+                said: "frobnicate".to_string()
+            }
         );
         assert!(refusal.detail().contains("frobnicate"));
         assert!(
@@ -1033,7 +1084,9 @@ mod tests {
         );
         assert_ne!(
             refusal,
-            CommandRefusal::UnknownVerb { said: "focus".to_string() }
+            CommandRefusal::UnknownVerb {
+                said: "focus".to_string()
+            }
         );
     }
 
@@ -1042,7 +1095,12 @@ mod tests {
         let mut console = Console::new();
         assert!(console.is_empty());
         for index in 0..(MAX_RECORDS + 10) {
-            console.log(Level::Info, "TEST", format!("line {index}"), Some(index as u64));
+            console.log(
+                Level::Info,
+                "TEST",
+                format!("line {index}"),
+                Some(index as u64),
+            );
         }
         assert_eq!(
             console.len(),
@@ -1065,7 +1123,12 @@ mod tests {
     fn a_filtered_console_shows_one_level_and_says_so() {
         let mut console = Console::new();
         console.log(Level::Sys, "SHELL", "mounted", Some(0));
-        console.log(Level::Warn, "PANEL", "a 358 dp panel in a 336 dp pane", Some(1));
+        console.log(
+            Level::Warn,
+            "PANEL",
+            "a 358 dp panel in a 336 dp pane",
+            Some(1),
+        );
         console.log(Level::Info, "SHADER", "bands 8 of 8", Some(2));
 
         assert_eq!(console.lines().len(), 3, "unfiltered shows everything");
@@ -1128,7 +1191,11 @@ mod tests {
         console.log(Level::Info, "TEST", "first", Some(0));
         console.toggle_autoscroll();
         console.log(Level::Info, "TEST", "second", Some(1));
-        assert_eq!(console.held_back(), 1, "the freeze is holding the second record");
+        assert_eq!(
+            console.held_back(),
+            1,
+            "the freeze is holding the second record"
+        );
 
         console.clear();
         assert_eq!(
@@ -1149,7 +1216,11 @@ mod tests {
     #[test]
     fn the_help_text_is_generated_from_the_table_it_documents() {
         let lines = help();
-        assert_eq!(lines.len(), Verb::COUNT + 1, "a header and one row per verb");
+        assert_eq!(
+            lines.len(),
+            Verb::COUNT + 1,
+            "a header and one row per verb"
+        );
         for verb in Verb::ALL {
             assert!(
                 lines.iter().any(|line| line.contains(verb.name())),

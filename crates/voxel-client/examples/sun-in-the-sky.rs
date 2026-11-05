@@ -43,7 +43,11 @@ const TICK: u64 = 9_000;
 /// One channel of `sRGB`, from a linear value a display transform has already bounded.
 fn srgb(v: f32) -> u8 {
     let v = v.clamp(0.0, 1.0) as f64;
-    let encoded = if v <= 0.003_130_8 { 12.92 * v } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
+    let encoded = if v <= 0.003_130_8 {
+        12.92 * v
+    } else {
+        1.055 * v.powf(1.0 / 2.4) - 0.055
+    };
     (encoded * 255.0 + 0.5) as u8
 }
 
@@ -63,9 +67,11 @@ fn main() {
     camera.pitch_rad = d.y.clamp(-1.0, 1.0).asin();
 
     let registry = voxel_shapers::materials::registry().expect("the registry");
-    let materials =
-        voxel_client::shading::table(&registry, &voxel_shapers::materials::shading_field().expect("the world's shading field"))
-            .expect("every admitted material derives");
+    let materials = voxel_client::shading::table(
+        &registry,
+        &voxel_shapers::materials::shading_field().expect("the world's shading field"),
+    )
+    .expect("every admitted material derives");
     let rig = GpuRig::from_rig(&voxel_client::skylight::exposed(&day.rig)).expect("the rig fits");
     let mut renderer = Renderer::new(WIDTH, HEIGHT, &materials, &rig).expect("a GPU adapter");
     // **The model the pass integrates**, over this column's own air: the Sun's bands through the
@@ -87,11 +93,8 @@ fn main() {
     renderer.world_mut().set_tonemap(1.0);
     renderer.world_mut().set_dither(1.0);
 
-    let scene = Scene::build_with_detail(
-        Vec::<voxel_mesh::Mesh>::new().iter(),
-        eye,
-    )
-    .with_bodies(&bodies);
+    let scene =
+        Scene::build_with_detail(Vec::<voxel_mesh::Mesh>::new().iter(), eye).with_bodies(&bodies);
     let frame = renderer.render(&scene, &camera).expect("a frame");
 
     let mut bytes = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
@@ -115,7 +118,11 @@ fn main() {
 
     // **And the numbers beside the picture**, so the image is not the only evidence: the body's
     // coverage by the model, the brightest pixel the frame carried, and where the Sun was.
-    let bright = frame.pixels.iter().map(|p| voxel_client::frame::luminance(*p)).fold(0.0f64, f64::max);
+    let bright = frame
+        .pixels
+        .iter()
+        .map(|p| voxel_client::frame::luminance(*p))
+        .fold(0.0f64, f64::max);
     let half_width = (sun.body.radius_m / voxel_client::sun::AU_M).atan();
     println!(
         "sun-in-the-sky: tick {TICK}, altitude {:.3}°, azimuth {:.3}°, the face's angular \
@@ -128,7 +135,10 @@ fn main() {
     );
     println!(
         "wrote {}",
-        std::env::current_dir().map(|d| d.join(path)).unwrap_or_else(|_| path.to_path_buf()).display()
+        std::env::current_dir()
+            .map(|d| d.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+            .display()
     );
 
     /// **And the shape as text.** A PNG is where a person looks and a terminal is where a run is

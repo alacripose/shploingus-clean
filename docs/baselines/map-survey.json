@@ -1,0 +1,94 @@
+{
+  "what": "map-survey-samples",
+  "why": "The map window draws a survey whose heights are the world's own surface: the streamer's resident chunks where it holds them, the generator's own columns at the survey's sample LOD everywhere else, band by band, and the laws only where the world answers nothing at all. The sample counts, the share that is the world's own, and the composed element count are the picture's floor: a change that lowers them is drawing a coarser or less truthful map, and one that raises them is paying for detail nobody asked for. The survey is the camera's own question — it always covers the body, coarsening its sample when the window shows more ground than 192 x 192 samples of it describe, so the picture reaches the window's edges at every size and scale.",
+  "package": "voxel-client",
+  "recipe": "MAP=1 [NEAR=1 | FAR=1] MAX=1 [PLAN=<token>] SIZE=1080|720 cargo run -p voxel-client --example shell-shot (display package mounted, map window open and maximised, a real Streamer of seed GAME_SEED settled over the frame's declared chunk at radius 2 chunks, camera 2 px/m at the resident patch's middle with NEAR=1 or 0.25 px/m for the kilometres-wide view with FAR=1, demo pose on the frame's declared column at bearing 135 degrees, selection 80 declared cells east so the route leaves the survey and clamps, pointer at 25% x / 75% y of the body; the survey is filled the way the game fills it — one ground write per band until no sample is the law's — then one frame, composed through the shell's own layer and rasterised through the game's own cell path). The live row is SHPLOINGUS_SHELL=\"6:open map-plan,8:map zoom out,10:map zoom out,12:map zoom out,14:map zoom out,520:quit\" over the real window, which is the frame loop and not a fixture.",
+  "measured": "2026-10-27, the pass that made the map's whole window the world's own surface",
+  "commit": "6049414 + working tree",
+  "rows": [
+    {
+      "name": "samples from the world's own ground, 1280 x 720 maximised",
+      "value": 6696,
+      "of": 6696,
+      "must": "equal",
+      "unit": "samples",
+      "note": "72 x 93 samples of 8 m over 576 x 744 m: 400 written from the resident chunks' own columns and 6 296 asked of the generator at the sample LOD, and **0 are the law's** — the window is the world's own to all four edges. Read in 7 bands; the survey is whole after 153 ms."
+    },
+    {
+      "name": "samples from the world's own ground, 1920 x 1080 maximised",
+      "value": 16576,
+      "of": 16576,
+      "must": "equal",
+      "unit": "samples",
+      "note": "112 x 148 samples of 8 m over 896 x 1184 m: the same camera scale, more world, and the same 160 x 160 m of residency inside it — 400 resident, 16 176 from the generator, 0 the law's. 16 bands, 473 ms."
+    },
+    {
+      "name": "samples from the world's own ground, the wide view (0.25 px/m, 1920 x 1080)",
+      "value": 28032,
+      "of": 28032,
+      "must": "equal",
+      "unit": "samples",
+      "note": "146 x 192 samples of 48.7 m over 7.1 x 9.3 km — a survey whose residency is 9 samples of it. This is the case the laws used to answer: it is now 28 023 generator columns and 9 resident ones, and 0 the law's. 28 bands, 2 018 ms once; the answers are cached, so a pan back over the same ground costs lookups."
+    },
+    {
+      "name": "samples from the world's own ground, the game (map zoomed to the scale floor)",
+      "value": 14400,
+      "of": 14400,
+      "must": "equal",
+      "unit": "samples",
+      "note": "The live run, not the fixture: `console [EVENT] (map) 14400 of 14400 samples from the world's own ground — 16 resident, 14384 asked of the generator (0 still the law's)`, reached at tick 81106 and still whole after a climate resample at tick 81152, which re-reads the survey from the cached columns without losing one. The line before it (tick 81101) reads 14 354 of 14 400 — the climb is visible in the run's own words."
+    },
+    {
+      "name": "survey observation, 1280 x 720 maximised",
+      "value": 39.5,
+      "must": "at most 60",
+      "unit": "ms",
+      "note": "The first observation: the laws sampled for the plan, every resident column written over them, and one band of 1 024 generator columns. A later observation pays a band only while the fill is climbing; a frame that moved nothing pays nothing."
+    },
+    {
+      "name": "survey observation, 1920 x 1080 maximised",
+      "value": 50.3,
+      "must": "at most 80",
+      "unit": "ms",
+      "note": "The same first frame on the larger body: 16 576 samples, 400 of them the residency's, plus its own band."
+    },
+    {
+      "name": "survey covers the body, both sizes",
+      "value": 100,
+      "of": 100,
+      "must": "equal",
+      "unit": "%",
+      "note": "Asserted as a law by shell::mount::tests::the_map_composes_in_the_shells_layer_from_the_worlds_own_voxels (1280 x 720 and 1920 x 1080), map_view::tests::the_survey_reaches_the_body_at_every_size_and_scale (3 sizes x 4 scales x 3 pitches) and the raster's own no-seam test."
+    },
+    {
+      "name": "composed layer, 1280 x 720 maximised",
+      "value": 35.2,
+      "must": "at most 60",
+      "unit": "ms",
+      "note": "Shell layer, map's own content included: 15 748 elements. Includes the ground raster's first build."
+    },
+    {
+      "name": "composed layer, 1920 x 1080 maximised",
+      "value": 92.5,
+      "must": "note",
+      "unit": "ms",
+      "note": "49 740 elements — the first frame's raster over a 1 749 x 950 dp body at 4 dp columns. The wide view's frame is 87 526 elements in 98.0 ms. A camera, ground, view or body change rebuilds the raster; a still map reuses it."
+    },
+    {
+      "name": "declared map cells",
+      "value": 896,
+      "must": "note",
+      "note": "28 x 32, the frame's `extent`; the toolbar's GRID fact reads this, not the sample grid."
+    }
+  ],
+  "unstable": [
+    {
+      "name": "the residency seam",
+      "note": "There is no longer a seam between two *worlds*: the residency's columns and the generator's own reading of the columns beyond it are the same material law, with the earthworks record composed over both, and map_survey::tests::the_probe_agrees_with_the_resident_chunks_it_overlaps pins that agreement. What can still show is a chunk's own build state — a chunk in flight answers nothing and its columns are read from the generator that frame, and a chunk an edit has moved under is read from its voxels, which is the truth the map is for — and a patch of water, where the surface is the topmost voxel that is not a fluid."
+    },
+    {
+      "name": "sample grain at a wide view",
+      "note": "At 0.25 px/m a body shows kilometres at 48.7 m a sample, so the picture's grain is the survey's, not the world's. The sample coarsens to keep the edges rather than to describe a voxel, which is the minimap's own size and interpolation question — named owed, not answered here."
+    }
+  ]
+}

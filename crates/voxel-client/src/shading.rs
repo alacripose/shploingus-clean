@@ -172,9 +172,11 @@ impl MaterialParams {
             Colour::Unadmitted => ([0.0, 0.0, 0.0], 0.0),
         };
         let (emission, luminance, emission_present) = match inputs.emission {
-            Emission::Emitted { color, luminance } => {
-                ([color.r as f32, color.g as f32, color.b as f32], luminance as f32, 1.0)
-            }
+            Emission::Emitted { color, luminance } => (
+                [color.r as f32, color.g as f32, color.b as f32],
+                luminance as f32,
+                1.0,
+            ),
             Emission::None => ([0.0, 0.0, 0.0], 0.0, 0.0),
         };
         let (roughness, rough_present) = match inputs.specular_roughness {
@@ -208,7 +210,12 @@ impl MaterialParams {
         };
         MaterialParams {
             base_color_and_present: [base[0], base[1], base[2], base_present],
-            rough_metal: [roughness, rough_present, inputs.base_metalness as f32, inputs.transmission_weight as f32],
+            rough_metal: [
+                roughness,
+                rough_present,
+                inputs.base_metalness as f32,
+                inputs.transmission_weight as f32,
+            ],
             spec_emission: [weight, weight_present, luminance, emission_present],
             emission_rgb_open: [emission[0], emission[1], emission[2], open as f32],
             // A **stated** row varies nothing: the gains are the world's shading
@@ -231,7 +238,12 @@ impl MaterialParams {
         reflectance_gain: f64,
         surface: u32,
     ) -> Self {
-        self.pattern = [roughness_gain as f32, reflectance_gain as f32, surface as f32, 0.0];
+        self.pattern = [
+            roughness_gain as f32,
+            reflectance_gain as f32,
+            surface as f32,
+            0.0,
+        ];
         self
     }
 
@@ -268,7 +280,10 @@ pub struct GpuLight {
 
 impl Default for GpuLight {
     fn default() -> Self {
-        GpuLight { direction: [0.0; 4], colour: [0.0; 4] }
+        GpuLight {
+            direction: [0.0; 4],
+            colour: [0.0; 4],
+        }
     }
 }
 
@@ -283,7 +298,11 @@ pub struct GpuRig {
 
 impl Default for GpuRig {
     fn default() -> Self {
-        GpuRig { ambient: [0.0; 4], count: [0; 4], lights: [GpuLight::default(); RIG_CAPACITY] }
+        GpuRig {
+            ambient: [0.0; 4],
+            count: [0; 4],
+            lights: [GpuLight::default(); RIG_CAPACITY],
+        }
     }
 }
 
@@ -306,13 +325,23 @@ impl GpuRig {
                     light.direction.z as f32,
                     light.intensity as f32,
                 ],
-                colour: [light.colour.r as f32, light.colour.g as f32, light.colour.b as f32, 0.0],
+                colour: [
+                    light.colour.r as f32,
+                    light.colour.g as f32,
+                    light.colour.b as f32,
+                    0.0,
+                ],
             };
         }
         let mut count = [0u32; 4];
         count[0] = rig.lights.len() as u32;
         Some(GpuRig {
-            ambient: [rig.ambient.r as f32, rig.ambient.g as f32, rig.ambient.b as f32, 0.0],
+            ambient: [
+                rig.ambient.r as f32,
+                rig.ambient.g as f32,
+                rig.ambient.b as f32,
+                0.0,
+            ],
             count,
             lights,
         })
@@ -346,7 +375,10 @@ impl GpuRig {
 /// material is never air. A material `derive` refuses **stops the table**: a
 /// world that contains a material the appearance layer cannot describe is not a
 /// world this client can draw, and shading it grey would hide that.
-pub fn table(registry: &MaterialRegistry, shading: &ShadingField) -> Result<Vec<MaterialParams>, Refusal> {
+pub fn table(
+    registry: &MaterialRegistry,
+    shading: &ShadingField,
+) -> Result<Vec<MaterialParams>, Refusal> {
     let mut highest = 0u16;
     for m in registry.materials() {
         highest = highest.max(m.id.0);
@@ -359,12 +391,8 @@ pub fn table(registry: &MaterialRegistry, shading: &ShadingField) -> Result<Vec<
         // gains of zero — the material draws flat, as declared.
         let (roughness_gain, reflectance_gain) = shading.gain(m.id).unwrap_or((0.0, 0.0));
         let surface = voxel_shapers::materials::pattern_of(m.id).index();
-        out[m.id.0 as usize] =
-            MaterialParams::from_inputs(&inputs, MESH_DOES_NOT_CARRY_OPEN).with_pattern(
-                roughness_gain,
-                reflectance_gain,
-                surface,
-            );
+        out[m.id.0 as usize] = MaterialParams::from_inputs(&inputs, MESH_DOES_NOT_CARRY_OPEN)
+            .with_pattern(roughness_gain, reflectance_gain, surface);
     }
     Ok(out)
 }
@@ -384,7 +412,12 @@ pub fn table(registry: &MaterialRegistry, shading: &ShadingField) -> Result<Vec<
 pub fn world_lattice_uniform() -> [u32; 4] {
     let seed = voxel_shapers::materials::SHADING_FIELD_DOMAIN;
     let tag = voxel_appearance::provenance::LATTICE_DOMAIN_TAG;
-    [seed as u32, (seed >> 32) as u32, tag as u32, (tag >> 32) as u32]
+    [
+        seed as u32,
+        (seed >> 32) as u32,
+        tag as u32,
+        (tag >> 32) as u32,
+    ]
 }
 
 /// The two sides, in samples per axis — the 4×4×4 subvoxel grid and the 256
@@ -488,8 +521,7 @@ mod tests {
     /// strongest, and names every material that has none.
     #[test]
     fn no_material_loses_its_rim_to_arithmetic() {
-        let registry =
-            voxel_shapers::materials::registry().expect("the materials registry");
+        let registry = voxel_shapers::materials::registry().expect("the materials registry");
         let rig = LightRig::standard();
 
         let normal = Vec3::new(0.0, 1.0, 0.0);
@@ -499,8 +531,7 @@ mod tests {
 
         let mut no_rim: Vec<(String, &'static str)> = Vec::new();
         for material in registry.materials() {
-            let inputs =
-                openpbr::derive(material, &registry, None).expect("a material derives");
+            let inputs = openpbr::derive(material, &registry, None).expect("a material derives");
             let a = shade_cpu(&inputs, normal, head_on, 0.0, &rig).expect("head-on shades");
             let b = shade_cpu(&inputs, normal, grazing, 0.0, &rig).expect("grazing shades");
             if a.0 == b.0 {
@@ -548,13 +579,10 @@ mod tests {
     fn the_corpus_names_what_each_unadmitted_substance_is_missing() {
         use std::collections::BTreeMap;
         let declared = voxel_model::materials::generated::table();
-        let registry =
-            voxel_shapers::materials::registry().expect("the materials registry");
+        let registry = voxel_shapers::materials::registry().expect("the materials registry");
 
-        let admitted: BTreeMap<&str, &voxel_model::Material> = registry
-            .materials()
-            .map(|m| (m.name.as_str(), m))
-            .collect();
+        let admitted: BTreeMap<&str, &voxel_model::Material> =
+            registry.materials().map(|m| (m.name.as_str(), m)).collect();
 
         let mut covered = 0usize;
         let mut missing_density: Vec<String> = Vec::new();
@@ -665,7 +693,11 @@ mod tests {
     #[test]
     fn no_absent_openpbr_term_is_unexplained() {
         /// One absent term: its name, why its absence is legitimate, and the rows it is absent for.
-        type Absence = (&'static str, &'static str, fn(&voxel_model::Material) -> bool);
+        type Absence = (
+            &'static str,
+            &'static str,
+            fn(&voxel_model::Material) -> bool,
+        );
 
         let stated: [Absence; 6] = [
             (
@@ -708,8 +740,7 @@ mod tests {
             ),
         ];
 
-        let registry =
-            voxel_shapers::materials::registry().expect("the materials registry");
+        let registry = voxel_shapers::materials::registry().expect("the materials registry");
         let mut unexplained: Vec<String> = Vec::new();
         let mut explained = 0usize;
         let mut all: Vec<(&voxel_model::Material, Vec<&'static str>)> = Vec::new();
@@ -792,17 +823,66 @@ mod tests {
 
         // Every term `OpenPbrInputs` carries, each with a second value to vary it to.
         let probes: [Probe; 11] = [
-            ("base_color", |i| i.base_color = Colour::Admitted(LinearRgb::WHITE), |i| i.base_color = Colour::Unadmitted),
-            ("base_metalness", |i| i.base_metalness = 1.0, |i| i.base_metalness = 0.0),
-            ("specular_roughness", |i| i.specular_roughness = Some(0.25), |i| i.specular_roughness = None),
-            ("specular_ior", |i| i.specular_ior = Some(1.5), |i| i.specular_ior = None),
-            ("specular_weight", |i| i.specular_weight = Some(0.5), |i| i.specular_weight = None),
-            ("coat_weight", |i| i.coat_weight = 1.0, |i| i.coat_weight = 0.0),
-            ("coat_roughness", |i| i.coat_roughness = Some(0.1), |i| i.coat_roughness = None),
-            ("transmission_weight", |i| i.transmission_weight = 1.0, |i| i.transmission_weight = 0.0),
-            ("transmission_depth", |i| i.transmission_depth = Some(0.3), |i| i.transmission_depth = None),
-            ("subsurface_weight", |i| i.subsurface_weight = Some(0.4), |i| i.subsurface_weight = None),
-            ("emission", |i| i.emission = Emission::Emitted { color: LinearRgb::WHITE, luminance: 2.0 }, |i| i.emission = Emission::None),
+            (
+                "base_color",
+                |i| i.base_color = Colour::Admitted(LinearRgb::WHITE),
+                |i| i.base_color = Colour::Unadmitted,
+            ),
+            (
+                "base_metalness",
+                |i| i.base_metalness = 1.0,
+                |i| i.base_metalness = 0.0,
+            ),
+            (
+                "specular_roughness",
+                |i| i.specular_roughness = Some(0.25),
+                |i| i.specular_roughness = None,
+            ),
+            (
+                "specular_ior",
+                |i| i.specular_ior = Some(1.5),
+                |i| i.specular_ior = None,
+            ),
+            (
+                "specular_weight",
+                |i| i.specular_weight = Some(0.5),
+                |i| i.specular_weight = None,
+            ),
+            (
+                "coat_weight",
+                |i| i.coat_weight = 1.0,
+                |i| i.coat_weight = 0.0,
+            ),
+            (
+                "coat_roughness",
+                |i| i.coat_roughness = Some(0.1),
+                |i| i.coat_roughness = None,
+            ),
+            (
+                "transmission_weight",
+                |i| i.transmission_weight = 1.0,
+                |i| i.transmission_weight = 0.0,
+            ),
+            (
+                "transmission_depth",
+                |i| i.transmission_depth = Some(0.3),
+                |i| i.transmission_depth = None,
+            ),
+            (
+                "subsurface_weight",
+                |i| i.subsurface_weight = Some(0.4),
+                |i| i.subsurface_weight = None,
+            ),
+            (
+                "emission",
+                |i| {
+                    i.emission = Emission::Emitted {
+                        color: LinearRgb::WHITE,
+                        luminance: 2.0,
+                    }
+                },
+                |i| i.emission = Emission::None,
+            ),
         ];
 
         let base = OpenPbrInputs {
@@ -846,7 +926,10 @@ mod tests {
 
     #[test]
     fn the_packed_sizes_are_the_strides_wgsl_will_use() {
-        assert_eq!(MaterialParams::SIZE, std::mem::size_of::<MaterialParams>() as u64);
+        assert_eq!(
+            MaterialParams::SIZE,
+            std::mem::size_of::<MaterialParams>() as u64
+        );
         assert_eq!(GpuRig::SIZE, std::mem::size_of::<GpuRig>() as u64);
         // A WGSL array stride must be a multiple of 16 for both structs.
         assert_eq!(MaterialParams::SIZE % 16, 0);
@@ -872,7 +955,10 @@ mod tests {
             emission: Emission::None,
         };
         let p = MaterialParams::from_inputs(&inputs, MESH_DOES_NOT_CARRY_OPEN);
-        assert_eq!(p.base_color_and_present[3], 0.0, "the colour is not admitted");
+        assert_eq!(
+            p.base_color_and_present[3], 0.0,
+            "the colour is not admitted"
+        );
         assert_eq!(p.rough_metal[1], 0.0, "roughness must be flagged absent");
         assert_eq!(p.spec_emission[1], 0.0, "weight must be flagged absent");
         assert_eq!(p.spec_emission[3], 0.0, "emission must be flagged absent");
@@ -903,18 +989,27 @@ mod tests {
             transmission_weight: 0.5,
             transmission_depth: None,
             subsurface_weight: None,
-            emission: Emission::Emitted { color: LinearRgb::WHITE, luminance: 2.0 },
+            emission: Emission::Emitted {
+                color: LinearRgb::WHITE,
+                luminance: 2.0,
+            },
         };
         let p = MaterialParams::from_inputs(&inputs, MESH_DOES_NOT_CARRY_OPEN);
         assert_eq!(p.base_color_and_present, [0.25, 0.5, 0.75, 1.0]);
         assert_eq!(p.rough_metal, [0.4, 1.0, 0.0, 0.5]);
         assert_eq!(p.spec_emission, [0.125, 1.0, 2.0, 1.0]);
-        assert_eq!(p.emission_rgb_open[3], 0.0, "open is the named debt, still 0");
+        assert_eq!(
+            p.emission_rgb_open[3], 0.0,
+            "open is the named debt, still 0"
+        );
         // The index travels as the reflectance it *becomes*, and the value is the
         // relation's own: `((1.5 − 1)/(1.5 + 1))² = 0.04`.
         let f0 = voxel_appearance::provenance::specular_f0(1.5) as f32;
         assert_eq!(p.specular_boundary, [f0, 1.0, 0.0, 0.0]);
-        assert!((f0 - 0.04).abs() < 1e-6, "n = 1.5 reflects about 4 %, got {f0}");
+        assert!(
+            (f0 - 0.04).abs() < 1e-6,
+            "n = 1.5 reflects about 4 %, got {f0}"
+        );
     }
 
     /// The world's own shading field — the same declaration the window builds its
@@ -1003,7 +1098,11 @@ mod tests {
         // zero gains are what keep the row flat (C-162).
         let water = voxel_shapers::materials::WATER;
         let water_row = t[water.0 as usize].pattern;
-        assert_eq!(water_row[..2], [0.0, 0.0], "a transmissive material was given gains");
+        assert_eq!(
+            water_row[..2],
+            [0.0, 0.0],
+            "a transmissive material was given gains"
+        );
         assert_eq!(
             water_row[2],
             voxel_shapers::materials::pattern_of(water).index() as f32,
@@ -1024,7 +1123,10 @@ mod tests {
             "the admitted set is {admitted}"
         );
         assert_eq!(reg.admitted_material_count(), admitted);
-        assert!(reg.material(MaterialId(0)).is_err(), "air must not be admitted");
+        assert!(
+            reg.material(MaterialId(0)).is_err(),
+            "air must not be admitted"
+        );
         // and the row that was never filled in says so
         assert_eq!(t[0], MaterialParams::default());
     }
@@ -1067,7 +1169,11 @@ mod tests {
         use voxel_appearance::npr::Light;
         let many = LightRig {
             lights: (0..RIG_CAPACITY + 1)
-                .map(|_| Light { direction: Vec3::new(0.0, 1.0, 0.0), colour: LinearRgb::WHITE, intensity: 1.0 })
+                .map(|_| Light {
+                    direction: Vec3::new(0.0, 1.0, 0.0),
+                    colour: LinearRgb::WHITE,
+                    intensity: 1.0,
+                })
                 .collect(),
             ambient: LinearRgb::BLACK,
         };
@@ -1075,7 +1181,10 @@ mod tests {
         let standard = LightRig::standard();
         let packed = GpuRig::from_rig(&standard).expect("the standard rig fits");
         assert_eq!(packed.count[0], standard.lights.len() as u32);
-        assert_eq!(packed.lights[0].direction[3] as f64, standard.lights[0].intensity);
+        assert_eq!(
+            packed.lights[0].direction[3] as f64,
+            standard.lights[0].intensity
+        );
     }
 
     #[test]
@@ -1094,7 +1203,14 @@ mod tests {
             emission: Emission::None,
         };
         let rig = LightRig::standard();
-        assert!(shade_cpu(&inputs, Vec3::new(0.0, 1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.0, &rig).is_err());
+        assert!(shade_cpu(
+            &inputs,
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            0.0,
+            &rig
+        )
+        .is_err());
     }
 
     #[test]

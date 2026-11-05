@@ -117,7 +117,12 @@ impl ChangeRegion {
         if !recorded_ms.is_finite() {
             return Err(ChangeRefusal::NoInstant);
         }
-        Ok(ChangeRegion { cells, reason, material, recorded_ms })
+        Ok(ChangeRegion {
+            cells,
+            reason,
+            material,
+            recorded_ms,
+        })
     }
 
     pub fn cells(&self) -> impl Iterator<Item = &Cell> {
@@ -218,7 +223,10 @@ impl ChangeRegion {
         let mut by_instant: BTreeMap<OrderedF64, Vec<&'a ChangeRegion>> = BTreeMap::new();
         for region in regions {
             if region.is_live(now_ms) {
-                by_instant.entry(OrderedF64(region.recorded_ms)).or_default().push(region);
+                by_instant
+                    .entry(OrderedF64(region.recorded_ms))
+                    .or_default()
+                    .push(region);
             }
         }
         by_instant.into_values().flatten().collect()
@@ -369,12 +377,20 @@ pub fn outline_strokes(
     projection: &Projection,
     now_ms: f64,
 ) -> Vec<Stroke> {
-    let paint = Paint { rgb: crate::debug::LaneClass::Change.hue(), alpha: 1.0 };
+    let paint = Paint {
+        rgb: crate::debug::LaneClass::Change.hue(),
+        alpha: 1.0,
+    };
     let mut out = Vec::new();
     for region in ChangeRegion::live(regions, now_ms) {
         for edge in region.outline_edges_world() {
             if let Some([from_dp, to_dp]) = projection.segment(edge[0], edge[1]) {
-                out.push(Stroke { from_dp, to_dp, width_dp: OUTLINE_DP, paint });
+                out.push(Stroke {
+                    from_dp,
+                    to_dp,
+                    width_dp: OUTLINE_DP,
+                    paint,
+                });
             }
         }
     }
@@ -398,10 +414,18 @@ impl std::fmt::Display for ChangeRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ChangeRefusal::NothingChanged => {
-                write!(f, "the edit changed no cells, so there is no area to outline")
+                write!(
+                    f,
+                    "the edit changed no cells, so there is no area to outline"
+                )
             }
-            ChangeRefusal::NoReason => write!(f, "the edit carried no reason, so the outline cannot say what changed it"),
-            ChangeRefusal::NoInstant => write!(f, "the edit carried no finite instant, so it cannot expire"),
+            ChangeRefusal::NoReason => write!(
+                f,
+                "the edit carried no reason, so the outline cannot say what changed it"
+            ),
+            ChangeRefusal::NoInstant => {
+                write!(f, "the edit carried no finite instant, so it cannot expire")
+            }
         }
     }
 }
@@ -452,7 +476,11 @@ fn canonical(a: Corner, b: Corner) -> (Corner, Corner) {
 }
 
 fn corner_world(corner: Corner, side: f64) -> [f64; 3] {
-    [corner[0] as f64 * side, corner[1] as f64 * side, corner[2] as f64 * side]
+    [
+        corner[0] as f64 * side,
+        corner[1] as f64 * side,
+        corner[2] as f64 * side,
+    ]
 }
 
 /// A total order over `f64`, because a `BTreeMap` key cannot be `NaN`-ordered.
@@ -486,8 +514,16 @@ mod tests {
     fn one_cell_is_a_cube_of_six_faces_and_twelve_edges() {
         // The smallest change there is, and both counts are exact.
         let change = region([[0, 0, 0]]);
-        assert_eq!(change.boundary_faces().len(), 6, "every face of one cell is a boundary");
-        assert_eq!(change.outline_edges().len(), 12, "and its wireframe is a cube's");
+        assert_eq!(
+            change.boundary_faces().len(),
+            6,
+            "every face of one cell is a boundary"
+        );
+        assert_eq!(
+            change.outline_edges().len(),
+            12,
+            "and its wireframe is a cube's"
+        );
     }
 
     #[test]
@@ -496,12 +532,18 @@ mod tests {
         let adjacent = region([[0, 0, 0], [1, 0, 0]]).boundary_faces().len();
         let separate = region([[0, 0, 0], [4, 0, 0]]).boundary_faces().len();
 
-        assert_eq!(separate, 12, "two changes that did not touch draw two whole cubes' surfaces");
+        assert_eq!(
+            separate, 12,
+            "two changes that did not touch draw two whole cubes' surfaces"
+        );
         assert_eq!(
             adjacent, 10,
             "two touching cells share the face between them, so one face is interior"
         );
-        assert_ne!(adjacent, separate, "the outline is not one box per changed cell");
+        assert_ne!(
+            adjacent, separate,
+            "the outline is not one box per changed cell"
+        );
         assert_ne!(
             adjacent, 6,
             "and not the bounding box either: a 1x2x1 change has 10 boundary faces, not 6"
@@ -524,7 +566,11 @@ mod tests {
             [1, 1, 1],
         ])
         .boundary_faces();
-        assert_eq!(faces.len(), 24, "6 sides x 4 cells, and no interior face: {faces:?}");
+        assert_eq!(
+            faces.len(),
+            24,
+            "6 sides x 4 cells, and no interior face: {faces:?}"
+        );
     }
 
     #[test]
@@ -543,7 +589,9 @@ mod tests {
             "the bounding box of an L is a box, and the change was not one"
         );
         // And the concave corner is in the surface, which a bounding box's six faces cannot have.
-        assert!(change.boundary_faces().contains(&[[1, 0, 1], [2, 0, 1], [2, 1, 1], [1, 1, 1]]));
+        assert!(change
+            .boundary_faces()
+            .contains(&[[1, 0, 1], [2, 0, 1], [2, 1, 1], [1, 1, 1]]));
     }
 
     #[test]
@@ -556,7 +604,10 @@ mod tests {
 
     #[test]
     fn an_edit_that_changed_nothing_is_refused_rather_than_drawn_as_an_empty_box() {
-        assert_eq!(ChangeRegion::of([], "nothing", None, 0.0), Err(ChangeRefusal::NothingChanged));
+        assert_eq!(
+            ChangeRegion::of([], "nothing", None, 0.0),
+            Err(ChangeRefusal::NothingChanged)
+        );
     }
 
     #[test]
@@ -572,13 +623,19 @@ mod tests {
     fn a_change_expires_and_the_window_is_declared_and_half_open() {
         let change = ChangeRegion::of([[0, 0, 0]], "the player broke it", None, 1_000.0)
             .expect("recordable");
-        assert!(change.is_live(1_000.0), "it is on screen the moment it is recorded");
+        assert!(
+            change.is_live(1_000.0),
+            "it is on screen the moment it is recorded"
+        );
         assert!(change.is_live(1_000.0 + ChangeRegion::LIFETIME_MS - 1.0));
         assert!(
             !change.is_live(1_000.0 + ChangeRegion::LIFETIME_MS),
             "the last instant is already gone, so the lifetime is exactly what it says"
         );
-        assert!(!change.is_live(999.0), "and it was not on screen before it happened");
+        assert!(
+            !change.is_live(999.0),
+            "and it was not on screen before it happened"
+        );
     }
 
     #[test]
@@ -598,7 +655,11 @@ mod tests {
         let xs: Vec<f64> = faces.iter().flatten().map(|corner| corner[0]).collect();
         assert_eq!(xs.iter().cloned().fold(f64::INFINITY, f64::min), 1.0);
         assert_eq!(xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max), 2.0);
-        assert_eq!(ChangeRegion::CELL_SIDE_M, 1.0, "the cell size is one world unit");
+        assert_eq!(
+            ChangeRegion::CELL_SIDE_M,
+            1.0,
+            "the cell size is one world unit"
+        );
     }
 
     #[test]
@@ -607,7 +668,10 @@ mod tests {
         let change = region([[-1, -1, -1]]);
         assert_eq!(change.boundary_faces().len(), 6);
         let world = change.boundary_faces_world();
-        assert!(world.iter().flatten().all(|corner| corner.iter().all(|v| *v >= -1.0)));
+        assert!(world
+            .iter()
+            .flatten()
+            .all(|corner| corner.iter().all(|v| *v >= -1.0)));
     }
 
     #[test]
@@ -639,7 +703,9 @@ mod tests {
 
     #[test]
     fn a_point_on_the_axis_lands_at_the_viewport_centre() {
-        let at = projection().point([0.0, 0.0, 10.0]).expect("in front of the eye");
+        let at = projection()
+            .point([0.0, 0.0, 10.0])
+            .expect("in front of the eye");
         assert!((at[0] - 50.0).abs() < 0.5, "{at:?}");
         assert!((at[1] - 50.0).abs() < 0.5, "{at:?}");
     }
@@ -647,9 +713,21 @@ mod tests {
     #[test]
     fn a_point_behind_the_eye_is_refused_rather_than_drawn_at_an_edge() {
         let p = projection();
-        assert_eq!(p.point([0.0, 0.0, 0.0]), None, "the eye itself has no projection");
-        assert_eq!(p.point([0.0, 0.0, -5.0]), None, "and a point behind it neither");
-        assert_eq!(p.point([0.0, 0.0, 0.05]), None, "between the eye and the near plane");
+        assert_eq!(
+            p.point([0.0, 0.0, 0.0]),
+            None,
+            "the eye itself has no projection"
+        );
+        assert_eq!(
+            p.point([0.0, 0.0, -5.0]),
+            None,
+            "and a point behind it neither"
+        );
+        assert_eq!(
+            p.point([0.0, 0.0, 0.05]),
+            None,
+            "between the eye and the near plane"
+        );
     }
 
     #[test]
@@ -707,8 +785,12 @@ mod tests {
         let p = Projection::of(&camera, Rect::new(0.0, 0.0, 100.0, 100.0));
         let change = region([[0, 0, 0]]);
         assert_eq!(
-            outline_strokes(std::slice::from_ref(&change), &p, ChangeRegion::LIFETIME_MS - 1.0)
-                .len(),
+            outline_strokes(
+                std::slice::from_ref(&change),
+                &p,
+                ChangeRegion::LIFETIME_MS - 1.0
+            )
+            .len(),
             12,
             "live for exactly its declared lifetime"
         );

@@ -83,8 +83,7 @@ use voxel_model::{Face, MaterialId, SUBVOXEL_SIDE};
 use voxel_shapers::clouds::TROPOPAUSE_M;
 
 use crate::cloud_field::{
-    cloud_transmittance, density_of, CloudField, CLOUD_COLUMNS, CLOUD_COLUMN_M,
-    CLOUD_SAMPLE_M,
+    cloud_transmittance, density_of, CloudField, CLOUD_COLUMNS, CLOUD_COLUMN_M, CLOUD_SAMPLE_M,
 };
 use crate::quad::{basis_for, QuadRecord};
 
@@ -122,7 +121,11 @@ pub fn rung_for(pixel_angle_rad: f64, distance_m: f64) -> u32 {
     // handing it to an unmeasurable eye would be a refusal dressed as a measurement. Only a
     // genuine distance of zero — an eye inside the cloud, whose footprint really is nothing —
     // lands on the floor.
-    if !pixel_angle_rad.is_finite() || !distance_m.is_finite() || pixel_angle_rad <= 0.0 || distance_m < 0.0 {
+    if !pixel_angle_rad.is_finite()
+        || !distance_m.is_finite()
+        || pixel_angle_rad <= 0.0
+        || distance_m < 0.0
+    {
         return RUNGS;
     }
     let footprint_m = pixel_angle_rad * distance_m.max(0.0);
@@ -226,7 +229,9 @@ pub fn veil_with_side(veil: f64, older: bool) -> f64 {
 /// declares below `Water`, so a reader can find it and a later edit cannot quietly make the cloud
 /// the slowest or the fastest thing in the world.
 pub fn cadence_ticks() -> u64 {
-    voxel_shapers::stages::Cadence::Sediment.period_ticks().max(1)
+    voxel_shapers::stages::Cadence::Sediment
+        .period_ticks()
+        .max(1)
 }
 
 /// **The cross-fade's own period, in ticks** — the rung the tree is *derived* on, read from
@@ -317,7 +322,10 @@ impl CloudCubes {
         let cell_m = rung_cell_m(rung).clamp(CLOUD_FINEST_CELL_M, MAX_CELL_M);
         // The domain is fixed by the atmosphere and the *levels* are what the rung changes, so
         // `domain / 2^levels == cell` is exact for every rung of the ladder (a power of two).
-        let levels = (CLOUD_DOMAIN_M / cell_m).log2().round().clamp(0.0, CLOUD_LEVELS as f64) as u32;
+        let levels = (CLOUD_DOMAIN_M / cell_m)
+            .log2()
+            .round()
+            .clamp(0.0, CLOUD_LEVELS as f64) as u32;
         let corner = domain_corner_m(field);
 
         let mut tree = SparseVoxelOctree::with_levels(levels);
@@ -329,7 +337,10 @@ impl CloudCubes {
             corner,
             cell_m,
             levels,
-            Ladder { eye_m, pixel_angle_rad },
+            Ladder {
+                eye_m,
+                pixel_angle_rad,
+            },
         );
         let drawn = drawn_from(&tree, field, corner, cell_m, eye_m, levels);
 
@@ -349,7 +360,10 @@ impl CloudCubes {
     /// The rows the field's own model would be asked for, as the field's sample lattice reads it —
     /// reported so a picture can say whether the model or the drawing is quiet.
     pub fn sample_lattice() -> (u32, u32) {
-        (crate::cloud_field::CLOUD_SAMPLES_PER_AXIS, crate::cloud_field::CLOUD_SAMPLE_STRIDE)
+        (
+            crate::cloud_field::CLOUD_SAMPLES_PER_AXIS,
+            crate::cloud_field::CLOUD_SAMPLE_STRIDE,
+        )
     }
 }
 
@@ -407,7 +421,9 @@ impl Ladder {
     fn distance_m(lo: [f64; 3], hi: [f64; 3], eye_m: [f64; 3]) -> f64 {
         let mut sum = 0.0;
         for axis in 0..3 {
-            let past = (lo[axis] - eye_m[axis]).max(eye_m[axis] - hi[axis]).max(0.0);
+            let past = (lo[axis] - eye_m[axis])
+                .max(eye_m[axis] - hi[axis])
+                .max(0.0);
             sum += past * past;
         }
         sum.sqrt()
@@ -423,7 +439,15 @@ fn fill(
     levels: u32,
     ladder: Ladder,
 ) {
-    classify(tree, field, samples, FillRegion { corner, cell_m }, [0, 0, 0], levels, ladder);
+    classify(
+        tree,
+        field,
+        samples,
+        FillRegion { corner, cell_m },
+        [0, 0, 0],
+        levels,
+        ladder,
+    );
 }
 
 /// **The region being filled, as one value.** The corner and the finest cell size do not change
@@ -916,7 +940,9 @@ fn drawn_from(
         ];
         let hi = [lo[0] + side_m, lo[1] + side_m, lo[2] + side_m];
         let veil = cell_veil(field, lo, hi);
-        let bucket = ((1.0 - veil) * VEIL_BUCKETS as f64).round().clamp(0.0, VEIL_BUCKETS as f64) as u32;
+        let bucket = ((1.0 - veil) * VEIL_BUCKETS as f64)
+            .round()
+            .clamp(0.0, VEIL_BUCKETS as f64) as u32;
 
         for face in 0..6u32 {
             let (axis, positive) = face_axis_and_sign(face);
@@ -926,7 +952,11 @@ fn drawn_from(
             // uniformly cloud (hidden) or uniformly empty (drawn), and a branch answer means it is
             // subdivided, so part of this face is exposed and it stays.
             let mut neighbour = origin;
-            neighbour[axis] = if positive { origin[axis] + half } else { origin[axis] - half };
+            neighbour[axis] = if positive {
+                origin[axis] + half
+            } else {
+                origin[axis] - half
+            };
             // **Outside the tree is empty, and that is a different question from "what region is
             // there?"** A coordinate off the tree's edge would otherwise descend into the root by
             // the bit test — the same node again, cloud — and hide the face that is genuinely on
@@ -937,7 +967,11 @@ fn drawn_from(
                 continue;
             }
             // **A wall pointing away from the eye is not drawn** (see the module doc).
-            let away = if positive { eye_m[axis] < lo[axis] } else { eye_m[axis] > hi[axis] };
+            let away = if positive {
+                eye_m[axis] < lo[axis]
+            } else {
+                eye_m[axis] > hi[axis]
+            };
             if away {
                 continue;
             }
@@ -954,7 +988,11 @@ fn drawn_from(
         }
     });
 
-    let mut drawn = Drawn { cells, deepest, ..Drawn::default() };
+    let mut drawn = Drawn {
+        cells,
+        deepest,
+        ..Drawn::default()
+    };
     for ((face, level, plane, _bucket), grid) in groups {
         let side_voxels = 1i32 << level;
         for (u0, v0, du, dv, veil) in greedy_merge(&grid) {
@@ -971,7 +1009,8 @@ fn drawn_from(
             // Already in subvoxels: `lattice_plane_sub` returns the plane in the record's own unit.
             let plane_sub = plane as f64;
             let holds = |value: f64| value.is_finite() && (0.0..=u16::MAX as f64).contains(&value);
-            if !(holds(u_sub) && holds(v_sub) && holds(du_sub) && holds(dv_sub) && holds(plane_sub)) {
+            if !(holds(u_sub) && holds(v_sub) && holds(du_sub) && holds(dv_sub) && holds(plane_sub))
+            {
                 drawn.clipped += 1;
                 continue;
             }
@@ -986,6 +1025,9 @@ fn drawn_from(
                 chunk: index,
                 light_y: 0,
                 light_z: 0,
+                shape_lo: 0,
+                shape_hi: 0,
+                shape_twist: 0,
             });
         }
     }
@@ -1108,7 +1150,9 @@ fn nearest_cloudy_column_m(field: &CloudField, eye_m: [f64; 3]) -> Option<f64> {
     let mut best: Option<f64> = None;
     for j in 0..n {
         for i in 0..n {
-            let Some(texel) = field.texel(i, j) else { continue };
+            let Some(texel) = field.texel(i, j) else {
+                continue;
+            };
             if texel[0] <= 0.0 {
                 continue;
             }
@@ -1173,7 +1217,10 @@ mod tests {
         let mut previous = 0.0;
         for step in 1..200 {
             let cell = rung_cell_m(rung_for(angle, step as f64 * 50.0));
-            assert!(cell >= previous, "the ladder went finer with distance at {step}");
+            assert!(
+                cell >= previous,
+                "the ladder went finer with distance at {step}"
+            );
             previous = cell;
         }
     }
@@ -1202,10 +1249,7 @@ mod tests {
         let field = field_with(&[(I, I, layer)]);
         // The field's own origin is the corner of its lattice, so column `I` holds
         // `[I·64 m, (I+1)·64 m]` in both directions.
-        let (low, high) = (
-            I as f64 * CLOUD_COLUMN_M,
-            (I as f64 + 1.0) * CLOUD_COLUMN_M,
-        );
+        let (low, high) = (I as f64 * CLOUD_COLUMN_M, (I as f64 + 1.0) * CLOUD_COLUMN_M);
 
         let cubes = CloudCubes::build(&field, [0.0, 0.0, 0.0], 1.7e-3);
         assert!(
@@ -1278,7 +1322,12 @@ mod tests {
         // large regions rather than one node per cell — which is the whole reason the geometry is
         // an octree and not a grid of boxes.
         let texel = [0.4f32, 1_000.0, 1_800.0, 1.0];
-        let field = field_with(&[(10, 10, texel), (11, 10, texel), (10, 11, texel), (11, 11, texel)]);
+        let field = field_with(&[
+            (10, 10, texel),
+            (11, 10, texel),
+            (10, 11, texel),
+            (11, 11, texel),
+        ]);
         let cubes = CloudCubes::build(&field, [0.0, 20.0, 0.0], 1.7e-3);
         assert!(
             cubes.subdivisions <= CLOUD_LEVELS as usize,
@@ -1335,8 +1384,9 @@ mod tests {
         // tree's interior faces are hidden and the surface's coplanar ones are merged. Measured
         // rather than asserted as a magic number: the count is printed.
         let texel = [0.5f32, 1_000.0, 1_800.0, 1.0];
-        let columns: Vec<(u32, u32, [f32; 4])> =
-            (8..12).flat_map(|i| (8..12).map(move |j| (i, j, texel))).collect();
+        let columns: Vec<(u32, u32, [f32; 4])> = (8..12)
+            .flat_map(|i| (8..12).map(move |j| (i, j, texel)))
+            .collect();
         let field = field_with(&columns);
         let cubes = CloudCubes::build(&field, [0.0, 20.0, 0.0], 1.7e-3);
         println!(
@@ -1361,7 +1411,10 @@ mod tests {
         for record in &cubes.records {
             let low = record.low();
             let size = record.size();
-            assert!(size[0] > 0 && size[1] > 0, "a rectangle has no area: {record:?}");
+            assert!(
+                size[0] > 0 && size[1] > 0,
+                "a rectangle has no area: {record:?}"
+            );
             let rect = [
                 low[0] as u32,
                 low[1] as u32,
@@ -1382,7 +1435,10 @@ mod tests {
             }
             at.push(rect);
         }
-        assert_eq!(cubes.clipped, 0, "a rectangle left the record format's own range");
+        assert_eq!(
+            cubes.clipped, 0,
+            "a rectangle left the record format's own range"
+        );
     }
 
     #[test]
@@ -1423,7 +1479,11 @@ mod tests {
                 low = low.min(y);
                 high = high.max(y + side);
             });
-            (cubes.cells, if cubes.cells == 0 { 0.0 } else { high - low }, volume)
+            (
+                cubes.cells,
+                if cubes.cells == 0 { 0.0 } else { high - low },
+                volume,
+            )
         };
         let (thin_cells, thin_band, thin_volume) = span(0.16);
         let (thick_cells, thick_band, thick_volume) = span(0.5);
@@ -1484,7 +1544,11 @@ mod tests {
     fn the_same_field_and_eye_build_the_same_cubes() {
         // Determinism is a contract (F1): no clock, no RNG, no allocation order.
         let texel = [0.5f32, 1_000.0, 1_800.0, 1.0];
-        let field = field_with(&[(10, 10, texel), (11, 11, texel), (40, 7, [0.3, 900.0, 1_400.0, 2.0])]);
+        let field = field_with(&[
+            (10, 10, texel),
+            (11, 11, texel),
+            (40, 7, [0.3, 900.0, 1_400.0, 2.0]),
+        ]);
         let first = CloudCubes::build(&field, [100.0, 30.0, -50.0], 1.7e-3);
         let second = CloudCubes::build(&field, [100.0, 30.0, -50.0], 1.7e-3);
         assert_eq!(first, second);
@@ -1543,7 +1607,10 @@ mod tests {
                         + record.slice as f64 / SUBVOXEL_SIDE as f64
                 })
                 .collect();
-            assert!(!below.is_empty(), "the fixture drew no underside at water {water}");
+            assert!(
+                !below.is_empty(),
+                "the fixture drew no underside at water {water}"
+            );
             below
         };
 
@@ -1552,14 +1619,16 @@ mod tests {
         let mut planes_m: Vec<f64> = Vec::new();
         for step in 0..=60 {
             let water = 1.0 - step as f32 * 0.015_825;
-            assert!(water > CLOUD_CUT_WATER as f32, "the sweep walked out of the cloud at {water}");
+            assert!(
+                water > CLOUD_CUT_WATER as f32,
+                "the sweep walked out of the cloud at {water}"
+            );
             let mut drawn = undersides(water);
             drawn.sort_by(|a, b| a.partial_cmp(b).expect("a plane is a number"));
             planes_m.push(drawn[0]);
         }
 
         // **One plane, for every water in the sweep**, because a leaf's face is a function of the ladder and never of the water.
-
 
         // **The plane is a face of the tree, and the water does not touch it.** Every step of the
         // sweep drew the same plane, because a leaf's face is a function of the ladder and never of
@@ -1569,8 +1638,7 @@ mod tests {
             assert_eq!(
                 pair[0], pair[1],
                 "the plane moved with the water: {} then {}",
-                pair[0],
-                pair[1]
+                pair[0], pair[1]
             );
         }
         // **On the ladder's own lattice.** The record's subvoxels are metres from the domain's own
@@ -1591,7 +1659,11 @@ mod tests {
         // planes is identical. That is what leaves the motion to the shader and the rebuild to the
         // derivation's own cadence.
         let planes_of = |cubes: &CloudCubes| -> BTreeSet<(u32, u32)> {
-            cubes.records.iter().map(|record| (record.face, record.slice)).collect()
+            cubes
+                .records
+                .iter()
+                .map(|record| (record.face, record.slice))
+                .collect()
         };
         let thinner = CloudCubes::build(&field(0.6), EYE, 1.7e-3);
         assert_eq!(
@@ -1599,7 +1671,10 @@ mod tests {
             planes_of(&thinner),
             "the planes moved with the water, so a slide would cost a rebuild"
         );
-        assert_ne!(wet.origins, thinner.origins, "the veil did not follow the water");
+        assert_ne!(
+            wet.origins, thinner.origins,
+            "the veil did not follow the water"
+        );
         println!(
             "the underside over a thinning column: {:.3} m held across {} derivations, against a \
              {cell:.3} m cell",
@@ -1638,7 +1713,10 @@ mod tests {
             built_ms,
         );
         assert!(!cubes.records.is_empty(), "a cloudy field drew no geometry");
-        assert_eq!(cubes.clipped, 0, "a rectangle left the record format's own range");
+        assert_eq!(
+            cubes.clipped, 0,
+            "a rectangle left the record format's own range"
+        );
     }
 
     #[test]
@@ -1648,10 +1726,16 @@ mod tests {
         for veil in [0.0, 0.01, 0.2, 0.5, 0.72, 0.95, 1.0] {
             let newer = veil_with_side(veil, false);
             let older = veil_with_side(veil, true);
-            assert_eq!(newer, -older, "the two sides do not share a magnitude at {veil}");
+            assert_eq!(
+                newer, -older,
+                "the two sides do not share a magnitude at {veil}"
+            );
             assert!(newer > 0.0 && older < 0.0, "a side lost its sign at {veil}");
             // A cloud can never answer zero, so "not a cloud" stays an exact test.
-            assert!((1.0..=2.0).contains(&newer), "the encoding left its own range at {veil}");
+            assert!(
+                (1.0..=2.0).contains(&newer),
+                "the encoding left its own range at {veil}"
+            );
             assert_ne!(newer, 0.0);
             // The decode is what the shader does: `1 - (|v| - 1)·w` is the tree's own number at one.
             for weight in [0.0, 0.25, 0.75, 1.0] {
@@ -1673,8 +1757,14 @@ mod tests {
         // The natural wrong path — multiplying the veil — misses half weight by 45 %:
         let right = 1.0 - (veil_with_side(0.95, false) - 1.0) * 0.5;
         let wrong = 0.95 * 0.5;
-        assert!((right - 0.975).abs() < 1e-12, "half weight is not half the opacity");
-        assert!((wrong - right).abs() > 0.4, "`veil · w` would have passed this check");
+        assert!(
+            (right - 0.975).abs() < 1e-12,
+            "half weight is not half the opacity"
+        );
+        assert!(
+            (wrong - right).abs() > 0.4,
+            "`veil · w` would have passed this check"
+        );
     }
 
     #[test]
@@ -1695,9 +1785,17 @@ mod tests {
              avoid"
         );
         let t = 40_000;
-        assert_eq!(fade_weight(t, t), 0.0, "a tree is the older half of its own first frame");
+        assert_eq!(
+            fade_weight(t, t),
+            0.0,
+            "a tree is the older half of its own first frame"
+        );
         assert_eq!(fade_weight(t, t + period / 2), 0.5);
-        assert_eq!(fade_weight(t, t + period), 1.0, "the fade outlived its cadence");
+        assert_eq!(
+            fade_weight(t, t + period),
+            1.0,
+            "the fade outlived its cadence"
+        );
         // A late derivation is a staler picture, not a slower dissolve.
         assert_eq!(fade_weight(t, t + 10 * period), 1.0);
         // A clock that went backwards cannot be served a negative share.
@@ -1731,8 +1829,19 @@ mod tests {
         // cadence — the dissolve the shared tick could not express. Both trees use the same
         // cadence tick above; only the anchor differs, which is the whole of the repair.
         let arrived = cadence_tick + 3;
-        assert_eq!(fade_weight(arrived, arrived), 0.0, "a new tree arrived opaque");
-        assert!(fade_weight(arrived, arrived + 1) > 0.0, "the dissolve never started");
-        assert_eq!(fade_weight(arrived, arrived + period), 1.0, "the dissolve never finished");
+        assert_eq!(
+            fade_weight(arrived, arrived),
+            0.0,
+            "a new tree arrived opaque"
+        );
+        assert!(
+            fade_weight(arrived, arrived + 1) > 0.0,
+            "the dissolve never started"
+        );
+        assert_eq!(
+            fade_weight(arrived, arrived + period),
+            1.0,
+            "the dissolve never finished"
+        );
     }
 }

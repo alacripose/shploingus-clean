@@ -343,6 +343,28 @@ impl Earthworks {
         self.entries.iter().any(|e| e.x == x && e.y == y && e.z == z)
     }
 
+    /// **How far up and down the record reaches in one column**, in voxels: the lowest and highest
+    /// `y` it has changed, or `None` where it has changed nothing.
+    ///
+    /// A reader that asks *"where is this column's surface?"* without a chunk in hand — the map's
+    /// far probe ([`voxel_stream::WorldSource::column_surface`]) — starts its walk from the
+    /// generator's own ceiling, which is the law's elevation plus the tallest tree. **An edit can
+    /// stand above that ceiling** (a raised mound, a placed block) **or cut below the generator's
+    /// floor** (a pit), and a probe that trusted the law would answer with the world it was before
+    /// the change. This is the record's own answer to how far the column can differ, read from the
+    /// entries rather than kept as a second index beside them.
+    pub fn column_span(&self, x: i32, z: i32) -> Option<(i32, i32)> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.x == x && entry.z == z)
+            .fold(None, |span: Option<(i32, i32)>, entry| {
+                Some(match span {
+                    None => (entry.y, entry.y),
+                    Some((low, high)) => (low.min(entry.y), high.max(entry.y)),
+                })
+            })
+    }
+
     /// The history at a position, oldest first.
     pub fn history(&self, x: i32, y: i32, z: i32) -> Vec<&Modification> {
         self.entries

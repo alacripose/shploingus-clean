@@ -36,7 +36,8 @@ fn main() {
     let spec = WorldSpec::new(voxel_client::GAME_SEED, Config::default());
     let registry = voxel_shapers::materials::registry().expect("the registry");
     let field = voxel_shapers::materials::shading_field().expect("the shading field");
-    let materials = voxel_client::table(&registry, &field).expect("every admitted material derives");
+    let materials =
+        voxel_client::table(&registry, &field).expect("every admitted material derives");
 
     // Error scopes around the pipeline build, so a refusal is named rather than a panic.
     let build_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -59,7 +60,11 @@ fn main() {
     ));
     let colour = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("surface-format-check colour"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -74,7 +79,11 @@ fn main() {
     let multisampled = (samples > 1).then(|| {
         device.create_texture(&wgpu::TextureDescriptor {
             label: Some("surface-format-check colour msaa"),
-            size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: samples,
             dimension: wgpu::TextureDimension::D2,
@@ -85,7 +94,11 @@ fn main() {
     });
     let depth = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("surface-format-check depth"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: samples,
         dimension: wgpu::TextureDimension::D2,
@@ -173,9 +186,18 @@ fn main() {
     );
 
     let draw_scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
-    let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("check") });
-    world.draw(&mut encoder, target, &depth_view, resolve, &scene, &camera, pixel_angle);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("check"),
+    });
+    world.draw(
+        &mut encoder,
+        target,
+        &depth_view,
+        resolve,
+        &scene,
+        &camera,
+        pixel_angle,
+    );
     queue.submit(Some(encoder.finish()));
     let draw_error = pollster::block_on(draw_scope.pop());
     println!("draw validation: {draw_error:?}");
@@ -201,9 +223,18 @@ fn main() {
     // themselves, so this is the one frame in the tree where the greedy merge's own rectangles are
     // the subject — the world's own materials are withheld, and the sky stays so the lines have a
     // horizon to be read against.
-    let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("wire") });
-    world.draw_wireframe(&mut encoder, target, &depth_view, resolve, &scene, &camera, pixel_angle);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("wire"),
+    });
+    world.draw_wireframe(
+        &mut encoder,
+        target,
+        &depth_view,
+        resolve,
+        &scene,
+        &camera,
+        pixel_angle,
+    );
     queue.submit(Some(encoder.finish()));
     let wire = read_back(&device, &queue, &colour);
     write_png("target/wireframe.png", &wire);
@@ -220,15 +251,20 @@ fn main() {
     let mut reference = |scene: &Scene, label: &'static str| {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
-        world.draw_wireframe(&mut encoder, target, &depth_view, resolve, scene, &camera, pixel_angle);
+        world.draw_wireframe(
+            &mut encoder,
+            target,
+            &depth_view,
+            resolve,
+            scene,
+            &camera,
+            pixel_angle,
+        );
         queue.submit(Some(encoder.finish()));
         read_back(&device, &queue, &colour)
     };
     let bare_wire = reference(&bare, "bare");
-    let nothing = Scene::build_with_detail(
-        Vec::<voxel_mesh::Mesh>::new().iter(),
-        eye,
-    );
+    let nothing = Scene::build_with_detail(Vec::<voxel_mesh::Mesh>::new().iter(), eye);
     let cloud_only = nothing.clone().with_clouds(&cubes);
     let cloud_only_wire = reference(&cloud_only, "cloud-only");
     let nothing_wire = reference(&nothing, "nothing");
@@ -290,8 +326,9 @@ fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("readback") });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("readback"),
+    });
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture,
@@ -307,7 +344,11 @@ fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture
                 rows_per_image: Some(HEIGHT),
             },
         },
-        wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
@@ -316,7 +357,10 @@ fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture
         let _ = sender.send(result);
     });
     device
-        .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
         .expect("the readback poll");
     receiver.recv().expect("the map callback").expect("the map");
     let pixels: Vec<u8> = slice.get_mapped_range().expect("the mapped range").to_vec();

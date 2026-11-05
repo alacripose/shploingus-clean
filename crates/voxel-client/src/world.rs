@@ -23,8 +23,8 @@
 //! out and makes the sharing explicit at the call site.
 
 use crate::camera::Camera;
-use crate::scene::{Scene, Vertex};
 use crate::quad::{origin_bytes, QuadRecord, ORIGIN_SIZE};
+use crate::scene::{Scene, Vertex};
 use crate::shading::{GpuRig, MaterialParams};
 use std::collections::BTreeSet;
 
@@ -44,7 +44,6 @@ const SKY_NOT_STATED: usize = usize::MAX;
 /// **The rows of a stated absence**: the buffer's own layout, all zeros, which the shader's
 /// arithmetic answers with black ([`NO_SKY_ROWS`]).
 const ZERO_SKY_MODEL: [u8; SKY_MODEL_BYTES] = [0u8; SKY_MODEL_BYTES];
-
 
 /// **The one place a pass is handed the display stage**, and the reason this is a
 /// function rather than three `include_str!`s.
@@ -151,6 +150,15 @@ pub struct WorldPipeline {
     /// write and a layer view can be taken of the scene that was just drawn rather than of a
     /// second scene built to be looked at.
     debug_layer: u32,
+    /// **Whether this pass draws the atmosphere behind its geometry.** Every game frame does;
+    /// an orthographic map frame does not, because an orthographic camera has one direction and
+    /// a physical sky there is a single flat sample with no horizon. Turning the pass off lets
+    /// the frame clear to its own declared sky instead, so the map's ground silhouette *is* the
+    /// horizon. See [`WorldPipeline::set_sky`].
+    sky: bool,
+    /// **The colour a frame with no sky pass clears to**, linear and straight into the target.
+    /// TRANSPARENT is the value every frame had before this record existed.
+    clear: wgpu::Color,
     /// The sky pass: the transport's rows, and the numbers that turn a pixel into a direction.
     ///
     /// **The rows and the integral both exist once.** The transport is `atmosphere.wgsl`'s — one
@@ -217,6 +225,19 @@ pub struct WorldPipeline {
     cloud_record_last: Vec<QuadRecord>,
     cloud_origin_last: Vec<[f64; 4]>,
     cloud_origin_eye: Option<[f64; 3]>,
+    /// **The far field's own pair** ([`crate::far_terrain`]): the world beyond the residency
+    /// window, at the coarse rung. A third pair rather than a suffix of the terrain's for the
+    /// cloud's own reason — a far chunk is built on its own thread and must not be renumbered by a
+    /// chunk landing near the eye — and a separate bind group is what lets the same `vs_quad` read
+    /// it without a second shader or a format change.
+    far_records: wgpu::Buffer,
+    far_origins: wgpu::Buffer,
+    far_record_capacity: u64,
+    far_origin_capacity: u64,
+    far_bind_group: wgpu::BindGroup,
+    far_record_last: Vec<QuadRecord>,
+    far_origin_last: Vec<[f64; 4]>,
+    far_origin_eye: Option<[f64; 3]>,
     /// **What is currently on the GPU, held as values rather than as bytes.**
     /// A rectangle is camera-independent and the mesh set changes only when a
     /// chunk arrives, is evicted, or is remeshed, so in the steady state the whole
@@ -383,64 +404,64 @@ impl WorldPipeline {
         // textures and sampler are the only additions; a world with no light binds them and the
         // shader's flag answers "no shadow", so the frame is the frame it was.
         let mut entries = vec![
-                uniform_entry(0, wgpu::ShaderStages::FRAGMENT),
-                // The camera is read by **both** stages now: the vertex projects with
-                // `vp`, and the fragment reads the eye's fractional offset to address
-                // the pattern (C-161). A layout that hid it from the fragment would
-                // be a pipeline wgpu refuses, which is how this line was found.
-                uniform_entry(1, wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT),
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+            uniform_entry(0, wgpu::ShaderStages::FRAGMENT),
+            // The camera is read by **both** stages now: the vertex projects with
+            // `vp`, and the fragment reads the eye's fractional offset to address
+            // the pattern (C-161). A layout that hid it from the fragment would
+            // be a pipeline wgpu refuses, which is how this line was found.
+            uniform_entry(1, wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT),
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                // The quad format's two storage buffers: the rectangles, and one
-                // eye-relative origin per chunk they name. **Vertex-visible
-                // only** — the fragment never reads either, because it addresses
-                // the pattern from its own interpolated position (C-161).
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+                count: None,
+            },
+            // The quad format's two storage buffers: the rectangles, and one
+            // eye-relative origin per chunk they name. **Vertex-visible
+            // only** — the fragment never reads either, because it addresses
+            // the pattern from its own interpolated position (C-161).
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                // **The sky's own transport, bound to the world pass** (C-177). A fluid
-                // surface *is* the sky, seen off a dielectric boundary: the reflection is most
-                // of what water looks like, and until this binding existed the world pass could
-                // not see the sky `sky.wgsl` was already drawing. Both passes bind **the same
-                // buffer at the same binding number (5)** — the model's rows, which
-                // `atmosphere.wgsl` declares once — and both evaluate them with that file's
-                // code, so there is one sky, one integral and one exposure rather than an
-                // agreement between two.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+                count: None,
+            },
+            // **The sky's own transport, bound to the world pass** (C-177). A fluid
+            // surface *is* the sky, seen off a dielectric boundary: the reflection is most
+            // of what water looks like, and until this binding existed the world pass could
+            // not see the sky `sky.wgsl` was already drawing. Both passes bind **the same
+            // buffer at the same binding number (5)** — the model's rows, which
+            // `atmosphere.wgsl` declares once — and both evaluate them with that file's
+            // code, so there is one sky, one integral and one exposure rather than an
+            // agreement between two.
+            wgpu::BindGroupLayoutEntry {
+                binding: 5,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
+                count: None,
+            },
         ];
         entries.extend(crate::sun_shadow::entries());
         entries.extend(crate::horizon::HorizonStream::layout_entries());
@@ -496,7 +517,10 @@ impl WorldPipeline {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
                 entry_point: Some("fs_main"),
@@ -541,7 +565,10 @@ impl WorldPipeline {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
                 entry_point: Some("fs_main"),
@@ -598,7 +625,10 @@ impl WorldPipeline {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
                 entry_point: Some("fs_main"),
@@ -645,7 +675,10 @@ impl WorldPipeline {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
                 entry_point: Some("fs_wire"),
@@ -716,7 +749,10 @@ impl WorldPipeline {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
                 entry_point: Some("fs_body"),
@@ -828,6 +864,33 @@ impl WorldPipeline {
             &shadow,
             &horizon,
         );
+        // **The far field's own pair**, bound through the same layout: one more reader of the quad
+        // format, not a second format. `write_quads` copies the cloud's three rules — grow by
+        // doubling, re-bind only on a growth, and compare values before serialising.
+        let far_records = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("far-records"),
+            size: QUAD_START_BYTES,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let far_origins = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("far-origins"),
+            size: QUAD_START_BYTES,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let far_bind_group = world_bind_group(
+            device,
+            &bind_group_layout,
+            &rig_buffer,
+            &view,
+            &materials_buffer,
+            &far_records,
+            &far_origins,
+            &sky_model,
+            &shadow,
+            &horizon,
+        );
 
         // ---- the sky pass -------------------------------------------------
         // Its own bind group and its own pipeline, sharing the render pass and the
@@ -862,12 +925,11 @@ impl WorldPipeline {
                 },
             ],
         });
-        let sky_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("sky"),
-                bind_group_layouts: &[Some(&sky_layout)],
-                immediate_size: 0,
-            });
+        let sky_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sky"),
+            bind_group_layouts: &[Some(&sky_layout)],
+            immediate_size: 0,
+        });
         let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("sky"),
             layout: Some(&sky_pipeline_layout),
@@ -893,7 +955,10 @@ impl WorldPipeline {
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
-            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
             fragment: Some(wgpu::FragmentState {
                 module: &sky_module,
                 entry_point: Some("fs_main"),
@@ -933,8 +998,14 @@ impl WorldPipeline {
             label: Some("sky"),
             layout: &sky_layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: sky_view.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: sky_model.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: sky_view.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: sky_model.as_entire_binding(),
+                },
             ],
         });
 
@@ -995,6 +1066,14 @@ impl WorldPipeline {
             cloud_record_last: Vec::new(),
             cloud_origin_last: Vec::new(),
             cloud_origin_eye: None,
+            far_records,
+            far_origins,
+            far_record_capacity: QUAD_START_BYTES,
+            far_origin_capacity: QUAD_START_BYTES,
+            far_bind_group,
+            far_record_last: Vec::new(),
+            far_origin_last: Vec::new(),
+            far_origin_eye: None,
             quad_record_last: Vec::new(),
             body_record_last: Vec::new(),
             quad_origin_last: Vec::new(),
@@ -1027,6 +1106,8 @@ impl WorldPipeline {
             sun: (rig.count[0] > 0).then_some(rig.lights[0].direction),
             shadows: false,
             shadow_range: crate::sun_shadow::FAR_RANGE_M,
+            sky: true,
+            clear: wgpu::Color::TRANSPARENT,
             samples,
         })
         .map(|mut pipeline| {
@@ -1125,11 +1206,30 @@ impl WorldPipeline {
         self.horizon.covers(pos)
     }
 
+    /// **Whether this chunk's fine band has been light-sampled** — the slot bit the shader reads,
+    /// asked about a chunk. `false` inside the cube means the chunk has no horizon measurement yet
+    /// (or a crossing cut it), and a frame may not draw through that: see
+    /// [`HorizonStream::lit`](crate::horizon::HorizonStream::lit).
+    pub fn horizon_lit(&self, pos: voxel_model::ChunkPos) -> bool {
+        self.horizon.lit(pos)
+    }
+
     /// What the fine band holds at a world point: `None` outside the cube or where the slot is
     /// unstamped, `Some(false)` for measured air, `Some(true)` for matter. The readout a frame
     /// uses to say which band answered for a pixel.
     pub fn horizon_solid(&self, point_m: [f64; 3]) -> Option<bool> {
         self.horizon.solid_at(point_m)
+    }
+
+    /// **How much of the coarse cell at a world point holds matter** — `Some(0.0)` for a stamped
+    /// empty cell, `None` where the coarse band is unstamped or the point is outside it.
+    ///
+    /// This is the far band's own reading, at the grain a distant chunk is lit at: `0.75` of it is
+    /// where a cell stands in a ray's way (`shading.wgsl`'s `FAR_BLOCKS`), so a caller asking
+    /// whether distant ground can read black asks this rather than [`Self::horizon_solid`], which
+    /// answers only inside the fine cube.
+    pub fn horizon_far_share(&self, point_m: [f64; 3]) -> Option<f32> {
+        self.horizon.far_share_at(point_m)
     }
 
     /// The fine band's stamped-slot mask, as the shader reads it.
@@ -1150,13 +1250,66 @@ impl WorldPipeline {
         self.horizon.stamp(pos, tree, version)
     }
 
+    /// **Stamp a far chunk's coarse band from the census its mesh was cut from.**
+    ///
+    /// The far field does not hold the chunk's tree after it is meshed — the census is the whole of
+    /// what the band needs — so this is the one statement of that chunk's coarse light. See
+    /// [`crate::horizon::HorizonStream::stamp_far`].
+    pub fn horizon_stamp_far(
+        &mut self,
+        pos: voxel_model::ChunkPos,
+        census: &crate::far_terrain::Census,
+        version: u64,
+    ) -> usize {
+        self.horizon.stamp_far(pos, census, version)
+    }
+
+    /// **Stamp a tier-6 far chunk's wide band from the census its mesh was cut from.**
+    ///
+    /// The second rung's own statement of that chunk's light; see
+    /// [`crate::horizon::HorizonStream::stamp_wide`], which refuses a census that is not tier 6.
+    pub fn horizon_stamp_wide(
+        &mut self,
+        pos: voxel_model::ChunkPos,
+        census: &crate::far_terrain::Census,
+        version: u64,
+    ) -> usize {
+        self.horizon.stamp_wide(pos, census, version)
+    }
+
+    /// **Stamp a tier-7 far chunk's chunk-tier band** (32 m, one cell a chunk) from its census.
+    ///
+    /// The last chunk-held rung; [`crate::horizon::HorizonStream::stamp_chunk_band`] refuses a
+    /// census that is not tier 7.
+    pub fn horizon_stamp_chunk_band(
+        &mut self,
+        pos: voxel_model::ChunkPos,
+        census: &crate::far_terrain::Census,
+        version: u64,
+    ) -> usize {
+        self.horizon.stamp_chunk_band(pos, census, version)
+    }
+
+    /// **Stamp one surface rung's band from the ring it was cut from** — the rung's own light.
+    ///
+    /// A rung above a chunk is measured one sample a cell ([`crate::surface`]), and its band is
+    /// that same sample: the share of the cell it stands in. The stamp refuses a ring whose cell is
+    /// not its tier's own, so the grain of the geometry and the grain of the march cannot drift.
+    pub fn horizon_stamp_surface(&mut self, ring: &crate::surface::SurfaceRing) -> usize {
+        self.horizon.stamp_surface(ring)
+    }
+
+    /// **How much of one surface rung's cell at a world point holds matter**, `None` outside the
+    /// rung's disc or where it has not been measured.
+    pub fn horizon_surface_share(&self, tier: u32, point_m: [f64; 3]) -> Option<f32> {
+        self.horizon.surface_share_at(tier, point_m)
+    }
+
     /// The world-voxel corner the cube is anchored on, for a report that has to say what the
     /// frame's horizon covers.
     pub fn horizon_anchor(&self) -> [i32; 3] {
         self.horizon.anchor()
     }
-
-
 
     /// How many rows the material table has. A scene naming a material beyond
     /// this is not shaded at all — the shader's own guard, not a wrap.
@@ -1190,6 +1343,24 @@ impl WorldPipeline {
     /// refuse *to*, and a caller who passes it wants more dither, not an error.
     pub fn set_dither(&mut self, amount: f32) {
         self.dither = amount.clamp(0.0, 1.0);
+    }
+
+    /// **Whether this pass draws the atmosphere** — `true` for every game frame, `false` for an
+    /// orthographic map frame, whose camera has one direction and whose sky is therefore the
+    /// colour the pass clears to.
+    pub fn set_sky(&mut self, draw: bool) {
+        self.sky = draw;
+    }
+
+    /// **The colour a sky-less frame clears to**, linear. It is the map's declared sky rather
+    /// than a second atmosphere: the ground's silhouette against this colour is the horizon.
+    pub fn set_clear(&mut self, colour: [f64; 4]) {
+        self.clear = wgpu::Color {
+            r: colour[0],
+            g: colour[1],
+            b: colour[2],
+            a: colour[3],
+        };
     }
 
     /// **The cloud's cross-fade weight** (C-183): `1.0` is the newer tree whole — the value every
@@ -1400,7 +1571,8 @@ impl WorldPipeline {
             self.sky_model.size()
         );
         self.queue.write_buffer(&self.sky_model, 0, &bytes);
-        self.sky_rows.store(model.rows(), std::sync::atomic::Ordering::Relaxed);
+        self.sky_rows
+            .store(model.rows(), std::sync::atomic::Ordering::Relaxed);
     }
 
     /// **State that this frame has no sky** — the atmosphere refused, say — rather than leaving
@@ -1413,7 +1585,8 @@ impl WorldPipeline {
     /// of [`WorldPipeline::admit_sky`]'s refusal.
     pub fn write_no_sky_model(&self) {
         self.queue.write_buffer(&self.sky_model, 0, &ZERO_SKY_MODEL);
-        self.sky_rows.store(NO_SKY_ROWS, std::sync::atomic::Ordering::Relaxed);
+        self.sky_rows
+            .store(NO_SKY_ROWS, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// The rows this host has stated, or `None` if it has stated nothing at all.
@@ -1505,11 +1678,17 @@ impl WorldPipeline {
             // older slice missing — a world with holes. The whole array is owed on that frame,
             // and the written ranges are replaced by it for this one upload.
             let everything = [[0u32, scene.vertices.len() as u32]];
-            let written_vertices: &[[u32; 2]] =
-                if grew { &everything } else { &scene.written_vertices };
+            let written_vertices: &[[u32; 2]] = if grew {
+                &everything
+            } else {
+                &scene.written_vertices
+            };
             let everything = [[0u32, scene.indices.len() as u32]];
-            let written_indices: &[[u32; 2]] =
-                if grew { &everything } else { &scene.written_indices };
+            let written_indices: &[[u32; 2]] = if grew {
+                &everything
+            } else {
+                &scene.written_indices
+            };
             let mut sent = 0u64;
             for [from, to] in written_vertices {
                 let from = *from as usize;
@@ -1519,7 +1698,8 @@ impl WorldPipeline {
                 }
                 if let Some(buffer) = vertex_buffer.as_ref() {
                     let bytes = scene.vertex_bytes_of(from, to);
-                    self.queue.write_buffer(buffer, from as u64 * stride, &bytes);
+                    self.queue
+                        .write_buffer(buffer, from as u64 * stride, &bytes);
                     sent += bytes.len() as u64;
                 }
             }
@@ -1597,13 +1777,15 @@ impl WorldPipeline {
         let vertices = scene.vertex_bytes_of(slice.vertex_from, slice.vertex_to);
         if !vertices.is_empty() {
             if let Some(buffer) = self.corners[back].vertices.as_ref() {
-                self.queue.write_buffer(buffer, slice.vertex_from as u64 * stride, &vertices);
+                self.queue
+                    .write_buffer(buffer, slice.vertex_from as u64 * stride, &vertices);
             }
         }
         let indices = scene.index_bytes_of(slice.index_from, slice.index_to);
         if !indices.is_empty() {
             if let Some(buffer) = self.corners[back].indices.as_ref() {
-                self.queue.write_buffer(buffer, slice.index_from as u64 * 4, &indices);
+                self.queue
+                    .write_buffer(buffer, slice.index_from as u64 * 4, &indices);
             }
         }
         self.corner_traffic.uploads += 1;
@@ -1798,7 +1980,11 @@ impl WorldPipeline {
             // `grew ⇒ everything` rule the corner path above already states.
             let everything = [[0u32, scene.records.len() as u32]];
             let whole = grew || !self.quad_records_filled;
-            let written: &[[u32; 2]] = if whole { &everything } else { &scene.written_records };
+            let written: &[[u32; 2]] = if whole {
+                &everything
+            } else {
+                &scene.written_records
+            };
             for [from, to] in written {
                 let from = *from as usize;
                 let to = (*to as usize).min(scene.records.len());
@@ -1806,7 +1992,8 @@ impl WorldPipeline {
                     continue;
                 }
                 let bytes = QuadRecord::bytes(&scene.records[from..to]);
-                self.queue.write_buffer(&self.quad_records, from as u64 * stride, &bytes);
+                self.queue
+                    .write_buffer(&self.quad_records, from as u64 * stride, &bytes);
                 self.quad_uploads += 1;
                 self.quad_bytes += bytes.len() as u64;
                 self.quad_patched += (to - from) as u64;
@@ -1860,16 +2047,15 @@ impl WorldPipeline {
         // chunks not moving while the material pattern, whose address is `eye_phase` and
         // `eye_voxel`, scrolled correctly past them.
         if scene.origins != self.quad_origin_last || self.quad_origin_eye != Some(eye_m) {
-            self.queue.write_buffer(&self.quad_origins, 0, &origin_bytes(&scene.origins, eye_m));
+            self.queue
+                .write_buffer(&self.quad_origins, 0, &origin_bytes(&scene.origins, eye_m));
             self.quad_origin_last.clear();
             self.quad_origin_last.extend_from_slice(&scene.origins);
             self.quad_origin_eye = Some(eye_m);
         }
         // ---- the cloud's own pair ------------------------------------------
-        let wanted_clouds =
-            (scene.clouds.len() * QuadRecord::SIZE as usize).max(4) as u64;
-        let wanted_cloud_origins =
-            (scene.cloud_origins.len() * ORIGIN_SIZE as usize).max(4) as u64;
+        let wanted_clouds = (scene.clouds.len() * QuadRecord::SIZE as usize).max(4) as u64;
+        let wanted_cloud_origins = (scene.cloud_origins.len() * ORIGIN_SIZE as usize).max(4) as u64;
         let mut cloud_grew = false;
         if wanted_clouds > self.cloud_record_capacity {
             self.cloud_record_capacity = wanted_clouds.next_power_of_two();
@@ -1909,20 +2095,78 @@ impl WorldPipeline {
             self.cloud_origin_eye = None;
         }
         if scene.clouds != self.cloud_record_last {
-            self.queue.write_buffer(&self.cloud_records, 0, &QuadRecord::bytes(&scene.clouds));
+            self.queue
+                .write_buffer(&self.cloud_records, 0, &QuadRecord::bytes(&scene.clouds));
             self.cloud_record_last.clear();
             self.cloud_record_last.extend_from_slice(&scene.clouds);
         }
-        if scene.cloud_origins != self.cloud_origin_last || self.cloud_origin_eye != Some(eye_m)
-        {
+        if scene.cloud_origins != self.cloud_origin_last || self.cloud_origin_eye != Some(eye_m) {
             self.queue.write_buffer(
                 &self.cloud_origins,
                 0,
                 &origin_bytes(&scene.cloud_origins, eye_m),
             );
             self.cloud_origin_last.clear();
-            self.cloud_origin_last.extend_from_slice(&scene.cloud_origins);
+            self.cloud_origin_last
+                .extend_from_slice(&scene.cloud_origins);
             self.cloud_origin_eye = Some(eye_m);
+        }
+        // ---- the far field's own pair --------------------------------------
+        let wanted_far = (scene.far.len() * QuadRecord::SIZE as usize).max(4) as u64;
+        let wanted_far_origins = (scene.far_origins.len() * ORIGIN_SIZE as usize).max(4) as u64;
+        let mut far_grew = false;
+        if wanted_far > self.far_record_capacity {
+            self.far_record_capacity = wanted_far.next_power_of_two();
+            self.far_records = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("far-records"),
+                size: self.far_record_capacity,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            far_grew = true;
+        }
+        if wanted_far_origins > self.far_origin_capacity {
+            self.far_origin_capacity = wanted_far_origins.next_power_of_two();
+            self.far_origins = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("far-origins"),
+                size: self.far_origin_capacity,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            far_grew = true;
+        }
+        if far_grew {
+            self.far_bind_group = world_bind_group(
+                &self.device,
+                &self.world_layout,
+                &self.rig,
+                &self.view,
+                &self.materials,
+                &self.far_records,
+                &self.far_origins,
+                &self.sky_model,
+                &self.shadow,
+                &self.horizon,
+            );
+            self.far_record_last.clear();
+            self.far_origin_last.clear();
+            self.far_origin_eye = None;
+        }
+        if scene.far != self.far_record_last {
+            self.queue
+                .write_buffer(&self.far_records, 0, &QuadRecord::bytes(&scene.far));
+            self.far_record_last.clear();
+            self.far_record_last.extend_from_slice(&scene.far);
+        }
+        if scene.far_origins != self.far_origin_last || self.far_origin_eye != Some(eye_m) {
+            self.queue.write_buffer(
+                &self.far_origins,
+                0,
+                &origin_bytes(&scene.far_origins, eye_m),
+            );
+            self.far_origin_last.clear();
+            self.far_origin_last.extend_from_slice(&scene.far_origins);
+            self.far_origin_eye = Some(eye_m);
         }
     }
 
@@ -1968,7 +2212,10 @@ impl WorldPipeline {
             resolve,
             scene,
             camera,
-            DrawMode { wireframe: false, pixel_angle_rad },
+            DrawMode {
+                wireframe: false,
+                pixel_angle_rad,
+            },
         );
     }
 
@@ -2008,7 +2255,10 @@ impl WorldPipeline {
             resolve,
             scene,
             camera,
-            DrawMode { wireframe: true, pixel_angle_rad },
+            DrawMode {
+                wireframe: true,
+                pixel_angle_rad,
+            },
         );
     }
 
@@ -2023,7 +2273,10 @@ impl WorldPipeline {
         camera: &Camera,
         mode: DrawMode,
     ) {
-        let DrawMode { wireframe, pixel_angle_rad } = mode;
+        let DrawMode {
+            wireframe,
+            pixel_angle_rad,
+        } = mode;
         // **The sky is drawn or the frame is refused**, before any of it is uploaded: a host that
         // never stated a sky has no frame to draw, and the refusal names what to call.
         self.admit_sky();
@@ -2066,9 +2319,7 @@ impl WorldPipeline {
             if self.shadows { self.sun } else { None },
             self.shadow_range,
         );
-        if let (true, Some(vertices), Some(indices)) =
-            (corners, &front.vertices, &front.indices)
-        {
+        if let (true, Some(vertices), Some(indices)) = (corners, &front.vertices, &front.indices) {
             self.shadow.render(
                 &self.device,
                 encoder,
@@ -2091,7 +2342,7 @@ impl WorldPipeline {
                 // it was before any of this existed.
                 resolve_target: resolve,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    load: wgpu::LoadOp::Clear(self.clear),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -2107,11 +2358,14 @@ impl WorldPipeline {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        // Sky first, unconditionally — including for an empty scene, because an
-        // empty scene is exactly the case that used to show nothing at all.
-        pass.set_pipeline(&self.sky_pipeline);
-        pass.set_bind_group(0, &self.sky_bind_group, &[]);
-        pass.draw(0..3, 0..1);
+        // Sky first — including for an empty scene, because an empty scene is exactly the case
+        // that used to show nothing at all. **A map frame states no sky pass** and keeps the
+        // colour it cleared to; see [`WorldPipeline::set_sky`].
+        if self.sky {
+            pass.set_pipeline(&self.sky_pipeline);
+            pass.set_bind_group(0, &self.sky_bind_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
 
         // **The debug wireframe replaces the material draws below** (F4) rather than being drawn
         // over them: the lines are the subject, and the sky the pass has already drawn is what
@@ -2135,9 +2389,16 @@ impl WorldPipeline {
                 pass.set_bind_group(0, &self.cloud_bind_group, &[]);
                 pass.draw(0..scene.clouds.len() as u32 * 8, 0..1);
             }
-        } else if let (true, Some(vertex_buffer), Some(index_buffer)) =
-            (corners, &self.corners[self.front].vertices, &self.corners[self.front].indices)
-        {
+            // The far field's rectangles are the frame's too, so the debug view outlines them.
+            if !scene.far.is_empty() {
+                pass.set_bind_group(0, &self.far_bind_group, &[]);
+                pass.draw(0..scene.far.len() as u32 * 8, 0..1);
+            }
+        } else if let (true, Some(vertex_buffer), Some(index_buffer)) = (
+            corners,
+            &self.corners[self.front].vertices,
+            &self.corners[self.front].indices,
+        ) {
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
@@ -2162,6 +2423,14 @@ impl WorldPipeline {
             pass.set_pipeline(&self.quad_pipeline);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.draw(0..6 * world_records as u32, 0..1);
+        }
+        // **And the far field**: the same pipeline and shader, on its own record pair. It draws
+        // after the window so the depth test keeps the fine geometry in front, and its records
+        // carry the cell size that tells the ladder which rung they were cut at.
+        if !wireframe && !scene.far.is_empty() {
+            pass.set_pipeline(&self.quad_pipeline);
+            pass.set_bind_group(0, &self.far_bind_group, &[]);
+            pass.draw(0..6 * scene.far.len() as u32, 0..1);
         }
 
         // **And the astronomical bodies, in the record array's own tail** (C-184). Drawn before the cloud
@@ -2403,14 +2672,22 @@ impl CornerPair {
     /// device's own [`wgpu::Limits::max_buffer_size`] is **refused**, not attempted: `wgpu` would
     /// hand back an invalid buffer whose every later write fails, which is a window that stops
     /// drawing rather than a refusal a reader can see.
-    fn ensure_vertices(&mut self, device: &wgpu::Device, bytes: u64) -> Result<bool, CornerRefusal> {
+    fn ensure_vertices(
+        &mut self,
+        device: &wgpu::Device,
+        bytes: u64,
+    ) -> Result<bool, CornerRefusal> {
         let wanted = bytes.max(4).next_power_of_two();
         if wanted <= self.vertex_capacity && self.vertices.is_some() {
             return Ok(false);
         }
         let limit = device.limits().max_buffer_size;
         if wanted > limit {
-            return Err(CornerRefusal { array: "corner-vertices", asked: wanted, limit });
+            return Err(CornerRefusal {
+                array: "corner-vertices",
+                asked: wanted,
+                limit,
+            });
         }
         self.vertex_capacity = wanted;
         self.vertices = Some(device.create_buffer(&wgpu::BufferDescriptor {
@@ -2430,7 +2707,11 @@ impl CornerPair {
         }
         let limit = device.limits().max_buffer_size;
         if wanted > limit {
-            return Err(CornerRefusal { array: "corner-indices", asked: wanted, limit });
+            return Err(CornerRefusal {
+                array: "corner-indices",
+                asked: wanted,
+                limit,
+            });
         }
         self.index_capacity = wanted;
         self.indices = Some(device.create_buffer(&wgpu::BufferDescriptor {
@@ -2463,12 +2744,30 @@ fn world_bind_group(
     horizon: &crate::horizon::HorizonStream,
 ) -> wgpu::BindGroup {
     let mut entries = vec![
-        wgpu::BindGroupEntry { binding: 0, resource: rig.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 1, resource: view.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 2, resource: materials.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 3, resource: records.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 4, resource: origins.as_entire_binding() },
-        wgpu::BindGroupEntry { binding: 5, resource: sky.as_entire_binding() },
+        wgpu::BindGroupEntry {
+            binding: 0,
+            resource: rig.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 1,
+            resource: view.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 2,
+            resource: materials.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 3,
+            resource: records.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 4,
+            resource: origins.as_entire_binding(),
+        },
+        wgpu::BindGroupEntry {
+            binding: 5,
+            resource: sky.as_entire_binding(),
+        },
     ];
     entries.extend(shadow.bind_entries());
     entries.extend(horizon.bind_entries());
@@ -2546,13 +2845,21 @@ mod tests {
             if flip {
                 origins.swap(0, 1);
             }
-            crate::scene::Scene { build: 1, records, origins, ..crate::scene::Scene::default() }
+            crate::scene::Scene {
+                build: 1,
+                records,
+                origins,
+                ..crate::scene::Scene::default()
+            }
         };
 
         let first = patched.render(&scene(false), &camera).expect("a frame");
         let after_patch = patched.render(&scene(true), &camera).expect("a frame");
         let (patched_records, _) = patched.world().quad_path();
-        assert!(patched_records > 0, "the second scene was not patched at all");
+        assert!(
+            patched_records > 0,
+            "the second scene was not patched at all"
+        );
 
         let from_scratch = encoded.render(&scene(true), &camera).expect("a frame");
         assert_eq!(
@@ -2653,6 +2960,9 @@ mod tests {
             chunk,
             light_y: 0,
             light_z: 0,
+            shape_lo: 0,
+            shape_hi: 0,
+            shape_twist: 0,
         }
     }
 
@@ -2673,17 +2983,26 @@ mod tests {
         let encode = |records: &[crate::quad::QuadRecord]| crate::quad::QuadRecord::bytes(records);
 
         // 1. Renumbered: the same rectangles, every origin index moved.
-        let renumbered: Vec<_> = previous.iter().map(|r| record(0, 0)).zip(0..1_000).map(|(_, i)| {
-            let mut r = previous[i];
-            r.chunk = (i % 37) as u32 + 1;
-            r
-        }).collect();
+        let renumbered: Vec<_> = previous
+            .iter()
+            .map(|r| record(0, 0))
+            .zip(0..1_000)
+            .map(|(_, i)| {
+                let mut r = previous[i];
+                r.chunk = (i % 37) as u32 + 1;
+                r
+            })
+            .collect();
         assert_eq!(
             update_record_bytes(&mut bytes, &previous, &renumbered, &[]),
             RecordPath::Patched { records: 1_000 },
             "a renumbered scene was not patched"
         );
-        assert_eq!(bytes, encode(&renumbered), "the patched bytes are not the array's bytes");
+        assert_eq!(
+            bytes,
+            encode(&renumbered),
+            "the patched bytes are not the array's bytes"
+        );
 
         // 2. Grown: renumbered, and 250 records the buffer has never held.
         let mut grown = renumbered.clone();
@@ -2693,7 +3012,11 @@ mod tests {
             update_record_bytes(&mut bytes, &renumbered, &grown, &[]),
             RecordPath::Patched { .. }
         ));
-        assert_eq!(bytes, encode(&grown), "a grown array's tail is not what was appended");
+        assert_eq!(
+            bytes,
+            encode(&grown),
+            "a grown array's tail is not what was appended"
+        );
 
         // 3. Shrunk: the tail is gone, and the bytes must not still carry it.
         let shrunk = &grown[..400];
@@ -2712,10 +3035,16 @@ mod tests {
             matches!(path, RecordPath::Patched { .. } | RecordPath::Encoded),
             "a changed rectangle took {path:?}"
         );
-        assert_eq!(bytes, encode(&edited), "a changed rectangle left bytes that are not its own");
+        assert_eq!(
+            bytes,
+            encode(&edited),
+            "a changed rectangle left bytes that are not its own"
+        );
 
         // 5. Nothing in common at the front: no patch is possible, and the whole array is encoded.
-        let mut reversed: Vec<_> = (0..shrunk.len()).map(|i| record(shrunk.len() - i, 0)).collect();
+        let mut reversed: Vec<_> = (0..shrunk.len())
+            .map(|i| record(shrunk.len() - i, 0))
+            .collect();
         reversed.truncate(shrunk.len());
         bytes = encode(shrunk);
         assert_eq!(
@@ -2737,7 +3066,10 @@ mod tests {
         );
         let mut expected = encode(shrunk);
         expected.extend_from_slice(&encode(&body));
-        assert_eq!(bytes, expected, "the body is not appended after the array it arrived beside");
+        assert_eq!(
+            bytes, expected,
+            "the body is not appended after the array it arrived beside"
+        );
     }
 
     /// **A patch writes the origin slot and nothing else.**
@@ -2776,7 +3108,10 @@ mod tests {
         }
         // And the slot is the record's own: the bytes there are the chunk it was given.
         let at = 7 * stride + CHUNK_SLOT * 4;
-        assert_eq!(&bytes[at..at + 4], &voxel_model::endian::le_bytes(next[7].chunk));
+        assert_eq!(
+            &bytes[at..at + 4],
+            &voxel_model::endian::le_bytes(next[7].chunk)
+        );
     }
 
     /// **No frame allocates a corner buffer** — the pin PATCH-053's fix left open.
@@ -2790,7 +3125,7 @@ mod tests {
     /// than on a frame somebody has to notice is 77 ms long.
     #[test]
     fn a_scene_arriving_allocates_no_corner_buffer() {
-        use super::{CORNER_INDEX_BYTES, CORNER_VERTEX_BYTES, WorldPipeline, CORNER_VERTICES};
+        use super::{WorldPipeline, CORNER_INDEX_BYTES, CORNER_VERTEX_BYTES, CORNER_VERTICES};
         use crate::renderer::TARGET_FORMAT;
         use crate::scene::{Scene, Vertex};
         use crate::shading::{GpuRig, MaterialParams};
@@ -2824,7 +3159,10 @@ mod tests {
         // the next power of two above the array's own peak, so this is the largest scene a frame
         // can be handed without a growth.
         let corners = 2_402_372usize;
-        assert!(corners < CORNER_VERTICES, "{corners} corners is not inside the capacity");
+        assert!(
+            corners < CORNER_VERTICES,
+            "{corners} corners is not inside the capacity"
+        );
         let corner = Vertex {
             position: [0.0; 3],
             normal: [0.0, 1.0, 0.0],
@@ -2836,7 +3174,10 @@ mod tests {
             light_present: 0,
             chunk: 0,
         };
-        let mut scene = Scene { build: 9, ..Scene::default() };
+        let mut scene = Scene {
+            build: 9,
+            ..Scene::default()
+        };
         scene.vertices = vec![corner; corners];
         scene.indices = vec![0u32; 11_055_720];
 
@@ -2850,7 +3191,11 @@ mod tests {
             4,
             "a scene arriving inside the stated capacity allocated a corner buffer: the allocation is back on a live frame"
         );
-        assert_eq!(world.upload_pending(), 0, "the whole scene did not land in one slice");
+        assert_eq!(
+            world.upload_pending(),
+            0,
+            "the whole scene did not land in one slice"
+        );
     }
 
     /// **A buffer past the device's own ceiling is refused before it is asked for.** `wgpu`
@@ -2877,7 +3222,10 @@ mod tests {
             "an invalid corner buffer was created and would fail every write"
         );
         // And the next buffer the device can hold is still made: the refusal is not sticky.
-        assert!(matches!(pair.ensure_vertices(&device, 4 * 1024 * 1024), Ok(true)));
+        assert!(matches!(
+            pair.ensure_vertices(&device, 4 * 1024 * 1024),
+            Ok(true)
+        ));
     }
 
     /// **Every pass that presents a frame**, as `(file, source)`.
@@ -2948,8 +3296,10 @@ mod tests {
     fn every_composed_pass_is_valid_wgsl() {
         for (name, pass) in PRESENTING {
             if let Err(error) = wgpu::naga::front::wgsl::parse_str(&pass_source(pass)) {
-                panic!("{name} does not assemble once the display stage is in front of it:
-{error}");
+                panic!(
+                    "{name} does not assemble once the display stage is in front of it:
+{error}"
+                );
             }
         }
     }
@@ -2984,13 +3334,15 @@ mod tests {
         // grep can find cannot tell apart from a refusal: what makes `arrayLength(&sky_model) <
         // SKY_MODEL_ROWS` a guard is that a pass's own expressions carry the handle.
         assert!(
-            module.functions.iter().any(|(_, function)| function
-                .expressions
+            module
+                .functions
                 .iter()
-                .any(|(_, expression)| matches!(
-                    expression,
-                    wgpu::naga::Expression::Constant(handle) if *handle == declared_by
-                ))),
+                .any(
+                    |(_, function)| function.expressions.iter().any(|(_, expression)| matches!(
+                        expression,
+                        wgpu::naga::Expression::Constant(handle) if *handle == declared_by
+                    ))
+                ),
             "no pass computes the row count, so the shader's own refusal is a declaration"
         );
         assert_eq!(
@@ -3007,11 +3359,22 @@ mod tests {
 
     /// **A shadow is the light's, this frame** — not a corner's remembered answer.
     ///
-    /// A 2 m floor and a half-metre roof a metre above its far corner. The beam comes from
-    /// `+X`, so the roof's shadow lands on the floor at `x ≈ 1.1`; the same point is lit when
-    /// the light is mirrored — the map is redrawn from the new direction, not re-read from a
-    /// cell — and lit again when the roof is removed, which is the edit path: new geometry,
-    /// same light, new shadow.
+    /// A 4 m floor and a 1.5 m roof a metre above it. The beam comes from `+X` with a slope of
+    /// one half, so the roof's shadow lands on the floor at `x ∈ [0.5, 2.0]`; the same point is
+    /// lit when the light is mirrored — the map is redrawn from the new direction, not re-read
+    /// from a cell — and lit again when the roof is removed, which is the edit path: new
+    /// geometry, same light, new shadow.
+    ///
+    /// **The roof is 1.5 m because the near cascade's texel is 31 cm**
+    /// ([`crate::sun_shadow::NEAR_RANGE_M`] is the streamed window's 160 m over 1024², and the
+    /// comparison spans 3 × 3 texels, so its penumbra is ±0.46 m). A 0.5 m roof's whole shadow is
+    /// inside that penumbra and reads as an 11 % dimming rather than a shadow — the geometry this
+    /// test used when the near map was 28 m and its texel 5.5 cm. A caster whose shadow is more
+    /// than three texels across has an interior the comparison resolves, which is what the law is
+    /// about; the map's own resolution is not what this test is measuring.
+    ///
+    /// The samples sit 0.75 m inside the shadow's edge and 0.6 m clear of it on the lit side, so
+    /// neither is a pixel the 3 × 3 comparison could call either way.
     #[test]
     fn the_beam_shadows_the_floor_and_moves_with_the_light_and_the_world() {
         use crate::renderer::Renderer;
@@ -3041,8 +3404,8 @@ mod tests {
                 loops: 0,
             },
         };
-        let floor = mesh(&[(0, [0, 0], [8, 8])]);
-        let roof = mesh(&[(4, [6, 6], [2, 2])]);
+        let floor = mesh(&[(0, [0, 0], [16, 16])]);
+        let roof = mesh(&[(4, [4, 4], [6, 6])]);
 
         let mut camera = crate::Camera::standard([1.0, 2.0, -1.0], 1.0);
         camera.pitch_rad = -0.55;
@@ -3104,11 +3467,11 @@ mod tests {
             let y = ((1.0 - (clip[1] / clip[3] * 0.5 + 0.5)) * f64::from(height)) as u32;
             (x.min(width - 1), y.min(height - 1))
         };
-        // A point under the roof's shadow from the east, and one clear of it. The shadow's edge
-        // from this light lies at `x = 1.0`, so the sample sits 0.3 m inside it rather than on
-        // the shoulder the 3 × 3 comparison would average.
-        let shadowed = at([1.3, 0.0, 1.7]);
-        let lit = at([0.3, 0.0, 1.0]);
+        // A point well inside the roof's shadow from the east, and one clear of it: from this
+        // light the shadow spans `x ∈ [0.5, 2.0]`, `z ∈ [1.0, 2.5]`, so the shadowed sample is
+        // 0.75 m inside every edge and the lit one 0.6 m beyond the eastern edge.
+        let shadowed = at([1.25, 0.0, 1.75]);
+        let lit = at([2.6, 0.0, 1.75]);
         let brightest = |frame: &crate::Frame, (x, y): (u32, u32)| -> f64 {
             let mut best = 0.0f64;
             for dy in -1i32..=1 {
@@ -3121,16 +3484,23 @@ mod tests {
             best
         };
 
-        let frame = renderer.render(&scene_with_roof, &camera).expect("the east frame");
+        let frame = renderer
+            .render(&scene_with_roof, &camera)
+            .expect("the east frame");
         let (dark, bright) = (brightest(&frame, shadowed), brightest(&frame, lit));
-        assert!(bright > 0.0, "the floor's lit point is black: nothing was drawn");
+        assert!(
+            bright > 0.0,
+            "the floor's lit point is black: nothing was drawn"
+        );
         assert!(
             dark < bright * 0.5,
             "the roof cast no shadow: {dark:.3} under it against {bright:.3} beside it"
         );
 
         renderer.world_mut().write_rig(&west).expect("the west rig");
-        let frame = renderer.render(&scene_with_roof, &camera).expect("the west frame");
+        let frame = renderer
+            .render(&scene_with_roof, &camera)
+            .expect("the west frame");
         let moved = brightest(&frame, shadowed);
         assert!(
             moved > bright * 0.5,
@@ -3138,7 +3508,9 @@ mod tests {
         );
 
         renderer.world_mut().write_rig(&east).expect("the east rig");
-        let frame = renderer.render(&scene_without_roof, &camera).expect("the open frame");
+        let frame = renderer
+            .render(&scene_without_roof, &camera)
+            .expect("the open frame");
         let opened = brightest(&frame, shadowed);
         assert!(
             opened > bright * 0.5,
@@ -3163,9 +3535,20 @@ mod tests {
         let floor = Mesh {
             chunk: ChunkPos::new(0, 0, 0),
             origin: [0, 0, 0],
-            quads: vec![Quad { face: Face::PosY, slice: 0, uv: [0, 0], extent: [8, 8], material: MaterialId(0) }],
+            quads: vec![Quad {
+                face: Face::PosY,
+                slice: 0,
+                uv: [0, 0],
+                extent: [8, 8],
+                material: MaterialId(0),
+            }],
             loops: Vec::new(),
-            stats: MeshStats { solid_voxels: 1, visible_faces: 1, quads: 1, loops: 0 },
+            stats: MeshStats {
+                solid_voxels: 1,
+                visible_faces: 1,
+                quads: 1,
+                loops: 0,
+            },
         };
         // The same eye and the same two floor points the shadow test uses, so the pixels are
         // known to be in frame; the difference is that no shadow pass runs.
@@ -3174,7 +3557,12 @@ mod tests {
         // Until the clock moves, the clear is the field's own answer and the beam is the rig.
         let clear = |_: [f64; 3]| Some([1.0f32, 1.0, 1.0, 0.0, 0.0, 0.0]);
         let scene = Scene::build_with_light_lattice(
-            [&floor], camera.position_m, &clear, None, None, SHADOW_LATTICE,
+            [&floor],
+            camera.position_m,
+            &clear,
+            None,
+            None,
+            SHADOW_LATTICE,
         );
         let material = MaterialParams {
             base_color_and_present: [0.7, 0.7, 0.7, 1.0],
@@ -3183,7 +3571,10 @@ mod tests {
         };
         let mut rig = GpuRig::default();
         rig.count[0] = 1;
-        rig.lights[0] = GpuLight { direction: [0.0, 1.0, 0.0, 1.0], colour: [1.0, 1.0, 1.0, 0.0] };
+        rig.lights[0] = GpuLight {
+            direction: [0.0, 1.0, 0.0, 1.0],
+            colour: [1.0, 1.0, 1.0, 0.0],
+        };
         let mut renderer = Renderer::new(96, 96, &[material], &rig).expect("a GPU");
         renderer.world_mut().write_no_sky_model();
         // **No shadow pass**, so the map cannot be the cause of the dark pixel.
@@ -3200,7 +3591,12 @@ mod tests {
                 );
             }
         }
-        assert!(renderer.world_mut().horizon_stamp(ChunkPos::new(0, 0, 0), &trees, 1) > 0);
+        assert!(
+            renderer
+                .world_mut()
+                .horizon_stamp(ChunkPos::new(0, 0, 0), &trees, 1)
+                > 0
+        );
 
         let (width, height) = (96u32, 96u32);
         let to_pixel = |point: [f64; 3]| -> (u32, u32) {
@@ -3263,15 +3659,31 @@ mod tests {
         let floor = Mesh {
             chunk: ChunkPos::new(0, 0, 0),
             origin: [0, 0, 0],
-            quads: vec![Quad { face: Face::PosY, slice: 0, uv: [0, 0], extent: [8, 8], material: MaterialId(0) }],
+            quads: vec![Quad {
+                face: Face::PosY,
+                slice: 0,
+                uv: [0, 0],
+                extent: [8, 8],
+                material: MaterialId(0),
+            }],
             loops: Vec::new(),
-            stats: MeshStats { solid_voxels: 1, visible_faces: 1, quads: 1, loops: 0 },
+            stats: MeshStats {
+                solid_voxels: 1,
+                visible_faces: 1,
+                quads: 1,
+                loops: 0,
+            },
         };
         let mut camera = crate::Camera::standard([1.0, 2.0, -1.0], 1.0);
         camera.pitch_rad = -0.55;
         let clear = |_: [f64; 3]| Some([1.0f32, 1.0, 1.0, 0.0, 0.0, 0.0]);
         let scene = Scene::build_with_light_lattice(
-            [&floor], camera.position_m, &clear, None, None, SHADOW_LATTICE,
+            [&floor],
+            camera.position_m,
+            &clear,
+            None,
+            None,
+            SHADOW_LATTICE,
         );
         let material = MaterialParams {
             base_color_and_present: [0.7, 0.7, 0.7, 1.0],
@@ -3280,7 +3692,10 @@ mod tests {
         };
         let mut rig = GpuRig::default();
         rig.count[0] = 1;
-        rig.lights[0] = GpuLight { direction: [0.0, 1.0, 0.0, 1.0], colour: [1.0, 1.0, 1.0, 0.0] };
+        rig.lights[0] = GpuLight {
+            direction: [0.0, 1.0, 0.0, 1.0],
+            colour: [1.0, 1.0, 1.0, 0.0],
+        };
         let mut renderer = Renderer::new(128, 128, &[material], &rig).expect("a GPU");
         renderer.world_mut().write_no_sky_model();
         // **No shadow pass**, so the map cannot be what darkens a column or lets one through.
@@ -3293,10 +3708,18 @@ mod tests {
         let voxel = LocalPos::new(1, 3, 1).expect("inside the chunk");
         let mut shape = VoxelShape::empty();
         for y in 0..4u8 {
-            shape.set(SubvoxelIndex::new(0, y, 0).expect("a subvoxel"), MaterialId(1));
+            shape.set(
+                SubvoxelIndex::new(0, y, 0).expect("a subvoxel"),
+                MaterialId(1),
+            );
         }
         tree.set_voxel(voxel, shape);
-        assert!(renderer.world_mut().horizon_stamp(ChunkPos::new(0, 0, 0), &tree, 1) > 0);
+        assert!(
+            renderer
+                .world_mut()
+                .horizon_stamp(ChunkPos::new(0, 0, 0), &tree, 1)
+                > 0
+        );
 
         // **The reference, on the same tree**: the two floor points differ only in which quarter
         // of one voxel stands above them.
@@ -3304,8 +3727,16 @@ mod tests {
         let above = |x: f64, z: f64| {
             transmittance_tree(&matter, &tree, [x, 0.001, z], [0.0, 1.0, 0.0], 8.0)
         };
-        assert_eq!(above(1.125, 1.125), 0.0, "the reference let a beam through the standing column");
-        assert_eq!(above(1.75, 1.125), 1.0, "the reference shadowed a dug quarter");
+        assert_eq!(
+            above(1.125, 1.125),
+            0.0,
+            "the reference let a beam through the standing column"
+        );
+        assert_eq!(
+            above(1.75, 1.125),
+            1.0,
+            "the reference shadowed a dug quarter"
+        );
 
         let (width, height) = (128u32, 128u32);
         let to_pixel = |point: [f64; 3]| -> (u32, u32) {

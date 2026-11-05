@@ -33,8 +33,8 @@
 
 use voxel_ui::{
     contrast_over_backdrop, min_gap_dp, pane_mark_for, pointer_glyph_dp, pointer_target_dp,
-    spacing_dp, title_size_dp, Align, Element, Ink, Palette, Paint, PaneMark, Rect, Role,
-    UiResult, PLACEHOLDER_MARK, WHITE,
+    spacing_dp, title_size_dp, Align, Element, Ink, Paint, Palette, PaneMark, Rect, Role, UiResult,
+    PLACEHOLDER_MARK, WHITE,
 };
 
 /// The header's height: **one row of MD1's dense-pointer targets**, the same derivation the
@@ -169,7 +169,10 @@ pub fn header_elements(
     let mut out = Vec::with_capacity(4 + 2 * actions(undock_shown).len());
     out.push(Element::Surface {
         rect: header,
-        paint: Paint { rgb: chrome, alpha: opacity },
+        paint: Paint {
+            rgb: chrome,
+            alpha: opacity,
+        },
     });
     out.push(Element::Rule {
         rect: Rect::new(header.x, header.bottom() - 1.0, header.width_dp, 1.0),
@@ -193,7 +196,10 @@ pub fn header_elements(
         if is_hovered {
             out.push(Element::Surface {
                 rect: lane,
-                paint: Paint { rgb: chrome.elevated(1)?, alpha: opacity },
+                paint: Paint {
+                    rgb: chrome.elevated(1)?,
+                    alpha: opacity,
+                },
             });
         }
         out.push(Element::Text {
@@ -204,7 +210,12 @@ pub fn header_elements(
                 glyph_size,
             ),
             text: mark.text.to_string(),
-            paint: if is_hovered { Ink::Full } else { Ink::Secondary }.paint(),
+            paint: if is_hovered {
+                Ink::Full
+            } else {
+                Ink::Secondary
+            }
+            .paint(),
             size_dp: glyph_size,
             align: Align::Start,
         });
@@ -237,7 +248,10 @@ mod tests {
 
     #[test]
     fn an_empty_slot_carries_the_reference_s_own_title() {
-        assert_eq!(empty_pane_title(), format!("{PLACEHOLDER_MARK}  New Split Slot"));
+        assert_eq!(
+            empty_pane_title(),
+            format!("{PLACEHOLDER_MARK}  New Split Slot")
+        );
         assert_eq!(split_slot_title(), format!("{PLACEHOLDER_MARK} Split"));
     }
 
@@ -254,7 +268,11 @@ mod tests {
         );
         assert_eq!(
             actions(false),
-            vec![PaneMark::SplitHorizontal, PaneMark::SplitVertical, PaneMark::Close]
+            vec![
+                PaneMark::SplitHorizontal,
+                PaneMark::SplitVertical,
+                PaneMark::Close
+            ]
         );
     }
 
@@ -264,7 +282,11 @@ mod tests {
         let lanes = action_lanes(p, true);
         assert_eq!(lanes.len(), 4);
         for (action, lane) in &lanes {
-            assert_eq!(lane.width_dp, pointer_target_dp(), "{action:?} is not a target wide");
+            assert_eq!(
+                lane.width_dp,
+                pointer_target_dp(),
+                "{action:?} is not a target wide"
+            );
             assert_eq!(lane.height_dp, header_height_dp());
         }
         assert_eq!(lanes[3].0, PaneMark::Close);
@@ -319,8 +341,8 @@ mod tests {
         let palette = Palette::declared();
         let hovered = elements(p, "a window", true, Some(PaneMark::Close), 0, 1.0, &palette)
             .expect("the header draws");
-        let plain = elements(p, "a window", true, None, 0, 1.0, &palette)
-            .expect("the header draws");
+        let plain =
+            elements(p, "a window", true, None, 0, 1.0, &palette).expect("the header draws");
         assert_eq!(hovered.len(), plain.len() + 1, "the hover adds one surface");
         let chrome = palette.get(Role::Chrome).unwrap();
         let raised = chrome.elevated(1).unwrap();

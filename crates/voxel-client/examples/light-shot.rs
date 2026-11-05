@@ -22,9 +22,7 @@ use std::cell::RefCell;
 use voxel_appearance::sky::SkyInputs;
 use voxel_client::field::CellField;
 use voxel_client::shading::GpuRig;
-use voxel_client::{
-    offscreen_device_for, skylight, Camera, Scene, WorldPipeline, DEPTH_FORMAT,
-};
+use voxel_client::{offscreen_device_for, skylight, Camera, Scene, WorldPipeline, DEPTH_FORMAT};
 use voxel_model::VoxelPos;
 use voxel_shapers::{Config, WorldSpec};
 
@@ -48,8 +46,8 @@ fn main() {
                 .total_cmp(&voxel_shapers::sky::solar_position(&spec, *b).altitude_deg)
         })
         .expect("a tick in the first day");
-    let daylight = skylight::daylight_of(&spec, tick, inputs, 0)
-        .expect("an atmosphere at the highest Sun");
+    let daylight =
+        skylight::daylight_of(&spec, tick, inputs, 0).expect("an atmosphere at the highest Sun");
     let grade = daylight.grade;
     println!(
         "sun: tick {tick}, {:.1} deg up at azimuth {:.1} deg",
@@ -135,7 +133,9 @@ fn main() {
     let mut direct: Vec<f32> = Vec::new();
     for measured in &measured_scene.vertices {
         if measured.light_present == 1 {
-            direct.push(measured.light_direct[0] + measured.light_direct[1] + measured.light_direct[2]);
+            direct.push(
+                measured.light_direct[0] + measured.light_direct[1] + measured.light_direct[2],
+            );
         }
     }
     direct.sort_by(f32::total_cmp);
@@ -161,8 +161,8 @@ fn main() {
     println!("adapter: {adapter}, {FORMAT:?} at {samples} sample(s)");
     let field_table = voxel_shapers::materials::shading_field().expect("the shading field");
     let materials = voxel_client::table(&registry, &field_table).expect("every material derives");
-    let gpu_rig = GpuRig::from_rig(&skylight::exposed_at(&daylight.rig, grade))
-        .expect("the rig fits");
+    let gpu_rig =
+        GpuRig::from_rig(&skylight::exposed_at(&daylight.rig, grade)).expect("the rig fits");
     let mut world = WorldPipeline::new(&device, &queue, FORMAT, &materials, &gpu_rig, samples)
         .expect("the world pipeline");
     let peak = skylight::peak_sun_luminance(&spec, inputs);
@@ -176,7 +176,11 @@ fn main() {
 
     let colour = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("colour"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -186,7 +190,11 @@ fn main() {
     });
     let depth = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("depth"),
-        size: wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
         mip_level_count: 1,
         sample_count: samples,
         dimension: wgpu::TextureDimension::D2,
@@ -205,7 +213,15 @@ fn main() {
     let mut render = |scene: &Scene, label: &'static str| -> Vec<u8> {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(label) });
-        world.draw(&mut encoder, &colour_view, &depth_view, None, scene, &camera, pixel_angle);
+        world.draw(
+            &mut encoder,
+            &colour_view,
+            &depth_view,
+            None,
+            scene,
+            &camera,
+            pixel_angle,
+        );
         queue.submit(Some(encoder.finish()));
         read_back(&device, &queue, &colour)
     };
@@ -217,7 +233,10 @@ fn main() {
     // ---- and how much of the picture moved ---------------------------------------------
     let (a, tail_a) = rigged.as_chunks::<4>();
     let (b, tail_b) = lit.as_chunks::<4>();
-    assert!(tail_a.is_empty() && tail_b.is_empty(), "a frame that is not whole pixels");
+    assert!(
+        tail_a.is_empty() && tail_b.is_empty(),
+        "a frame that is not whole pixels"
+    );
     let mut differing = 0usize;
     let mut total = 0i64;
     for (rig, lit) in a.iter().zip(b) {
@@ -246,8 +265,9 @@ fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("readback") });
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("readback"),
+    });
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture,
@@ -263,7 +283,11 @@ fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture
                 rows_per_image: Some(HEIGHT),
             },
         },
-        wgpu::Extent3d { width: WIDTH, height: HEIGHT, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
     );
     queue.submit(Some(encoder.finish()));
     let slice = readback.slice(..);
@@ -272,7 +296,10 @@ fn read_back(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture
         let _ = sender.send(result);
     });
     device
-        .poll(wgpu::PollType::Wait { submission_index: None, timeout: None })
+        .poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        })
         .expect("the readback poll");
     receiver.recv().expect("the map callback").expect("the map");
     let pixels: Vec<u8> = slice.get_mapped_range().expect("the mapped range").to_vec();

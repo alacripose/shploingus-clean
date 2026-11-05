@@ -1,0 +1,66 @@
+shploingus.recipe/3
+package	biomes	v1
+# The classified biomes library, as a package: one row per catalog row, and the row's own fields
+# after its words. `voxel_shapers::biome_library` reads these rows — the shipped copy is embedded
+# by that crate and the same text may be mounted at runtime — so the catalog is authored here and
+# not in Rust.
+#
+# A row's text is `key=value` fields separated by ` | `. Every row carries `role` and `name`;
+# an envelope's fields are the two Holdridge bands (`open` for an unbounded end), the structure
+# and the formation; a type's are its envelope, water and position; an overlay's are its water and
+# position; a deferred row's are the field it waits on. `source` is the atlas section the row was
+# read from — every row names one.
+#
+# **The rows are exactly those the climate producers can generate.** A row whose water and
+# position the ground cannot produce together is deferred with the producer it waits on, because a
+# catalog row nothing can ever be given is a label, not a classification.
+row	ENV-0001	role=envelope | name=polar_desert | system=Tundra / polar desert | biotemperature=open..-5 | precipitation=0..250 | structure=Cryptogam | biome=polar_desert | source=continental §15 (polar desert: very cold and often extremely dry; sparse cryptogams)
+row	ENV-0002	role=envelope | name=arctic_tundra | system=Tundra / polar desert | biotemperature=open..-5 | precipitation=250..open | structure=Wetland | biome=tundra | source=continental §15 (arctic wet tundra and arctic dry heath tundra)
+row	ENV-0003	role=envelope | name=dry_tundra | system=Tundra / polar desert | biotemperature=-5..3 | precipitation=0..250 | structure=Cryptogam | biome=tundra | source=terrain §2 (tundra: very short growing season, cold soils, low stature)
+row	ENV-0004	role=envelope | name=boreal_forest | system=Boreal forest | biotemperature=-5..3 | precipitation=250..open | structure=ConiferCanopy | biome=boreal_forest | source=continental §15 (boreal taiga: long cold winter, short summer; conifer forest)
+row	ENV-0005	role=envelope | name=montane_tundra | system=Mountain systems | biotemperature=3..12 | precipitation=0..200 | structure=Cryptogam | biome=tundra | source=terrain §2 (tundra: alpine tundra among the common subtypes)
+row	ENV-0006	role=envelope | name=shortgrass_steppe | system=Temperate grassland / steppe | biotemperature=3..12 | precipitation=200..450 | structure=Grass | biome=grassland | source=continental §15 (shortgrass steppe: semi-arid continental climate, dry uplands)
+row	ENV-0007	role=envelope | name=cool_mixed_forest | system=Temperate forest | biotemperature=3..12 | precipitation=450..900 | structure=DeciduousCanopy | biome=cool_temperate_forest | source=continental §15 (temperate mixed / conifer forest: seasonal climate, conifers by soil)
+row	ENV-0008	role=envelope | name=temperate_rain_forest | system=Temperate forest | biotemperature=3..12 | precipitation=900..open | structure=ConiferCanopy | biome=boreal_forest | source=continental §15 (temperate rain forest: cool-mild and very wet, maritime influence)
+row	ENV-0009	role=envelope | name=cold_desert | system=Desert / xeric shrubland | biotemperature=12..20 | precipitation=0..180 | structure=Sparse | biome=desert | source=continental §15 (cold desert: low precipitation, a strong cold season, mountain lee)
+row	ENV-0010	role=envelope | name=temperate_tallgrass_prairie | system=Temperate grassland / steppe | biotemperature=12..20 | precipitation=180..400 | structure=Grass | biome=grassland | source=continental §15 (temperate tallgrass prairie: subhumid, fertile soils, fire and herbivory)
+row	ENV-0011	role=envelope | name=mediterranean_shrubland | system=Mediterranean shrubland / woodland | biotemperature=12..20 | precipitation=400..750 | structure=Shrub | biome=subtropical_scrub | source=continental §15 (mediterranean shrubland: dry summer, wet winter, fire important)
+row	ENV-0012	role=envelope | name=temperate_deciduous_forest | system=Temperate forest | biotemperature=12..20 | precipitation=750..open | structure=DeciduousCanopy | biome=temperate_forest | source=continental §15 (temperate deciduous forest: seasonal cold winter, adequate moisture)
+row	ENV-0013	role=envelope | name=hot_desert | system=Desert / xeric shrubland | biotemperature=20..open | precipitation=0..150 | structure=Sparse | biome=desert | source=continental §15 (hot desert: extreme water deficit and high evaporative demand)
+row	ENV-0014	role=envelope | name=thorn_scrub | system=Savanna / open woodland | biotemperature=20..open | precipitation=150..350 | structure=Shrub | biome=subtropical_scrub | source=continental §15 (thorn scrub / caatinga-like: high seasonal deficit, shallow-soil upland)
+row	ENV-0015	role=envelope | name=savanna | system=Savanna / open woodland | biotemperature=20..open | precipitation=350..800 | structure=Grass | biome=tropical_dry_forest | source=continental §15 (savanna: strongly seasonal water, disturbance, fire-prone mosaics)
+row	ENV-0016	role=envelope | name=tropical_evergreen_forest | system=Tropical moist forest | biotemperature=20..open | precipitation=800..open | structure=ClosedCanopy | biome=tropical_rainforest | source=continental §15 (tropical evergreen lowland forest: hot, very wet, no severe dry season)
+row	TYP-0001	role=type | name=arctic_dry_heath_tundra | envelope=arctic_tundra | hydrology=Dry | position=Ridge | structure=Shrub | source=continental §15 (arctic dry heath tundra: cold and windy, better-drained sites)
+row	TYP-0002	role=type | name=arctic_wet_tundra | envelope=arctic_tundra | hydrology=Wet | position=WetFlat | structure=Wetland | source=continental §15 (arctic wet tundra: saturated active layer, low relief)
+row	TYP-0003	role=type | name=boreal_taiga | envelope=boreal_forest | hydrology=Any | position=Any | structure=ConiferCanopy | source=continental §15 (boreal taiga: long cold winter, short summer; conifer forest)
+row	TYP-0004	role=type | name=boreal_peatland | envelope=boreal_forest | hydrology=Wet | position=WetFlat | structure=Wetland | source=continental §15 (boreal peatland: high water table, slow decomposition, flat basin)
+row	TYP-0005	role=type | name=temperate_rain_forest | envelope=temperate_rain_forest | hydrology=Fog | position=Any | structure=ConiferCanopy | source=continental §15 (temperate rain forest: cool-mild and very wet, maritime influence)
+row	TYP-0006	role=type | name=cold_desert | envelope=cold_desert | hydrology=Dry | position=Any | structure=Sparse | source=continental §15 (cold desert: continental basin or plateau, low shrubs and grasses)
+row	TYP-0007	role=type | name=temperate_deciduous_cove | envelope=temperate_deciduous_forest | hydrology=Wet | position=WetFlat | structure=DeciduousCanopy | source=continental §15 (temperate deciduous forest: rolling uplands, deep soils, coves)
+row	TYP-0008	role=type | name=fog_desert | envelope=hot_desert | hydrology=Fog | position=Any | structure=Sparse | source=continental §15 (fog desert: very low rain, coastal marine fog beside a cool current)
+row	TYP-0009	role=type | name=hot_desert_sand_sea | envelope=hot_desert | hydrology=Dry | position=Plains | structure=Sparse | source=continental §15 (hot desert: sand sea, gravel plain, rocky plateau, basin)
+row	TYP-0010	role=type | name=thorn_scrub_upland | envelope=thorn_scrub | hydrology=Dry | position=Slope | structure=Shrub | source=continental §15 (thorn scrub: dry basin, rocky or shallow-soil upland)
+row	TYP-0011	role=type | name=tropical_dry_forest | envelope=savanna | hydrology=Fresh | position=Slope | structure=DeciduousCanopy | source=continental §15 (tropical dry forest: long dry season, rain-shadow slope)
+row	TYP-0012	role=type | name=savanna_grass_mosaic | envelope=savanna | hydrology=Dry | position=Plains | structure=Grass | source=continental §15 (savanna: broad plains, uplands, fire-prone mosaics)
+row	TYP-0013	role=type | name=tropical_evergreen_lowland_forest | envelope=tropical_evergreen_forest | hydrology=Any | position=Any | structure=ClosedCanopy | source=continental §15 (tropical evergreen lowland forest: lowland basin, deep weathered soils)
+row	TYP-0014	role=type | name=tropical_swamp_forest | envelope=tropical_evergreen_forest | hydrology=Wet | position=WetFlat | structure=Wetland | source=continental §15 (tropical swamp / peat forest: saturated or seasonally flooded depression)
+row	TYP-0015	role=type | name=tropical_cloud_forest | envelope=tropical_evergreen_forest | hydrology=Fog | position=Slope | structure=ClosedCanopy | source=continental §15 (tropical cloud forest: frequent fog immersion on the windward slope)
+row	TYP-0016	role=type | name=montane_forest | envelope=* | hydrology=Any | position=Slope | structure=ConiferCanopy | source=continental §11 (mountain biomes: montane forest on the lower and mid slopes)
+row	TYP-0017	role=type | name=subalpine_woodland | envelope=* | hydrology=Any | position=Ridge | structure=ConiferCanopy | source=continental §15 (subalpine woodland: near treeline, snow and wind stress, krummholz)
+row	TYP-0018	role=type | name=alpine_meadow | envelope=* | hydrology=Wet | position=Ridge | structure=Grass | source=continental §15 (alpine meadow / turf: cold, short season, snowmelt zone)
+row	TYP-0019	role=type | name=alpine_fellfield | envelope=* | hydrology=Dry | position=Ridge | structure=Cryptogam | source=continental §15 (alpine fellfield / scree: wind, frost heave, thin soil, unstable rock)
+row	OVL-0001	role=overlay | name=marsh_wet_meadow | hydrology=Wet | position=WetFlat | source=continental §15b (marsh / wet meadow: seasonal saturation or shallow water)
+row	OVL-0002	role=overlay | name=alpine_snowbed | hydrology=Wet | position=Ridge | source=continental §15b (alpine snowbed: late-melting snow, short growing season)
+row	OVL-0003	role=overlay | name=rockland_talus | hydrology=Dry | position=Ridge | source=continental §15b (rockland / talus: substrate instability, exposure, shallow soil)
+row	DEF-0001	role=deferred | name=temperate_rain_forest_slope | waits_on=a wet slope: the ground's own laws make saturation flat (WET_SLOPE is below DRY_SLOPE), so water and slope cannot both be read until run-off or flow accumulation gives a slope its water
+row	DEF-0002	role=deferred | name=bog | waits_on=water chemistry: a bog reads as the same saturated flat as a marsh, and the peat that would separate them needs a substrate producer the field plane does not have
+row	DEF-0003	role=deferred | name=fen | waits_on=water chemistry: fen is the mineral-fed member of the bog pair, and no field tells the two apart
+row	DEF-0004	role=deferred | name=salt_pan_playa | waits_on=salinity: no field carries salt in the field plane, so the evaporative basin cannot be read
+row	DEF-0005	role=deferred | name=hot_desert_wadi | waits_on=flow accumulation: hydrology measures it, but the material path cannot afford it per column
+row	DEF-0006	role=deferred | name=riparian_woodland | waits_on=flow accumulation, for the corridor itself rather than for the water in it
+row	DEF-0007	role=deferred | name=floodplain_forest | waits_on=flood recurrence: the atlas's flood frequency has no producer
+row	DEF-0008	role=deferred | name=salt_marsh | waits_on=tide and salinity, both absent
+row	DEF-0009	role=deferred | name=estuarine_delta | waits_on=tide, salinity and sediment deposition, all three absent
+row	DEF-0010	role=deferred | name=coastal_strand_dunes | waits_on=distance to the sea, which `terrain::is_regional_sea` can answer but no caller passes yet
+row	DEF-0011	role=deferred | name=lake_littoral | waits_on=standing water: the fluid lattice knows it at a voxel, the climate path does not
+row	DEF-0012	role=deferred | name=spring_seep_meadow | waits_on=groundwater discharge, which the `Groundwater` field declares and no law produces

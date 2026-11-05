@@ -90,7 +90,7 @@ use crate::shell::titlebar::{self, TitlePress};
 use voxel_package::recipe::{BehaviorPolicy, LayoutPolicy, WindowSpec};
 use voxel_ui::{
     contrast_over_backdrop, drop_zone_mark, pointer_glyph_dp, pointer_target_dp, spacing_dp, Align,
-    Element, GlyphAction, Ink, Palette, Paint, PaneMark, Rect, Role, UiResult, WHITE,
+    Element, GlyphAction, Ink, Paint, Palette, PaneMark, Rect, Role, UiResult, WHITE,
 };
 
 /// **The window's border, in dp.** The reference's `WindowLayoutPolicy.border_width = 1` (2819)
@@ -121,6 +121,15 @@ pub struct PortalWindow {
     pub arrangement: Arrangement,
     /// The window that holds this one as a pane, when it is docked.
     pub host: Option<WindowId>,
+    /// **Whether this window is pinned**: drawn while the shell is hidden, above the floating
+    /// windows, with the minimal title bar.
+    ///
+    /// **Runtime state, and it is the only copy.** The package's `pin` rows say what is
+    /// pinned when it is mounted; from then on the player's pin button is the writer, and
+    /// `Mount::draw_order`, the HUD's layer choice and the debug lanes all read this field.
+    /// `spec.pinnable` stays where the declaration put it — the recipe's own statement that a
+    /// window *may* live in the HUD, which is what its validator checks a `pin` row against.
+    pub pinned: bool,
 }
 
 /// The rects the composite hands out: the title bar's slot, and the content container's.
@@ -144,7 +153,7 @@ pub struct Composite {
 /// (`titlebar::has_bar`). **The reference's `BOTTOM` position is not ported**: the package's
 /// `LayoutPolicy::TITLE_POSITION` is a permit, not a position, and a second position token is
 /// not in its vocabulary — a bottom bar would be invented here.
-pub fn composite(spec: &WindowSpec, rect: Rect) -> Composite {
+pub fn composite(spec: &WindowSpec, rect: Rect, pinned: bool) -> Composite {
     let inner = Rect::new(
         rect.x + BORDER_DP,
         rect.y + BORDER_DP,
@@ -152,24 +161,37 @@ pub fn composite(spec: &WindowSpec, rect: Rect) -> Composite {
         (rect.height_dp - 2.0 * BORDER_DP).max(0.0),
     );
     if !titlebar::has_bar(spec) {
-        return Composite { title: None, content: inner };
+        return Composite {
+            title: None,
+            content: inner,
+        };
     }
-    let bar = Rect::new(inner.x, inner.y, inner.width_dp, titlebar::bar_height_dp());
+    // **The bar's own form, from the pin state**: a pinned window draws the minimal strip and
+    // its body starts that much higher.
+    let bar = titlebar::BarStyle::of(pinned).rect(Rect::new(
+        inner.x,
+        inner.y,
+        inner.width_dp,
+        inner.height_dp,
+    ));
     let content = Rect::new(
         inner.x,
         bar.bottom(),
         inner.width_dp,
         (inner.height_dp - bar.height_dp).max(0.0),
     );
-    Composite { title: Some(bar), content }
+    Composite {
+        title: Some(bar),
+        content,
+    }
 }
 
 /// The title bar's height for a window that draws one, else `0` — the reference's `tb_h`
 /// (3179: `other_win.titlebar.height() if … else 0`), which the drop rule and the edge triggers
 /// both measure from.
-pub fn title_height(spec: &WindowSpec) -> f64 {
+pub fn title_height(spec: &WindowSpec, pinned: bool) -> f64 {
     if titlebar::has_bar(spec) {
-        titlebar::bar_height_dp()
+        titlebar::BarStyle::of(pinned).height_dp
     } else {
         0.0
     }
@@ -197,6 +219,7 @@ impl PortalWindow {
             previous: None,
             arrangement: Arrangement::of(id),
             host: None,
+            pinned: false,
         })
     }
 
@@ -208,10 +231,32 @@ impl PortalWindow {
     pub fn permits(&self, action: GlyphAction) -> bool {
         let policy = self.spec.layout_policy;
         match action {
+            // **The pin is always permitted**: it is the window's runtime state, not a
+            // declared chrome bit (`titlebar::controls` says the same in list form).
+            GlyphAction::Pin => true,
             GlyphAction::Minimize => policy.permits(LayoutPolicy::MINIMIZE),
             GlyphAction::Maximize => policy.permits(LayoutPolicy::MAXIMIZE),
             GlyphAction::Close => policy.permits(LayoutPolicy::CLOSE),
         }
+    }
+
+    /// **The bar this window draws**, from its pin state. The composite, the drawing and the
+    /// hit tests all ask this one question.
+    pub fn bar_style(&self) -> titlebar::BarStyle {
+        titlebar::BarStyle::of(self.pinned)
+    }
+
+    /// **Pin or unpin the window.** Returns the new state. The caller that owns the layer
+    /// (`Mount`) decides what a pinned window draws over; this only records the state the
+    /// chrome reads.
+    pub fn set_pinned(&mut self, pinned: bool) -> bool {
+        self.pinned = pinned;
+        self.pinned
+    }
+
+    /// Flip the pin. The pin glyph's press is the caller's; this is the state it changes.
+    pub fn toggle_pin(&mut self) -> bool {
+        self.set_pinned(!self.pinned)
     }
 
     /// The controls the title bar draws, in the declared order. **An unpermitted control is
@@ -252,27 +297,39 @@ impl PortalWindow {
     /// it will restore to. One implementation: this is [`PortalWindow::layout`] with the rect
     /// stated.
     pub fn layout_at(&self, rect: Rect) -> UiResult<Layout> {
-        splitter::layout(&self.arrangement, composite(&self.spec, rect).content)
+        splitter::layout(
+            &self.arrangement,
+            composite(&self.spec, rect, self.pinned).content,
+        )
     }
 
     /// The composite's content container — the rect the arrangement lives in.
     pub fn content(&self) -> Rect {
-        composite(&self.spec, self.rect).content
+        composite(&self.spec, self.rect, self.pinned).content
     }
 
     /// The content container **at a supplied rect** (see [`PortalWindow::layout_at`]).
-    pub fn content_at(rect: Rect, spec: &WindowSpec) -> Rect {
-        composite(spec, rect).content
+    ///
+    /// A method rather than a free function, because the container depends on the bar's form
+    /// and the bar's form is this window's pin state — an arithmetic that took a bare spec
+    /// could place a pinned window's body under a bar it does not draw.
+    pub fn content_at(&self, rect: Rect) -> Rect {
+        composite(&self.spec, rect, self.pinned).content
     }
 
     /// The title bar's slot, when the declaration permits one.
     pub fn title_slot(&self) -> Option<Rect> {
-        composite(&self.spec, self.rect).title
+        composite(&self.spec, self.rect, self.pinned).title
     }
 
     /// The title bar's slot **at a supplied rect**.
-    pub fn title_slot_at(rect: Rect, spec: &WindowSpec) -> Option<Rect> {
-        composite(spec, rect).title
+    pub fn title_slot_at(&self, rect: Rect) -> Option<Rect> {
+        composite(&self.spec, rect, self.pinned).title
+    }
+
+    /// The bar's height at the window's own form — `0` when it draws no bar.
+    pub fn title_height(&self) -> f64 {
+        title_height(&self.spec, self.pinned)
     }
 
     /// `split(pane, h|v)`: the arrangement's own three cases, with the window's state kept.
@@ -450,9 +507,12 @@ impl PortalWindow {
         out: &mut Vec<Element>,
     ) -> UiResult<Layout> {
         if !self.is_drawn() {
-            return Ok(Layout { panes: Vec::new(), seams: Vec::new() });
+            return Ok(Layout {
+                panes: Vec::new(),
+                seams: Vec::new(),
+            });
         }
-        let composite = composite(&self.spec, rect);
+        let composite = composite(&self.spec, rect, self.pinned);
         let level = self.spec.elevation;
         let opacity = (self.spec.opacity as f64 / 1000.0).clamp(0.0, 1.0);
 
@@ -462,18 +522,28 @@ impl PortalWindow {
             .elevated(level)?;
         out.push(Element::Surface {
             rect,
-            paint: Paint { rgb: body, alpha: opacity },
+            paint: Paint {
+                rgb: body,
+                alpha: opacity,
+            },
         });
         // The outline: one ink step brighter when focused. `set_focus_visual` (3312–3320) is
         // this, applied at draw time — the reference re-polishes a stylesheet property instead.
-        let outline = if view.focused { Ink::Secondary } else { Ink::Divider };
+        let outline = if view.focused {
+            Ink::Secondary
+        } else {
+            Ink::Divider
+        };
         for edge in [
             Rect::new(rect.x, rect.y, rect.width_dp, BORDER_DP),
             Rect::new(rect.x, rect.bottom() - BORDER_DP, rect.width_dp, BORDER_DP),
             Rect::new(rect.x, rect.y, BORDER_DP, rect.height_dp),
             Rect::new(rect.right() - BORDER_DP, rect.y, BORDER_DP, rect.height_dp),
         ] {
-            out.push(Element::Rule { rect: edge, paint: outline.paint() });
+            out.push(Element::Rule {
+                rect: edge,
+                paint: outline.paint(),
+            });
         }
 
         // The title bar's slot, per the declaration.
@@ -484,6 +554,7 @@ impl PortalWindow {
                 &view.title,
                 view.focused,
                 palette,
+                self.bar_style(),
             )?);
         }
 
@@ -538,7 +609,10 @@ impl PortalWindow {
         // overlay per window and shows it on the target, 3264–3269). The window-edge geometry
         // is measured from the content container, which is the rect a dock lands in.
         if let Some(preview) = &view.drop {
-            let pane_rect = preview.pane.as_ref().and_then(|pane| layout.pane_rect(pane));
+            let pane_rect = preview
+                .pane
+                .as_ref()
+                .and_then(|pane| layout.pane_rect(pane));
             if preview.pane.is_none() || pane_rect.is_some() {
                 out.extend(drop::elements(
                     composite.content,
@@ -564,7 +638,10 @@ impl PortalWindow {
                 };
                 out.push(Element::Surface {
                     rect: lane,
-                    paint: Paint { rgb: surface, alpha: opacity },
+                    paint: Paint {
+                        rgb: surface,
+                        alpha: opacity,
+                    },
                 });
                 let glyph = drop_zone_mark(zone.name())?;
                 out.push(Element::Text {
@@ -620,11 +697,12 @@ impl PortalWindow {
         if !self.is_drawn() || !rect.contains(at) {
             return WindowPress::None;
         }
-        let composite = composite(&self.spec, rect);
+        let composite = composite(&self.spec, rect, self.pinned);
+        let style = self.bar_style();
         if double {
             if let Some(bar) = composite.title {
                 if bar.contains(at) {
-                    return match titlebar::press(&self.spec, bar, at, true) {
+                    return match titlebar::press(&self.spec, bar, at, true, style) {
                         TitlePress::Maximize => WindowPress::Maximize,
                         TitlePress::Control(action) => WindowPress::Control(action),
                         TitlePress::Drag | TitlePress::None => WindowPress::None,
@@ -640,7 +718,7 @@ impl PortalWindow {
         }
         if let Some(bar) = composite.title {
             if bar.contains(at) {
-                return match titlebar::press(&self.spec, bar, at, false) {
+                return match titlebar::press(&self.spec, bar, at, false, style) {
                     TitlePress::Control(action) => WindowPress::Control(action),
                     TitlePress::Drag => WindowPress::Drag,
                     // A single press never maximizes; the double-click path is above.
@@ -677,7 +755,11 @@ impl PortalWindow {
                 // draws no header, so its top row is body — the reference's own leaf case, with
                 // the split and close controls belonging to the window's title bar instead.
                 let verdict = if self.draws_pane_headers() {
-                    pane::press(pane_rect, undock_shown && matches!(pane, PaneRef::Window(_)), at)
+                    pane::press(
+                        pane_rect,
+                        undock_shown && matches!(pane, PaneRef::Window(_)),
+                        at,
+                    )
                 } else {
                     PanePress::Body
                 };
@@ -723,7 +805,8 @@ impl PortalWindow {
             return None;
         }
         let band = EdgeTriggers::band_dp();
-        let title_bottom = Self::title_slot_at(rect, &self.spec)
+        let title_bottom = self
+            .title_slot_at(rect)
             .map(|bar| bar.bottom())
             .unwrap_or(rect.y);
         let near = at.0 <= rect.x + band
@@ -773,7 +856,12 @@ pub struct ResizeEdges {
 }
 
 impl ResizeEdges {
-    pub const NONE: Self = Self { west: false, east: false, north: false, south: false };
+    pub const NONE: Self = Self {
+        west: false,
+        east: false,
+        north: false,
+        south: false,
+    };
 
     /// The strip's width: the grid step, the reference's `resize_margin` (92) read from the
     /// declared grid.
@@ -789,7 +877,12 @@ impl ResizeEdges {
         let east = !west && at.0 >= rect.right() - margin;
         let north = at.1 <= rect.y + margin;
         let south = !north && at.1 >= rect.bottom() - margin;
-        ResizeEdges { west, east, north, south }
+        ResizeEdges {
+            west,
+            east,
+            north,
+            south,
+        }
     }
 
     pub fn any(self) -> bool {
@@ -918,7 +1011,12 @@ pub struct SeamDrag {
 
 impl SeamDrag {
     /// A drag that grabbed the seam at `at` — the start pair read from the tree's own shares.
-    pub fn start(id: impl Into<String>, seam: &splitter::Seam, from: (f32, f32), at: (f64, f64)) -> Self {
+    pub fn start(
+        id: impl Into<String>,
+        seam: &splitter::Seam,
+        from: (f32, f32),
+        at: (f64, f64),
+    ) -> Self {
         SeamDrag {
             id: id.into(),
             splitter: seam.splitter,
@@ -1112,7 +1210,10 @@ mod tests {
     }
 
     fn view(title: &str) -> WindowView {
-        WindowView { title: title.to_string(), ..Default::default() }
+        WindowView {
+            title: title.to_string(),
+            ..Default::default()
+        }
     }
 
     /// A view offering one window, for the empty-slot tests.
@@ -1200,7 +1301,11 @@ mod tests {
         let w = window("host");
         let top_of_content = w.content().y + 1.0;
         assert_eq!(
-            w.press(&view("Inventory"), (w.content().x + 20.0, top_of_content), false),
+            w.press(
+                &view("Inventory"),
+                (w.content().x + 20.0, top_of_content),
+                false
+            ),
             WindowPress::Pane(PaneRef::Window(id("host")))
         );
     }
@@ -1275,7 +1380,8 @@ mod tests {
     #[test]
     fn docking_keeps_the_input_order_on_both_sides() {
         let mut w = window("host");
-        w.dock(&[id("a"), id("b")], None, DropZone::Right).expect("docks");
+        w.dock(&[id("a"), id("b")], None, DropZone::Right)
+            .expect("docks");
         let layout = w.layout().expect("lays out");
         let order: Vec<&str> = layout
             .panes
@@ -1285,14 +1391,19 @@ mod tests {
         assert_eq!(order, vec!["host", "a", "b"], "after keeps the input order");
 
         let mut w = window("host");
-        w.dock(&[id("a"), id("b")], None, DropZone::Left).expect("docks");
+        w.dock(&[id("a"), id("b")], None, DropZone::Left)
+            .expect("docks");
         let layout = w.layout().expect("lays out");
         let order: Vec<&str> = layout
             .panes
             .iter()
             .map(|(_, pane)| pane.window().expect("a window pane").as_str())
             .collect();
-        assert_eq!(order, vec!["a", "b", "host"], "before keeps the input order too");
+        assert_eq!(
+            order,
+            vec!["a", "b", "host"],
+            "before keeps the input order too"
+        );
     }
 
     #[test]
@@ -1327,7 +1438,7 @@ mod tests {
     #[test]
     fn the_composite_is_the_border_then_the_bar_then_the_content() {
         let w = window("host");
-        let composite = composite(&w.spec, w.rect);
+        let composite = composite(&w.spec, w.rect, w.pinned);
         let bar = composite.title.expect("the declaration permits a bar");
         assert_eq!(bar.x, w.rect.x + BORDER_DP);
         assert_eq!(bar.y, w.rect.y + BORDER_DP);
@@ -1348,11 +1459,14 @@ mod tests {
             Rect::new(100.0, 80.0, 640.0, 406.0),
         )
         .expect("a window");
-        let composite = composite(&w.spec, w.rect);
+        let composite = composite(&w.spec, w.rect, w.pinned);
         assert!(composite.title.is_none());
         assert_eq!(composite.content.y, w.rect.y + BORDER_DP);
-        assert_eq!(composite.content.height_dp, w.rect.height_dp - 2.0 * BORDER_DP);
-        assert_eq!(title_height(&w.spec), 0.0);
+        assert_eq!(
+            composite.content.height_dp,
+            w.rect.height_dp - 2.0 * BORDER_DP
+        );
+        assert_eq!(w.title_height(), 0.0);
     }
 
     #[test]
@@ -1389,7 +1503,11 @@ mod tests {
         let draw = |focused: bool| {
             let mut out = Vec::new();
             w.elements(
-                &WindowView { title: "host".to_string(), focused, ..Default::default() },
+                &WindowView {
+                    title: "host".to_string(),
+                    focused,
+                    ..Default::default()
+                },
                 &palette,
                 &titles(&[("host", "host")]),
                 &mut out,
@@ -1415,8 +1533,13 @@ mod tests {
             .expect("splits");
         let palette = Palette::declared();
         let mut out = Vec::new();
-        w.elements(&view("host"), &palette, &titles(&[("host", "host")]), &mut out)
-            .expect("draws");
+        w.elements(
+            &view("host"),
+            &palette,
+            &titles(&[("host", "host")]),
+            &mut out,
+        )
+        .expect("draws");
         let empty_title = pane::empty_pane_title();
         let texts: Vec<&str> = out.iter().filter_map(|element| element.text()).collect();
         assert!(texts.contains(&empty_title.as_str()), "found {texts:?}");
@@ -1478,7 +1601,10 @@ mod tests {
         let body = pane::body(pane_rect);
         let lane = placeholder::offer_lanes(placeholder::frame(body), 2)[1];
         let at = (lane.x + 2.0, lane.y + 2.0);
-        assert_eq!(w.press(&shown, at, false), WindowPress::Offer(slot.clone(), 1));
+        assert_eq!(
+            w.press(&shown, at, false),
+            WindowPress::Offer(slot.clone(), 1)
+        );
         // The note, between the mark and the offers: the body, which focuses.
         let note = placeholder::note_rect(placeholder::frame(body));
         let at = (note.x + 2.0, note.y + 2.0);
@@ -1488,7 +1614,7 @@ mod tests {
     #[test]
     fn an_edge_trigger_press_is_the_zone_the_lane_shows() {
         let w = window("host");
-        let content = composite(&w.spec, w.rect).content;
+        let content = composite(&w.spec, w.rect, w.pinned).content;
         // The left lane, at the content's mid-height: a press inside it is the trigger's, and
         // it wins over the pane body underneath it (the reference `raise_`s the buttons,
         // 3280–3281).
@@ -1513,7 +1639,10 @@ mod tests {
         let strip = (w.rect.x + 4.0, w.rect.y + 200.0);
         assert_eq!(
             w.press(&view("host"), strip, false),
-            WindowPress::Resize(ResizeEdges { west: true, ..Default::default() })
+            WindowPress::Resize(ResizeEdges {
+                west: true,
+                ..Default::default()
+            })
         );
         let bar = (w.rect.x + 100.0, w.rect.y + 10.0);
         assert_eq!(w.press(&view("host"), bar, false), WindowPress::Drag);
@@ -1556,18 +1685,28 @@ mod tests {
     fn the_resize_arithmetic_grows_from_the_far_edge_and_stops_at_the_floor() {
         let w = window("host");
         let start = w.rect;
-        let west = ResizeEdges { west: true, ..Default::default() };
+        let west = ResizeEdges {
+            west: true,
+            ..Default::default()
+        };
         let grown = w.resize_from(start, west, -50.0, 0.0);
         assert_eq!(grown.width_dp, start.width_dp + 50.0);
         assert_eq!(grown.x, start.x - 50.0, "the far edge stays put");
         let floored = w.resize_from(start, west, 500.0, 0.0);
         assert_eq!(floored.width_dp, 260.0);
         assert_eq!(floored.x, start.x + start.width_dp - 260.0);
-        let north = ResizeEdges { north: true, ..Default::default() };
+        let north = ResizeEdges {
+            north: true,
+            ..Default::default()
+        };
         let floored = w.resize_from(start, north, 0.0, 500.0);
         assert_eq!(floored.height_dp, 160.0);
         assert_eq!(floored.y, start.y + start.height_dp - 160.0);
-        let east_south = ResizeEdges { east: true, south: true, ..Default::default() };
+        let east_south = ResizeEdges {
+            east: true,
+            south: true,
+            ..Default::default()
+        };
         let grown = w.resize_from(start, east_south, 30.0, 40.0);
         assert_eq!(grown.width_dp, start.width_dp + 30.0);
         assert_eq!(grown.height_dp, start.height_dp + 40.0);
@@ -1578,10 +1717,23 @@ mod tests {
     fn the_resize_strip_answers_one_edge_per_axis_and_its_cursor() {
         let rect = Rect::new(100.0, 80.0, 640.0, 406.0);
         let west = ResizeEdges::at(rect, (102.0, 200.0));
-        assert_eq!(west, ResizeEdges { west: true, ..Default::default() });
+        assert_eq!(
+            west,
+            ResizeEdges {
+                west: true,
+                ..Default::default()
+            }
+        );
         assert_eq!(west.cursor(), Some(ResizeCursor::EastWest));
         let north_west = ResizeEdges::at(rect, (102.0, 82.0));
-        assert_eq!(north_west, ResizeEdges { west: true, north: true, ..Default::default() });
+        assert_eq!(
+            north_west,
+            ResizeEdges {
+                west: true,
+                north: true,
+                ..Default::default()
+            }
+        );
         assert_eq!(north_west.cursor(), Some(ResizeCursor::ForwardDiagonal));
         let south_east = ResizeEdges::at(rect, (738.0, 484.0));
         assert_eq!(south_east.cursor(), Some(ResizeCursor::ForwardDiagonal));
@@ -1619,7 +1771,9 @@ mod tests {
         let bar = w.title_slot().expect("a bar");
         assert_eq!(triggers.top.y, bar.bottom() + spacing_dp());
         // Away from every edge, no triggers.
-        assert!(w.edge_triggers((w.rect.x + 200.0, w.rect.y + 200.0)).is_none());
+        assert!(w
+            .edge_triggers((w.rect.x + 200.0, w.rect.y + 200.0))
+            .is_none());
     }
 
     #[test]
@@ -1634,8 +1788,11 @@ mod tests {
         let triggers = w
             .edge_triggers_at(drawn, near_left)
             .expect("near the drawn window's left edge");
-        assert!(triggers.left.contains(near_left), "the lane is at the drawn rect");
-        let bar = PortalWindow::title_slot_at(drawn, &w.spec).expect("a bar");
+        assert!(
+            triggers.left.contains(near_left),
+            "the lane is at the drawn rect"
+        );
+        let bar = w.title_slot_at(drawn).expect("a bar");
         assert_eq!(triggers.top.y, bar.bottom() + spacing_dp());
         // Away from every edge of the drawn rect: none.
         assert!(w.edge_triggers_at(drawn, (400.0, 400.0)).is_none());
@@ -1645,17 +1802,14 @@ mod tests {
     fn a_drag_over_two_windows_targets_the_topmost_and_the_pane_under_the_cursor() {
         let a_rect = Rect::new(0.0, 0.0, 600.0, 400.0);
         let b_rect = Rect::new(100.0, 50.0, 600.0, 400.0);
-        let a_layout =
-            splitter::layout(&Arrangement::of(id("a")), a_rect).expect("lays out");
-        let b_layout =
-            splitter::layout(&Arrangement::of(id("b")), b_rect).expect("lays out");
+        let a_layout = splitter::layout(&Arrangement::of(id("a")), a_rect).expect("lays out");
+        let b_layout = splitter::layout(&Arrangement::of(id("b")), b_rect).expect("lays out");
         let candidates = [
             ("a", a_rect, 40.0, &a_layout),
             ("b", b_rect, 40.0, &b_layout),
         ];
         // Inside both: the last candidate (the topmost) wins.
-        let (found, target) =
-            drop_target_at(candidates, (300.0, 250.0)).expect("a target");
+        let (found, target) = drop_target_at(candidates, (300.0, 250.0)).expect("a target");
         assert_eq!(found, "b");
         assert_eq!(target.pane, Some(PaneRef::Window(id("b"))));
         assert_eq!(target.zone, DropZone::Left);

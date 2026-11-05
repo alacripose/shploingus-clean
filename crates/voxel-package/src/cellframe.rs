@@ -86,9 +86,14 @@ pub const CELL_W_DP: u32 = 8;
 /// One cell's height in device-independent pixels.
 pub const CELL_H_DP: u32 = 16;
 
-/// Every key a frame carries, **in grammar order**. The parser, the missing-key report and the
-/// renderer all read this list.
+/// Every **required** key a frame carries, in grammar order. The parser, the missing-key report
+/// and the renderer all read this list. The optional key is [`OPTIONAL_KEYS`].
 pub const KEYS: [&str; 5] = ["window", "cols", "rows", "order", "requires"];
+
+/// The keys a frame may carry **and may omit**. `feature` names the world feature a map frame
+/// shows: the mount draws one frame per window, so a package that declares several views of the
+/// same window selects between them by this token rather than by inventing a second window.
+pub const OPTIONAL_KEYS: [&str; 1] = ["feature"];
 
 /// The paper a cell stands on, **named by role**. The raster resolves it against the schema.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -212,8 +217,65 @@ pub struct Run {
     pub text: String,
 }
 
-/// One frame, as declared. [`Frame::parse`] is the only constructor and it checks every field.
+/// **One field source a GPU map frame declares** — a name the renderer knows and the law that
+/// answers it. The frame names the source rather than sampling it: the map's elevation and biome
+/// are the world's own laws, and a frame holding a copy of one would be a second world.
 #[derive(Clone, PartialEq, Eq, Debug)]
+pub struct FieldRef {
+    /// The field's name: `elevation` or `biome`.
+    pub name: String,
+    /// The law that answers it, as the world states it (`terrain::elevation_m`).
+    pub source: String,
+}
+
+/// **A map frame's GPU declaration**: the fields and the 1/32 cell law the terrain renderer
+/// consumes, plus the extent and camera it is drawn with.
+///
+/// The `.frame` still carries its glyph rows as the **fallback** a shell with no GPU surface
+/// draws, but this record is the drawing: the ASCII raster is not the map, it is what the map
+/// degrades to. `field` names terrain laws rather than cell glyphs, `shaper` names the per-axis
+/// cell law (`profile32` at 32 divisions), and `projection` names the camera.
+#[derive(Clone, PartialEq, Debug)]
+pub struct MapView {
+    /// The fields the renderer samples, in declaration order.
+    pub fields: Vec<FieldRef>,
+    /// The cell law's name — `profile32`.
+    pub shaper: String,
+    /// That law's divisions per axis: 32.
+    pub shaper_cells: u32,
+    /// The camera: `orthographic`.
+    pub projection: String,
+    /// The world column the view is centred on, metres.
+    pub centre_xz: [f64; 2],
+    /// One map cell, metres.
+    pub cell_m: f64,
+    /// The map's extent in cells: columns (x) and rows (z).
+    pub extent: [u32; 2],
+    /// The camera's downward tilt, degrees. Negative looks down; it is what puts the horizon in
+    /// the window rather than drawing a plan from directly above.
+    pub pitch_deg: f64,
+}
+
+impl MapView {
+    /// The fields this build can sample. An unknown name is a refusal, not a default: a frame that
+    /// asked for a field the renderer does not know would otherwise draw the one it does.
+    pub const FIELDS: [&'static str; 2] = ["elevation", "biome"];
+    /// The only cell law the renderer carries.
+    pub const SHAPER: &'static str = "profile32";
+    /// The only projection it carries.
+    pub const PROJECTION: &'static str = "orthographic";
+
+    /// The source declared for `name`, if this frame declares it.
+    pub fn source_of(&self, name: &str) -> Option<&str> {
+        self.fields
+            .iter()
+            .find(|field| field.name == name)
+            .map(|field| field.source.as_str())
+    }
+}
+
+/// One frame, as declared. [`Frame::parse`] is the only constructor and it checks every field.
+#[derive(Clone, PartialEq, Debug)]
 pub struct Frame {
     /// The frame's id — **and the row id the package's recipe names it by**.
     pub id: String,
@@ -227,9 +289,16 @@ pub struct Frame {
     pub order: u32,
     /// Frames that must be registered before this one, by id.
     pub requires: Vec<String>,
+    /// **The world feature this frame shows**, if it declares one — `all`, `ocean`, `mountain`,
+    /// and so on. `None` is a frame with no claim on the world (a panel's cells, a test fixture).
+    /// The token is what the console's `plan` verb selects; it is not a window id.
+    pub feature: Option<String>,
+    /// **The GPU declaration**, when the frame draws through the terrain renderer. `None` is a
+    /// frame of glyphs alone, which is every frame the shell drew before the map surface existed.
+    pub map: Option<MapView>,
     /// The paper runs, in declaration order.
     pub fills: Vec<Fill>,
-    /// The glyph runs, in declaration order.
+    /// The glyph runs, in declaration order — the fallback picture when no GPU surface exists.
     pub runs: Vec<Run>,
 }
 
@@ -292,6 +361,18 @@ impl Frame {
         let mut rows: Option<u32> = None;
         let mut order: Option<u32> = None;
         let mut requires: Option<Vec<String>> = None;
+        let mut feature: Option<String> = None;
+        // **The GPU declaration's own keys** — optional together, and one declaration when any is
+        // present. `map_declared` distinguishes "no map keys" from "map keys that did not parse",
+        // so a broken map is refused rather than silently drawn as glyphs.
+        let mut map_declared = false;
+        let mut fields: Vec<FieldRef> = Vec::new();
+        let mut shaper: Option<(String, u32)> = None;
+        let mut projection: Option<String> = None;
+        let mut centre: Option<[f64; 2]> = None;
+        let mut cell_m: Option<f64> = None;
+        let mut extent: Option<[u32; 2]> = None;
+        let mut pitch: Option<f64> = None;
         let mut fills: Vec<Fill> = Vec::new();
         let mut runs: Vec<Run> = Vec::new();
 
@@ -351,6 +432,205 @@ impl Frame {
                         }
                     }
                 }
+                // **The GPU map declaration.** These rows name laws rather than cells, so the
+                // map renderer can sample the world instead of reading a glyph grid: the frame
+                // says *what* answers the field, never the answer itself.
+                ["field", name, source] => {
+                    map_declared = true;
+                    if !MapView::FIELDS.contains(name) {
+                        errors.refuse(
+                            RefusalKind::UnadmittedFieldSpec,
+                            format!(
+                                "frame {id:?} line {number}: `field {name}` is not a field this \
+                                 renderer samples; the fields are {:?}",
+                                MapView::FIELDS
+                            ),
+                        );
+                    } else if fields.iter().any(|field| field.name == *name) {
+                        errors.refuse(
+                            RefusalKind::MalformedRecord,
+                            format!(
+                                "frame {id:?} line {number}: `field {name}` is declared twice; a \
+                                 field has one source"
+                            ),
+                        );
+                    } else if !source_token(source) {
+                        errors.refuse(
+                            RefusalKind::MalformedRecord,
+                            format!(
+                                "frame {id:?} line {number}: `field {name}` takes a law name such \
+                                 as `terrain::elevation_m`, found {source:?}"
+                            ),
+                        );
+                    } else {
+                        fields.push(FieldRef {
+                            name: (*name).to_string(),
+                            source: (*source).to_string(),
+                        });
+                    }
+                }
+                ["shaper", name, divisions] => {
+                    map_declared = true;
+                    let divisions = number_of(divisions);
+                    if *name != MapView::SHAPER {
+                        errors.refuse(
+                            RefusalKind::UnadmittedFieldSpec,
+                            format!(
+                                "frame {id:?} line {number}: `shaper {name}` is not a cell law this \
+                                 renderer carries; the law is {}",
+                                MapView::SHAPER
+                            ),
+                        );
+                    } else if shaper.is_some() {
+                        errors.refuse(
+                            RefusalKind::MalformedRecord,
+                            format!(
+                                "frame {id:?} line {number}: `shaper` is declared twice; a frame \
+                                 states one cell law"
+                            ),
+                        );
+                    } else if divisions != Some(32) {
+                        errors.refuse(
+                            RefusalKind::MalformedRecord,
+                            format!(
+                                "frame {id:?} line {number}: `shaper {}` takes 32 divisions per \
+                                 axis, found {divisions:?}",
+                                MapView::SHAPER
+                            ),
+                        );
+                    } else {
+                        shaper = Some(((*name).to_string(), 32));
+                    }
+                }
+                ["projection", name] => {
+                    map_declared = true;
+                    if *name != MapView::PROJECTION {
+                        errors.refuse(
+                            RefusalKind::UnadmittedFieldSpec,
+                            format!(
+                                "frame {id:?} line {number}: `projection {name}` is not a camera \
+                                 this renderer carries; the projection is {}",
+                                MapView::PROJECTION
+                            ),
+                        );
+                    } else if projection.is_some() {
+                        errors.refuse(
+                            RefusalKind::MalformedRecord,
+                            format!(
+                                "frame {id:?} line {number}: `projection` is declared twice; a \
+                                 frame is drawn through one camera"
+                            ),
+                        );
+                    } else {
+                        projection = Some((*name).to_string());
+                    }
+                }
+                ["centre", x, z] => {
+                    map_declared = true;
+                    match (number_f64(x), number_f64(z)) {
+                        (Some(x), Some(z)) if centre.is_none() => centre = Some([x, z]),
+                        (Some(_), Some(_)) => {
+                            errors.refuse(
+                                RefusalKind::MalformedRecord,
+                                format!(
+                                    "frame {id:?} line {number}: `centre` is declared twice; a \
+                                     view is centred on one column"
+                                ),
+                            );
+                        }
+                        _ => {
+                            errors.refuse(
+                                RefusalKind::MalformedRecord,
+                                format!(
+                                    "frame {id:?} line {number}: `centre` is \
+                                     `centre<TAB>x<TAB>z` in metres, found {trimmed:?}"
+                                ),
+                            );
+                        }
+                    }
+                }
+                ["cell", metres] => {
+                    map_declared = true;
+                    match number_f64(metres) {
+                        Some(m) if m > 0.0 && cell_m.is_none() => cell_m = Some(m),
+                        Some(_) => {
+                            errors.refuse(
+                                RefusalKind::MalformedRecord,
+                                format!(
+                                    "frame {id:?} line {number}: `cell` is zero, negative, or \
+                                     already declared; one cell is one positive number of metres"
+                                ),
+                            );
+                        }
+                        None => {
+                            errors.refuse(
+                                RefusalKind::MalformedRecord,
+                                format!(
+                                    "frame {id:?} line {number}: `cell` takes a positive number \
+                                     of metres, found {metres:?}"
+                                ),
+                            );
+                        }
+                    }
+                }
+                ["extent", cols_span, rows_span] => {
+                    map_declared = true;
+                    match (number_of(cols_span), number_of(rows_span)) {
+                        (Some(cols_span), Some(rows_span))
+                            if cols_span > 0 && rows_span > 0 && extent.is_none() =>
+                        {
+                            extent = Some([cols_span, rows_span])
+                        }
+                        (Some(_), Some(_)) => {
+                            errors.refuse(
+                                RefusalKind::MalformedRecord,
+                                format!(
+                                    "frame {id:?} line {number}: `extent` is empty or already \
+                                     declared; a map is at least one cell and stated once"
+                                ),
+                            );
+                        }
+                        _ => {
+                            errors.refuse(
+                                RefusalKind::MalformedRecord,
+                                format!(
+                                    "frame {id:?} line {number}: `extent` is \
+                                     `extent<TAB>cols<TAB>rows` with whole numbers, found \
+                                     {trimmed:?}"
+                                ),
+                            );
+                        }
+                    }
+                }
+                ["pitch", degrees] => {
+                    map_declared = true;
+                    match number_f64(degrees) {
+                        Some(pitch_deg)
+                            if (-80.0..=-1.0).contains(&pitch_deg) && pitch.is_none() =>
+                        {
+                            pitch = Some(pitch_deg)
+                        }
+                        Some(_) => {
+                            errors.refuse(
+                                RefusalKind::MalformedRecord,
+                                format!(
+                                    "frame {id:?} line {number}: `pitch` is declared twice or \
+                                     outside −80°..−1°; a map camera looks down and never at the \
+                                     pole"
+                                ),
+                            );
+                        }
+                        None => {
+                            errors.refuse(
+                                RefusalKind::MalformedRecord,
+                                format!(
+                                    "frame {id:?} line {number}: `pitch` takes a downward tilt \
+                                     in degrees, found {degrees:?}"
+                                ),
+                            );
+                        }
+                    }
+                }
                 [key, value] | [key, value, ..] => match *key {
                     "window" => match *value {
                         "" => {
@@ -405,6 +685,30 @@ impl Frame {
                             }
                         }
                     }
+                    "feature" => {
+                        if feature.is_some() {
+                            errors.refuse(
+                                RefusalKind::MalformedRecord,
+                                format!(
+                                    "frame {id:?} line {number}: `feature` is declared twice; a \
+                                     frame shows one view"
+                                ),
+                            );
+                            continue;
+                        }
+                        if feature_token(value) {
+                            feature = Some((*value).to_string());
+                        } else {
+                            errors.refuse(
+                                RefusalKind::MalformedRecord,
+                                format!(
+                                    "frame {id:?} line {number}: `feature` takes a lowercase \
+                                     world-feature token such as `all`, `ocean` or `mountain`, \
+                                     found {value:?}"
+                                ),
+                            );
+                        }
+                    }
                     "requires" => {
                         if requires.is_some() {
                             errors.refuse(
@@ -445,7 +749,8 @@ impl Frame {
                             RefusalKind::UnadmittedFieldSpec,
                             format!(
                                 "frame {id:?} line {number} declares key {other:?}, which is not in \
-                                 the grammar; the keys are {KEYS:?}"
+                                 the grammar; the required keys are {KEYS:?} and the optional \
+                                 key is {OPTIONAL_KEYS:?}"
                             ),
                         );
                     }
@@ -501,13 +806,99 @@ impl Frame {
                 ),
             );
         }
-        if fills.is_empty() && runs.is_empty() {
+        // **The GPU declaration, checked as one record.** A map frame is drawn by the terrain
+        // renderer, so its fields, law, camera and extent are all required together: a frame that
+        // named `orthographic` and no elevation is not a map with a default, it is a declaration
+        // missing the thing it draws.
+        let map = if map_declared {
+            for name in MapView::FIELDS {
+                if !fields.iter().any(|field| field.name == name) {
+                    errors.refuse(
+                        RefusalKind::MalformedRecord,
+                        format!(
+                            "frame {id:?} declares a GPU map but no `field {name}`; the renderer \
+                             samples both {:?}",
+                            MapView::FIELDS
+                        ),
+                    );
+                }
+            }
+            if shaper.is_none() {
+                errors.refuse(
+                    RefusalKind::MalformedRecord,
+                    format!(
+                        "frame {id:?} declares a GPU map but no `shaper {} 32`; a map cell is a \
+                         per-axis cell and the law is what shapes it",
+                        MapView::SHAPER
+                    ),
+                );
+            }
+            if projection.is_none() {
+                errors.refuse(
+                    RefusalKind::MalformedRecord,
+                    format!(
+                        "frame {id:?} declares a GPU map but no `projection {}`",
+                        MapView::PROJECTION
+                    ),
+                );
+            }
+            for (absent, key) in [
+                (centre.is_none(), "centre"),
+                (cell_m.is_none(), "cell"),
+                (extent.is_none(), "extent"),
+                (pitch.is_none(), "pitch"),
+            ] {
+                if absent {
+                    errors.refuse(
+                        RefusalKind::MalformedRecord,
+                        format!(
+                            "frame {id:?} declares a GPU map but no `{key}`; a view states where \
+                             it looks, how wide one cell is, and how far"
+                        ),
+                    );
+                }
+            }
+            if let Some([cols_span, rows_span]) = extent {
+                if cols_span > MAX_COLS || rows_span > MAX_ROWS {
+                    errors.refuse(
+                        RefusalKind::MalformedRecord,
+                        format!(
+                            "frame {id:?} declares a {cols_span} × {rows_span} cell map; the \
+                             ceiling is {MAX_COLS} × {MAX_ROWS}"
+                        ),
+                    );
+                }
+            }
+            match (shaper, projection, centre, cell_m, extent, pitch) {
+                (
+                    Some((shaper, shaper_cells)),
+                    Some(projection),
+                    Some(centre_xz),
+                    Some(cell_m),
+                    Some(extent),
+                    Some(pitch_deg),
+                ) => Some(MapView {
+                    fields,
+                    shaper,
+                    shaper_cells,
+                    projection,
+                    centre_xz,
+                    cell_m,
+                    extent,
+                    pitch_deg,
+                }),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if fills.is_empty() && runs.is_empty() && map.is_none() {
             errors.refuse(
                 RefusalKind::MalformedRecord,
                 format!(
-                    "frame {id:?} carries no `fill` and no `run`, so it draws nothing; a window \
-                     whose content is erased says so with an empty declaration, not with an empty \
-                     frame"
+                    "frame {id:?} carries no `fill`, no `run` and no GPU map, so it draws nothing; \
+                     a window whose content is erased says so with an empty declaration, not with \
+                     an empty frame"
                 ),
             );
         }
@@ -569,6 +960,8 @@ impl Frame {
             rows: height,
             order: order.unwrap_or(0),
             requires: requires.unwrap_or_default(),
+            feature,
+            map,
             fills,
             runs,
         })
@@ -597,9 +990,29 @@ impl Frame {
     }
 
     /// The frame as one line: `MAP-0001 · map-plan · 56 × 22 · 4 fills · 18 runs`.
+    ///
+    /// A frame that declares a world feature says so, because two frames addressed to the
+    /// same window are otherwise one line each with nothing to tell them apart.
     pub fn describe(&self) -> String {
+        let feature = match &self.feature {
+            Some(feature) => format!(" · feature {feature}"),
+            None => String::new(),
+        };
+        let map = match &self.map {
+            Some(map) => format!(
+                " · {} {} · {} field(s) · {} m/cell {} × {} · pitch {}°",
+                map.projection,
+                map.shaper,
+                map.fields.len(),
+                map.cell_m,
+                map.extent[0],
+                map.extent[1],
+                map.pitch_deg
+            ),
+            None => String::new(),
+        };
         format!(
-            "{} · {} · {} × {} · {} fills · {} runs",
+            "{} · {} · {} × {} · {} fills · {} runs{feature}{map}",
             self.id,
             self.window,
             self.cols,
@@ -666,6 +1079,29 @@ impl Frame {
         out.push_str(&format!("rows        {}\n", self.rows));
         out.push_str(&format!("order       {}\n", self.order));
         out.push_str(&format!("requires    {requires}\n"));
+        if let Some(feature) = &self.feature {
+            out.push_str(&format!("feature     {feature}\n"));
+        }
+        if let Some(map) = &self.map {
+            for field in &map.fields {
+                out.push_str(&format!(
+                    "field       {} {}\n",
+                    field.name, field.source
+                ));
+            }
+            out.push_str(&format!(
+                "shaper      {} {}\nprojection  {}\ncentre      {} {}\ncell        {}\nextent      {} {}\npitch       {}\n",
+                map.shaper,
+                map.shaper_cells,
+                map.projection,
+                map.centre_xz[0],
+                map.centre_xz[1],
+                map.cell_m,
+                map.extent[0],
+                map.extent[1],
+                map.pitch_deg
+            ));
+        }
         for fill in &self.fills {
             out.push_str(&format!(
                 "fill        {} {} {} {}\n",
@@ -700,7 +1136,7 @@ impl Frame {
 }
 
 /// A frame and the record that explains it, as a folder holds them.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Declared {
     /// The parsed frame.
     pub frame: Frame,
@@ -711,7 +1147,7 @@ pub struct Declared {
 }
 
 /// A display package's frames, checked against the recipe that names them.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Package {
     /// The folder this was read from; empty when the frames came from a package's artifact map.
     pub folder: PathBuf,
@@ -947,12 +1383,48 @@ fn section_of(record: &str, heading: &str) -> Option<String> {
     Some(body.join("\n"))
 }
 
+/// **A world-feature token**: lowercase ASCII, digits and a hyphen, at most 24 characters.
+///
+/// The narrowness is the point: this token is typed at the console (`plan ocean`), so a value
+/// with a space in it would be a selection no verb could name and a value with capitals would be
+/// a second spelling of the same feature.
+fn feature_token(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 24
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
 /// A whole number, or `None` — the one reading every count in the grammar uses.
 fn number_of(text: &str) -> Option<u32> {
     if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
     text.parse().ok()
+}
+
+/// A signed decimal, or `None`. The map's centre, cell size and pitch are the only numbers in this
+/// grammar that are not counts, and `-0` is a value rather than a typo.
+fn number_f64(text: &str) -> Option<f64> {
+    if text.is_empty()
+        || !text
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'-' | b'+' | b'.' | b'e' | b'E'))
+    {
+        return None;
+    }
+    text.parse::<f64>().ok().filter(|value| value.is_finite())
+}
+
+/// A law's name: `terrain::elevation_m`. No whitespace, because a row splits on tabs and a source
+/// with a space in it would be two tokens the grammar did not declare.
+fn source_token(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 96
+        && text.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'_' | b'.' | b'-' | b'/')
+        })
 }
 
 #[cfg(test)]
@@ -991,6 +1463,38 @@ mod tests {
         assert_eq!(
             parsed.describe(),
             "MAP-0001 · map-plan · 8 × 2 · 1 fills · 2 runs"
+        );
+    }
+
+    #[test]
+    fn a_frame_may_declare_the_world_feature_it_shows_and_the_key_is_optional() {
+        let parsed = Frame::parse(&frame(
+            "\tfeature\tocean\nfill\t0\t0\t8\tsurface\nrun\t1\t1\taccent\ttopo\n",
+        ))
+        .expect("a frame with a feature parses");
+        assert_eq!(parsed.feature.as_deref(), Some("ocean"));
+        assert!(
+            parsed.describe().ends_with("· feature ocean"),
+            "the description does not name the view: {}",
+            parsed.describe()
+        );
+
+        // It is optional: the fixture every other test uses declares none.
+        let plain = Frame::parse(&frame("fill\t0\t0\t8\tsurface\nrun\t1\t1\taccent\ttopo\n"))
+            .expect("a frame without a feature parses");
+        assert_eq!(plain.feature, None);
+
+        let twice = refusals(&frame(
+            "\tfeature\tocean\n\tfeature\tmountain\nfill\t0\t0\t8\tsurface\n",
+        ));
+        assert!(
+            twice.iter().any(|detail| detail.contains("`feature` is declared twice")),
+            "{twice:?}"
+        );
+        let bad = refusals(&frame("\tfeature\tOcean Reef\nfill\t0\t0\t8\tsurface\n"));
+        assert!(
+            bad.iter().any(|detail| detail.contains("lowercase world-feature token")),
+            "{bad:?}"
         );
     }
 

@@ -1,0 +1,32 @@
+=== the capture fixture (example shell-shot) ===
+shell-shot exit=0
+game: exit=0 135s — test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 652 filtered out; finished in 134.55s
+skylight: exit=0 173s — test result: ok. 39 passed; 0 failed; 1 ignored; 0 measured; 616 filtered out; finished in 171.81s
+renderer: exit=101 62s — test result: FAILED. 21 passed; 1 failed; 0 ignored; 0 measured; 634 filtered out; finished in 60.29s
+scene: exit=0 3s — test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 624 filtered out; finished in 1.44s
+motion: exit=0 1s — test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 627 filtered out; finished in 0.01s
+world: exit=124 910s — 
+surface: exit=0 2s — test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 645 filtered out; finished in 1.36s
+sun: exit=0 2s — test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 640 filtered out; finished in 0.19s
+sun_shadow: exit=0 2s — test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 652 filtered out; finished in 0.80s
+shading: exit=0 1s — test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 641 filtered out; finished in 0.00s
+far_terrain: exit=0 12s — test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 641 filtered out; finished in 10.50s
+horizon: exit=0 5s — test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 633 filtered out; finished in 4.45s
+cloud_field: exit=0 1s — test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 643 filtered out; finished in 0.45s
+cloud_cubes: exit=0 1s — test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 643 filtered out; finished in 0.27s
+clock: exit=0 1s — test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 643 filtered out; finished in 0.00s
+debug: exit=0 1s — test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 634 filtered out; finished in 0.00s
+camera: exit=0 1s — test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 647 filtered out; finished in 0.07s
+camera_overhaul: exit=0 1s — test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 645 filtered out; finished in 0.00s
+pattern: exit=0 1s — test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 646 filtered out; finished in 0.00s
+quad: exit=0 1s — test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 648 filtered out; finished in 0.00s
+hud: exit=0 2s — test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 645 filtered out; finished in 0.99s
+frame: exit=0 1s — test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 650 filtered out; finished in 0.00s
+field: exit=0 1s — test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 638 filtered out; finished in 0.43s
+work: exit=0 1s — test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 652 filtered out; finished in 0.00s
+shaped: exit=0 1s — test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 652 filtered out; finished in 0.15s
+measure: exit=0 1s — test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 653 filtered out; finished in 0.02s
+lod: exit=0 1s — test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 653 filtered out; finished in 0.00s
+fog_cubes: exit=0 2s — test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 654 filtered out; finished in 1.36s
+atmosphere: exit=0 1s — test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 655 filtered out; finished in 0.09s
+groups total: 359 passed, 1 failed, 2 ignored (shell map_view map_survey measured separately)

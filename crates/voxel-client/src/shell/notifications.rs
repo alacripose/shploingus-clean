@@ -145,8 +145,6 @@ pub fn mint_the_gate_proofs() -> Vec<ProofOfWork> {
     voxel_model::laya::mint_proofs_from_rows(drain_committed_actions())
 }
 
-
-
 /// **The judgement this run asks for, written by the game itself.**
 ///
 /// The queue's only writers used to be tests, so `logs/laya-decisions/` was residue from them
@@ -302,7 +300,10 @@ impl ToastQueue {
         }
         if self.current.is_none() {
             if let Some(text) = self.pending.pop_front() {
-                self.current = Some(Toast { text, shown_at: tick });
+                self.current = Some(Toast {
+                    text,
+                    shown_at: tick,
+                });
                 self.raised += 1;
             }
         }
@@ -422,10 +423,17 @@ mod tests {
         )
         .expect("the record lands");
 
-        let mut stream = NotificationStream { records: vec![queue.join("laya-0000.musli")].into_iter() };
-        std::fs::write(scratch.join(artifact_rel), b"pub fn judged() { /* changed */ }")
-            .expect("the artifact changes");
-        let refused = stream.next_verified(&scratch).expect_err("the tamper is caught");
+        let mut stream = NotificationStream {
+            records: vec![queue.join("laya-0000.musli")].into_iter(),
+        };
+        std::fs::write(
+            scratch.join(artifact_rel),
+            b"pub fn judged() { /* changed */ }",
+        )
+        .expect("the artifact changes");
+        let refused = stream
+            .next_verified(&scratch)
+            .expect_err("the tamper is caught");
         assert!(
             refused.contains("does not match"),
             "the refusal names the sha256 mismatch: {refused}"
@@ -543,7 +551,11 @@ mod tests {
             .flatten()
             .map(|entry| entry.path())
             .collect();
-        assert_eq!(records.len(), 1, "the previous run's record survived the new pass");
+        assert_eq!(
+            records.len(),
+            1,
+            "the previous run's record survived the new pass"
+        );
         assert!(
             !evaluation.decisions[0].cleared(),
             "an artifact with no proof of work cleared the gate"
@@ -551,8 +563,9 @@ mod tests {
 
         let mut stream = NotificationStream::open(&scratch).expect("the queue is there");
         let mut seen = 0usize;
-        while let Some(notification) =
-            stream.next_verified(&scratch).expect("every record verifies")
+        while let Some(notification) = stream
+            .next_verified(&scratch)
+            .expect("every record verifies")
         {
             assert_eq!(
                 notification.decision, evaluation.decisions[seen],
@@ -560,7 +573,11 @@ mod tests {
             );
             seen += 1;
         }
-        assert_eq!(seen, evaluation.decisions.len(), "one notification per decision");
+        assert_eq!(
+            seen,
+            evaluation.decisions.len(),
+            "one notification per decision"
+        );
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
@@ -599,12 +616,32 @@ mod tests {
             "the proof names the caller's artifact, not the recorder: {}",
             proof.path
         );
-        assert!(!proof.path.contains(':'), "the line is dropped: {}", proof.path);
+        assert!(
+            !proof.path.contains(':'),
+            "the line is dropped: {}",
+            proof.path
+        );
         assert_eq!(proof.path, commit_site_artifact(&row.site));
-        assert_eq!(proof.origin, EvidenceOrigin::ReadBack, "B — the machine read its own book");
-        assert_eq!(proof.origin.letter(), "B", "axis.rs's ticket-evidence ladder token");
-        assert!(proof.claim.contains("res-4"), "the claim anchor: {}", proof.claim);
-        assert_eq!(proof.evidence, row.message(), "the proof quotes the row's own account");
+        assert_eq!(
+            proof.origin,
+            EvidenceOrigin::ReadBack,
+            "B — the machine read its own book"
+        );
+        assert_eq!(
+            proof.origin.letter(),
+            "B",
+            "axis.rs's ticket-evidence ladder token"
+        );
+        assert!(
+            proof.claim.contains("res-4"),
+            "the claim anchor: {}",
+            proof.claim
+        );
+        assert_eq!(
+            proof.evidence,
+            row.message(),
+            "the proof quotes the row's own account"
+        );
         assert_eq!(
             voxel_model::observer::recorder::pending_committed_actions(),
             0,
@@ -645,21 +682,27 @@ mod tests {
         std::fs::write(&artifact, b"pub fn judged() {}\n").expect("the artifact lands");
 
         let proofs = mint_the_gate_proofs();
-        assert_eq!(proofs.len(), 1, "the act was minted before the gate read the book");
+        assert_eq!(
+            proofs.len(),
+            1,
+            "the act was minted before the gate read the book"
+        );
         let evaluation = evaluate_project(&scratch, &proofs);
         assert_eq!(evaluation.decisions.len(), 1, "one artifact, one decision");
         let decision = &evaluation.decisions[0];
-        assert_eq!(decision.path, artifact_rel, "the proof is looked up by the artifact's path");
+        assert_eq!(
+            decision.path, artifact_rel,
+            "the proof is looked up by the artifact's path"
+        );
         assert_eq!(
             decision.origin,
             Some(EvidenceOrigin::ReadBack),
             "the proof's origin is on the decision, not stamped by the caller"
         );
         assert!(
-            decision.grades.contains(&(
-                voxel_model::axis::AxisKind::TicketEvidence,
-                "B".to_string()
-            )),
+            decision
+                .grades
+                .contains(&(voxel_model::axis::AxisKind::TicketEvidence, "B".to_string())),
             "the ticket-evidence ladder carries the origin's own token: {:?}",
             decision.grades
         );
@@ -678,8 +721,15 @@ mod tests {
         // own setting — a setting made unchangeable by a test is clutter, not protection.
         let hz = crate::clock::TICK_HZ as f64;
         let expected = (voxel_ui::toast_ms() / 1000.0 * hz).round().max(1.0) as u64;
-        assert_eq!(toast_ticks(), expected, "the duration in ticks is the duration in seconds");
-        assert!(toast_ticks() >= 1, "a toast must last at least one renderable tick");
+        assert_eq!(
+            toast_ticks(),
+            expected,
+            "the duration in ticks is the duration in seconds"
+        );
+        assert!(
+            toast_ticks() >= 1,
+            "a toast must last at least one renderable tick"
+        );
         let entry = (voxel_ui::toast_entry_ms() / 1000.0 * hz).round().max(1.0) as u64;
         assert_eq!(
             toast_entry_ticks(),
@@ -693,15 +743,24 @@ mod tests {
         let mut queue = ToastQueue::default();
         queue.enqueue("first");
         queue.enqueue("second");
-        assert!(queue.current().is_none(), "nothing is on screen before the first advance");
+        assert!(
+            queue.current().is_none(),
+            "nothing is on screen before the first advance"
+        );
         queue.advance(10);
-        assert_eq!(queue.current().map(|toast| toast.text.as_str()), Some("first"));
+        assert_eq!(
+            queue.current().map(|toast| toast.text.as_str()),
+            Some("first")
+        );
         assert_eq!(queue.raised(), 1);
 
         // Advancing again inside the same tick changes nothing: the queue moves at the world's
         // rate, not at whatever rate the frame loop asks it to.
         queue.advance(10);
-        assert_eq!(queue.current().map(|toast| toast.text.as_str()), Some("first"));
+        assert_eq!(
+            queue.current().map(|toast| toast.text.as_str()),
+            Some("first")
+        );
         assert_eq!(queue.raised(), 1);
 
         let done = 10 + toast_ticks();
