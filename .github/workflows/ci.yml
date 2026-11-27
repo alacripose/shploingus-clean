@@ -25,8 +25,13 @@ jobs:
       # The headless crates are the ones a runner can measure: no window, no GPU adapter.
       # `shploingus` and `voxel-client` need a surface and an adapter, so their tests run on
       # the machine that has one; the release build below still proves they compile.
+      # `voxel-von` and `voxel-mcp` reach `jigor`, whose build links a prebuilt ONNX Runtime that
+      # is an install on the machine rather than a dependency; they run where that install exists.
       - name: Headless tests
-        run: cargo test --release --workspace --exclude shploingus --exclude voxel-client
+        run: >-
+          cargo test --release --workspace
+          --exclude shploingus --exclude voxel-client
+          --exclude voxel-von --exclude voxel-mcp
 
       - name: Release binary builds
         run: cargo build --release -p shploingus

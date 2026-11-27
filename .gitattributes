@@ -1,6 +1,16 @@
-# Byte-exact files. These are hashed by build scripts before they are compiled, and a checkout
-# that rewrites their line endings changes the hash. `-text` turns off every conversion, in both
-# directions, so the bytes a build sees are the bytes that were committed.
+# Checkouts are LF, everywhere, on every machine.
+#
+# Several build-time gates read text files as bytes: the alpha-shell recipe refuses a file that is
+# not LF-terminated, and the materials digests in `crates/voxel-model/materials/digest.txt` are
+# hashes of the files themselves. `core.autocrlf=true` is set system-wide on Windows, so without a
+# policy a checkout on a Windows runner rewrote them to CRLF and those gates refused a tree that was
+# correct as committed. `eol=lf` makes the bytes a build sees the bytes that were committed.
+* text=auto eol=lf
+
+# The exceptions: files whose committed bytes are *not* LF, and which a build hashes verbatim.
+# `-text` turns off every conversion in both directions, so what was recorded stays what is read.
+# The SPLIB07A spectra are distributed as CRLF (and `sources.tsv` is a mix of both), and the two
+# generated modules were recorded with CRLF line endings.
 crates/voxel-model/materials/** -text
 crates/voxel-model/src/materials/generated.rs -text
 crates/voxel-model/src/materials/spectra.rs -text
