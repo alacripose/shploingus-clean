@@ -1,0 +1,6 @@
+# Byte-exact files. These are hashed by build scripts before they are compiled, and a checkout
+# that rewrites their line endings changes the hash. `-text` turns off every conversion, in both
+# directions, so the bytes a build sees are the bytes that were committed.
+crates/voxel-model/materials/** -text
+crates/voxel-model/src/materials/generated.rs -text
+crates/voxel-model/src/materials/spectra.rs -text
