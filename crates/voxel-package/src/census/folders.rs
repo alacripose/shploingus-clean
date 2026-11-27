@@ -144,12 +144,18 @@ pub const FORMATS: [(&str, &str); 1] = [(
     "display-packages/alpha-shell/frames/MAP-0001.frame",
 )];
 
-pub const DECLARED: [(&str, Kind, &str); 16] = [
+pub const DECLARED: [(&str, Kind, &str); 19] = [
     (".agents", Kind::Harness, ".agents/skills"),
     (".cargo", Kind::Build, ".cargo/config.toml"),
     (".freebuff", Kind::Harness, ".freebuff/ledger-digest.md"),
+    // The workflows that build and publish this tree; `ci.yml` is the file that runs on every push.
+    (".github", Kind::Build, ".github/workflows/ci.yml"),
+    // The local build tree's logs and scratch files: output that neither a source nor a build is.
+    (".scratch", Kind::Output, ".gitignore"),
     (".superpowers", Kind::Harness, ".superpowers/sdd"),
     ("architecture", Kind::Documents, "architecture/workspace.dsl"),
+    // What the judges wrote about the tree, kept as the record it is rather than re-read each run.
+    ("artifacts", Kind::Records, "artifacts/agents-judge.json"),
     ("chains", Kind::Records, "chains/workspace.chain"),
     (
         "clean-room",
