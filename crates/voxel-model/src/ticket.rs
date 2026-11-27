@@ -2049,11 +2049,11 @@ mod tests {
         // and the doc comment on the enum is the only thing warning them — so the warning is
         // here too, where a reader editing the test will see it.
         let all = EvidenceOrigin::ALL;
-        assert_eq!(all.len(), 3, "three sources, not a scale");
+        assert_eq!(all.len(), 4, "four sources, not a scale");
         // Distinct by construction, and the letters are not an ordering claim: they happen to be
         // alphabetical, which is the whole reason the type must carry no `Ord`.
         let letters: Vec<&str> = all.iter().map(|origin| origin.letter()).collect();
-        assert_eq!(letters, vec!["A", "B", "C"]);
+        assert_eq!(letters, vec!["A", "B", "C", "D"]);
         // Each describes where it came from. None of them claims to be stronger or weaker than
         // another, which is the property the old name implied and the derive list enforced.
         for origin in all {
