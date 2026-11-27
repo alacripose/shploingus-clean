@@ -1225,8 +1225,16 @@ mod tests {
         if made {
             let sizes = measure(&root.join("debug/examples")).expect("the directory reads");
             assert_eq!(sizes.not_followed, vec![link.clone()]);
-            // The linked file is counted once, through its own name — never twice.
-            assert_eq!(sizes.bytes, 4096 + 2048 + 2048);
+            // The linked file is counted once, through its own name — never twice. **The two
+            // numbers come from `measure`, not from the sizes written above**, because `bytes` is
+            // what the volume allocated: a 2048-byte file is one 2048-byte run on a volume with
+            // 2 KiB clusters and one 4096-byte run on this machine's, and a test holding the literal
+            // total was measuring the cluster size of the disk it happened to run on. A link
+            // allocates no clusters of its own, so the directory is its two files and nothing else.
+            let demo = measure(&root.join("debug/examples/demo.exe")).expect("a file").bytes;
+            let pdb = measure(&root.join("debug/examples/demo.pdb")).expect("a file").bytes;
+            assert_eq!(sizes.bytes, demo + pdb);
+            assert!(sizes.bytes < demo + pdb + 8192, "the link's target is not counted");
         }
         cleanup(&root);
     }
