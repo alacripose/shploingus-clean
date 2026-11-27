@@ -325,7 +325,7 @@ fn main() {
         // **The selection is off the survey on purpose**: the route leaves the player and stops at
         // the edge, and the edge indicator says which way the chosen cell lies. A capture that only
         // showed an on-map selection would not exercise the clamp.
-        mount.select_map(Some([
+        mount.map.select(Some([
             camera.centre_m[0] + declaration.cell_m * 80.0,
             camera.centre_m[1],
         ]));

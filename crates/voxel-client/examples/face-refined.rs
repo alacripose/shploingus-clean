@@ -37,7 +37,7 @@ use voxel_mesh::{Chunk, Mesh, MeshConfig, Mesher, Quad, RefineConfig};
 use voxel_model::{ChunkPos, DisplacementField, Face, MaterialId, SUBVOXEL_SIDE};
 use voxel_noise::Vec3;
 use voxel_shapers::materials::{self, SurfacePattern};
-use voxel_shapers::{gaia, Config, WorldSpec};
+use voxel_shapers::{flora, Config, WorldSpec};
 use voxel_stream::WorldSource;
 
 /// 1025 is odd, so pixel 512 is the frame's exact centre.
@@ -327,7 +327,7 @@ fn main() {
     let mut tree = None;
     'search: for cell_x in 0..96 {
         for cell_z in 0..96 {
-            if let Some(found) = voxel_shapers::gaia::tree_of_cell(&spec, cell_x, cell_z) {
+            if let Some(found) = voxel_shapers::flora::tree_of_cell(&spec, cell_x, cell_z) {
                 tree = Some(found);
                 break 'search;
             }
