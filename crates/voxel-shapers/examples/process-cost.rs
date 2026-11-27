@@ -36,7 +36,7 @@ const TICKS: u64 = 40;
 const TICK_HZ: f64 = 20.0;
 
 /// Every stage that has a body, in the roster's own order.
-const BODIES: [Stage; 14] = [
+const BODIES: [Stage; 15] = [
     Stage::Tectonics,
     Stage::Fields,
     Stage::Geology,
@@ -51,6 +51,7 @@ const BODIES: [Stage; 14] = [
     Stage::Transition,
     Stage::SoilTransport,
     Stage::Ecology,
+    Stage::Earthworks,
 ];
 
 fn main() {
@@ -78,7 +79,7 @@ fn main() {
     // split, so each body is timed on its own through `body_of` — the share is read as a
     // share, and its sum is **not** the turn's cost (the roster also computes five
     // identities per process, which this does not).
-    let mut stage_sum = [Duration::ZERO; 14];
+    let mut stage_sum = [Duration::ZERO; BODIES.len()];
     let mut total = Duration::ZERO;
     for tick in 0..=TICKS {
         let request = ProcessRequest {
@@ -87,6 +88,7 @@ fn main() {
             hydro_radius: FIELD_PLANE_HYDRO_RADIUS,
             region: &region,
             unit: Some(unit),
+            entries: &[],
         };
         let started = Instant::now();
         let evidence = scheduler.step(&spec, &request).expect("the tick advances");

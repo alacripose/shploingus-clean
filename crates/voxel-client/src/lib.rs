@@ -70,6 +70,7 @@ pub mod frame;
 pub mod game;
 pub mod horizon;
 pub mod hud;
+pub mod inventory;
 pub mod lod;
 pub mod map_survey;
 pub mod map_view;

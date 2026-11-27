@@ -60,7 +60,10 @@ impl FrameRecorder {
     ) -> Option<Self> {
         let dir: PathBuf = std::env::var_os("SHPLOINGUS_CAPTURE_DIR")?.into();
         if let Err(e) = std::fs::create_dir_all(&dir) {
-            eprintln!("shploingus: cannot create the capture directory {}: {e}", dir.display());
+            eprintln!(
+                "shploingus: cannot create the capture directory {}: {e}",
+                dir.display()
+            );
             return None;
         }
         let padded_row_bytes = (width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
@@ -156,7 +159,11 @@ impl FrameRecorder {
             submission_index: None,
             timeout: None,
         });
-        if receiver.recv().map(|result| result.is_err()).unwrap_or(true) {
+        if receiver
+            .recv()
+            .map(|result| result.is_err())
+            .unwrap_or(true)
+        {
             eprintln!("shploingus: a captured frame could not be mapped");
             return;
         }
@@ -324,7 +331,11 @@ pub fn corner_digest(scene: &Scene, probe: [f64; 3], radius_m: f64) -> CornerDig
             origin[1] + f64::from(vertex.position[1]),
             origin[2] + f64::from(vertex.position[2]),
         ];
-        let d = [world[0] - probe[0], world[1] - probe[1], world[2] - probe[2]];
+        let d = [
+            world[0] - probe[0],
+            world[1] - probe[1],
+            world[2] - probe[2],
+        ];
         if d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > radius_m * radius_m {
             continue;
         }
@@ -356,7 +367,11 @@ pub fn corner_digest(scene: &Scene, probe: [f64; 3], radius_m: f64) -> CornerDig
     for axis in 0..3 {
         fold(&(digest.axes[axis] as u32).to_le_bytes(), &mut hash);
     }
-    digest.rough_mean = if digest.corners == 0 { 0.0 } else { rough_sum / digest.corners as f64 };
+    digest.rough_mean = if digest.corners == 0 {
+        0.0
+    } else {
+        rough_sum / digest.corners as f64
+    };
     digest.materials = materials.len();
     // **The rectangles too**: a face that left the record format for triangles, or joined a neighbour
     // in the merge, changes what the world states without moving a corner of the ones still there.
@@ -366,7 +381,11 @@ pub fn corner_digest(scene: &Scene, probe: [f64; 3], radius_m: f64) -> CornerDig
             Some(origin) => origin,
             None => continue,
         };
-        let d = [origin[0] - probe[0], origin[1] - probe[1], origin[2] - probe[2]];
+        let d = [
+            origin[0] - probe[0],
+            origin[1] - probe[1],
+            origin[2] - probe[2],
+        ];
         if d[0] * d[0] + d[1] * d[1] + d[2] * d[2] > reach * reach {
             continue;
         }

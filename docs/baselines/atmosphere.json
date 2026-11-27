@@ -1,0 +1,34 @@
+{
+  "what": "the-sky-on-the-surface-ladder",
+  "why": "The cloud is drawn from the same 32 rungs the ground is: a rung is an index into `lod::TIERS`, and `rung_cell_m` is `lod::cell_m`, so the sky and the terrain are measured in the same cells at the same index rather than on a second ladder of ten octaves that met the world's only where the numbers happened to coincide. The rows below are the ladder's own cells, the rung the eye resolves at four distances, the veil the cubes carry (the extinction the beam uses and the transmittance the shipped model's own columns imply), and the fog's visibility fit — the atmospheric facts this path relies on, read from `crates/voxel-client` and `voxel_light`, and reproduced by `cargo run -p voxel-client --example atmosphere-probe`. `cloud_cubes::tests::the_atmosphere_baseline_is_this_ladder` reads this file back and fails if a row and the law disagree, so the record is a binding and not a copy.",
+  "package": "voxel-client",
+  "recipe": "cargo run -p voxel-client --example atmosphere-probe (GAME_SEED 2468, Config::default(), tick = TICKS_PER_DAY / 2, pixel angle 1.945 mrad at 70° vertical over 720 px; transmittance over 752 cloudy columns on a 61 × 67 m grid inside 2 048 m, the same grid `the_worlds_own_clouds_are_mostly_transparent` reads; the tree's finest cell is its domain at its 16 levels)",
+  "measured": "2026-10-28, the pass that put the cloud on the surface ladder",
+  "commit": "working tree",
+  "rows": [
+    { "name": "rungs in the cloud ladder", "value": 32, "of": 32, "must": "equal", "unit": "rungs", "note": "`RUNGS` is `lod::TIERS`: the cloud has the surface's 32 rungs, not ten octaves of its own. `every_cloud_rung_is_the_surface_ladders_rung` walks all 32 and holds each cell to `lod::cell_m(tier)` and each cell back to its tier." },
+    { "name": "cloud rung 0 cell", "value": 0.25, "must": "equal", "unit": "m", "note": "The ladder's floor — a subvoxel — so the user's own bound holds: no cloud is drawn finer than a pixel of a block (C-164: 32 per side)." },
+    { "name": "cloud rung 9 cell", "value": 128, "must": "equal", "unit": "m", "note": "A rung the old ten-octave ladder did not have. The tree's own domain (16 384 m) is the only top: a cell larger than the sky box would be the whole sky in one box." },
+    { "name": "rung drawn at 500 m", "value": 4, "must": "equal", "unit": "m", "note": "The silence rule (a rung is drawn while a pixel is under a quarter of its cell) at 1.945 mrad: 4 × 1.945 mrad × 500 m = 3.89 m, the 4 m rung (tier 4)." },
+    { "name": "rung drawn at 1 000 m", "value": 8, "must": "equal", "unit": "m", "note": "Tier 5 — the tree's own finest cell (the 16 384 m domain at 11 levels)." },
+    { "name": "rung drawn at 2 000 m", "value": 16, "must": "equal", "unit": "m", "note": "Tier 6." },
+    { "name": "rung drawn at 4 000 m", "value": 32, "must": "equal", "unit": "m", "note": "Tier 7 — the chunk rung." },
+    { "name": "cloud tree's finest cell", "value": 0.25, "must": "equal", "unit": "m", "note": "`CLOUD_DOMAIN_M / 2^CLOUD_LEVELS` with 16 levels: the tree's floor is the ladder's own rung 0 (a subvoxel), so no rung the surface draws is below what the cloud can cut. It reaches it only where the ladder asks — an eye inside a cloud — and an empty box costs one node." },
+    { "name": "clouds' extinction", "value": 0.01, "must": "equal", "unit": "1/m", "note": "`cloud_field::CLOUD_EXTINCTION_PER_M`, held to `voxel_light`'s cloud optics by `the_worlds_own_clouds_are_mostly_transparent`. Extinction is the quantity the coupling guide defines in §2.1 (Extinction, scattering, and absorption) and applies as Beer–Lambert along the beam; the guide's §3.1 (Koschmieder relation) is the same β the fog row below uses." },
+    { "name": "median cloud transmittance, 752 cloudy columns", "value": 0.978, "must": "at least 0.5", "unit": "fraction of the beam", "note": "The shipped model's column water paths through `cloud_transmittance` (exp(−σ·LWP)). §2.1 of the coupling guide is the Beer–Lambert law this is; the water path itself is the model's, from the clouds guide's §\"Saturation and relative humidity\" (condensation at the LCL) and §\"The dry and moist adiabatic lapse rates\" (the lift that sets the depth). A cloud that passed under half the beam would be a wall, not a veil." },
+    { "name": "deepest cloud transmittance, 752 cloudy columns", "value": 0.516, "must": "note", "unit": "fraction of the beam", "note": "The deepest column is not ruled on: a convective column's depth is its lift above its own LCL, so a deep one is allowed to be thick. It is recorded so a change that makes every cloud opaque has to move this line and say so." },
+    { "name": "fog extinction at the guide's droplet load", "value": 0.00437, "must": "equal", "unit": "1/m", "note": "`fog::FOG_LWC_G_M3` = 0.021 g/m³ through `voxel_light::droplet_extinction_per_m`, which carries the guide's visibility fit (§8, Droplet size, optics, and visibility) and the Koschmieder relation V = 3.912/β that §8 states; the coupling guide's §3.1 is the same relation." },
+    { "name": "visibility the fog load implies", "value": 895, "must": "at most 1000", "unit": "m", "note": "The fog guide defines fog as near-surface droplets that reduce horizontal visibility to less than about 1 km (§1.1, Terminology that prevents category errors; the entry for Fog). The load the shapers call a fog passes that test with 895 m — the number is the law's, not a chosen one." },
+    { "name": "the drawn ladder is one ladder", "value": 1, "of": 1, "must": "equal", "note": "`crates/voxel-client/src/cloud_cubes.rs` states `RUNGS = lod::TIERS` and `rung_cell_m(tier) = lod::cell_m(tier)`; the probe prints both ends and every rung it selects. There is no second ladder left to disagree." }
+  ],
+  "unstable": [
+    {
+      "name": "the frames a rung transition lands on",
+      "note": "The drawn rung is asked about the nearest cloudy column, so it moves when the eye does, not on a schedule: the same camera at the same tick draws the same rung, but the frame a walk changes it on depends on the walk's speed. `cloud-rung` on the console names the rung and cell each second, so a capture reports the transition rather than predicting it."
+    },
+    {
+      "name": "fps beside the cloud rectangles",
+      "note": "The 880-column transmittance grid and the cloud tree's cost move with this machine's load by 2×, so fps is a note and not a row; the counters above are camera- and tick-determined."
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the executable
+        run: cargo build --release -p shploingus
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $files = @("target/release/shploingus.exe", "README.md")
+          if (Test-Path "LICENSE") { $files += "LICENSE" }
+          Compress-Archive -Path $files -DestinationPath dist/shploingus-windows-x64.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/shploingus-windows-x64.zip
+          generate_release_notes: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shploingus-windows-x64
+          path: dist/shploingus-windows-x64.zip

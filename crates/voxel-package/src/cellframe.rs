@@ -71,7 +71,15 @@ pub const HEADER: &str = "shploingus.cellframe/1";
 pub const ACCEPTED_VERSIONS: &[&str] = &[HEADER];
 
 /// One frame's ceiling. A declaration, not a truncation: a frame larger than this is refused.
-pub const MAX_FRAME_BYTES: usize = 512 * 1024;
+///
+/// **Interim, and lifted from 512 KiB — deliberately, not silently.** The format owner's Q-4 ruling
+/// (`secure-shell-audit/cell-schema-ruling.md`) says the 512 KiB / 16 384 pair is **not** the ceiling:
+/// the surface is stateful and real-time, the addressing 64-bit, the geometry subvoxel, and the exact
+/// numbers are still owed. This admits that class (a package carrying its whole timeline measures
+/// ~741 KB) while the owner's numbers are owed. `MAX_CELLS` below is **not** moved with it: it is a
+/// declared grid ratio (`MAX_COLS * MAX_ROWS / 16`) and the ruling's cell number is part of what is
+/// owed.
+pub const MAX_FRAME_BYTES: usize = 8 * 1024 * 1024;
 /// The widest a frame may declare. `cols × rows` is also bounded, because a grid is memory the
 /// shell allocates per frame and a number nobody bounded is a bound the allocator chooses.
 pub const MAX_COLS: u32 = 512;

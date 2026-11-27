@@ -45,6 +45,7 @@
 //! | [`substrate`] | Heimsath, Dietrich, Nishiizumi & Finkel 1997 |
 //! | [`ecology`] | Holdridge 1947; Reynolds 1987 (boids); `earth_biomes_subbiomes_terrain.pdf`, `earth_biomes_subbiomes_continentalness_mountains.pdf` |
 //! | [`biome_library`] | the same two atlases, as the `display-packages/biomes` catalog: their §5 systems, §15 catalog and §15b overlays, with the envelope bands Holdridge gives |
+//! | [`worldgen`] | the same two atlases, as the `display-packages/worldgen` constants: continental §1–§3 and terrain §1, §3, §7 for the meaning of the wavelength, relief, sea line, datum, base temperature and ridge terms |
 //! | [`habitat`] | `earth_biomes_subbiomes_terrain.pdf`; `earth_biomes_subbiomes_continentalness_mountains.pdf` (§3, §15, §16) |
 //! | [`delta`] | Shields 1936; Hjulström 1935; Gilbert 1885; Slingerland & Smith 2004 |
 //! | [`transition`] | Shepard 1968 |
@@ -70,6 +71,7 @@ pub mod biome_library;
 pub mod caves;
 pub mod chunk_fields;
 pub mod climate;
+pub mod composition;
 pub mod clouds;
 pub mod corpus;
 pub mod delta;
@@ -96,6 +98,7 @@ pub mod tectonics;
 pub mod terrain;
 pub mod transition;
 pub mod voxel;
+pub mod worldgen;
 pub mod water;
 pub mod weather;
 

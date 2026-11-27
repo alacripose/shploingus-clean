@@ -22,10 +22,11 @@
 //! connect**, and it is refused. That is what makes the record an audit rather
 //! than a wish.
 use voxel_model::endian::LeBytes;
+use voxel_model::profile32;
 
 use voxel_model::conservation::{Exact, Ledger, Mass, MassPumpDeclaration, Source};
 use voxel_model::world::{ActorId, PhysicalVerb, ReservationId, TaskId};
-use voxel_model::{Digest, MaterialId, Ratio, RefusalKind, RefusalSet, Refused};
+use voxel_model::{Digest, MaterialId, Ratio, RefusalKind, RefusalSet, Refused, VoxelShape};
 
 /// One recorded change.
 ///
@@ -394,6 +395,157 @@ impl Earthworks {
     }
 }
 
+// -------------------------------------------------------------------------------------
+// The profile32 cell: the field record this shaper produces
+// -------------------------------------------------------------------------------------
+//
+// **Earthworks is a terrain shaper, and its product is a cell.** It is not a book beside
+// the world and it is not a generator of material: it answers, at a voxel, *which part of
+// that voxel the world holds* — the `profile32` cell the shader draws — and the
+// append-only record above is where the changes it makes are stated.
+//
+// The cell is **one plane per voxel, not a stored 32³ grid**, which is dual contouring's
+// own record: a cell is its cuts, and the interior is the law those cuts define. (Ju,
+// Losasso, Schaefer & Warren, *Dual contouring of Hermite data*, ACM Transactions on
+// Graphics 21(3), 2002, 339–346 — <https://doi.org/10.1145/566570.566586>.) The cut is
+// placed from the world's **own** surface law and leans by that surface's gradient, so the
+// ground is a ramp at 1/32 of a block instead of a staircase of whole ones.
+//
+// That earthworks is a *terrain-forming* process rather than decoration is the reading of
+// the artificial-ground literature: humans move more rock and soil than any other
+// geomorphic agent, and the ground they make is a mapped geological unit. (Price, Ford,
+// Cooper & Neal, *Humans as major geological and geomorphological agents in the
+// Anthropocene: the significance of artificial ground in Great Britain*, Philosophical
+// Transactions of the Royal Society A 369(1938), 2011, 1056–1084 —
+// <https://doi.org/10.1098/rsta.2010.0296>; Hooke, *On the history of humans as geomorphic
+// agents*, Geology 28(9), 2000, 843–846 —
+// <https://doi.org/10.1130/0091-7613(2000)28<843:OTHOHA>2.0.CO;2>.) Which is why the
+// stage's product is a cell record and its changes are mass-ledgered entries: the work is
+// real terrain, and the record is what makes it auditable.
+
+/// **The profile32 cell a voxel holds** — the record this shaper writes at an address.
+///
+/// The order is the world's own:
+///
+/// * a voxel the **record** names is whole if the record placed something and empty if it
+///   removed it — an earthwork is per voxel, and a placed block is not a partial one;
+/// * empty air is an empty cell;
+/// * a voxel wholly under the surface law is a whole block;
+/// * a voxel wholly above it but not empty — the sea's skin, a tree's organ, a block placed
+///   mid-air — is a whole block too, because none of them is the ground's own profile;
+/// * the voxel the surface law **cuts** is the cell: a Y cut at the surface's own height in
+///   the block, leaning by the surface's gradient, so a ramp is one plane and not 32 steps.
+///
+/// The cell is a **pure function of the world and the record**, so the fragment that draws
+/// it and the process that reports it cannot disagree.
+pub fn cell_at(
+    spec: &crate::spec::WorldSpec,
+    entries: &[Modification],
+    x: i32,
+    y: i32,
+    z: i32,
+) -> Refused<profile32::Cell> {
+    // **The record's last word at a voxel it names.** The entries are the chain in order,
+    // so the newest is the last one; a hand edit is per voxel and replaces the whole block.
+    if let Some(entry) = entries
+        .iter()
+        .rev()
+        .find(|entry| entry.x == x && entry.y == y && entry.z == z)
+    {
+        return Ok(if entry.to.is_empty() {
+            profile32::Cell::floor(0.0)
+        } else {
+            profile32::Cell::solid()
+        });
+    }
+    let material = crate::chunk_fields::material_at(spec, x, y, z)?;
+    if material.is_empty() {
+        return Ok(profile32::Cell::floor(0.0));
+    }
+    let surface = crate::terrain::elevation_m(spec, x as f64 + 0.5, z as f64 + 0.5);
+    let floor = y as f64;
+    if floor + 1.0 <= surface {
+        return Ok(profile32::Cell::solid());
+    }
+    if floor >= surface {
+        return Ok(profile32::Cell::solid());
+    }
+    let at = surface - floor;
+    let (dx, dz) = surface_gradient(spec, x, z);
+    // **Solid below the plane** (`inside = -1`), which is the ground: a floor at the
+    // surface's own height, leaning across the other two axes.
+    Ok(profile32::Cell::solid().with(
+        profile32::Axis::Y,
+        profile32::AxisCut::leaning(at, -1.0, [dx, dz]),
+    ))
+}
+
+/// **How much of the block the cell occupies**, in `[0, 1]` — the reading the process
+/// reports and the number a 1/32 fill is stated in.
+///
+/// For the single Y cut this shaper produces, the volume is the plane's own average over
+/// the block, and a leaning plane's average is its height at the centre: the fill is the
+/// cut's `at` (solid below) or `1 - at` (solid above). No 32³ walk is done here —
+/// [`profile32::Cell::volume`] is the witness for an arbitrary cell, not a frame cost.
+pub fn fill(cell: &profile32::Cell) -> f64 {
+    let (at, solid_above) = match cell.cuts[profile32::Axis::Y.index()] {
+        Some(cut) => (cut.at, cut.inside > 0.0),
+        // No Y cut: every profile cell is inside, which is a whole block.
+        None => return 1.0,
+    };
+    let value: f64 = if solid_above { 1.0 - at } else { at };
+    value.clamp(0.0, 1.0)
+}
+
+/// **The cell as a voxel shape** — the cubic world format's record of it.
+///
+/// A voxel in this world is a 4×4×4 grid of subvoxels ([`voxel_model::VoxelShape`]), and
+/// that grid is what the mesher reads and the renderer draws. So the shaper's cell does
+/// not stay a column beside the world: it **is** the surface voxel's shape, sampled at the
+/// centre of each subvoxel — `(i + 0.5) / 4` on each axis — with the block's own material
+/// on the inside of every cut and nothing outside. A subvoxel is drawn when its centre is
+/// inside the cell, the same point sample the profile grid uses at its own resolution.
+///
+/// The sampling is the format's, not a second law: [`profile32::Cell::coverage`] decides
+/// inside/outside at a point, so a shape and the cell it was made from cannot disagree.
+/// A whole block stays whole, an empty cell stays empty, and the cut block becomes the
+/// stepped top the mesher draws.
+pub fn voxel_shape(material: MaterialId, cell: &profile32::Cell) -> VoxelShape {
+    let mut shape = VoxelShape::empty();
+    if material.is_empty() {
+        return shape;
+    }
+    let side = voxel_model::SUBVOXEL_SIDE;
+    for w in 0..side {
+        for v in 0..side {
+            for u in 0..side {
+                let at = [
+                    (u as f64 + 0.5) / side as f64,
+                    (v as f64 + 0.5) / side as f64,
+                    (w as f64 + 0.5) / side as f64,
+                ];
+                if cell.coverage(at) > 0.5 {
+                    shape.set(
+                        voxel_model::SubvoxelIndex { x: u as u8, y: v as u8, z: w as u8 },
+                        material,
+                    );
+                }
+            }
+        }
+    }
+    shape
+}
+
+/// **The ground's gradient at a column**, in block units per block unit: one central
+/// difference of the same surface law the cell is cut from, so the lean and the cut cannot
+/// be two different readings of the slope.
+fn surface_gradient(spec: &crate::spec::WorldSpec, x: i32, z: i32) -> (f64, f64) {
+    let h = |dx: i32, dz: i32| {
+        crate::terrain::elevation_m(spec, (x + dx) as f64 + 0.5, (z + dz) as f64 + 0.5)
+    };
+    ((h(1, 0) - h(-1, 0)) * 0.5, (h(0, 1) - h(0, -1)) * 0.5)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -662,6 +814,140 @@ mod tests {
             .iter()
             .any(|r| r.kind() == RefusalKind::MissingStage));
         assert!(e.is_empty(), "an unidentified change is not a record");
+    }
+
+    fn world() -> crate::spec::WorldSpec {
+        crate::spec::WorldSpec::new(2468, crate::spec::Config::default())
+    }
+
+    /// The voxel the surface law cuts, and the fraction of it the law fills.
+    fn surface_voxel(spec: &crate::spec::WorldSpec, x: i32, z: i32) -> (i32, f64) {
+        let surface = crate::terrain::elevation_m(spec, x as f64 + 0.5, z as f64 + 0.5);
+        (surface.floor() as i32, surface - surface.floor())
+    }
+
+    fn record_at(x: i32, y: i32, z: i32, to: MaterialId) -> Modification {
+        let from = if to.is_empty() { SOIL } else { MaterialId::EMPTY };
+        let mut ledger = Ledger::new();
+        ledger.declare_pump(voxel_model::conservation::MassPumpDeclaration {
+            reason: "the test's own earthwork".into(),
+            source: voxel_model::conservation::Source::World,
+        });
+        ledger.deposit(
+            voxel_model::conservation::Mass::from_exact(voxel_model::conservation::Exact::new(
+                voxel_model::Ratio::from_u64(1),
+            )),
+            voxel_model::conservation::Source::World,
+            "one cubic metre",
+        );
+        Modification {
+            x,
+            y,
+            z,
+            from,
+            to,
+            reason: "the test's own earthwork".into(),
+            ledger,
+            actor: ActorId::player(),
+            task: None,
+            verb: PhysicalVerb::Place,
+            reservation: None,
+            transition: hand_change_id(x, y, z, from, to, &ActorId::player(), PhysicalVerb::Place),
+        }
+    }
+
+    #[test]
+    fn a_voxel_under_the_surface_is_a_whole_block_and_one_above_it_is_empty() {
+        let spec = world();
+        let (floor, _) = surface_voxel(&spec, 12, -7);
+        let below = cell_at(&spec, &[], 12, floor - 2, -7).expect("the shaper answers");
+        assert_eq!(fill(&below), 1.0, "a voxel under the surface is whole");
+        let above = cell_at(&spec, &[], 12, floor + 3, -7).expect("the shaper answers");
+        assert_eq!(fill(&above), 0.0, "air above the surface is an empty cell");
+    }
+
+    #[test]
+    fn the_surface_voxel_holds_the_fraction_the_law_fills_and_leans_with_the_ground() {
+        let spec = world();
+        // A column whose surface is well inside its voxel, so the cut is a real one and not
+        // a whole block or an empty one at the edges of the search.
+        let (x, z) = (0..512)
+            .map(|step| (40 + step, -95))
+            .find(|(x, z)| {
+                let (_, fraction) = surface_voxel(&spec, *x, *z);
+                (0.15..=0.85).contains(&fraction)
+            })
+            .expect("a column with a partial surface voxel");
+        let (floor, fraction) = surface_voxel(&spec, x, z);
+        let cell = cell_at(&spec, &[], x, floor, z).expect("the shaper answers");
+        assert!(
+            (fill(&cell) - fraction).abs() < 1e-9,
+            "the cell holds {} of the block, the law fills {fraction}",
+            fill(&cell)
+        );
+        let cut = cell.cuts[profile32::Axis::Y.index()].expect("the surface voxel is cut");
+        assert!(cut.inside < 0.0, "the ground is below the plane, not above it");
+        assert!((cut.at - fraction).abs() < 1e-9);
+        // The lean is the surface's own gradient: the same central difference the cell's
+        // height came from, so the plane and the cut cannot be two readings of one slope.
+        let h = |x: i32| crate::terrain::elevation_m(&spec, x as f64 + 0.5, z as f64 + 0.5);
+        assert!((cut.lean[0] - (h(x + 1) - h(x - 1)) * 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_recorded_voxel_is_whole_and_a_recorded_break_is_empty() {
+        let spec = world();
+        let (floor, _) = surface_voxel(&spec, 4, 9);
+        let placed = [record_at(4, floor + 6, 9, SOIL)];
+        let cell = cell_at(&spec, &placed, 4, floor + 6, 9).expect("the shaper answers");
+        assert_eq!(fill(&cell), 1.0, "a placed block is a whole voxel");
+        let broken = [record_at(4, floor - 1, 9, MaterialId::EMPTY)];
+        let cell = cell_at(&spec, &broken, 4, floor - 1, 9).expect("the shaper answers");
+        assert_eq!(fill(&cell), 0.0, "a recorded break is an empty cell");
+    }
+
+    #[test]
+    fn the_cell_is_the_voxel_shape_the_mesher_draws() {
+        // A 1/2 cut fills the two lower subvoxel layers and none of the upper two: the
+        // shape is sampled at the subvoxel centres, so the plane's own coverage decides
+        // every cell — there is no second rounding rule in the mesher.
+        let cell = profile32::Cell::floor(0.5);
+        let shape = voxel_shape(SOIL, &cell);
+        let mut filled = 0;
+        for z in 0..4u8 {
+            for x in 0..4u8 {
+                for y in 0..4u8 {
+                    let cell = shape.get(voxel_model::SubvoxelIndex { x, y, z });
+                    let expected = if y < 2 { SOIL } else { MaterialId::EMPTY };
+                    assert_eq!(cell, expected, "subvoxel ({x}, {y}, {z})");
+                    filled += usize::from(!cell.is_empty());
+                }
+            }
+        }
+        assert_eq!(filled, 32, "a half block is 32 of the 64 subvoxels");
+        // The whole block stays whole, and air stays empty — the shape is the cell's
+        // answer, not a rule of its own.
+        assert!(!voxel_shape(SOIL, &profile32::Cell::solid()).is_empty());
+        assert!(voxel_shape(SOIL, &profile32::Cell::floor(0.0)).is_empty());
+    }
+
+    #[test]
+    fn the_fill_is_a_profile_axis_count_and_never_leaves_the_block() {
+        let spec = world();
+        for step in 0..64 {
+            let (x, z) = (step * 3, -41);
+            let (floor, _) = surface_voxel(&spec, x, z);
+            for y in [floor - 1, floor, floor + 1] {
+                let cell = cell_at(&spec, &[], x, y, z).expect("the shaper answers");
+                let fill = fill(&cell);
+                assert!((0.0..=1.0).contains(&fill), "fill {fill} left the block");
+                let count = (fill * f64::from(profile32::PROFILE_SIDE)).round();
+                assert!(
+                    (0.0..=f64::from(profile32::PROFILE_SIDE)).contains(&count),
+                    "{count} profile cells is not a fill"
+                );
+            }
+        }
     }
 
     #[test]

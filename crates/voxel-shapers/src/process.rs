@@ -48,9 +48,12 @@
 //! (`ecology::carrying_capacity`, `ecology::species_suitability`, Lieth 1975 and
 //! Holdridge 1947). Every one of them refuses by name when handed no region.
 //!
-//! The remaining two stages have **no admitted body**, and each refuses with its own
-//! named reason ([`owed_body`]) rather than inventing one: cave occupancy is not a
-//! declared field, and earthworks is the record rather than a process. The roster is every stage from the first tick, so in a full-roster step the
+//! One stage still has **no admitted body**, and refuses with its own named reason
+//! ([`owed_body`]) rather than inventing one: cave occupancy is not a declared field.
+//! `Earthworks` is a body now — the profile32 cell shaper: it answers, at the site's
+//! voxel, how much of that voxel the world holds, composed with the record's changes,
+//! and reports it as `ProfileCell`. Its sources are in [`crate::earthworks`].
+//! The roster is every stage from the first tick, so in a full-roster step the
 //! first owed stage in dependency order reports its own debt and the stages downstream
 //! of a refusal report `DependencyUnavailable` until it clears. A body that *does*
 //! exist must emit exactly the fields its [`ProcessSpec::outputs`] declares — a reading
@@ -72,11 +75,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use voxel_model::{Identity, Refusal, RefusalKind, Refused};
 
+use voxel_model::profile32;
+
 use crate::chunk_fields::fixed_from_f64;
 use crate::field_sampler::{FieldId, FieldValue, Unit};
 use crate::spec::WorldSpec;
 use crate::stages::{Cadence, Stage, ALL as ALL_STAGES, STAGE_COUNT};
-use crate::{atmosphere, climate, delta, ecology, erosion, geology, hydrology, substrate, tectonics, terrain, transition, weather};
+use crate::earthworks::Modification;
+use crate::{
+    atmosphere, climate, delta, earthworks, ecology, erosion, geology, hydrology, substrate,
+    tectonics, terrain, transition, weather,
+};
 
 // -------------------------------------------------------------------------------------
 // The vocabulary, ported from the reference's world/process.rs
@@ -545,13 +554,15 @@ fn spec_for_stage(stage: Stage) -> Refused<ProcessSpec> {
             vec![Geology],
         ),
         Stage::Earthworks => (
+            // A voxel is a local answer, but it is read through the world's own surface
+            // law and composed with the world's record, so the scope is the global field.
             ProcessScope::GlobalField,
             SimulationClass::Work,
             vec![NoMatterCreationOrDestruction],
             ResidencyPolicy::Exact,
-            vec![],
-            vec![],
-            vec![],
+            vec![Elevation, Slope],
+            vec![ProfileCell],
+            vec![ProfileCell],
         ),
     };
     let spec = ProcessSpec {
@@ -656,21 +667,41 @@ impl UnitBox {
 }
 
 /// One field value a process produced, with its unit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// **The cell is part of the reading, not a second ask.** A field value is a number, and
+/// the earthworks shaper's number is the *fill* of a profile32 cell; the cell is the shape
+/// that fill came from. Carrying it here is what lets the caller apply exactly the cell the
+/// stage computed — the console's line and the voxel's drawn shape are the same record —
+/// rather than re-deriving the cell at a reporting site and hoping the two agree.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ProcessReading {
     pub field: FieldId,
     pub unit: Unit,
     pub value: FieldValue,
+    /// The shaper's cell, present exactly for a field that is a cell (the earthworks
+    /// stage's `ProfileCell`). `None` is a plain number.
+    pub cell: Option<profile32::Cell>,
 }
 
 impl ProcessReading {
     pub fn fixed(field: FieldId, unit: Unit, value: f64) -> Refused<Self> {
         let value = FieldValue::Fixed(fixed_from_f64(value)?);
-        Ok(ProcessReading { field, unit, value })
+        Ok(ProcessReading { field, unit, value, cell: None })
+    }
+
+    /// A reading whose value is a cell's fill and which carries the cell itself.
+    pub fn shaped(
+        field: FieldId,
+        unit: Unit,
+        value: f64,
+        cell: profile32::Cell,
+    ) -> Refused<Self> {
+        let value = FieldValue::Fixed(fixed_from_f64(value)?);
+        Ok(ProcessReading { field, unit, value, cell: Some(cell) })
     }
 
     pub fn integer(field: FieldId, unit: Unit, value: i128) -> Self {
-        ProcessReading { field, unit, value: FieldValue::Integer(value) }
+        ProcessReading { field, unit, value: FieldValue::Integer(value), cell: None }
     }
 }
 
@@ -711,6 +742,10 @@ pub struct ProcessRequest<'a> {
     /// The **unit** a structural stage reads. `None` is a site request, and a
     /// structural body handed none refuses by name rather than inventing one.
     pub unit: Option<UnitBox>,
+    /// The **earthworks record** as its shaper reads it: the changes the world did not make
+    /// itself, in chain order. An empty slice is the generated world, which is what every
+    /// stage but `Earthworks` is asked for — the record is the one input no other body reads.
+    pub entries: &'a [Modification],
 }
 
 /// The body a stage has **today**, or `None` with the debt named by [`owed_body`].
@@ -730,28 +765,24 @@ pub fn body_of(stage: Stage) -> Option<ProcessBody> {
         Stage::Erosion => Some(erosion_body),
         Stage::SoilTransport => Some(soil_transport_body),
         Stage::Ecology => Some(ecology_body),
-        Stage::Caves | Stage::Earthworks => None,
+        Stage::Caves => None,
+        Stage::Earthworks => Some(earthworks_body),
     }
 }
 
 /// Why a stage has no body yet. Named, one line per stage, so the refusal quotes the
 /// actual owed work rather than "not implemented".
 ///
-/// **Only the two stages that genuinely have none appear here.** The earlier arms for
-/// `Fields`, `Erosion`, `Delta`, `Transition`, `SoilTransport` and `Ecology` were the
-/// debts of their day; each of those stages has a body now, so the arm would be a stale
-/// claim about a stage that runs. `Earthworks` is the third and it is **by design**: it
-/// is the modification record, and running it as a generator would make the record a
-/// simulation.
+/// **Only the stage that genuinely has none appears here.** The earlier arms for
+/// `Fields`, `Erosion`, `Delta`, `Transition`, `SoilTransport`, `Ecology` and
+/// `Earthworks` were the debts of their day; each of those stages has a body now, so the
+/// arm would be a stale claim about a stage that runs. `Caves` is the one that remains:
+/// its answer (open/flooded/rock) is not one of the declared fields.
 pub fn owed_body(stage: Stage) -> &'static str {
     match stage {
         Stage::Caves => {
             "the cave answer (open/flooded/rock) is not one of the nineteen declared fields; \
              cave occupancy's field is owed by name"
-        }
-        Stage::Earthworks => {
-            "earthworks is the modification record, not a field process; it refuses because \
-             running it as one would make the record a generator"
         }
         _ => "this stage has a body; owed_body was asked about the wrong one",
     }
@@ -1074,6 +1105,29 @@ fn soil_transport_body(
     Ok(vec![ProcessReading::fixed(FieldId::Soil, Unit::Metre, after_m)?])
 }
 
+/// **Earthworks**, the profile32 cell shaper.
+///
+/// The shape is not a field the world generates from scratch: it is the world's own surface
+/// cut at the voxel, composed with the record of what the world did not make itself. The
+/// body therefore reads the two fields that place the surface (`Elevation`, `Slope`) and
+/// reports the cell's fill — the fraction of the block the ground occupies — as
+/// `ProfileCell`. The cell itself (the leaning Y cut) is `earthworks::cell_at`, the one law
+/// the fragment that draws a cuboid cell reads, so the report and the picture cannot
+/// disagree.
+fn earthworks_body(
+    world: &WorldSpec,
+    request: &ProcessRequest<'_>,
+) -> Refused<Vec<ProcessReading>> {
+    let site = request.site;
+    let cell = earthworks::cell_at(world, request.entries, site.x, site.y, site.z)?;
+    Ok(vec![ProcessReading::shaped(
+        FieldId::ProfileCell,
+        Unit::Ratio,
+        earthworks::fill(&cell),
+        cell,
+    )?])
+}
+
 /// **Ecology**, the two capacities the roster declares.
 ///
 /// The biome is a *class* and was already a field law; the two fields that had **no law**
@@ -1183,6 +1237,7 @@ pub fn field_at(world: &WorldSpec, field: FieldId, site: Site, tick: u64) -> Ref
         hydro_radius: FIELD_PLANE_HYDRO_RADIUS,
         region: &[],
         unit: Some(unit_at(site)),
+        entries: &[],
     };
     let readings = execute_body(&spec, world, &request)?;
     readings
@@ -1587,6 +1642,23 @@ fn output_identity(readings: &[ProcessReading]) -> Identity {
         field_str(&mut payload, reading.field.as_str());
         field_str(&mut payload, reading.unit.as_str());
         append_value(&mut payload, reading.value);
+        // **The shape is part of what the process produced.** Two runs that fill a block
+        // the same but cut it on a different axis are different outputs, and a replay
+        // identity that could not tell them apart would not be an identity.
+        match reading.cell {
+            None => field_u8(&mut payload, 0),
+            Some(cell) => {
+                field_u8(&mut payload, 1);
+                for (axis, cut) in cell.cuts.iter().enumerate() {
+                    let Some(cut) = cut else { continue };
+                    field_u8(&mut payload, axis as u8);
+                    payload.extend_from_slice(&cut.at.to_bits().to_le_bytes());
+                    payload.extend_from_slice(&cut.inside.to_bits().to_le_bytes());
+                    payload.extend_from_slice(&cut.lean[0].to_bits().to_le_bytes());
+                    payload.extend_from_slice(&cut.lean[1].to_bits().to_le_bytes());
+                }
+            }
+        }
     }
     Identity::of_fields("voxel-shapers/process-output/v1", &[&payload])
 }
@@ -1718,7 +1790,14 @@ mod tests {
     }
 
     fn request(tick: u64) -> ProcessRequest<'static> {
-        ProcessRequest { site: Site::new(12, 24, -7), tick, hydro_radius: 4, region: &[], unit: None }
+        ProcessRequest {
+            site: Site::new(12, 24, -7),
+            tick,
+            hydro_radius: 4,
+            region: &[],
+            unit: None,
+            entries: &[],
+        }
     }
 
     fn region_request(tick: u64) -> ProcessRequest<'static> {
@@ -1728,6 +1807,7 @@ mod tests {
             hydro_radius: 4,
             region: &[],
             unit: Some(UnitBox::new([0, 0, 0], [16, 16, 16], 4)),
+            entries: &[],
         }
     }
 
@@ -1992,8 +2072,14 @@ mod tests {
         let mine = Site::new(12, 24, -7);
         let neighbour = Site::new(20, 24, -7);
         let region = [RegionSample { site: neighbour, distance_m: 1.0 }];
-        let req =
-            ProcessRequest { site: mine, tick: 0, hydro_radius: 4, region: &region, unit: None };
+        let req = ProcessRequest {
+            site: mine,
+            tick: 0,
+            hydro_radius: 4,
+            region: &region,
+            unit: None,
+            entries: &[],
+        };
         let expected = chunk_fields::lithology_code(lithology_at(&world, neighbour));
         let readings = body_readings(Stage::Transition, &world, &req);
         let got = match readings
@@ -2095,7 +2181,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{stage:?} was not in the evidence"))
         };
         let ran = evidence.iter().filter(|e| e.ran()).count();
-        assert_eq!(ran, 12, "a unit request ran {ran} stages, not twelve");
+        assert_eq!(ran, 13, "a unit request ran {ran} stages, not thirteen");
         assert!(find(Stage::Fields).ran(), "fields refused a unit request");
         assert!(find(Stage::Erosion).ran(), "erosion refused a unit request");
         assert!(find(Stage::Ecology).ran(), "ecology refused: {:?}", find(Stage::Ecology).detail);
@@ -2108,13 +2194,13 @@ mod tests {
             );
             assert!(find(stage).detail.as_deref().unwrap_or("").contains("region"));
         }
-        for stage in [Stage::Caves, Stage::Earthworks] {
-            assert_eq!(
-                find(stage).refusal,
-                Some(RefusalCondition::UnadmittedProductionContract),
-                "{stage:?} reads a ran dependency and should quote its own debt"
-            );
-        }
+        assert_eq!(
+            find(Stage::Caves).refusal,
+            Some(RefusalCondition::UnadmittedProductionContract),
+            "caves reads a ran dependency and should quote its own debt"
+        );
+        // Earthworks is a body now: with its dependencies run, it answers its own cell.
+        assert!(find(Stage::Earthworks).ran(), "earthworks refused: {:?}", find(Stage::Earthworks).detail);
     }
 
     #[test]
@@ -2161,8 +2247,14 @@ mod tests {
             RegionSample { site: Site::new(13, 24, -7), distance_m: 1_000.0 },
             RegionSample { site: Site::new(11, 24, -6), distance_m: 1_000.0 },
         ];
-        let req =
-            ProcessRequest { site, tick: 0, hydro_radius: 4, region: &region, unit: None };
+        let req = ProcessRequest {
+            site,
+            tick: 0,
+            hydro_radius: 4,
+            region: &region,
+            unit: None,
+            entries: &[],
+        };
 
         let surface = terrain::elevation_m(&world, site.fx(), site.fz());
         let slope = terrain::sample(&world, site.fx(), site.fz()).slope;
@@ -2228,6 +2320,7 @@ mod tests {
             (Stage::Climate, FieldId::Moisture),
             (Stage::Substrate, FieldId::Soil),
             (Stage::Geology, FieldId::Geology),
+            (Stage::Earthworks, FieldId::ProfileCell),
         ];
         let mut compared_count = 0;
         for (stage, field) in compared {
@@ -2249,7 +2342,37 @@ mod tests {
             }
             compared_count += 1;
         }
-        assert_eq!(compared_count, 5);
+        assert_eq!(compared_count, 6);
+    }
+
+    #[test]
+    fn earthworks_answers_a_whole_block_and_an_empty_one() {
+        // The cell's two ordinary answers, straight through the body the scheduler drives:
+        // a voxel under the surface is held whole, and air above it holds nothing. The
+        // surface voxel itself is the shaper's own unit test, where the fraction is
+        // checked against the law that cut it.
+        let world = world();
+        let spec = spec_for_stage(Stage::Earthworks).expect("the spec builds");
+        let site = request(0).site;
+        let floor = terrain::elevation_m(&world, site.fx(), site.fz()).floor() as i32;
+        let below = ProcessRequest {
+            site: Site::new(site.x, floor - 2, site.z),
+            ..request(0)
+        };
+        assert_eq!(
+            kind_of(&execute_body(&spec, &world, &below).expect("the body runs"), FieldId::ProfileCell),
+            1.0,
+            "a voxel under the surface is held whole"
+        );
+        let above = ProcessRequest {
+            site: Site::new(site.x, floor + 4, site.z),
+            ..request(0)
+        };
+        assert_eq!(
+            kind_of(&execute_body(&spec, &world, &above).expect("the body runs"), FieldId::ProfileCell),
+            0.0,
+            "air above the surface holds nothing"
+        );
     }
 
     #[test]
@@ -2261,7 +2384,7 @@ mod tests {
         let world = world();
         // `Fields` and `Erosion` now have **region** bodies: a site request (no unit)
         // refuses them by name rather than admitting a law about an area at a point.
-        let owed = [Stage::Caves, Stage::Earthworks];
+        let owed = [Stage::Caves];
         let mut scheduler = ProcessScheduler::world_defaults().expect("the roster builds");
         let evidence = scheduler.step(&world, &request(0)).expect("the first step");
         assert_eq!(evidence.len(), STAGE_COUNT, "a stage was silently skipped");

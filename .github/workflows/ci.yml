@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # The headless crates are the ones a runner can measure: no window, no GPU adapter.
+      # `shploingus` and `voxel-client` need a surface and an adapter, so their tests run on
+      # the machine that has one; the release build below still proves they compile.
+      - name: Headless tests
+        run: cargo test --release --workspace --exclude shploingus --exclude voxel-client
+
+      - name: Release binary builds
+        run: cargo build --release -p shploingus

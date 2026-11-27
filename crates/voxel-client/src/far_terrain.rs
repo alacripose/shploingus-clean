@@ -53,6 +53,20 @@
 //! vertically that the mesh never draws — before any is meshed, so a neighbour's boundary is known
 //! when a face asks for it.
 //!
+//! # The flat band at the horizon is the sea, and it is not a stand-in
+//!
+//! A 60 m frame over the shipped world shows a **flat, uniform band** between the near ground and
+//! the horizon. It is water: at the eye's own column the ground reads **13.78 m** against a sea
+//! level of **16.00 m** (`terrain::elevation_m`, seed 2468, `Config::default()`), and the same
+//! band fills the lower frame when the eye stands over the ocean at z = −1 000 m, 60 m up. Water
+//! is level by law, so its merged faces are flat wherever they are drawn — near or far, at any
+//! rung — and no plane carrier exists in this module, in [`crate::surface`] or in the renderer to
+//! retire. What draws past the window is these tiers and `surface`'s rungs; a frame that shows
+//! terrain missing would show **sky**, not a plane (the outer edge draws no wall, by the rule
+//! above). The elevations are the evidence, and a caller can reproduce them with
+//! `terrain::elevation_m(&WorldSpec::new(2468, Config::default()), 0.5, z)` at z = −100.5 and
+//! −1 000.5.
+//!
 //! **This is a slice, and its edges are named.** The stack is bounded at one chunk each side of the
 //! eye because the world's surface spans about −22 … +54 m; a relief more than a chunk past the
 //! eye, or a cave deeper than the stack's floor, is not drawn. **One far ring is drawn, at tier 5**

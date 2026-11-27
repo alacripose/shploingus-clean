@@ -100,7 +100,8 @@ impl Axis {
         }
     }
 
-    const fn index(self) -> usize {
+    /// This axis's index in a [`Cell`]'s `cuts`, which are declared in `[X, Y, Z]` order.
+    pub const fn index(self) -> usize {
         match self {
             Axis::X => 0,
             Axis::Y => 1,

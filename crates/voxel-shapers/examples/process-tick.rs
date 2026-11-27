@@ -47,6 +47,7 @@ fn main() {
             hydro_radius: 4,
             region: &region,
             unit: Some(unit),
+            entries: &[],
         };
         let evidence = scheduler.step(&world, &request).expect("the tick advances");
         report(tick, &evidence);

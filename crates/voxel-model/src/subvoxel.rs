@@ -17,6 +17,8 @@
 //! the subvoxel count, 64×. The corrected arithmetic and the test that pins it are
 //! in `voxel-appearance::detail`; `LEDGER.md` C-28 records the correction.)
 
+use std::collections::BTreeMap;
+
 use crate::coord::{DETAIL_SIDE, SUBVOXEL_COUNT, SUBVOXEL_SIDE};
 use crate::material::MaterialId;
 use crate::refusal::{Refusal, RefusalKind, Refused};
@@ -181,6 +183,46 @@ impl VoxelShape {
     /// True when no cell holds matter.
     pub fn is_empty(&self) -> bool {
         self.cells.iter().all(|m| m.is_empty())
+    }
+
+    /// **The shape with its highest occupied layer taken off**, and what was taken.
+    ///
+    /// A break is a *step down the cell*, not the deletion of the block: the topmost
+    /// 4×4 layer is removed and the rest of the shape stays, so a solid block becomes
+    /// three quarters, then two, then one, and the fifth break finds nothing. A cell the
+    /// surface law already cut has its top layer empty or partial, so a break on one
+    /// removes only the subvoxels that are actually there — the inventory is credited
+    /// for what left, not for a nominal layer.
+    ///
+    /// The removed subvoxels are counted **by material**, because a cell may hold more
+    /// than one and an inventory that credited the block's first material for all of
+    /// them would be inventing the rest. The order is material-id order, so two runs
+    /// credit the same books in the same order.
+    pub fn break_top_layer(&self) -> (VoxelShape, Vec<(MaterialId, u32)>) {
+        let side = SUBVOXEL_SIDE as u8;
+        let mut next = *self;
+        let top = (0..side).rev().find(|y| {
+            (0..side).any(|x| {
+                (0..side).any(|z| {
+                    !self.get(SubvoxelIndex { x, y: *y, z }).is_empty()
+                })
+            })
+        });
+        let Some(y) = top else {
+            return (next, Vec::new());
+        };
+        let mut removed: BTreeMap<MaterialId, u32> = BTreeMap::new();
+        for x in 0..side {
+            for z in 0..side {
+                let at = SubvoxelIndex { x, y, z };
+                let material = next.get(at);
+                if !material.is_empty() {
+                    next.set(at, MaterialId::EMPTY);
+                    *removed.entry(material).or_insert(0) += 1;
+                }
+            }
+        }
+        (next, removed.into_iter().collect())
     }
 
     /// The subvoxels on `face`, in a stable order. A face is a 4×4 grid, so this
@@ -513,6 +555,36 @@ mod tests {
         // The message names the side, so a change of base cannot leave a refusal
         // naming the old one.
         assert!(e.detail().contains("0..16"), "{}", e.detail());
+    }
+
+    #[test]
+    fn a_break_takes_the_top_layer_and_the_fifth_finds_nothing() {
+        let material = MaterialId(4);
+        let mut shape = VoxelShape::solid(material);
+        for step in 1..=4u8 {
+            let (next, removed) = shape.break_top_layer();
+            assert_eq!(removed, vec![(material, 16)], "step {step} did not take one layer");
+            assert!(
+                next.get(SubvoxelIndex { x: 0, y: 4 - step, z: 0 }).is_empty(),
+                "step {step} did not clear its own top layer"
+            );
+            shape = next;
+        }
+        assert!(shape.is_empty(), "four breaks did not empty a whole block");
+        let (_, removed) = shape.break_top_layer();
+        assert!(removed.is_empty(), "a fifth break took matter that is not there");
+    }
+
+    #[test]
+    fn a_break_on_a_cut_cell_takes_only_the_subvoxels_that_are_there() {
+        // The top layer is empty and the one below holds a single subvoxel: a break must
+        // remove that one and credit one, not a nominal 16.
+        let material = MaterialId(3);
+        let mut shape = VoxelShape::empty();
+        shape.set(SubvoxelIndex { x: 1, y: 2, z: 3 }, material);
+        let (next, removed) = shape.break_top_layer();
+        assert_eq!(removed, vec![(material, 1)]);
+        assert!(next.is_empty());
     }
 
     #[test]

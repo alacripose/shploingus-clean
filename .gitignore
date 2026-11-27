@@ -2,3 +2,10 @@
 **/*.rs.bk
 Cargo.lock.orig
 *.pdb
+
+# Build scratch and packaged output: a log of a build is not the source of one.
+/.scratch/
+/dist/
+
+# The coding tool's own project marker and ledgers; project-id is machine-local.
+/.freebuff/

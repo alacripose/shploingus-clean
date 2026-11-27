@@ -87,33 +87,37 @@ use crate::cloud_field::{
 };
 use crate::quad::{basis_for, QuadRecord};
 
-/// **The drawn floor**: one pixel of a block at 32 per side, in metres. It is the user's own
-/// number (C-164: *"we do not go further than 32 pixels per side of block"*) and the finest rung
-/// the ladder has, so no cell is ever drawn finer than it.
-pub const MIN_CELL_M: f64 = 31.25 / 1000.0;
+/// **The ladder's floor**, metres: the surface ladder's own first rung ([`crate::lod::cell_m`]`(0)`,
+/// a subvoxel, 0.25 m). It is coarser than the old 31.25 mm drawn floor, so the user's own bound
+/// (C-164: *"we do not go further than 32 pixels per side of block"*) still holds — the cloud is
+/// never cut finer than a pixel of a block.
+pub const MIN_CELL_M: f64 = crate::lod::cell_m(0);
 
-/// The ladder's top for a cloud, metres. The plan's own cap: above it the n-gon merge is
-/// affordable but the cell stops being a cell.
-pub const MAX_CELL_M: f64 = 32.0;
+/// **The ladder's top**, metres: the surface ladder's own last rung. There is no second cap: the
+/// cloud's own tree bounds the drawn cell against [`CLOUD_DOMAIN_M`], which is a property of the
+/// sky box rather than a ladder of its own.
+pub const MAX_CELL_M: f64 = crate::lod::cell_m(crate::lod::TIERS - 1);
 
-/// How many rungs the cloud's ladder has: `MIN_CELL_M · 2^octave`, so octave 10 is
-/// [`MAX_CELL_M`] exactly — 31.25 mm × 1024 = 32 m.
-pub const RUNGS: u32 = 10;
+/// How many rungs the cloud's ladder has: **the surface's own 32** ([`crate::lod::TIERS`]).
+///
+/// The cloud used to climb a ladder of its own — ten octaves from 31.25 mm to 32 m — and the two
+/// ladders met only at the values that happened to coincide. A rung is an index into the world's
+/// one ladder now, and [`rung_cell_m`] is [`crate::lod::cell_m`], so the sky and the ground are
+/// measured in the same cells at the same index by construction.
+pub const RUNGS: u32 = crate::lod::TIERS;
 
-/// The cell size of one rung, metres — the geometric ladder [`rung_for`] climbs.
-pub fn rung_cell_m(octave: u32) -> f64 {
-    let octave = octave.min(RUNGS);
-    MIN_CELL_M * (1u64 << octave) as f64
+/// The cell size of one rung, metres — **the surface ladder's own cell**, not a second scale.
+pub fn rung_cell_m(tier: u32) -> f64 {
+    crate::lod::cell_m(tier.min(RUNGS - 1))
 }
 
 /// **The rung drawn at an eye distance**: the finest rung whose cell is more than four times the
 /// pixel's own footprint — the ladder's silence rule (`pattern::octave_weight`), inverted.
 ///
 /// The rule is the model's and not a taste: a rung is drawn while the pixel is under a quarter of
-/// its cell, so a cell never shows a detail the screen cannot resolve. The floor and the cap are
-/// [`MIN_CELL_M`] and [`MAX_CELL_M`], which is why the answer is clamped rather than extrapolated
-/// — a cloud at 8 km would otherwise ask for a 150 m cell, and one inside the player's eye for a
-/// cell below the drawn floor.
+/// its cell, so a cell never shows a detail the screen cannot resolve. The answer is a **rung of
+/// the surface's 32**, so a cloud at 8 km asks for the 128 m rung and one inside the player's eye
+/// for the floor — the ladder's own ends, not a cap of the cloud's.
 pub fn rung_for(pixel_angle_rad: f64, distance_m: f64) -> u32 {
     // **An unmeasurable input must not buy the fine end.** This function is a *bound on cost*, so
     // a NaN angle, a NaN or infinite distance, or a non-positive angle is answered with the
@@ -126,7 +130,7 @@ pub fn rung_for(pixel_angle_rad: f64, distance_m: f64) -> u32 {
         || pixel_angle_rad <= 0.0
         || distance_m < 0.0
     {
-        return RUNGS;
+        return RUNGS - 1;
     }
     let footprint_m = pixel_angle_rad * distance_m.max(0.0);
     let wanted = 4.0 * footprint_m;
@@ -137,7 +141,7 @@ pub fn rung_for(pixel_angle_rad: f64, distance_m: f64) -> u32 {
     if octave <= 0.0 {
         0
     } else {
-        (octave as u32).min(RUNGS)
+        (octave as u32).min(RUNGS - 1)
     }
 }
 
@@ -162,13 +166,14 @@ pub const CLOUD_DOMAIN_M: f64 = 16_384.0;
 /// **How many levels the cloud's tree has** — the domain at `2^11` cells, so its finest cell is
 /// [`CLOUD_FINEST_CELL_M`]. The world's tree has 5 ([`voxel_mesh::OCTREE_LEVELS`]); the same type
 /// serves both because the span is the tree's own field.
-pub const CLOUD_LEVELS: u32 = 11;
+pub const CLOUD_LEVELS: u32 = 16;
 
 /// **The finest cell the cloud's tree can draw**, metres: the domain at [`CLOUD_LEVELS`] levels.
 ///
-/// 8 m is where the ladder meets the tree: the rung at 1 km with the game's own pixel angle
-/// (1.70 mrad) is 8 m, it is a whole number of subvoxels at the record's own quantum (32), and it
-/// keeps every coordinate the record format can hold, which the tests hold rather than assume.
+/// It is the ladder's own floor — rung 0, a subvoxel — so no rung the surface draws is below what
+/// the cloud can cut. The tree reaches it only where the ladder asks for it (an eye inside a
+/// cloud); an empty box costs one node, and the shell is bounded by [`MAX_ROWS_PER_COLUMN`] the
+/// same at every rung.
 pub const CLOUD_FINEST_CELL_M: f64 = CLOUD_DOMAIN_M / (1u64 << CLOUD_LEVELS) as f64;
 
 /// **The tree's own material for a cloud cell.** The octree stores materials, and a cloud cell has
@@ -288,6 +293,9 @@ pub struct CloudCubes {
     pub domain_corner_m: [f64; 3],
     /// The drawn lattice's finest cell, metres.
     pub cell_m: f64,
+    /// **The rung of the surface's 32 the eye drew**, so a capture can name the transition rather
+    /// than assert one.
+    pub rung: u32,
     /// How many levels the tree used: the domain at `2^levels` cells a side.
     pub subdivisions: usize,
     /// How many cloud cells (leaves) the tree holds.
@@ -319,7 +327,11 @@ impl CloudCubes {
         // to the cap.
         let distance = nearest_cloudy_column_m(field, eye_m).unwrap_or(f64::INFINITY);
         let rung = rung_for(pixel_angle_rad, distance);
-        let cell_m = rung_cell_m(rung).clamp(CLOUD_FINEST_CELL_M, MAX_CELL_M);
+        // **The rung is the cell; the sky box is the only bound.** The tree cannot cut finer than
+        // its own finest cell ([`CLOUD_FINEST_CELL_M`]) and a cell larger than the domain would be
+        // the whole sky in one box, so those two are the geometry's, and the ladder's own ends are
+        // [`MIN_CELL_M`] and [`MAX_CELL_M`].
+        let cell_m = rung_cell_m(rung).clamp(CLOUD_FINEST_CELL_M, CLOUD_DOMAIN_M);
         // The domain is fixed by the atmosphere and the *levels* are what the rung changes, so
         // `domain / 2^levels == cell` is exact for every rung of the ladder (a power of two).
         let levels = (CLOUD_DOMAIN_M / cell_m)
@@ -349,6 +361,7 @@ impl CloudCubes {
             origins: drawn.origins,
             domain_corner_m: corner,
             cell_m,
+            rung,
             subdivisions: levels as usize,
             cells: drawn.cells,
             rows_max: drawn.deepest,
@@ -414,7 +427,7 @@ impl Ladder {
     /// own finest cell.
     fn floor_m(&self, distance_m: f64, cell_m: f64) -> f64 {
         let rung = rung_cell_m(rung_for(self.pixel_angle_rad, distance_m));
-        rung.clamp(cell_m, MAX_CELL_M)
+        rung.clamp(cell_m, CLOUD_DOMAIN_M)
     }
 
     /// How far the eye is from a box, metres — zero when it is inside it.
@@ -1211,8 +1224,10 @@ mod tests {
         assert_eq!(rung_cell_m(rung_for(angle, 4_000.0)), 32.0);
         // The floor: an eye inside a cloud resolves nothing finer than the drawn floor.
         assert_eq!(rung_cell_m(rung_for(angle, 0.0)), MIN_CELL_M);
-        // The cap: a cloud at 40 km would ask for 256 m, and the ladder stops at 32.
-        assert_eq!(rung_cell_m(rung_for(angle, 40_000.0)), MAX_CELL_M);
+        // The answer is the surface's rung at that distance: 40 km asks for 272 m, so the rung
+        // is 512 m — a ladder cell, not a cap of the cloud's own.
+        assert_eq!(rung_cell_m(rung_for(angle, 40_000.0)), 512.0);
+        assert_eq!(rung_for(angle, 40_000.0), crate::lod::tier_of(512.0).expect("a rung"));
         // Monotone: moving away never draws a finer cell.
         let mut previous = 0.0;
         for step in 1..200 {
@@ -1223,6 +1238,138 @@ mod tests {
             );
             previous = cell;
         }
+    }
+
+    #[test]
+    fn every_cloud_rung_is_the_surface_ladders_rung() {
+        // The ladder is the surface's own: the same 32 rungs, the same cells, at every index.
+        assert_eq!(RUNGS, crate::lod::TIERS);
+        for tier in 0..RUNGS {
+            assert_eq!(
+                rung_cell_m(tier),
+                crate::lod::cell_m(tier),
+                "rung {tier} is not the surface's cell"
+            );
+            assert_eq!(
+                crate::lod::tier_of(rung_cell_m(tier)),
+                Some(tier),
+                "rung {tier}'s cell does not name it on the surface ladder"
+            );
+        }
+        assert_eq!(MIN_CELL_M, crate::lod::cell_m(0));
+        assert_eq!(MAX_CELL_M, crate::lod::cell_m(crate::lod::TIERS - 1));
+        // An unmeasurable eye lands on a rung that exists, never one past the top.
+        assert_eq!(rung_for(f64::NAN, 10.0), RUNGS - 1);
+        assert_eq!(rung_for(1.7e-3, f64::INFINITY), RUNGS - 1);
+    }
+
+    #[test]
+    fn the_atmosphere_baseline_is_this_ladder() {
+        // **The record is a binding, not a copy** (`docs/baselines/atmosphere.json`): every row
+        // it states is read here and held to the law the probe printed it from. A rung that moves,
+        // an extinction that thickens or a fog load that stops being a fog has to change the file
+        // in its own change, with the reason beside it.
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/baselines/atmosphere.json"
+        );
+        let record = std::fs::read_to_string(path).expect("docs/baselines/atmosphere.json");
+        let mut rows: Vec<(String, f64)> = Vec::new();
+        for line in record.lines() {
+            let Some(start) = line.find("\"name\": \"") else {
+                continue;
+            };
+            let rest = &line[start + 9..];
+            let Some(end) = rest.find('"') else { continue };
+            let Some(at) = line.find("\"value\": ") else {
+                continue;
+            };
+            let tail = &line[at + 9..];
+            let number: String = tail
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+                .collect();
+            let Ok(value) = number.parse::<f64>() else {
+                continue;
+            };
+            rows.push((rest[..end].to_string(), value));
+        }
+        let value = |name: &str| -> f64 {
+            rows.iter()
+                .find(|(row, _)| row == name)
+                .map(|(_, value)| *value)
+                .unwrap_or_else(|| panic!("the record has no numeric row {name:?}"))
+        };
+
+        assert_eq!(value("rungs in the cloud ladder") as u32, RUNGS);
+        assert_eq!(value("cloud rung 0 cell"), rung_cell_m(0));
+        assert_eq!(value("cloud rung 9 cell"), rung_cell_m(9));
+        let angle = f64::from(crate::pixel_angle_rad(70.0f64.to_radians(), 720));
+        for (distance, name) in [
+            (500.0, "rung drawn at 500 m"),
+            (1_000.0, "rung drawn at 1 000 m"),
+            (2_000.0, "rung drawn at 2 000 m"),
+            (4_000.0, "rung drawn at 4 000 m"),
+        ] {
+            assert_eq!(
+                value(name),
+                rung_cell_m(rung_for(angle, distance)),
+                "{name} is not the rung the eye resolves"
+            );
+        }
+        assert_eq!(value("cloud tree's finest cell"), CLOUD_FINEST_CELL_M);
+        // The rate is `f32` on both sides, so the record's three decimals are compared as the
+        // number they stand for rather than as a bit pattern.
+        assert!(
+            (value("clouds' extinction") - f64::from(crate::cloud_field::CLOUD_EXTINCTION_PER_M)).abs()
+                < 1.0e-6
+        );
+        assert!(
+            (value("clouds' extinction") - voxel_light::CLOUD_EXTINCTION_PER_M).abs() < 1.0e-6
+        );
+
+        // The veil rows are the shipped model's own columns, read on the probe's grid.
+        let spec = voxel_shapers::WorldSpec::new(2468, voxel_shapers::Config::default());
+        let tick = voxel_shapers::climate::TICKS_PER_DAY / 2;
+        let mut dimmed: Vec<f64> = Vec::new();
+        for x in (-1_024..1_024).step_by(61) {
+            for z in (-1_024..1_024).step_by(67) {
+                let path = voxel_shapers::clouds::column_water_path_m(&spec, x as f64, z as f64, tick);
+                if path > 0.0 {
+                    dimmed.push(crate::cloud_field::cloud_transmittance(path));
+                }
+            }
+        }
+        dimmed.sort_by(f64::total_cmp);
+        let median = dimmed[dimmed.len() / 2];
+        assert!(
+            (value("median cloud transmittance, 752 cloudy columns") - median).abs() < 1.0e-3,
+            "the recorded median {:.3} is not the model's {median:.3}",
+            value("median cloud transmittance, 752 cloudy columns")
+        );
+        assert!(
+            (value("deepest cloud transmittance, 752 cloudy columns") - dimmed[0]).abs()
+                < 1.0e-3,
+            "the recorded deepest {:.3} is not the model's {:.3}",
+            value("deepest cloud transmittance, 752 cloudy columns"),
+            dimmed[0]
+        );
+
+        // The fog rows are the guide's droplet load through the solver's own visibility fit.
+        let extinction = voxel_light::droplet_extinction_per_m(voxel_shapers::fog::FOG_LWC_G_M3);
+        assert!(
+            (value("fog extinction at the guide's droplet load") - extinction).abs() < 1.0e-5,
+            "the recorded fog extinction is not the solver's"
+        );
+        let visibility = 3.912 / (extinction * 1_000.0);
+        assert!(
+            (value("visibility the fog load implies") - visibility * 1_000.0).abs() < 1.0,
+            "the recorded visibility is not Koschmieder's"
+        );
+        assert!(
+            visibility <= 1.0,
+            "the guide's fog load implies {visibility:.2} km, which is not fog"
+        );
     }
 
     #[test]

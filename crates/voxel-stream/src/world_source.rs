@@ -120,6 +120,13 @@ pub struct WorldSource {
     /// shrinking it shrinks the watershed rather than approximating the same
     /// one — the shaper's own words, and a reason not to hide it in a default.
     hydro_radius: usize,
+    /// **The Earthworks stage's recorded cells**, as the cubic world format's voxel
+    /// shapes: the newest shape at a voxel wins. This is the surface record the
+    /// mesher reads and the renderer draws — the cell does not stay a column beside
+    /// the world. It is not the modification chain because a cell changes no
+    /// material, and the chain's `from`/`to` law refuses a change that replaces a
+    /// material with itself.
+    profile: BTreeMap<[i32; 3], VoxelShape>,
 }
 
 impl WorldSource {
@@ -128,6 +135,7 @@ impl WorldSource {
             spec,
             earthworks: Earthworks::new(),
             hydro_radius: DEFAULT_HYDRO_RADIUS,
+            profile: BTreeMap::new(),
         }
     }
 
@@ -166,13 +174,59 @@ impl WorldSource {
     /// foundation the chunks did not use.
     pub fn material_at(&self, x: i32, y: i32, z: i32) -> Refused<MaterialId> {
         let generated = chunk_fields::material_at(&self.spec, x, y, z)?;
-        Ok(self.earthworks.material_at(x, y, z, generated))
+        let composed = self.earthworks.material_at(x, y, z, generated);
+        if composed.is_empty() {
+            return Ok(composed);
+        }
+        // **A cell broken down to nothing is air.** A player's break records the cell's
+        // shape one layer at a time and, on the last layer, writes an empty shape; the
+        // generator still says there is a block there. So the cell record is the last word
+        // on whether the voxel holds matter — unless a material change named this voxel, in
+        // which case the chain has already answered above (a placed block is whole).
+        if !self.earthworks.is_recorded(x, y, z)
+            && self.profile.get(&[x, y, z]).is_some_and(VoxelShape::is_empty)
+        {
+            return Ok(MaterialId::EMPTY);
+        }
+        Ok(composed)
     }
 
     /// The voxel shape at a world coordinate: solid material, or nothing.
     pub fn shape_at(&self, x: i32, y: i32, z: i32) -> Refused<VoxelShape> {
         let m = self.material_at(x, y, z)?;
-        Ok(if m.is_empty() { VoxelShape::empty() } else { VoxelShape::solid(m) })
+        if m.is_empty() {
+            return Ok(VoxelShape::empty());
+        }
+        // **The modification chain's last word, then the shaper's cell.** A material
+        // change at this voxel replaces the whole block, so it outranks a cell recorded
+        // before it; where the chain is silent the recorded cell is the shape.
+        if self.earthworks.is_recorded(x, y, z) {
+            return Ok(VoxelShape::solid(m));
+        }
+        Ok(self
+            .profile
+            .get(&[x, y, z])
+            .copied()
+            .unwrap_or(VoxelShape::solid(m)))
+    }
+
+    /// **Record the Earthworks stage's cell at a voxel**, as the shape the surface draws.
+    ///
+    /// The cell is the process roster's output; this is the world's record of it. It
+    /// changes no material and mints nothing, so the ledger's `from`/`to` would refuse it
+    /// as a change that records nothing — the shape is kept here, keyed by the voxel it
+    /// shapes, and [`Self::shape_at`] and the chunk build answer from it before the
+    /// generator's whole block.
+    ///
+    /// `true` says the record moved; `false` says this voxel already held exactly this
+    /// shape, so a caller does not move the generation for a change that is none.
+    pub fn record_profile(&mut self, x: i32, y: i32, z: i32, shape: VoxelShape) -> bool {
+        let key = [x, y, z];
+        if self.profile.get(&key) == Some(&shape) {
+            return false;
+        }
+        self.profile.insert(key, shape);
+        true
     }
 
     /// A world coordinate from a chunk-relative one. `local` **may be outside
@@ -193,7 +247,9 @@ impl WorldSource {
     /// There is deliberately no column walk here. A per-column shape would make
     /// the chunk a stack of columns rather than a volume, and the field plane is
     /// what lets the octree, the material slots and the greedy remesher see the
-    /// chunk as the cubic thing they were built around.
+    /// chunk as the cubic thing they were built around. A shaper's cell is applied
+    /// where it is recorded ([`Self::record_profile`]) as the voxel's own 4×4×4
+    /// shape — the same cubic format every other voxel uses.
     ///
     /// **What changed, and what did not.** The volume loop is the same one it was;
     /// the field reads go through [`ColumnMemo`], a per-build cache of the three
@@ -226,9 +282,16 @@ impl WorldSource {
                     if m.is_empty() {
                         continue;
                     }
+                    // A material change is the whole block; otherwise the shaper's
+                    // recorded cell is this voxel's shape, in the same 4×4×4 format.
+                    let shape = if self.earthworks.is_recorded(x, y, z) {
+                        VoxelShape::solid(m)
+                    } else {
+                        self.profile.get(&[x, y, z]).copied().unwrap_or(VoxelShape::solid(m))
+                    };
                     tree.set_voxel(
                         LocalPos { x: lx as u32, y: ly as u32, z: lz as u32 },
-                        VoxelShape::solid(m),
+                        shape,
                     );
                 }
             }
@@ -367,6 +430,75 @@ mod tests {
     // is pinned below by `the_memoized_chunk_is_the_same_world_as_the_unmemoized_one` and
     // `the_world_is_continuous_across_a_chunk_boundary` — which compare real chunks
     // against each other rather than against a second implementation of the world.
+
+    #[test]
+    fn a_recorded_cell_is_the_shape_the_single_voxel_read_and_the_chunk_answer() {
+        // The cell the Earthworks stage records is the voxel's own cubic 4×4×4 shape — not
+        // a column beside the world. The single-voxel read and the chunk build must answer
+        // the same shape, or the mesher and the pick would be two different worlds.
+        let mut s = source();
+        let (x, z) = (0..512)
+            .map(|step| (16 + step, 16))
+            .find(|(x, z)| {
+                let e = terrain::elevation_m(&s.spec, *x as f64 + 0.5, *z as f64 + 0.5);
+                let y = (e - 0.5).floor() as i32;
+                let cell = voxel_shapers::earthworks::cell_at(&s.spec, &[], *x, y, *z)
+                    .expect("the shaper answers");
+                (0.3..=0.7).contains(&voxel_shapers::earthworks::fill(&cell))
+            })
+            .expect("a column with a half-cut surface voxel");
+        let e = terrain::elevation_m(&s.spec, x as f64 + 0.5, z as f64 + 0.5);
+        let y = (e - 0.5).floor() as i32;
+        let m = s.material_at(x, y, z).expect("the world answers");
+        assert!(!m.is_empty(), "the surface voxel holds matter");
+        let cell = voxel_shapers::earthworks::cell_at(&s.spec, &[], x, y, z)
+            .expect("the shaper answers");
+        let shape = voxel_shapers::earthworks::voxel_shape(m, &cell);
+        assert_ne!(shape, VoxelShape::solid(m), "the cell is a cut, not the whole block");
+        assert!(s.record_profile(x, y, z, shape), "the world's record did not move");
+        assert_eq!(s.shape_at(x, y, z).expect("the world answers"), shape);
+        let pos = VoxelPos::new(x, y, z).chunk();
+        let tree = s.build_chunk(pos).expect("the chunk builds");
+        let local = LocalPos {
+            x: x.rem_euclid(CHUNK_SIDE) as u32,
+            y: y.rem_euclid(CHUNK_SIDE) as u32,
+            z: z.rem_euclid(CHUNK_SIDE) as u32,
+        };
+        assert_eq!(tree.voxel(local), shape, "the chunk build did not take the cell");
+        assert!(!s.record_profile(x, y, z, shape), "an unchanged cell moved the record");
+    }
+
+    #[test]
+    fn a_cell_recorded_down_to_nothing_is_air_to_the_material_read() {
+        // The player's break steps a cell down and writes an empty shape on the last layer.
+        // The generator still holds a block there, so the record has to be what makes the
+        // voxel gone — otherwise the picture is empty and the pick still finds a block.
+        let mut s = source();
+        let (x, z) = (0..512)
+            .map(|step| (16 + step, 16))
+            .find(|(x, z)| {
+                let e = terrain::elevation_m(&s.spec, *x as f64 + 0.5, *z as f64 + 0.5);
+                let y = (e - 0.5).floor() as i32;
+                !s.material_at(*x, y, *z).expect("the world answers").is_empty()
+            })
+            .expect("a column with a solid surface voxel");
+        let e = terrain::elevation_m(&s.spec, x as f64 + 0.5, z as f64 + 0.5);
+        let y = (e - 0.5).floor() as i32;
+        let material = s.material_at(x, y, z).unwrap();
+        assert!(!material.is_empty());
+        assert!(s.record_profile(x, y, z, VoxelShape::empty()), "the record did not move");
+        assert_eq!(
+            s.material_at(x, y, z).expect("the world answers"),
+            MaterialId::EMPTY,
+            "a cell recorded down to nothing still reads as matter"
+        );
+        assert!(s.shape_at(x, y, z).expect("the world answers").is_empty());
+        // And the record is still the cell's: putting one layer back makes the voxel matter again.
+        let mut one = VoxelShape::empty();
+        one.set(voxel_model::SubvoxelIndex { x: 0, y: 0, z: 0 }, material);
+        assert!(s.record_profile(x, y, z, one));
+        assert_eq!(s.material_at(x, y, z).unwrap(), material);
+    }
 
     #[test]
     fn a_chunk_holds_something_and_the_same_something_twice() {

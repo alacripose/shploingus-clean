@@ -37,13 +37,13 @@
 use voxel_model::endian::LeBytes;
 
 use std::cmp::Reverse;
-use std::collections::{BTreeSet, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread::JoinHandle;
 
 use voxel_mesh::{Chunk, Mesh, MeshConfig, Mesher};
-use voxel_model::{ChunkPos, MaterialId, Refusal, RefusalKind, Refused};
+use voxel_model::{ChunkPos, MaterialId, Refusal, RefusalKind, Refused, VoxelShape};
 use voxel_shapers::earthworks::{hand_change, Modification};
 use voxel_stream::WorldSource;
 
@@ -95,6 +95,9 @@ pub enum Submitted {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Built {
     pub generation: u64,
+    /// **The shape stamp this chunk's build saw** — the per-chunk half of the world
+    /// version, so a cell recorded at one voxel discards only the builds it reaches.
+    pub stamp: u64,
     pub mesh: Mesh,
     /// **The chunk's own octree, handed back rather than dropped.**
     ///
@@ -219,6 +222,14 @@ impl Queue {
 struct World {
     source: WorldSource,
     generation: u64,
+    /// **The shape record's per-chunk stamps.** A recorded cell changes one voxel's
+    /// 4×4×4 shape, not the world's materials: bumping the global `generation` for it
+    /// would discard **every** build in flight, which is right for an edit and ruinous
+    /// for a shaper that records a cell every few ticks (measured: the 605-chunk window
+    /// fell to 288 with 340 builds in flight). The stamp carries the same guarantee at
+    /// the record's own reach — only the chunks whose mesh reads the voxel move.
+    shape_epoch: u64,
+    shape_stamps: BTreeMap<ChunkPos, u64>,
 }
 
 struct Shared {
@@ -316,7 +327,12 @@ impl Pool {
             running: AtomicUsize::new(0),
             closed: AtomicBool::new(false),
             scratch: AtomicUsize::new(0),
-            world: RwLock::new(World { source, generation: 0 }),
+            world: RwLock::new(World {
+                source,
+                generation: 0,
+                shape_epoch: 0,
+                shape_stamps: BTreeMap::new(),
+            }),
             config,
         });
 
@@ -400,6 +416,12 @@ impl Pool {
         self.shared.world.read().unwrap().source.material_at(x, y, z)
     }
 
+    /// **The voxel's own cubic shape** — the shaper's cell where one is recorded, the whole
+    /// block where none is, and empty where the record has broken it away.
+    pub fn shape_at(&self, x: i32, y: i32, z: i32) -> Refused<VoxelShape> {
+        self.shared.world.read().unwrap().source.shape_at(x, y, z)
+    }
+
     /// **The world's own surface at one column**, read under **one** lock.
     ///
     /// The probe asks a handful of voxels of one column, and asking the world's lock per
@@ -478,6 +500,40 @@ impl Pool {
             })?;
         world.generation += 1;
         Ok(modification)
+    }
+
+    /// **Record the Earthworks stage's cell at a voxel**, as the shape the surface draws.
+    ///
+    /// The process roster's output reaches the world here: no material moves, so the
+    /// earthworks chain has nothing to record and the shape is kept on the world's own
+    /// source ([`WorldSource::record_profile`]). The stamp moves **only when the shape
+    /// actually changed**, in the same lock the record is read under, so a worker either
+    /// sees the whole new cell or none of it — and the material generation is left alone,
+    /// because a cell is not an edit and must not discard the window's in-flight builds.
+    pub fn record_profile(&self, x: i32, y: i32, z: i32, shape: VoxelShape) -> bool {
+        let mut world = self.shared.world.write().unwrap();
+        if !world.source.record_profile(x, y, z, shape) {
+            return false;
+        }
+        world.shape_epoch += 1;
+        let epoch = world.shape_epoch;
+        for pos in crate::stream::chunks_touching([x, y, z]) {
+            world.shape_stamps.insert(pos, epoch);
+        }
+        true
+    }
+
+    /// **The shape stamp a chunk's build must have seen.** A build whose stamp is older
+    /// than this one was meshed from a surface record the world no longer holds.
+    pub fn chunk_stamp(&self, pos: ChunkPos) -> u64 {
+        self.shared
+            .world
+            .read()
+            .unwrap()
+            .shape_stamps
+            .get(&pos)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Take everything that has finished.
@@ -668,15 +724,19 @@ fn build_one(mesher: &mut Mesher, shared: &Shared, pos: ChunkPos) -> Refused<Bui
     // not built from. The cost is the clone: the spec is small, and the
     // earthworks record is already scanned per voxel by `build_chunk` itself, so
     // one more copy per chunk is not what the history costs.
-    let (source, generation) = {
+    let (source, generation, stamp) = {
         let world = shared.world.read().unwrap();
-        (world.source.clone(), world.generation)
+        (
+            world.source.clone(),
+            world.generation,
+            world.shape_stamps.get(&pos).copied().unwrap_or(0),
+        )
     };
     let tree = source.build_chunk(pos)?;
     let chunk = Chunk::from_tree(pos, tree.clone());
     let neighborhood = source.neighborhood(pos);
     let mesh = mesher.build(&chunk, &shared.config, Some(&neighborhood))?;
-    Ok(Built { generation, mesh, tree })
+    Ok(Built { generation, stamp, mesh, tree })
 }
 
 #[cfg(test)]
@@ -974,6 +1034,47 @@ mod tests {
         assert_eq!(pool.generation(), 1, "an edit must move the generation");
         // The record holds it, and its ledger audits.
         assert!(impact.ledger.audit().is_ok(), "the edit's ledger did not audit");
+        pool.shutdown();
+    }
+
+    #[test]
+    fn a_recorded_cell_is_a_cut_in_the_chunk_the_workers_build() {
+        // The Earthworks stage's output reaches the world here: the cell becomes the
+        // voxel's own 4×4×4 shape, the generation moves, and a worker builds the chunk
+        // **from that shape** — the cell is the surface's record, not a column beside it.
+        let pool = pool(1);
+        let (x, y, z) = (2, 0, 3);
+        let material = pool.material_at(x, y, z).unwrap();
+        assert!(!material.is_empty(), "the test voxel starts empty");
+        let shape = voxel_shapers::earthworks::voxel_shape(
+            material,
+            &voxel_model::profile32::Cell::floor(0.5),
+        );
+        assert_ne!(shape, VoxelShape::solid(material), "the cell is not the whole block");
+        assert!(pool.record_profile(x, y, z, shape), "the record did not move");
+        assert_eq!(
+            pool.generation(),
+            0,
+            "a recorded cell is not a material edit: the window's builds must survive it"
+        );
+        let pos = voxel_model::VoxelPos::new(x, y, z).chunk();
+        assert_eq!(pool.chunk_stamp(pos), 1, "the reached chunk carries the new cell");
+        pool.submit(Request { pos, priority: 0 });
+        pool.wait_until_idle();
+        let collected = pool.collect();
+        let built = collected
+            .meshes
+            .iter()
+            .find(|built| built.mesh.chunk == pos)
+            .expect("the chunk built");
+        assert_eq!(built.stamp, 1, "the build saw the record's cell");
+        let local = voxel_model::LocalPos {
+            x: x.rem_euclid(voxel_model::CHUNK_SIDE) as u32,
+            y: y.rem_euclid(voxel_model::CHUNK_SIDE) as u32,
+            z: z.rem_euclid(voxel_model::CHUNK_SIDE) as u32,
+        };
+        assert_eq!(built.tree.voxel(local), shape, "the chunk did not take the cell");
+        assert!(!pool.record_profile(x, y, z, shape), "an unchanged cell moved the record");
         pool.shutdown();
     }
 

@@ -91,11 +91,16 @@ pub enum FieldId {
     Radiation,
     CarryingCapacity,
     SpeciesSuitability,
+    /// **How much of the voxel the world holds**, in `[0, 1]` — the `profile32` cell's own
+    /// fill, produced by [`crate::earthworks`]. It is the field record the shader draws a
+    /// voxel's cuboid cell from: a whole block is `1`, air above the surface is `0`, and the
+    /// voxel the terrain's surface law cuts holds the fraction of it the ground occupies.
+    ProfileCell,
 }
 
 impl FieldId {
     /// The full roster, in declaration order.
-    pub const ALL: [FieldId; 26] = [
+    pub const ALL: [FieldId; 27] = [
         FieldId::Tectonics,
         FieldId::Geology,
         FieldId::Elevation,
@@ -122,6 +127,7 @@ impl FieldId {
         FieldId::Radiation,
         FieldId::CarryingCapacity,
         FieldId::SpeciesSuitability,
+        FieldId::ProfileCell,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -152,6 +158,7 @@ impl FieldId {
             Self::Radiation => "radiation",
             Self::CarryingCapacity => "carrying-capacity",
             Self::SpeciesSuitability => "species-suitability",
+            Self::ProfileCell => "profile-cell",
         }
     }
 }
@@ -1111,12 +1118,15 @@ mod tests {
             FieldId::CloudBase,
             FieldId::CloudTop,
         ];
+        // The shaper's own field: the profile32 cell a voxel holds, produced by the
+        // earthworks stage. Declared here, not silently appended to the guide's set.
+        let shaper_additions = [FieldId::ProfileCell];
         assert_eq!(
             FieldId::ALL.len(),
-            19 + additions.len(),
+            19 + additions.len() + shaper_additions.len(),
             "the roster grew by something other than the declared additions"
         );
-        for field in additions {
+        for field in additions.into_iter().chain(shaper_additions) {
             assert!(FieldId::ALL.contains(&field), "{field:?} is not in the roster");
         }
         let mut names: Vec<&str> = FieldId::ALL.iter().map(|f| f.as_str()).collect();

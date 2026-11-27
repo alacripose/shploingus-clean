@@ -26,8 +26,14 @@ pub struct Config {
     pub base_elevation_m: f64,
     /// Peak-to-trough relief the terrain field can reach.
     pub relief_m: f64,
-    /// Frequency of the continental masses — low, because continents are large.
+    /// Frequency of the continental masses — low, because continents are large. It is the
+    /// reciprocal of the mounted worldgen package's continental wavelength.
     pub continent_frequency: f64,
+    /// How many continental frequencies the ridged mountain term runs at: a range's wavelength is
+    /// `1 / (continent_frequency · this)` ([`crate::terrain::range_wavelength_m`]).
+    pub ridge_frequency_scale: f64,
+    /// How much of [`Config::relief_m`] the ridged term raises where plates converge.
+    pub ridge_amplitude: f64,
     /// How many tectonic plates the world is partitioned into.
     pub plate_count: u32,
     /// Edge length of a tectonic plate cell, in metres. A **declared** constant
@@ -79,19 +85,28 @@ pub struct Config {
 }
 
 impl Default for Config {
+    /// **The terrain and climate constants are the mounted worldgen package's**, not literals in
+    /// this file: `display-packages/worldgen/package.shspec` authors the continental wavelength,
+    /// the relief, the sea line, the datum, the base temperature and the two ridge terms, and the
+    /// game mounts that folder before it opens the world. A row edited on disk therefore changes
+    /// the ground the same binary draws, without a rebuild — the experiment the package exists
+    /// for. The numbers that remain here are the **plate and structural** dials, which are this
+    /// crate's own and are not in either atlas.
     fn default() -> Self {
+        let world = crate::worldgen::library();
         Config {
             // **These three place the world inside the first playable band**
-            // (z = -16 … +47, C-6), which is why they are not round numbers: at
-            // a datum of 16 m and a relief of 40 m the surface spans roughly
-            // -22 … +54, so the band contains it rather than sitting under it.
-            // An earlier default of (sea 0, datum 64, relief 140) produced a
-            // world with a land fraction of 1.00 — no sea at all — which the
-            // test below caught by measuring rather than assuming.
-            sea_level_m: 16.0,
-            base_elevation_m: 16.0,
-            relief_m: 40.0,
-            continent_frequency: 0.0025,
+            // (z = -16 … +47, C-6), and they come from the package: at a datum of 16 m and a
+            // relief of 40 m the surface spans roughly -22 … +54, so the band contains it rather
+            // than sitting under it. An earlier (sea 0, datum 64, relief 140) produced a world
+            // with a land fraction of 1.00 — no sea at all — which the test below caught by
+            // measuring rather than assuming.
+            sea_level_m: world.sea_level_m,
+            base_elevation_m: world.datum_m,
+            relief_m: world.relief_m,
+            continent_frequency: 1.0 / world.continental_wavelength_m,
+            ridge_frequency_scale: world.ridge_frequency_scale,
+            ridge_amplitude: world.ridge_amplitude,
             plate_count: 12,
             plate_cell_size_m: 6000.0,
             plate_boundary_width_m: 600.0,
@@ -100,7 +115,7 @@ impl Default for Config {
             erosion_droplets_per_column: 0,
             soil_max_slope: 0.62,
             lapse_rate_c_per_m: scale::per_voxel(0.0065),
-            base_temperature_c: 26.0,
+            base_temperature_c: world.base_temperature_c,
             origin_latitude_deg: 45.0,
             orographic_efficiency: 0.0012,
             cave_threshold: 0.62,
@@ -148,6 +163,12 @@ impl Config {
         }
         if !(self.continent_frequency > 0.0 && self.continent_frequency.is_finite()) {
             return bad("continent_frequency must be positive and finite");
+        }
+        if !(self.ridge_frequency_scale > 0.0 && self.ridge_frequency_scale.is_finite()) {
+            return bad("ridge_frequency_scale must be positive and finite");
+        }
+        if !(self.ridge_amplitude >= 0.0 && self.ridge_amplitude.is_finite()) {
+            return bad("ridge_amplitude must be finite and not negative");
         }
         if !(0.0..=90.0).contains(&self.origin_latitude_deg) {
             return bad("origin_latitude_deg outside [0, 90]");
@@ -264,6 +285,8 @@ impl WorldSpec {
             c.base_elevation_m.to_bits(),
             c.relief_m.to_bits(),
             c.continent_frequency.to_bits(),
+            c.ridge_frequency_scale.to_bits(),
+            c.ridge_amplitude.to_bits(),
             c.plate_count as u64,
             c.plate_cell_size_m.to_bits(),
             c.plate_boundary_width_m.to_bits(),
@@ -340,6 +363,8 @@ mod tests {
             base_elevation_m: Config::default().base_elevation_m + 1.0,
             relief_m: Config::default().relief_m + 1.0,
             continent_frequency: Config::default().continent_frequency + 1e-6,
+            ridge_frequency_scale: Config::default().ridge_frequency_scale + 1.0,
+            ridge_amplitude: Config::default().ridge_amplitude + 0.05,
             plate_count: Config::default().plate_count + 1,
             plate_cell_size_m: Config::default().plate_cell_size_m + 1.0,
             plate_boundary_width_m: Config::default().plate_boundary_width_m + 1.0,
@@ -353,7 +378,7 @@ mod tests {
             orographic_efficiency: Config::default().orographic_efficiency + 1e-4,
             cave_threshold: Config::default().cave_threshold + 0.01,
         }
-        assert_eq!(flips.len(), 16, "a config field is not exercised here");
+        assert_eq!(flips.len(), 18, "a config field is not exercised here");
         for c in flips {
             assert_ne!(
                 base,

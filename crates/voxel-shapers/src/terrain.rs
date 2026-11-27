@@ -46,21 +46,18 @@ pub struct TerrainSample {
     pub mountain_m: f64,
 }
 
-/// **How much higher than the continents the ridged mountain term is read**: ranges are narrow and
-/// tall. It is the term's own frequency multiple — the one place it is written — so a reader that
-/// needs the wavelength of a range ([`range_wavelength_m`]) and the elevation law itself cannot
-/// drift apart.
-pub const RANGE_FREQUENCY_SCALE: f64 = 6.0;
-
 /// The **wavelength of the world's mountain ranges**, engine metres: one cycle of the ridged term's
-/// own base octave, `1 / (continent_frequency · 6)` — 66.7 engine metres for the default world.
+/// own base octave, `1 / (continent_frequency · ridge_frequency_scale)` — 66.7 engine metres for
+/// the default world. The multiple is the mounted worldgen package's `ridge_frequency_scale` row,
+/// so a reader that needs the wavelength of a range and the elevation law itself cannot drift
+/// apart.
 ///
 /// **Read by [`crate::weather`] as the baseline for the air's upslope**, because that is the scale
 /// of the landform the air climbs: a gradient read two metres apart sampled the fractal's finest
 /// octaves instead, which is where the rain shadow became a per-cell coin toss rather than a
 /// mountain's own wet side and dry side.
 pub fn range_wavelength_m(spec: &WorldSpec) -> f64 {
-    1.0 / (spec.config.continent_frequency * RANGE_FREQUENCY_SCALE)
+    1.0 / (spec.config.continent_frequency * spec.config.ridge_frequency_scale)
 }
 
 /// The continental field's fractal.
@@ -110,12 +107,12 @@ pub fn elevation_m(spec: &WorldSpec, x: f64, z: f64) -> f64 {
         let r = ridged.ridged(
             spec.stationary_stage_seed("mountains"),
             Vec3::new(
-                x * f * RANGE_FREQUENCY_SCALE,
+                x * f * cfg.ridge_frequency_scale,
                 0.0,
-                z * f * RANGE_FREQUENCY_SCALE,
+                z * f * cfg.ridge_frequency_scale,
             ),
         );
-        r * cfg.relief_m * 0.55 * convergent
+        r * cfg.relief_m * cfg.ridge_amplitude * convergent
     } else {
         0.0
     };
@@ -179,12 +176,12 @@ pub fn sample(spec: &WorldSpec, x: f64, z: f64) -> TerrainSample {
         ridged.ridged(
             spec.stationary_stage_seed("mountains"),
             Vec3::new(
-                x * cfg.continent_frequency * RANGE_FREQUENCY_SCALE,
+                x * cfg.continent_frequency * cfg.ridge_frequency_scale,
                 0.0,
-                z * cfg.continent_frequency * RANGE_FREQUENCY_SCALE,
+                z * cfg.continent_frequency * cfg.ridge_frequency_scale,
             ),
         ) * cfg.relief_m
-            * 0.55
+            * cfg.ridge_amplitude
             * convergent
     } else {
         0.0

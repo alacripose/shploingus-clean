@@ -244,6 +244,16 @@ pub fn declared_fields() -> Refused<Vec<DraftFieldSpec>> {
             Unit::Ratio,
             "docs/SHAPERS.md §1 ecology (Holdridge 1947)",
         )?,
+        // **The earthworks shaper's field**: the fraction of a voxel its profile32 cell
+        // occupies. The cell is one plane per voxel (dual contouring's record), and the
+        // ground it describes is a terrain-forming process rather than decoration — the
+        // sources are in `earthworks.rs`'s own section.
+        measured(
+            FieldId::ProfileCell,
+            Unit::Ratio,
+            "crates/voxel-shapers/src/earthworks.rs; Ju, Losasso, Schaefer & Warren 2002 \
+             (doi:10.1145/566570.566586)",
+        )?,
     ])
 }
 
@@ -276,6 +286,7 @@ fn law_of(field: FieldId) -> Option<FieldLaw> {
         FieldId::Wind => Some(wind_law),
         FieldId::CarryingCapacity => Some(carrying_capacity_law),
         FieldId::SpeciesSuitability => Some(species_suitability_law),
+        FieldId::ProfileCell => Some(profile_cell_law),
         // **The two guides' fields**, produced here rather than by the stage roster for the
         // same reason the material fields are: their producers are shapers, and the plane is
         // where a shaper's answer becomes a declared field.
@@ -564,6 +575,17 @@ fn species_suitability_law(
     coord: VoxelPos,
 ) -> Refused<FieldValue> {
     process_field(FieldId::SpeciesSuitability, spec, coord)
+}
+
+/// **The earthworks shaper's field**: the fill of the voxel's profile32 cell. The producer
+/// is the Earthworks stage's own body, so the plane and the roster answer one number for
+/// one address — the same rule every process field above follows.
+fn profile_cell_law(
+    _fields: &dyn FieldQuery,
+    spec: &WorldSpec,
+    coord: VoxelPos,
+) -> Refused<FieldValue> {
+    process_field(FieldId::ProfileCell, spec, coord)
 }
 
 // ---- the two guides' fields -----------------------------------------------------------
@@ -949,8 +971,8 @@ mod tests {
         let specs = declared_fields().expect("the declarations are consistent");
         assert_eq!(
             specs.len(),
-            22,
-            "the material fields, nine roster fields, the two guides' four, and the cloud's three"
+            23,
+            "the material fields, ten roster fields, the two guides' four, and the cloud's three"
         );
         let ids: Vec<FieldId> = specs.iter().map(|spec| spec.id).collect();
         for required in [
@@ -974,6 +996,7 @@ mod tests {
             FieldId::SprayWater,
             FieldId::Visibility,
             FieldId::CloudWater,
+            FieldId::ProfileCell,
             FieldId::CloudBase,
             FieldId::CloudTop,
         ] {

@@ -193,9 +193,9 @@ const _: () = assert!(FAR_CELL_VOXELS_TOTAL == 512);
 ///
 /// A tier outside `0..TIERS` is not a rung: the ladder has a bottom and a top, and a caller that
 /// asks past either has the wrong number rather than a large one.
-pub fn cell_m(tier: u32) -> f64 {
-    assert!(tier < TIERS, "tier {tier} is outside the ladder of {TIERS}");
-    BASE_CELL_M * f64::from(1u32 << tier)
+pub const fn cell_m(tier: u32) -> f64 {
+    assert!(tier < TIERS);
+    BASE_CELL_M * ((1u64 << tier) as f64)
 }
 
 /// **The tier a cell size names**, or `None` when the size is not a rung.

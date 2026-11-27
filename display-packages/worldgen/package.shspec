@@ -1,7 +1,13 @@
 shploingus.recipe/3
-package	worldgen	v0
-# A world-generation package: its rows are the simulation work, and it declares no window and no
-# layer — the terrain, cloud and sky passes are the renderer's, and the shapers are the shapers'.
+package	worldgen	v1
+# A world-generation package: it declares no window and no layer — the terrain, cloud and sky
+# passes are the renderer's, and the shapers are the shapers'. Its rows are of two kinds:
+#
+#   * `OPT`/`ORO`/`WAV` — the atmosphere and optics the two Colorado documents require, in prose.
+#   * `GEN` — **the world's own constants**: the seven numbers the terrain and climate laws read.
+#     Each row is `key=value` fields, and `voxel_shapers::worldgen` reads them into the `Config`
+#     every `WorldSpec` is built from, so the depth of the sea and the wavelength of a continent
+#     are authored here rather than compiled into Rust. The game mounts this folder at boot.
 #
 # The two documents this package is derived from live in `docs/`:
 #   docs/colorado_atmospheric_effects_scientific_report.pdf   (7 pages, 9 references)
@@ -19,3 +25,16 @@ package	worldgen	v0
 row	OPT-0001	at the 1/32 cubic-field cell, express BOTH optical mechanisms the two documents name — droplet diffraction (corona/aureole, droplet-size controlled) and hexagonal ice-crystal refraction (22-degree minimum deviation halo) — as scattering terms of the one sky transport, measured in angular degrees rather than pixels
 row	ORO-0001	at the 1/32 cubic-field cell, sample terrain-forced lift (approach, expansion and cooling, condensation, lee descent) so cloud forms only where moisture, temperature and stability allow it; a rain shadow is an outcome of the parcel path, never a guarantee
 row	WAV-0001	at the 1/32 cubic-field cell, carry terrain-generated gravity waves upward — displacement, buoyancy oscillation, propagation, breaking and momentum deposition — and let a wave exist in a clear sky, with cloud only where condensation cooperates
+#
+# The world's constants. `value` is in `unit`; `source` is the atlas section that says what the
+# number *means* — not where it came from, because neither atlas quotes an engine metre. The atlas
+# is conceptual (`continental §2`: continentalness is "not a simple distance-to-coast rule") and
+# this world is modelled eight times smaller than the real one, so every length here is the
+# world's own tuning at that scale, read from `crates/voxel-shapers/src/scale.rs`.
+row	GEN-0001	role=constant | knob=continental_wavelength_m | value=400 | unit=m | source=continental §2 (Continentalness: from maritime margins to inland climates) — one continental cycle at the 1/8 scale; the atlas's maritime-to-interior gradient is regional, and this is the length it is drawn at
+row	GEN-0002	role=constant | knob=relief_m | value=40 | unit=m | source=terrain §3 (Terrain is a climate modifier: "elevation, slope, aspect, relief") and §7 (mountains: relief "simultaneously changes rainfall, exposure, snow distribution, and erosion") — the peak-to-trough amplitude the elevation law can reach
+row	GEN-0003	role=constant | knob=sea_level_m | value=16 | unit=m | source=continental §2 (the ocean is the maritime end of continentalness; the height of its surface is this world's datum, and a column below it is sea)
+row	GEN-0004	role=constant | knob=datum_m | value=16 | unit=m | source=terrain §3 (elevation is the first terrain variable; the datum the whole surface is measured from)
+row	GEN-0005	role=constant | knob=base_temperature_c | value=26 | unit=C | source=continental §1 (The climate engine: heat, water, and seasonality) and terrain §1 (The first filter: energy and water) — the equatorial sea-level annual mean, which the latitude penalty is measured down from
+row	GEN-0006	role=constant | knob=ridge_frequency_scale | value=6 | unit=x | source=continental §3 (Mountains: uplift, rain shadows, and ecological compression: ranges "reorganize climate over short horizontal distances") — the ridged term is six continental frequencies, so a range is narrow and tall
+row	GEN-0007	role=constant | knob=ridge_amplitude | value=0.55 | unit=x | source=continental §3 and terrain §7 (Mountains: compressed biomes + high topographic diversity) — how much of the relief the ridged term raises where plates converge

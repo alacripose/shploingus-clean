@@ -33,7 +33,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use voxel_mesh::raycast::{Crossings, Ray};
 use voxel_mesh::{Mesh, MeshConfig, SparseVoxelOctree};
-use voxel_model::{ChunkPos, Digest, Face, MaterialId, Refusal, RefusalKind, Refused, VoxelPos};
+use voxel_model::{
+    ChunkPos, Digest, Face, MaterialId, Refusal, RefusalKind, Refused, VoxelPos, VoxelShape,
+};
 use voxel_shapers::earthworks::Modification;
 use voxel_stream::{Horizons, WorldSource};
 
@@ -498,6 +500,13 @@ impl Streamer {
         self.pool.material_at(x, y, z)
     }
 
+    /// **The voxel's own 4×4×4 shape** — the cell record's answer where one is recorded, the
+    /// whole block where none is. A break reads this and hands the stepped-down shape back to
+    /// [`Streamer::record_profile`], so the two are one record rather than a read beside a write.
+    pub fn shape_at(&self, x: i32, y: i32, z: i32) -> Refused<VoxelShape> {
+        self.pool.shape_at(x, y, z)
+    }
+
     /// **The world's own surface at one column, whether or not the chunk is resident.**
     ///
     /// The same world the resident chunks were built from, read at a few voxels instead of a
@@ -656,7 +665,40 @@ impl Streamer {
     pub fn edit(&mut self, edit: crate::pool::Edit) -> Refused<Modification> {
         let (x, y, z) = (edit.x, edit.y, edit.z);
         let modification = self.pool.edit(edit)?;
-        for pos in chunks_touching([x, y, z]) {
+        self.demote([x, y, z]);
+        Ok(modification)
+    }
+
+    /// **Apply the Earthworks stage's recorded cell to the world's surface.**
+    ///
+    /// The cell is the process roster's output and the pool records it as the voxel's
+    /// shape ([`Pool::record_profile`]); this is the half the picture needs: the chunks
+    /// that voxel reaches are demoted, exactly as an edit's are, and the pump rebuilds
+    /// them from the record. The shape is the cell the stage computed — there is no
+    /// column carrier and no second writer beside the roster.
+    ///
+    /// `true` says the record and a chunk's rebuild moved; a cell the record already
+    /// held costs neither.
+    pub fn record_profile(
+        &mut self,
+        x: i32,
+        y: i32,
+        z: i32,
+        shape: voxel_model::VoxelShape,
+    ) -> bool {
+        if !self.pool.record_profile(x, y, z, shape) {
+            return false;
+        }
+        self.demote([x, y, z]);
+        true
+    }
+
+    /// **Demote the chunks one voxel reaches** — the chunk's mesh is moved to the stale
+    /// set (still drawn, still charged) and its octree dropped, so the pump's next ask
+    /// rebuilds from the new record. Shared by a material edit and a shaper's cell, so
+    /// the two write paths cannot disagree about what an invalidation is.
+    fn demote(&mut self, voxel: [i32; 3]) {
+        for pos in chunks_touching(voxel) {
             // Demoted, not dropped: the mesh keeps its charge and keeps being
             // drawn, and `absorb` releases it when the replacement lands. A
             // second edit while the first replacement is still building finds the
@@ -677,7 +719,6 @@ impl Streamer {
             // failure would keep the hole the edit just made.
             self.failed.remove(&pos);
         }
-        Ok(modification)
     }
 
     /// **The world record's generation** — bumped by every recorded modification.
@@ -912,11 +953,12 @@ impl Streamer {
         let generation = self.pool.generation();
         let mut apply = Apply::default();
         for built in meshes {
-            let Built { generation: built_from, mesh, tree } = built;
+            let Built { generation: built_from, stamp, mesh, tree } = built;
             let pos = mesh.chunk;
-            if built_from != generation {
-                // An edit landed while this chunk was being meshed. It is not a
-                // cache miss; it is a piece of a world that no longer exists.
+            if built_from != generation || stamp != self.pool.chunk_stamp(pos) {
+                // An edit, or a cell recorded at a voxel this chunk reads, landed
+                // while the chunk was being meshed. It is not a cache miss; it is a
+                // piece of a world that no longer exists.
                 apply.stale += 1;
                 continue;
             }
@@ -1759,6 +1801,43 @@ mod tests {
         s.settle().unwrap();
         assert_eq!(s.len(), before, "the dropped chunk did not come back");
         assert_ne!(s.digest(), digest_before, "the rebuilt world is the old world");
+        s.shutdown();
+    }
+
+    #[test]
+    fn a_recorded_cell_demotes_only_the_chunk_it_reaches_and_the_window_keeps_streaming() {
+        // The reason the pool stamps the record **per chunk**: an Earthworks tick records a
+        // cell, and a global generation bump would discard every build in flight (measured:
+        // 288 of 605 chunks resident with 340 builds thrown away). A cell reaches one chunk's
+        // mesh, and one chunk is what moves.
+        let mut s = streamer(2, 64 * 1024 * 1024);
+        s.settle().unwrap();
+        let before = s.len();
+        let c = s.centre();
+        let (x, z) = (c.x * 32 + 16, c.z * 32 + 16);
+        let y = (c.y * 32..c.y * 32 + 32)
+            .rev()
+            .find(|y| !s.material_at(x, *y, z).unwrap().is_empty())
+            .expect("the centre chunk's middle column is empty");
+        let shape = voxel_shapers::earthworks::voxel_shape(
+            s.material_at(x, y, z).unwrap(),
+            &voxel_model::profile32::Cell::floor(0.5),
+        );
+        let generation = s.world_generation();
+        let drawn = s.digest();
+
+        assert!(s.record_profile(x, y, z, shape), "the record did not take the cell");
+        assert_eq!(
+            s.world_generation(),
+            generation,
+            "a cell moved the material record and discarded the window's builds"
+        );
+        assert_eq!(s.len(), before - 1, "the cell invalidated more than the chunk it reaches");
+        assert_eq!(s.stale_len(), 1, "and it went stale, not missing");
+
+        s.settle().unwrap();
+        assert_eq!(s.len(), before, "the reached chunk did not come back");
+        assert_ne!(s.digest(), drawn, "the rebuilt window is the old window: the cell was not drawn");
         s.shutdown();
     }
 

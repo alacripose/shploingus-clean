@@ -169,6 +169,64 @@ fn walk_lift_m_s() -> f64 {
     })
 }
 
+/// **How far down the demo looks while it walks**, in degrees — `SHPLOINGUS_LOOK_DEG`,
+/// read once, or level.
+///
+/// The walk looks level because a level eye is what a walk along the ground is; but the
+/// block the Earthworks stage is shaping is the column under the eye, and a level camera
+/// cannot see it. A run that has to show the drawn cell asks for a downward look here, the
+/// same way it asks for an eye height or a capture folder — an input of the measurement,
+/// not a second camera.
+fn walk_look_deg() -> Option<f64> {
+    let text = std::env::var("SHPLOINGUS_LOOK_DEG").ok()?;
+    match text.trim().parse::<f64>() {
+        Ok(deg) if deg.is_finite() && (-89.0..=89.0).contains(&deg) => Some(deg),
+        other => {
+            eprintln!(
+                "shploingus: SHPLOINGUS_LOOK_DEG must be finite degrees in -89..=89, not \
+                 {other:?}"
+            );
+            None
+        }
+    }
+}
+
+/// **When the demo breaks** — `SHPLOINGUS_BREAK_AT="60,64,68,72"`, comma-separated frames.
+///
+/// Each listed frame fires [`App::break_at_target`], which is the window's own left-click path:
+/// the break reads the pick, steps the cell, records it through the one writer and credits the
+/// inventory. So a capture of repeated breaks is a capture of the live break, not of a second
+/// one written for the proof. A malformed entry refuses by name and the instrument is off.
+fn break_frames_from_env() -> Vec<u64> {
+    let Some(text) = std::env::var_os("SHPLOINGUS_BREAK_AT") else {
+        return Vec::new();
+    };
+    let text = text.to_string_lossy();
+    let mut frames = Vec::new();
+    for part in text.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        match part.parse::<u64>() {
+            Ok(frame) => frames.push(frame),
+            Err(_) => {
+                eprintln!(
+                    "shploingus: SHPLOINGUS_BREAK_AT entry {part:?} is not a frame number; \
+                     the instrument is off"
+                );
+                return Vec::new();
+            }
+        }
+    }
+    frames.sort_unstable();
+    println!(
+        "shploingus: SHPLOINGUS_BREAK_AT fires {} break(s) through the live break path",
+        frames.len()
+    );
+    frames
+}
+
 /// **A held pose** — `SHPLOINGUS_EYE="x,y,z[,pitch_deg]"`, in metres and degrees.
 ///
 /// The demo's walk is frame-rate driven, so the ghost's path — and every defect that depends on
@@ -285,6 +343,17 @@ const DOUBLE_CLICK_SLOP_PX: f64 = 4.0;
 
 /// How far the player can reach to break or build, in metres.
 const REACH_M: f64 = 6.0;
+
+/// **How many world columns one Earthworks sweep band spans in z** before it steps x. The
+/// shape of the sweep is the process's, not the frame's; this number only says how wide a
+/// strip the demo shapes before starting the next one.
+const EARTHWORKS_SWEEP_COLUMNS: i32 = 64;
+
+/// **How many world ticks one Earthworks column lasts** before the sweep advances. A terrain
+/// process does not cross ten metres of ground a second; a column every two seconds is slow
+/// enough to watch and fast enough that a minute shapes a real strip. Declared because the
+/// sweep's speed is a property of the process, not of the frame rate.
+const EARTHWORKS_SWEEP_TICKS: u64 = 40;
 
 /// The seven admitted materials, in the order the number keys choose them.
 ///
@@ -547,6 +616,59 @@ fn main() {
     // the console's `file` verb (as before) and the judgement the game asks for below.
     let found_root =
         voxel_package::features::workspace_root(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
+    // ---- the worldgen package, mounted from its folder ----------------------------
+    //
+    // **The world's constants are a package, and the game mounts the folder before it opens the
+    // world.** `Config::default()` reads these rows, so `display-packages/worldgen/package.shspec`
+    // decides the continental wavelength, the relief, the sea line, the datum, the base
+    // temperature and the two ridge terms; an edit there changes the elevation the first frame
+    // draws, with no rebuild. A package that cannot be read is named once and the embedded rows
+    // stay: the world is never left without numbers.
+    let worldgen = match found_root.as_deref() {
+        Some(root) => {
+            let path = root.join("display-packages/worldgen/package.shspec");
+            match std::fs::read_to_string(&path)
+                .map_err(|why| format!("{} cannot be read ({why})", path.display()))
+                .and_then(|source| voxel_shapers::worldgen::mount(&source))
+            {
+                Ok(constants) => {
+                    format!("{} {} at {}", constants.package, constants.version, path.display())
+                }
+                Err(why) => {
+                    eprintln!(
+                        "shploingus: the worldgen package is not mounted: {why}; the embedded rows \
+                         stay"
+                    );
+                    "the embedded package".to_string()
+                }
+            }
+        }
+        None => "the embedded package".to_string(),
+    };
+    {
+        let constants = voxel_shapers::worldgen::library();
+        // **The world's own read of it.** `World::shipped()` builds its `Config` from these rows,
+        // and the spawn column's elevation is computed from that spec, so this line changes when
+        // a row on disk does — which is what makes the mount observable from the built game.
+        let world = World::shipped();
+        let at = spawn_feet(&world);
+        let elevation = voxel_shapers::terrain::elevation_m(world.spec(), at[0], at[2]);
+        println!(
+            "shploingus: the worldgen package: {} constants from {worldgen} — continental {:.0} m, \
+             relief {:.0} m, sea {:.0} m, datum {:.0} m, base {:.0} C, ridge x{} at {}; the spawn \
+             column at ({:.1}, {:.1}) stands at {elevation:.2} m",
+            constants.rows.len(),
+            constants.continental_wavelength_m,
+            constants.relief_m,
+            constants.sea_level_m,
+            constants.datum_m,
+            constants.base_temperature_c,
+            constants.ridge_frequency_scale,
+            constants.ridge_amplitude,
+            at[0],
+            at[2],
+        );
+    }
     // ---- the biomes catalog, mounted from its folder ------------------------------
     //
     // **The catalog is a package, and the game mounts the folder** — the embedded copy is what a
@@ -1339,6 +1461,29 @@ struct App {
     process_at: Option<u64>,
     /// The last ran/refused summary printed, so a set that has not changed is not a report.
     process_refusals: Option<String>,
+    /// **The last profile32 cell the Earthworks stage recorded**, keyed by its site and the
+    /// cell's own cuts, so a cell the world's record already holds is neither recorded nor
+    /// printed twice. A cell that *does* change is the shaper shaping another column of the
+    /// world, and it is the same record that moves the console line and the chunk's rebuild.
+    earthworks_said: Option<String>,
+    /// **The shaper's own sweep over the world's columns**, as `[seed z, columns]` — see
+    /// [`App::earthwork_column`]. `None` until the first tick, which seeds the band at the
+    /// column the world first stood over.
+    earthworks_seed: Option<[i32; 2]>,
+    /// **The column this cadence tick's Earthworks works**, in world metres. A world process
+    /// advances one column a tick along +z and wraps to the seed after a band, so the work is
+    /// a property of the world model and not of where the player is looking.
+    earthworks_column: Option<(i32, i32)>,
+    /// **The player's books**: the elements the cells this player broke have added.
+    inventory: voxel_client::inventory::Inventory,
+    /// Frames at which the demo fires the real left-click break — `SHPLOINGUS_BREAK_AT`.
+    break_at: Vec<u64>,
+    /// Frames drawn, for the break instrument's own clock.
+    break_frame: u64,
+    /// **The tick the sweep last advanced at.** Kept as a span rather than a modulo: a stalled
+    /// tick skips a phase, and a sweep keyed on `tick % period == 0` would then wait for the
+    /// next multiple — the world process would stall with the frame that stalled it.
+    earthworks_column_at: u64,
     /// The tick the light was last derived at, **or `None` before the first frame**.
     ///
     /// This exists to honour [`voxel_shapers::stages::Stage::Atmosphere`]'s declared
@@ -2218,6 +2363,13 @@ impl App {
             .expect("the built-in process roster validates"),
         process_at: None,
         process_refusals: None,
+        earthworks_said: None,
+        earthworks_seed: None,
+        earthworks_column: None,
+        earthworks_column_at: 0,
+        inventory: voxel_client::inventory::Inventory::new(),
+        break_at: break_frames_from_env(),
+        break_frame: 0,
         notifications,
         workspace,
         notified_at: None,
@@ -2344,16 +2496,55 @@ impl App {
     /// `DependencyUnavailable` for the daily stages until the next day boundary. Stepping
     /// tick 0 once is exactly what that clause anticipates: the pipeline's first tick is the
     /// whole chain, and the live tick follows it.
+    /// **The world column this cadence tick's Earthworks works.**
+    ///
+    /// Seeded once at the column the demo stands over, then advanced one column every
+    /// [`EARTHWORKS_SWEEP_TICKS`] along +z — a deterministic sweep of the world's own surface.
+    /// The strip is [`EARTHWORKS_SWEEP_COLUMNS`] wide in z before the next x, so a run shapes a
+    /// band of the world wherever the eye is and whichever way it looks. No pick, no crosshair,
+    /// no camera: the column is the world model's.
+    fn earthwork_column(&mut self, tick: u64, eye: [f64; 3]) -> (i32, i32) {
+        let seed = *self
+            .earthworks_seed
+            .get_or_insert([eye[0].floor() as i32, eye[2].floor() as i32]);
+        let Some((x, z)) = self.earthworks_column else {
+            self.earthworks_column = Some((seed[0], seed[1]));
+            self.earthworks_column_at = tick;
+            return (seed[0], seed[1]);
+        };
+        if tick < self.earthworks_column_at + EARTHWORKS_SWEEP_TICKS {
+            return (x, z);
+        }
+        let next = if z + 1 >= seed[1] + EARTHWORKS_SWEEP_COLUMNS {
+            (x + 1, seed[1])
+        } else {
+            (x, z + 1)
+        };
+        self.earthworks_column = Some(next);
+        self.earthworks_column_at = tick;
+        next
+    }
+
     fn drive_processes(&mut self, tick: u64) {
         if self.process_at == Some(tick) {
             return;
         }
         use voxel_shapers::process::{ProcessRequest, RegionSample, Site, UnitBox};
-        let site = Site::new(
-            self.camera.position_m[0].floor() as i32,
-            self.camera.position_m[1].floor() as i32,
-            self.camera.position_m[2].floor() as i32,
-        );
+        // **The shaper's column is the world's, not the player's.** A world-model process
+        // works the world on its own cadence; a site tied to the crosshair made terrain work
+        // a property of the camera — a player who stood still never saw the world shaped, and
+        // a player who turned aimed it. The sweep is seeded where the world first stood, so
+        // the demo begins under the player, and then advances in world metres.
+        let eye = self.camera.position_m;
+        let (x, z) = self.earthwork_column(tick, eye);
+        let spec = *self.spec();
+        // **The ground's own surface voxel.** The cell is cut from the elevation law
+        // (`earthworks::cell_at`), so the site is the block that law's surface stands in —
+        // not the column's topmost solid, because a canopy's leaf is a whole block and a
+        // terrain shaper does not carve leaves. One law names both the site and the cell, so
+        // the stage cannot be asked about a block the picture does not cut.
+        let surface = voxel_shapers::terrain::elevation_m(&spec, x as f64 + 0.5, z as f64 + 0.5);
+        let site = Site::new(x, surface.floor() as i32, z);
         const HALF: i32 = 8;
         let unit = UnitBox::new(
             [site.x - HALF, site.y - HALF, site.z - HALF],
@@ -2366,7 +2557,10 @@ impl App {
             RegionSample { site: Site::new(site.x, site.y, site.z + 4), distance_m: 4.0 },
             RegionSample { site: Site::new(site.x, site.y, site.z - 4), distance_m: 4.0 },
         ];
-        let spec = *self.spec();
+        // **The record as the shaper reads it.** `Earthworks` is the one body that composes
+        // the world with the modifications the world did not make itself; every other body
+        // ignores the slice. It is read once for the turn, not once a process.
+        let entries = self.streamer.as_ref().map(|streamer| streamer.modifications()).unwrap_or_default();
         let mut ticks: Vec<u64> = Vec::new();
         if self.process.last_tick().is_none() && tick != 0 {
             ticks.push(0);
@@ -2379,6 +2573,7 @@ impl App {
                 hydro_radius: voxel_shapers::process::FIELD_PLANE_HYDRO_RADIUS,
                 region: &region,
                 unit: Some(unit),
+                entries: &entries,
             };
             match self.process.step(&spec, &request) {
                 Ok(evidence) => {
@@ -2387,6 +2582,21 @@ impl App {
                     if self.process_refusals.as_deref() != Some(summary.as_str()) {
                         println!("process\tt{at}\t{summary}");
                         self.process_refusals = Some(summary);
+                    }
+                    // **The shaper's cell, applied where the stage recorded it.** The
+                    // Earthworks reading carries the cell it computed; the streamer records
+                    // that cell as the surface voxel's own 4×4×4 shape, and the chunk it
+                    // reaches rebuilds from that record. The line this prints is built from
+                    // the same reading, so the console and the picture are one record.
+                    let earthworks = evidence.iter().find(|e| {
+                        e.process.stage() == voxel_shapers::stages::Stage::Earthworks && e.ran()
+                    });
+                    if let Some(shaper) = earthworks {
+                        if let Some(reading) = shaper.reading(
+                            voxel_shapers::field_sampler::FieldId::ProfileCell,
+                        ) {
+                            self.record_earthworks(at, site, reading);
+                        }
                     }
                 }
                 Err(refusal) => {
@@ -2400,6 +2610,67 @@ impl App {
                 }
             }
         }
+    }
+
+    /// **The Earthworks stage's recorded cell, applied to the world's surface.**
+    ///
+    /// The stage's own reading carries the profile32 cell — not a fill alone — so this is
+    /// the one place that cell becomes a drawn shape: the block's material and the cell go
+    /// through [`voxel_shapers::earthworks::voxel_shape`] into the cubic 4×4×4 voxel record,
+    /// and [`voxel_work::Streamer::record_profile`] demotes the chunk that voxel reaches so
+    /// the mesher rebuilds it. Nothing material moves, and there is no second writer beside
+    /// the process roster: this is the roster's output being recorded.
+    ///
+    /// A cell the world's record already holds is not printed again and costs no rebuild.
+    /// The console line is built from the reading's own value, so the number on screen is
+    /// the stage's answer at the stage's own site.
+    fn record_earthworks(
+        &mut self,
+        tick: u64,
+        site: voxel_shapers::process::Site,
+        reading: &voxel_shapers::process::ProcessReading,
+    ) {
+        let voxel_shapers::field_sampler::FieldValue::Fixed(fixed) = reading.value else {
+            return;
+        };
+        let fill = voxel_shapers::chunk_fields::f64_of_fixed(fixed);
+        let Some(cell) = reading.cell else { return };
+        let key = format!("{},{},{}|{:?}", site.x, site.y, site.z, cell);
+        if self.earthworks_said.as_deref() == Some(key.as_str()) {
+            return;
+        }
+        self.earthworks_said = Some(key);
+        let Some(streamer) = self.streamer.as_mut() else { return };
+        let material = streamer
+            .material_at(site.x, site.y, site.z)
+            .unwrap_or(MaterialId::EMPTY);
+        // A whole block is the material record's own shape already; the shaper's cell is a
+        // *cut* only where it is partial. Recording a solid shape would move the generation
+        // for a picture the drawn block already is.
+        let recorded = !material.is_empty() && fill < 1.0 && {
+            let shape = voxel_shapers::earthworks::voxel_shape(material, &cell);
+            streamer.record_profile(site.x, site.y, site.z, shape)
+        };
+        self.shell.announce(
+            ConsoleLevel::Event,
+            "earthworks",
+            format!(
+                "t{tick} ({}, {}, {}) profile32 cell {:.0}/32 of the block, material {}",
+                site.x, site.y, site.z, fill * 32.0, material.0
+            ),
+            Some(tick),
+        );
+        // **The run's own line**, beside the console record: a capture is read by a person,
+        // and the tick, the block, the stage's fill and whether the record moved are what
+        // the frame cannot say.
+        println!(
+            "earthworks\tt{tick}\tblock ({}, {}, {})\tcell {:.0}/32 of the block\t{}",
+            site.x,
+            site.y,
+            site.z,
+            fill * 32.0,
+            if recorded { "recorded" } else { "held" }
+        );
     }
 }
 
@@ -3437,11 +3708,12 @@ impl App {
         // boundary. The gate arms the demo; it does not fly it.
         if self.walk && (self.walk_started || settled) {
             if !self.walk_started {
-                // **The demo looks level**, because a walk is along the ground and this is the
-                // ghost's first step: the boot's own −0.08 rad pitch would sink it 29 m over the
-                // minute a bounded run flies, and a camera under the terrain is a run that cannot
-                // show what the ground under it does.
-                self.camera.pitch_rad = 0.0;
+                // **The demo looks level unless asked otherwise**, because a walk is along the
+                // ground and this is the ghost's first step: the boot's own −0.08 rad pitch would
+                // sink it 29 m over the minute a bounded run flies. `SHPLOINGUS_LOOK_DEG` is the
+                // one input that asks for a downward look — the Earthworks stage shapes the column
+                // under the eye, and this is how a capture sees it.
+                self.camera.pitch_rad = walk_look_deg().map(f64::to_radians).unwrap_or(0.0);
                 self.walk_since.get_or_insert_with(Instant::now);
             }
             self.walk_started = true;
@@ -4224,6 +4496,14 @@ impl App {
         // that lands this frame is drawn this frame, which is what makes a capture of it a
         // capture of the live path.
         self.run_shell_script(event_loop, viewport_dp);
+        // **The scripted break**, through the same `break_at_target` the window's left click
+        // calls. A capture of repeated breaks is then a capture of the live path.
+        if !self.break_at.is_empty() {
+            self.break_frame += 1;
+            if self.break_at.contains(&self.break_frame) {
+                self.break_at_target();
+            }
+        }
         // **The map's own observation, before the renderer is borrowed.** Sampling the world reads
         // the world's spec and the streamer; both borrows must be over before the draw.
         self.observe_map(dt);
@@ -4691,6 +4971,21 @@ impl App {
                 drawn.1,
                 &self.streamer.as_ref().expect("checked above").digest().to_hex()[..16],
             );
+            // **The cloud's rung, on the same surface as the counters.** The cloud draws from the
+            // surface ladder's own 32 rungs; this line is what a capture reads to show the ladder
+            // moving (`rung 8 of 32` at one distance, `rung 9` at another), rather than a picture
+            // asserting it did.
+            if let Some(tree) = self.cloud_tree.as_ref() {
+                println!(
+                    "cloud-rung\t{} of {} | cell {:.3} m | {} rect(s) | domain {:.0} m | {} level(s)",
+                    tree.rung,
+                    voxel_client::RUNGS,
+                    tree.cell_m,
+                    tree.records.len(),
+                    voxel_client::cloud_cubes::CLOUD_DOMAIN_M,
+                    tree.subdivisions,
+                );
+            }
         }
     }
 
@@ -4770,41 +5065,109 @@ impl App {
         }
     }
 
-    /// Left button: take the voxel out of the world, recorded.
+    /// Left button: **break one layer of the voxel's profile32 cell**, recorded, and credit the
+    /// matter that left to the player's inventory.
+    ///
+    /// A break is a step down the cell, not the deletion of a cube. The voxel's own 4×4×4
+    /// shape ([`Streamer::shape_at`]) loses its highest occupied layer, and the stepped shape
+    /// goes back through the **same record the Earthworks stage writes**
+    /// ([`Streamer::record_profile`]) — one writer for a cell, whether a shaper or a player
+    /// changed it. Five breaks empty a whole block; a cell the surface already cut steps down
+    /// from its own top layer, so a break never deletes matter the law did not put there.
+    ///
+    /// The removed subvoxels are counted by material and credited by element
+    /// ([`voxel_client::inventory::Inventory`]); the console record and the toast both name the mass taken
+    /// and the totals the player now holds, because a break that silently moved 300 kg is the
+    /// failure the inventory exists to prevent.
     fn break_at_target(&mut self) {
+        // **A press that hits nothing says so.** The pick answering "no voxel in reach" is not a
+        // refusal, so `target` prints nothing for it — and a press that returns in silence is a
+        // click the player cannot tell from one the window never received. One record per press,
+        // on the same surface as the break itself.
         let Some(pick) = self.target() else {
-            return;
-        };
-        let streamer = self.streamer.as_mut().expect("the target came from the streamer");
-        match streamer.edit(voxel_work::pool::Edit {
-            x: pick.voxel[0],
-            y: pick.voxel[1],
-            z: pick.voxel[2],
-            to: MaterialId::EMPTY,
-            reason: "the player broke it".into(),
-            actor: voxel_model::world::ActorId::player(),
-            verb: voxel_model::world::PhysicalVerb::Break,
-        }) {
-            // **A transient result goes through `announce`, and a refusal stays a record.**
-            // `broke material 4 at (…)` is MD1's snackbar class (UI-SPEC §7), so it is one call
-            // that writes the console record *and* raises the toast; the refusal is a `Warn`,
-            // which the same call logs and deliberately does not toast.
-            Ok(m) => self.shell.announce(
+            self.shell.announce(
                 ConsoleLevel::Event,
                 "world",
-                format!(
-                    "broke material {} at ({}, {}, {})",
-                    m.from.0, pick.voxel[0], pick.voxel[1], pick.voxel[2]
-                ),
+                "nothing within reach to break".to_string(),
                 Some(self.clock.tick),
-            ),
-            Err(refusal) => self.shell.announce(
+            );
+            return;
+        };
+        let (x, y, z) = (pick.voxel[0], pick.voxel[1], pick.voxel[2]);
+        let tick = Some(self.clock.tick);
+        // **A fluid is not a block** (C-152.2). The cell path must keep the rule the material
+        // edit path already enforces; a break that stepped a water cell down would be the
+        // "I can break water blocks" defect the refusal exists to prevent.
+        if voxel_shapers::materials::is_fluid(pick.material) {
+            self.shell.announce(
                 ConsoleLevel::Warn,
                 "world",
-                format!("{refusal}"),
-                Some(self.clock.tick),
-            ),
+                "a fluid is not a block: the sea cannot be broken (C-152.2)".to_string(),
+                tick,
+            );
+            return;
         }
+        let shape = {
+            let Some(streamer) = self.streamer.as_ref() else { return };
+            match streamer.shape_at(x, y, z) {
+                Ok(shape) => shape,
+                Err(refusal) => {
+                    self.shell
+                        .announce(ConsoleLevel::Warn, "world", format!("{refusal}"), tick);
+                    return;
+                }
+            }
+        };
+        let (next, removed) = shape.break_top_layer();
+        let Some(count) = removed.iter().map(|(_, count)| count).max().copied() else {
+            self.shell.announce(
+                ConsoleLevel::Event,
+                "world",
+                format!("nothing left to break at ({x}, {y}, {z})"),
+                tick,
+            );
+            return;
+        };
+        let materials: String = removed
+            .iter()
+            .map(|(material, count)| format!("{}×{}", material.0, count))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let recorded = self
+            .streamer
+            .as_mut()
+            .expect("the target came from the streamer")
+            .record_profile(x, y, z, next);
+        if !recorded {
+            self.shell.announce(
+                ConsoleLevel::Warn,
+                "world",
+                format!("the cell at ({x}, {y}, {z}) did not take the step"),
+                tick,
+            );
+            return;
+        }
+        let credit = match self.inventory.credit(&removed) {
+            Ok(credit) => credit,
+            Err(refusal) => {
+                self.shell
+                    .announce(ConsoleLevel::Warn, "world", format!("{refusal}"), tick);
+                return;
+            }
+        };
+        // **The pack leads, and the gain follows.** The toast is the surface this line speaks
+        // on and it truncates, so a record that opened with the coordinates cut off the totals
+        // the player is watching rise. The console keeps the whole line either way.
+        let line = format!(
+            "pack {}; broke {count} subvoxel(s) [{materials}] at ({x}, {y}, {z}); {}",
+            self.inventory.summary(),
+            self.inventory.credit_line(&credit)
+        );
+        self.shell
+            .announce(ConsoleLevel::Event, "world", line.clone(), tick);
+        // The run's own book line, beside the console record: a capture is read by a person,
+        // and the mass a break moved is what the frame cannot say.
+        println!("break\t{line}");
     }
 
     /// Right button: put the selected material into the empty voxel the ray
