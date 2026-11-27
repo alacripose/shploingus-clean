@@ -9,6 +9,10 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      # `.cargo/config.toml` points the build tree at a drive on the authoring machine; a runner
+      # has no such drive, so the tree goes in the workspace here.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@v4
 
