@@ -7,5 +7,9 @@ Cargo.lock.orig
 /.scratch/
 /dist/
 
+# Generated test workspaces: a run of the console writes hundreds of megabytes of chain here,
+# which is the input to the next run rather than evidence of one.
+logs/test-workspaces/
+
 # The coding tool's own project marker and ledgers; project-id is machine-local.
 /.freebuff/
